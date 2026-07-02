@@ -1,0 +1,32 @@
+# ToDo-Liste
+- [ ] 0. Phase 0: Fundament
+  - [ ] 0.1 Toolchain festlegen (Emscripten vs. clang+wasi-sdk) und installieren/prüfen
+  - [ ] 0.2 HAL-Definition (src/hal/q9_hal.h) ausformulieren
+  - [ ] 0.3 Build-System (Makefile: Targets wasm + native)
+  - [ ] 0.4 "Hello Kernel" bootet im Browser (web/ mit xterm.js)
+  - [ ] 0.5 Nativer PC-Testbuild (CLI) läuft mit derselben Kernel-Quelle
+- [ ] 1. Phase 1: Kernel-Basis (Syscalls, Device-Modell, Konsole)
+- [ ] 2. Phase 2: Modulsystem (Header, q9mod, Directory, Loader)
+- [ ] 3. Phase 3: Filesystem (VFS + erster FS-Typ)
+- [ ] 4. Phase 4: Prozesse (kooperativer Scheduler)
+- [ ] 5. Phase 5: Shell
+- [ ] 6. Phase 6: 68k-Runtime (Musashi)
+- [ ] 7. Phase 7: 68k-Target nativ (Vinculum)
+- [ ] 8. Phase 8: Vision (6809-Runtime, Netzwerk, wasm2c, Self-Hosting)
+
+# Letzter Arbeitsstand
+Zuletzt bearbeitet: 2026-07-02
+Aktuell bei: Projekt angelegt, PROJECT.md v1 steht. Nächster Schritt: 0.1 Toolchain.
+
+# Detaillierte Beschreibungen
+
+## 0. Projekt-Gründung (2026-07-02)
+Status: Abgeschlossen
+- Name Q9 festgelegt (Anlehnung an OS-9, Q bewusst offen)
+- Architektur ausdiskutiert: portabler C-Kern, HAL, Dual-Target WASM+68k
+- Modulsystem nach OS-9-Vorbild mit Language-Byte (WASM/68k/6809),
+  Sync-Bytes "Q9" ($51 $39), CRC, q9mod-Packer
+- Andreas' Idee: 68k-Module bekommen automatisch Musashi-Runtime
+  untergesetzt; später sogar 6809-Runtime für original OS-9/6809-Binaries
+  (Syscall-Semantik von OS-9/6809 und /68k ist weitgehend identisch)
+- Offene Entscheidungen O1-O4 siehe PROJECT.md

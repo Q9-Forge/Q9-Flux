@@ -1,0 +1,18 @@
+# Build-Artefakte
+build/
+*.o
+*.obj
+*.exe
+*.out
+
+# Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
+*.wasm.map
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Claude Code lokale Settings
+.claude/settings.local.json

@@ -1,0 +1,181 @@
+# PROJECT.md — Q9
+
+**Q9** ist ein modulares Mini-Betriebssystem in der Tradition von OS-9.
+Der Kern ist portables C mit einer schmalen HAL. Primäres Executable-Format ist
+WebAssembly; native 68k-Module laufen über eine eingebaute Emulator-Runtime.
+
+**Name**: Anlehnung an OS-9. Wofür das Q steht, ist bewusst offen. 🙂
+
+---
+
+## 🎯 Vision
+
+Ein OS, das die Kernideen von OS-9 (Modulsystem, einheitliches I/O, alles ist
+ein Modul) in die Gegenwart holt:
+
+- **Läuft im Browser** (WASM-Host) — sofort testbar, überall verfügbar
+- **Läuft später nativ auf 68k** (Vinculum / MC68EN360) — gleicher Quellcode
+- **Mischbetrieb**: WASM-Module und 68k-Module gleichberechtigt nebeneinander,
+  unterschieden nur durch das Language-Byte im Modul-Header
+- **Fernziele**: OS-9/6809-Binärkompatibilität per 6809-Runtime, Netzwerk,
+  Self-Hosting-Toolchain
+
+---
+
+## 🏗️ Architektur
+
+### Schichtenmodell
+
+```
+┌─────────────────────────────────────────────────────┐
+│  User-Module (Shell, Tools, Anwendungen)            │
+│  LANG_WASM │ LANG_68K │ LANG_6809 (Vision)          │
+├─────────────────────────────────────────────────────┤
+│  Runtimes:  nativ (WASM-Instanz) │ Musashi │ 6809   │
+├─────────────────────────────────────────────────────┤
+│  Q9-Kernel (portables C):                           │
+│  Syscalls · Modul-Directory · Scheduler · VFS       │
+├─────────────────────────────────────────────────────┤
+│  HAL (pro Target implementiert)                     │
+├──────────────────────────┬──────────────────────────┤
+│  Target 1: WASM/Browser  │  Target 2: 68k/Vinculum  │
+│  xterm.js, Canvas, OPFS/ │  UART (QUICC SMC), RAM,  │
+│  File System Access API  │  CompactFlash/SCSI       │
+└──────────────────────────┴──────────────────────────┘
+```
+
+### Grundsätze
+
+1. **Kernel ist portables C (C99)** — kein Target-spezifischer Code außerhalb
+   der HAL. Muss mit clang (→WASM) und vbcc (→68k) übersetzbar bleiben.
+2. **HAL bleibt schmal** — Konsole, Block-Device, Timer, Yield. Alles andere
+   ist Kernel-Sache.
+3. **Syscall-Semantik nah an OS-9** (F$/I$-Philosophie) — das hält die
+   spätere 6809-Runtime dünn und ehrt das Vorbild. Q9-Präfix: `Q$...`
+4. **Kein WASM-Interpreter auf dem 68k-Target** — dort läuft 68k nativ,
+   WASM-Module ggf. per wasm2c+vbcc vorkompiliert. (Interpreter höchstens
+   temporär für Bootstrap-Experimente.)
+
+### HAL-Schnittstelle (Entwurf, wird in Phase 0 festgezurrt)
+
+```c
+void     q9_hal_init(void);
+void     q9_hal_con_put(char c);            /* Konsole            */
+int      q9_hal_con_get(void);              /* -1 = nichts da     */
+uint32_t q9_hal_ticks_ms(void);             /* Timer              */
+int      q9_hal_blk_read(uint32_t lba, void *buf);   /* 512 Byte  */
+int      q9_hal_blk_write(uint32_t lba, const void *buf);
+void     q9_hal_yield(void);                /* Host-Kooperation   */
+```
+
+---
+
+## 📦 Modulsystem (Herzstück, OS-9-inspiriert)
+
+**Konzeptgetreu, aber NICHT binärkompatibel zu OS-9** (bewusste Entscheidung —
+Binärkompatibilität würde die komplette OS-9-API erzwingen).
+
+### Modul-Header (Entwurf)
+
+| Offset | Größe | Feld         | Bemerkung                                |
+|--------|-------|--------------|------------------------------------------|
+| $00    | 2     | Sync         | `$51 $39` = ASCII "Q9"                   |
+| $02    | 2     | HeaderSize   |                                          |
+| $04    | 4     | ModuleSize   | gesamt, inkl. Header + CRC               |
+| $08    | 4     | NameOffset   | → nullterminierter Modulname             |
+| $0C    | 1     | Type         | 1=Programm 2=Treiber 3=FileMgr 4=Data 5=Runtime |
+| $0D    | 1     | Language     | 1=WASM 2=M68K 3=MC6809 (reserviert)      |
+| $0E    | 1     | Attribute    | Bit0=reentrant ...                       |
+| $0F    | 1     | Revision     |                                          |
+| $10    | 4     | ExecOffset   | Einsprung (bei WASM: Offset der .wasm-Daten) |
+| $14    | 4     | DataSize     | statischer Datenbedarf                   |
+| $18    | 4     | CRC32        | über das gesamte Modul (Feld = 0 gerechnet) |
+
+- **WASM-Module**: gültige `.wasm`-Datei, Q9-Header als **Custom Section**
+  eingebettet → Datei ist gleichzeitig valides WASM UND valides Q9-Modul.
+- **68k-Module**: Header + positionsunabhängiger 68k-Code (vbcc, PC-relativ).
+- **Modul-Directory** im Kernel: Name → Adresse, Link-Count, Revision-Update,
+  CRC-Prüfung beim Laden.
+- **Start-Dispatch**: `Q$Fork` liest das Language-Byte und wählt die Runtime
+  (WASM-Instanz nativ / Musashi / später 6809). Vorbild: OS-9s Language-Byte
+  für 68k-Objektcode vs. Basic09-I-Code.
+
+### Werkzeug: `q9mod` (tools/)
+
+Packt Compiler-Output in das Modulformat, rechnet CRC, setzt Header-Felder.
+Portables C, läuft auf dem PC (und eines Tages unter Q9 selbst).
+
+---
+
+## 🗺️ Phasenplan
+
+| Phase | Inhalt | Status |
+|-------|--------|--------|
+| 0 | **Fundament**: Build-System (clang→WASM), HAL-Definition, "Hello Kernel" im Browser (xterm.js), nativer PC-Testbuild | offen |
+| 1 | **Kernel-Basis**: initSystem, Syscall-Mechanismus (`Q$...`), Device-Modell, Konsolen-I/O | offen |
+| 2 | **Modulsystem**: Header-Format final, `q9mod`-Tool, Modul-Directory, Loader (Module zunächst aus eingebautem "ROM-Image") | offen |
+| 3 | **Filesystem**: VFS-Layer (RBF-artige Pfad-Semantik), erster FS-Typ | offen |
+| 4 | **Prozesse**: kooperativer Scheduler, `Q$Fork`/`Q$Exit`/`Q$Wait`, Prozess-Directory | offen |
+| 5 | **Shell**: erstes echtes User-Modul, Kommandos, Modul-Tools (`mdir`, `procs`...) | offen |
+| 6 | **68k-Runtime**: Musashi (als WASM kompiliert) als Runtime-Modul, TRAP→Syscall-Bridge, erste LANG_68K-Module | offen |
+| 7 | **68k-Target nativ**: vbcc-Build der HAL für Vinculum, Boot auf echter Hardware bzw. Board-Emulator | offen |
+| 8 | **Vision**: 6809-Runtime (original OS-9/6809-Binaries!), Netzwerk (CH9121 real / WebSocket-Proxy im Browser), wasm2c-Pfad, Self-Hosting | offen |
+
+**Arbeitsweise**: Jede Phase endet mit lauffähigem, getestetem Stand.
+Tests in `test/` (01_test_..., PASS/FAIL, standalone).
+
+---
+
+## ⚖️ Getroffene Entscheidungen
+
+| # | Entscheidung | Begründung |
+|---|-------------|------------|
+| E1 | Kern in portablem C, Dual-Target WASM+68k | einmal schreiben, sofort testen, später nativ |
+| E2 | Modulsystem nach OS-9-Vorbild, nicht binärkompatibel | Konzept ja, API-Ballast nein |
+| E3 | Syscalls semantisch OS-9-nah (`Q$`-Präfix) | 6809-Runtime bleibt dünn, bewährtes Design |
+| E4 | Kooperativer Scheduler zuerst | einzige sauber portable Variante (WASM kennt keine Preemption); Preemption später 68k-seitig möglich |
+| E5 | Kein WASM-Interpreter auf 68k | Performance; wasm2c+vbcc als Weg zu nativem Code |
+| E6 | CPU-Emulation im Browser via Web Worker | UI-Thread bleibt frei |
+
+## ❓ Offene Entscheidungen
+
+| # | Frage | Stand |
+|---|-------|-------|
+| O1 | Erster Filesystem-Typ: FAT16 (Interop) vs. eigenes FS (Lehrreich) | Tendenz FAT16, VFS hält beides offen |
+| O2 | Grafik-Device: Framebuffer-Layout, Auflösung, Register — im Emulator entwerfen, später in Hardware (CPLD/FPGA)? | Design steht aus, Phase ≥5 |
+| O3 | Syscall-Nummernraum: eigene Nummern oder OS-9-Nummern spiegeln? | zu klären in Phase 1 |
+| O4 | 68k-Board-Emulation: nur CPU (Musashi) oder auch QUICC-Peripherie für Phase 7 | zu klären in Phase 6/7 |
+| O5 | WASM-Runtime für den nativen PC-Build: WAMR vs. wasm3 vs. wasmtime (eingebettet als LANG_WASM-Runtime, damit die native Version voll benutzbar ist, nicht nur Debug) | zu klären ab Phase 2 |
+
+---
+
+## 📂 Verzeichnisstruktur
+
+```
+Q9/
+├── PROJECT.md          # dieses Dokument
+├── context.txt         # Arbeitsstand
+├── README.md           # englische Kurzbeschreibung
+├── src/
+│   ├── kernel/         # portabler Kern (Syscalls, Module, Scheduler, VFS)
+│   └── hal/
+│       ├── wasm/       # HAL für Browser/Emscripten
+│       ├── native/     # HAL für PC-Testbuild (CLI)
+│       └── m68k/       # HAL für Vinculum (Phase 7)
+├── tools/              # q9mod, mkrom (PC-Werkzeuge)
+├── web/                # Browser-Frontend (xterm.js, Canvas, Loader-JS)
+├── test/               # 01_test_..., standalone, PASS/FAIL
+└── docs/               # Detail-Spezifikationen (Modulformat, Syscalls, HAL)
+```
+
+## 🔧 Toolchain
+
+- **WASM**: Emscripten (emcc) oder clang + wasi-sdk — Festlegung in Phase 0
+- **PC-Test**: clang/gcc nativ
+- **68k**: vbcc mit M68k-Backend (PC-relativer Code), ab Phase 7
+- **Standards**: Header-System und Versionierung gemäß `C:\projects\PROJECT.md`
+
+---
+
+**Erstellt**: 2026-07-02
+**Letzte Aktualisierung**: 2026-07-02 (Initiale Version nach Design-Diskussion)
