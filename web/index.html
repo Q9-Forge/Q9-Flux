@@ -1,0 +1,60 @@
+<!doctype html>
+<!--══════════════════════════════════════════════════════════════════════════════════════════════
+    File:   index.html                                                                    Ver. 1.00
+    Owner:  AF
+    Desc.:  Q9 Browser-Frontend: xterm.js-Konsole + WASM-Loader. Stellt globalThis.q9host
+            bereit (putc/getc), das von hal_wasm.c per EM_JS aufgerufen wird.
+    Edition History
+    26-07-02 1.00 Initiale Version                                                            CF
+    ═════════════════════════════════════════════════════════════════════════════════════════════-->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Q9</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; background: #101014; }
+    #term      { height: 100%; padding: 8px; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 16,
+      theme: { background: '#101014', foreground: '#c8e6c9', cursor: '#8bc34a' }
+    });
+    term.open(document.getElementById('term'));
+    term.focus();
+
+    // Input-Queue: Tastendrücke sammeln, Kernel pollt via q9_hal_con_get()
+    const inputQueue = [];
+    term.onData(data => {
+      for (const ch of data) inputQueue.push(ch.charCodeAt(0));
+    });
+
+    // Host-Schnittstelle für hal_wasm.c (EM_JS).
+    // Der Kernel liefert einen UTF-8-Bytestrom; TextDecoder im Stream-Modus setzt
+    // Mehrbyte-Sequenzen korrekt zusammen (nackte Bytes wären C1-Steuerzeichen!).
+    const utf8 = new TextDecoder('utf-8');
+    globalThis.q9host = {
+      putc: c  => {
+        const s = utf8.decode(new Uint8Array([c]), { stream: true });
+        if (s) term.write(s);
+      },
+      getc: () => inputQueue.length ? inputQueue.shift() : -1
+    };
+
+    // Emscripten-Modul: nach Init den Kernel starten und zyklisch steppen
+    var Module = {
+      onRuntimeInitialized() {
+        Module._q9_kernel_init();
+        setInterval(() => Module._q9_kernel_step(), 10);
+      }
+    };
+  </script>
+  <script src="q9.js"></script>
+</body>
+</html>

@@ -22,13 +22,13 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 
 | # | Schritt | Status | Notizen |
 |---|---------|--------|---------|
-| 0.1 | Toolchain prüfen/festlegen: Emscripten vorhanden? clang nativ vorhanden? Installation dokumentieren | ⬜ | Votum: Emscripten für WASM, clang/gcc für nativ |
-| 0.2 | `src/hal/q9_hal.h` ausformulieren (Konsole, Block-Device, Timer, Yield) | ⬜ | Entwurf steht in PROJECT.md |
-| 0.3 | Kernel-Minimalgerüst: `src/kernel/main.c` mit `q9_init()`, Banner, Echo-Loop über HAL | ⬜ | |
-| 0.4 | HAL `native/`: PC-CLI-Build (stdin/stdout), Makefile-Target `native` | ⬜ | zuerst nativ — schnellster Debugzyklus |
-| 0.5 | HAL `wasm/`: Emscripten-Build, `web/index.html` mit xterm.js, Makefile-Target `wasm` | ⬜ | |
-| 0.6 | Erster Test: `test/01_test_boot` — beide Targets booten, Banner erscheint | ⬜ | |
-| 0.7 | Git-Repo initialisieren + erster Commit (nach Freigabe durch Andreas) | ⬜ | |
+| 0.1 | Toolchain installieren: w64devkit 2.8.0 (gcc 16.1.0 + make) + emsdk latest | ✅ | portabel, ohne Admin; Doku: docs/TOOLCHAIN.md |
+| 0.2 | `src/hal/q9_hal.h` ausformulieren (Konsole, Block-Device, Timer, Target-Info) | ✅ | yield gestrichen: Host treibt q9_kernel_step() |
+| 0.3 | Kernel-Minimalgerüst: `src/kernel/kernel.c`, Banner, Echo-Loop über HAL | ✅ | nicht-blockierendes Step-Design |
+| 0.4 | HAL `native/`: PC-Build (conio, Disk-Image-Stub), Makefile-Target `native` | ✅ | Windows-only (conio); POSIX-Variante später |
+| 0.5 | HAL `wasm/`: Emscripten-Build, `web/index.html` mit xterm.js, Makefile-Target `wasm` | ✅ | q9.wasm = 1,3 KB 😄 |
+| 0.6 | Erster Test: `test/01_test_boot.py` (nativ) + Browser-Boot verifiziert | ✅ | PASS; Bugfix: Konsole ist UTF-8-Bytestrom (C1-Falle) |
+| 0.7 | Git-Repo initialisieren + erster Commit + GitHub | ✅ | github.com/foellmy51/Q9 (privat) |
 
 ### Phase 1 — Kernel-Basis (Vorschau, wird nach Phase 0 detailliert)
 
@@ -47,8 +47,10 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 
 ## Erledigt
 
-*(noch nichts — Projekt frisch angelegt am 2026-07-02)*
+- **2026-07-02 — Phase 0 komplett** ✅: Toolchain, HAL, Kernel-Gerüst, beide Targets bauen,
+  nativer Selftest PASS, Browser-Boot mit Echo verifiziert. Q9 v0.01 alpha läuft.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-02 — Plan initial erstellt, noch kein Schritt begonnen.
+**Letzte Aktualisierung**: 2026-07-02 — Phase 0 abgeschlossen. Nächster Schritt: 1.1
+(Syscall-Nummernraum O3 vor Implementierung mit Andreas besprechen!).
