@@ -115,8 +115,13 @@ int main(int argc, char **argv)
     q9_kernel_init();
 
     if (selftest) {
+        int fails = q9_kernel_selftest();
         for (int i = 0; i < 100; i++) {
             q9_kernel_step();
+        }
+        if (fails != 0) {
+            printf("\nSELFTEST FAIL (%d)\n", fails);
+            return 1;
         }
         printf("\nSELFTEST PASS\n");
         return 0;

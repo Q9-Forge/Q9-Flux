@@ -18,8 +18,8 @@ EMCC    = emcc
 CFLAGS  = -std=c99 -Wall -Wextra -O2
 
 BUILD   = build
-KSRC    = src/kernel/kernel.c
-HDRS    = src/hal/q9_hal.h src/kernel/kernel.h
+KSRC    = src/kernel/kernel.c src/kernel/syscall.c
+HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows, w64devkit)
@@ -46,6 +46,7 @@ $(BUILD)/wasm/q9.js: $(KSRC) src/hal/wasm/hal_wasm.c $(HDRS) web/index.html
 #───────────────────────────────────────────────────────────────────────────────────────────────
 test: native
 	python test/01_test_boot.py
+	python test/02_test_syscalls.py
 
 clean:
 	rm -rf $(BUILD)

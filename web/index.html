@@ -6,6 +6,7 @@
             bereit (putc/getc), das von hal_wasm.c per EM_JS aufgerufen wird.
     Edition History
     26-07-02 1.00 Initiale Version                                                            CF
+    26-07-03 1.01 UTF-8-Stream-Decoder; Input-getriebenes Stepping + rAF (Timer-Drosselung)  CF
     ═════════════════════════════════════════════════════════════════════════════════════════════-->
 <html lang="de">
 <head>
@@ -33,6 +34,7 @@
     const inputQueue = [];
     term.onData(data => {
       for (const ch of data) inputQueue.push(ch.charCodeAt(0));
+      pump();                      // Eingabe treibt den Kernel sofort (kein Timer-Lag)
     });
 
     // Host-Schnittstelle für hal_wasm.c (EM_JS).
@@ -47,11 +49,19 @@
       getc: () => inputQueue.length ? inputQueue.shift() : -1
     };
 
-    // Emscripten-Modul: nach Init den Kernel starten und zyklisch steppen
+    // Kernel-Antrieb: rAF (~60 Hz, nur sichtbarer Tab) + Interval-Fallback.
+    // Wichtig: Browser drosseln Timer in versteckten Tabs auf <=1/s — deshalb
+    // pumpt zusätzlich jede Eingabe direkt (s.o.). Langfristig: Web Worker (E6).
+    let ready = false;
+    function pump() {
+      if (ready) Module._q9_kernel_step();
+    }
     var Module = {
       onRuntimeInitialized() {
         Module._q9_kernel_init();
-        setInterval(() => Module._q9_kernel_step(), 10);
+        ready = true;
+        (function loop() { pump(); requestAnimationFrame(loop); })();
+        setInterval(pump, 50);
       }
     };
   </script>

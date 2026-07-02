@@ -30,12 +30,13 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 | 0.6 | Erster Test: `test/01_test_boot.py` (nativ) + Browser-Boot verifiziert | ✅ | PASS; Bugfix: Konsole ist UTF-8-Bytestrom (C1-Falle) |
 | 0.7 | Git-Repo initialisieren + erster Commit + GitHub | ✅ | github.com/foellmy51/Q9 (privat) |
 
-### Phase 1 — Kernel-Basis (Vorschau, wird nach Phase 0 detailliert)
+### Phase 1 — Kernel-Basis
 
 | # | Schritt | Status | Notizen |
 |---|---------|--------|---------|
-| 1.1 | Syscall-Mechanismus + Nummernraum-Entscheidung (O3) | ⬜ | vorher mit Andreas besprechen |
-| 1.2 | Device-Modell + Konsolen-Treiber als erstes internes Modul | ⬜ | |
+| 1.1 | Syscall-Design entschieden (E7): OS-9-Nummern + Registerkonventionen, ABI-Spez in docs/SYSCALLS.md | ✅ | Nummern/Fehlercodes aus Andreas' MWOS-SDK (M:\MWOS) verifiziert |
+| 1.2 | Dispatcher + erste Calls: I$Read/Write/ReadLn/WritLn, F$Exit/ID/Time; Kernel-REPL nutzt eigene Syscalls; Selbsttest + Test 02 | ✅ | E$NotRdy statt Blockieren bis Phase 4 (dokumentiert) |
+| 1.3 | Device-Modell + Konsolen-Treiber als internes Modul (löst fest verdrahtete Pfade 0/1/2 ab) | ⬜ | |
 
 ---
 
@@ -49,8 +50,10 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 
 - **2026-07-02 — Phase 0 komplett** ✅: Toolchain, HAL, Kernel-Gerüst, beide Targets bauen,
   nativer Selftest PASS, Browser-Boot mit Echo verifiziert. Q9 v0.01 alpha läuft.
+- **2026-07-03 — Phase 1.1 + 1.2** ✅: OS-9-Syscall-ABI (E7) spezifiziert und implementiert,
+  REPL über eigene Syscalls, Tests 01+02 PASS, Browser verifiziert.
+  Fix: Timer-Drosselung in versteckten Tabs → Input-getriebenes Stepping + rAF.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-02 — Phase 0 abgeschlossen. Nächster Schritt: 1.1
-(Syscall-Nummernraum O3 vor Implementierung mit Andreas besprechen!).
+**Letzte Aktualisierung**: 2026-07-03 — Phase 1.2 fertig. Nächster Schritt: 1.3 Device-Modell.
