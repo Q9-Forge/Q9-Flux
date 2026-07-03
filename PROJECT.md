@@ -74,6 +74,8 @@ void     q9_hal_yield(void);                /* Host-Kooperation   */
 
 **Konzeptgetreu, aber NICHT binärkompatibel zu OS-9** (bewusste Entscheidung —
 Binärkompatibilität würde die komplette OS-9-API erzwingen).
+Vollständige OS-9-Referenz (Header-Felder, Modul-Directory, Link-Counting,
+Sticky-Module, Namensauflösung): **docs/MODULES.md**.
 
 ### Modul-Header (Entwurf)
 

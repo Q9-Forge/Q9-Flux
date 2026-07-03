@@ -68,10 +68,15 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 2.1 | Modul-Header final spezifizieren (docs/MODULES.md), CRC32-Routine im Kernel | 💤 | — | Header-Entwurf steht in PROJECT.md; Feinplanung nach Phase-1-Abschluss |
+| 2.1 | Modul-Header final spezifizieren (docs/MODULES.md), CRC32-Routine im Kernel | 💤 | — | Header-Entwurf steht in PROJECT.md; OS-9-Referenz in docs/MODULES.md; Feinplanung nach Phase-1-Abschluss |
 | 2.2 | `tools/q9mod`: Compiler-Output → Q9-Modul (Header, CRC, Custom Section für WASM) | 💤 | — | portables C, läuft auf dem PC |
-| 2.3 | Modul-Directory im Kernel + F$Link/F$UnLink; Module aus eingebautem ROM-Image | 💤 | — | |
+| 2.3 | Modul-Directory im Kernel + F$Link/F$UnLink; Module aus eingebautem ROM-Image | 💤 | — | Revision-Tie-Break-Regel + F$Load-Multi-Modul-Muster aus docs/MODULES.md übernehmen |
 | 2.4 | dev_term als echtes Typ-2-Modul (Treiber) aus dem ROM-Image laden | 💤 | — | Nagelprobe: internes Modul → echtes Modul |
+
+**Design-Fragen für heute Abend** (Details in docs/MODULES.md, Abschnitt „Zusammenfassung"):
+braucht Q9 Modul-Gruppen (gemeinsames Unlink mehrerer Module)? Braucht Q9 den
+OS-9-Dreiklang File-Manager/Treiber/Descriptor, oder bleibt es beim aktuellen
+kombinierten `q9_dev_t`?
 
 ---
 
