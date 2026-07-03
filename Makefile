@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 1.50
+# File:   Makefile                                                                        Ver. 1.60
 # Owner:  AF
 # Desc.:  Q9 Build-System. Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc),
 #         wasm (Browser, emcc), test, clean. Toolchain-Setup siehe docs/TOOLCHAIN.md.
@@ -17,6 +17,7 @@
 # 26-07-03│ 1.30 │ 2.1: module.c/.h (Modul-Header + CRC32)                                 │ CF
 # 26-07-03│ 1.40 │ 3.1: dev_d0.c (Roh-Block-Device), Test 04                               │ CF
 # 26-07-04│ 1.50 │ 3.2: vfs.c/.h (VFS-Pfad-Routing), Test 05                               │ CF
+# 26-07-04│ 1.60 │ 3.3: fat16.c/.h (FAT16 lesend), Test 06                                 │ CF
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -27,9 +28,9 @@ PYTHON  = $(shell command -v python3 2>/dev/null || command -v python)
 BUILD   = build
 KSRC    = src/kernel/kernel.c src/kernel/syscall.c src/kernel/device.c src/kernel/dev_term.c \
           src/kernel/dev_nil.c src/kernel/dev_d0.c src/kernel/name.c src/kernel/module.c \
-          src/kernel/vfs.c
+          src/kernel/vfs.c src/kernel/fat16.c
 HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h src/kernel/device.h \
-          src/kernel/name.h src/kernel/module.h src/kernel/vfs.h
+          src/kernel/name.h src/kernel/module.h src/kernel/vfs.h src/kernel/fat16.h
 
 # native-HAL nach Betriebssystem waehlen: Windows (w64devkit setzt $OS=Windows_NT) = conio,
 # alles andere (macOS/Linux) = POSIX/termios.
@@ -68,6 +69,7 @@ test: native
 	$(PYTHON) test/03_test_devices.py
 	$(PYTHON) test/04_test_blkdev.py
 	$(PYTHON) test/05_test_vfs.py
+	$(PYTHON) test/06_test_fat16.py
 
 clean:
 	rm -rf $(BUILD)
@@ -75,5 +77,5 @@ clean:
 .PHONY: native wasm test clean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 1.50
+# EOF Makefile                                                                            Ver. 1.60
 #─────────────────────────────────────────────────────────────────────────────────────────────────

@@ -63,11 +63,12 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $8B | I$ReadLn | ✅ implementiert |
 | $8C | I$WritLn | ✅ implementiert |
 | $82 | I$Dup    | ✅ implementiert (Phase 1.4) |
-| $84 | I$Open   | ✅ implementiert (Phase 3.2: VFS-Pfad-Routing, kein FS dahinter vor 3.3) |
+| $84 | I$Open   | ✅ implementiert (Phase 3.2: VFS-Pfad-Routing; seit 3.3 FAT16 an /d0) |
 | $83 | I$Create | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
 | $85 | I$MakDir | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
 | $86 | I$ChgDir | ✅ implementiert (Phase 3.2: globales Arbeitsverzeichnis) |
 | $87 | I$Delete | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
+| $88 | I$Seek   | ✅ implementiert (Phase 3.3: über `fm->seek()`, sonst `E$UnkSvc`) |
 | $8D | I$GetStt | ✅ Grundgerüst (Phase 1.8: SS.Ready, SS.EOF; 3.1: SS.BlkRd auf /d0) |
 | $8E | I$SetStt | ✅ Grundgerüst (Phase 3.1: SS.BlkWr auf /d0) |
 | $8F | I$Close  | ✅ implementiert (Phase 1.4) |
@@ -108,6 +109,11 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 - I$ReadLn liest zeilenweise **inklusive CR**, macht Echo und Zeilen-Editierung
   (Backspace) — SCF-Verhalten. I$Read liest rohe Zeichen ohne Echo.
 - Zeilenende ist CR ($0D) wie bei OS-9; LF von Host-Terminals wird als CR akzeptiert.
+- **Seit Phase 3.3**: hat das Gerät hinter dem Pfad einen File-Manager MIT `read`-Op
+  (`q9_dev_t.fm`, z.B. FAT16 an `/d0`), geht I$Read an `fm->read()` statt an die Treiber-Op —
+  liest aus der über I$Open an `q9_path_t.fmctx` gebundenen Datei, folgt dabei selbstständig
+  der Cluster-Kette. `E$EOF`, wenn die Position bereits am Dateiende steht. I$ReadLn bleibt
+  auf dem Treiber-Pfad (Zeilenmodus mit Echo/Editierung ergibt für Dateien keinen Sinn).
 
 ### I$Write ($8A) / I$WritLn ($8C)
 
@@ -205,11 +211,11 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
   Arbeitsverzeichnis auf (s.u.), zerlegt dann per F$PrsNam in Gerätename + Rest-Pfad.
 - **Gerät ohne File-Manager** (z.B. `/term`, `/nil`): Rest-Pfad **muss leer** sein — sonst
   `E$PNNF`. Rückwärtskompatibel zu Phase 1/2 (entspricht dem bisherigen `q9_path_open`).
-- **Gerät mit File-Manager** (`q9_dev_t.fm`, ab 3.3 z.B. FAT16 an `/d0`): Rest-Pfad wird an
-  `fm->open()` weitergereicht, das einen Datei-Kontext im Pfad-Deskriptor ablegt
-  (`q9_path_t.fmctx`, device.h — File-Manager-eigenes Byte-Array, kein malloc). Vor 3.3 hat
-  kein Gerät produktiv einen File-Manager; die Schnittstelle (vfs.h: `q9_fm_t`) existiert
-  bereits, ein Test-File-Manager im Kernel-Selbsttest beweist das Routing.
+- **Gerät mit File-Manager** (`q9_dev_t.fm`): Rest-Pfad wird an `fm->open()` weitergereicht,
+  das einen Datei-Kontext im Pfad-Deskriptor ablegt (`q9_path_t.fmctx`, device.h —
+  File-Manager-eigenes Byte-Array, kein malloc). **Seit Phase 3.3** hat `/d0` produktiv einen
+  File-Manager (FAT16, siehe docs/DEVICES.md), sofern das gemountete Image beim Boot als
+  FAT16-Superfloppy erkannt wurde — sonst bleibt `fm` weiterhin `NULL` wie in Phase 1/2/3.2.
 - I$ChgDir setzt **ein einziges globales** Arbeitsverzeichnis (kein Pfad pro Prozess — das
   kommt erst mit echten Prozessen in Phase 4). Direkt nach dem Boot: `/` (nur absolute Pfade
   funktionieren, bis ein I$ChgDir gesetzt wurde). Zu langer/leerer Pfad → `E$PNNF`.
@@ -219,6 +225,21 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 Liefern aktuell `E$UnkSvc` — echte Semantik kommt mit FAT16 schreibend (Phase 3.4), wenn ein
 File-Manager auch `create`/`makdir`/`remove` sinnvoll implementieren kann (VFS-seitig sind die
 q9_fm_t-Funktionszeiger dafür schon vorgesehen, siehe docs/DEVICES.md).
+
+### I$Seek ($88) — seit Phase 3.3
+
+| Register | Input                          |
+|----------|--------------------------------|
+| d0.w     | Pfadnummer                     |
+| d1.l     | neue Position (absolut, Byte)  |
+
+- Hat das Gerät hinter dem Pfad **keinen** File-Manager oder keine `seek`-Op → `E$UnkSvc`
+  (vor 3.3 gab es I$Seek noch gar nicht im Dispatcher — Rohdatenträger/Zeichengeräte kennen
+  keine Position).
+- FAT16 (`fm->seek`): setzt die Position absolut (kein `SEEK_CUR`/`SEEK_END` wie bei Unix,
+  OS-9-Vorbild). `E$Param`, wenn die Position hinter dem Dateiende liegt (Verzeichnisse mit
+  unbekannter Größe ausgenommen — deren Grenze zeigt sich erst beim nächsten I$Read über die
+  Kettenlänge).
 
 ### F$Exit ($06)
 
@@ -294,10 +315,11 @@ q9_fm_t-Funktionszeiger dafür schon vorgesehen, siehe docs/DEVICES.md).
    Standardpfade 0/1/2 öffnet der Kernel beim Boot auf /term (Update-Modus).
    ~~User-seitiges I$Open/I$Close mit Pfadnamen kommt in Phase 3~~ — seit
    Phase 3.2 implementiert (I$Open über die VFS-Schicht, s.o.).
-4. **Kein Dateisystem hinter I$Open vor Phase 3.3**: die VFS-Schicht (3.2) routet Pfade
-   nur — ohne einen registrierten File-Manager (ab 3.3: FAT16 an /d0) bleibt I$Open auf
-   Geräte mit leerem Rest-Pfad beschränkt (wie bisher). I$Create/I$MakDir/I$Delete sind
-   bis 3.4 (FAT16 schreibend) reine Gerüste (`E$UnkSvc`).
+4. ~~Kein Dateisystem hinter I$Open vor Phase 3.3~~ — seit Phase 3.3 hat `/d0` produktiv
+   einen File-Manager (FAT16 lesend), sofern das gemountete Image erkannt wurde. Ohne
+   erkanntes FAT16-Image bzw. bei anderen Geräten (`/term`, `/nil`) bleibt I$Open auf leeren
+   Rest-Pfad beschränkt (wie bisher). I$Create/I$MakDir/I$Delete sind weiterhin bis 3.4
+   (FAT16 schreibend) reine Gerüste (`E$UnkSvc`).
 
 **Erstellt**: 2026-07-03
-**Letzte Aktualisierung**: 2026-07-04 (Phase 3.2: I$Open/I$ChgDir über die VFS-Schicht)
+**Letzte Aktualisierung**: 2026-07-04 (Phase 3.3: FAT16 lesend über I$Open/I$Read/I$Seek)

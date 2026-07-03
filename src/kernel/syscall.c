@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.90
+// File:   syscall.c                                                                       Ver. 2.00
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -21,6 +21,8 @@
 // 26-07-03│ 1.80 │ 2.3d: F$Link/F$UnLink ueber q9_mod_link/unlink (Modul-Directory)       │ CF
 // 26-07-04│ 1.90 │ 3.2: I$Open/I$ChgDir ueber die VFS-Schicht (vfs.c); I$Create/I$MakDir/ │ CF
 //         │      │ I$Delete als Geruest (E$UnkSvc, echte Semantik erst 3.4)               │ CF
+// 26-07-04│ 2.00 │ 3.3: I$Read routet auf fm->read() (FAT16 ueber File-Manager statt      │ CF
+//         │      │ Treiber, wenn vorhanden); I$Seek neu ueber fm->seek()                  │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -184,7 +186,10 @@ static int sc_write(q9_regs_t *r, int line_mode)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: sc_read
 // Desc.:    I$Read/I$ReadLn — d0.w Pfad, a0 Puffer, d1.l max; out: d1.l gelesen.
-//           Delegiert an die read/readln-Op des Treibers (E$NotRdy-Semantik siehe SYSCALLS.md).
+//           Hat das Geraet hinter dem Pfad einen File-Manager MIT read-Op (ab 3.3, FAT16), geht
+//           I$Read (nicht I$ReadLn — Zeilenmodus mit Echo/Editierung ergibt fuer Dateien keinen
+//           Sinn) an dessen fm->read(); sonst wie bisher an die read/readln-Op des Treibers
+//           (E$NotRdy-Semantik siehe SYSCALLS.md).
 // Call:     Dispatcher
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int sc_read(q9_regs_t *r, int line_mode)
@@ -200,8 +205,12 @@ static int sc_read(q9_regs_t *r, int line_mode)
     if (line_mode && n == 0) {
         return E_BPADDR;
     }
-    err = line_mode ? p->dev->drv->readln(p->dev, (uint8_t *)r->a[0], &n)
-                    : p->dev->drv->read(p->dev, (uint8_t *)r->a[0], &n);
+    if (!line_mode && p->dev->fm && p->dev->fm->read) {
+        err = p->dev->fm->read(p->dev, p, (uint8_t *)r->a[0], &n);
+    } else {
+        err = line_mode ? p->dev->drv->readln(p->dev, (uint8_t *)r->a[0], &n)
+                        : p->dev->drv->read(p->dev, (uint8_t *)r->a[0], &n);
+    }
     if (err != 0) {
         return err;
     }
@@ -297,6 +306,17 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
             return E_BPADDR;
         }
         return q9_vfs_chdir((const char *)r->a[0]);
+
+    case I_SEEK: {                                       /* d0.w path, d1.l Position (absolut)     */
+        q9_path_t *p = q9_path_get(r->d[0] & 0xffffu);
+        if (!p) {
+            return E_BPNUM;
+        }
+        if (!p->dev->fm || !p->dev->fm->seek) {           /* kein File-Manager -> kein Sinn (3.3)   */
+            return E_UNKSVC;
+        }
+        return p->dev->fm->seek(p->dev, p, r->d[1]);
+    }
 
     case I_CREATE:                                      /* Geruest — echte Semantik erst 3.4      */
     case I_MAKDIR:
@@ -407,5 +427,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.90
+// EOF syscall.c                                                                           Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────
