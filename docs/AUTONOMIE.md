@@ -1,10 +1,14 @@
 # Autonomer Betrieb — Claudia arbeitet den Arbeitsplan selbstständig ab
 
 Ziel: Eine geplante Aufgabe (Claude Code Desktop, "Scheduled Task") prüft stündlich
-den ARBEITSPLAN und bearbeitet **genau einen** 🟢-Ready-Schritt pro Lauf.
-Die Steuerung liegt komplett beim Statusmodell: **nur was Andreas auf 🟢 Ready
-stellt, wird angefasst.** Nichts Ready = Lauf beendet sich sofort (minimaler
-Verbrauch).
+den ARBEITSPLAN und arbeitet **alle 🟢-Ready-Schritte nacheinander** ab —
+jeden komplett (implementieren, testen, ✅, commit+push), bevor der nächste
+beginnt. Die Steuerung liegt komplett beim Statusmodell: **nur was Andreas auf
+🟢 Ready stellt, wird angefasst.** Nichts Ready = Lauf beendet sich sofort
+(minimaler Verbrauch). Drosseln geht also jederzeit über die Zahl der
+freigegebenen Ready-Punkte. (Bis 2026-07-03 galt „genau ein Schritt pro
+Lauf" — auf Andreas' Wunsch gelockert, weil kleine Schritte sonst unnötig
+je eine Stunde warten.)
 
 ## Bausteine
 
@@ -57,13 +61,16 @@ OS-9-Tradition) von Andreas.
    🔄 in Arbeit · ✅ fertig · ⛔ blockiert.
 3. Beende OHNE Änderungen, wenn: kein 🟢-Ready-Schritt mit Wer=Claudia
    existiert, ODER bereits ein Schritt auf 🔄 steht, ODER git pull fehlschlägt.
-4. Sonst: bearbeite den ERSTEN 🟢-Ready-Schritt (niedrigste Nummer) — und
-   danach Schluss, auch wenn weitere warten (schont die Nutzungslimits).
+4. Sonst: arbeite die 🟢-Ready-Schritte NACHEINANDER ab (niedrigste Nummer
+   zuerst). Immer nur EIN Schritt gleichzeitig in Arbeit: jeden Schritt
+   komplett abschließen (implementieren, testen, Status ✅ + Notiz im
+   ARBEITSPLAN, git commit + git push), bevor der nächste beginnt. Erst
+   aufhören, wenn kein Ready-Schritt mehr übrig oder einer blockiert ist.
 
-Regeln: Nur EIN Schritt pro Lauf. 💡/💤 niemals anfassen. Bei Blockade: ⛔
-setzen, unter "Geparkt" dokumentieren, committen, beenden. Nach Abschluss:
-Status ✅ + Notiz im ARBEITSPLAN, sofort git commit + git push (Stil:
-"Release X.YZ: <Titel> (<Nr>)", Deutsch, ASCII im Body). Code-Stil exakt wie
+Regeln: 💡/💤 niemals anfassen. Bei Blockade eines Schritts: ⛔ setzen, unter
+"Geparkt" dokumentieren, committen — dann mit dem nächsten unabhängigen
+Ready-Schritt weitermachen, sofern sinnvoll, sonst beenden. Commit-Stil:
+"Release X.YZ: <Titel> (<Nr>)", Deutsch, ASCII im Body. Code-Stil exakt wie
 im Bestand (Box-Header, Edition History mit CF, portables C99, kein malloc im
 Kernel); Versionsnummern pflegen. Doku (docs/SYSCALLS.md, docs/DEVICES.md)
 mitziehen, Selbsttest + test/-Skripte erweitern.
