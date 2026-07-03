@@ -168,8 +168,9 @@ WASM kennt keine Hardware-IRQs.
 ## Zusammenfassung
 
 - **23 / 97** implementiert (Phase 1 komplett: alle I$-Kern-Calls + F$Exit/ID/Time/STime/PrsNam/CmpNam;
-  Phase 2.3d: F$Link/F$UnLink über die Modul-Directory; Phase 3.2: I$Open/I$ChgDir + I$Create/
-  I$MakDir/I$Delete-Gerüste über die VFS-Schicht)
+  Phase 2.3d: F$Link/F$UnLink über die Modul-Directory; Phase 3.2/3.3: I$Open/I$ChgDir/I$Seek über
+  die VFS-Schicht + FAT16 lesend; Phase 3.4: I$Create/I$MakDir/I$Delete/I$Write jetzt mit echter
+  FAT16-Semantik, kein Gerüst mehr)
 - **~24** für konkrete künftige Phasen eingeplant (🟢, meist Phase 3–4)
 - **~10** optional/ohne feste Phase (💤)
 - **~30** bewusst ignoriert (🚫) — meist OS-9-Interna, die Q9 nicht 1:1 nachbaut, oder WASM-irrelevant
