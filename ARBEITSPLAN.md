@@ -92,8 +92,14 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 - **2026-07-03 — Phase 1.3** ✅: Device-Modell (Geräte-/Pfadtabelle, IOMan-Vorbild) +
   /term-Treiber als internes Modul (SCF-artig), Mode-Check E$BMode, Tests 01–03 PASS.
   Nebenbei: w64devkit auf Desktop AF-PC installiert (docs/TOOLCHAIN.md).
+- **2026-07-03 — Phase 1.4–1.9 komplett** ✅: I$Dup/I$Close, F$PrsNam/F$CmpNam (name.c),
+  I$Attach/I$Detach (namensbasiert, E$MNF), /nil als zweiter Treiber, I$GetStt/I$SetStt
+  (SS.Ready/SS.EOF), echte Uhrzeit (q9_hal_time, F$Time/F$STime, Kalender 2000–2136).
+  22 Selbsttest-Checks, Tests 01–03 PASS. **Phase 1 damit abgeschlossen** (Kernel v1.80).
+  Offen für MWOS-Abgleich: E$Diff-Nummer ($E2), SS-Nummern, F$Time-Packung.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 — Andreas hat die Vorschläge freigegeben:
-1.4–1.9 → 🟢 Ready (Claudia), Phase-2-Skizze → 💤 Idle. Nächster Schritt: 1.4.
+**Letzte Aktualisierung**: 2026-07-03 — **Phase 1 komplett** (1.4–1.9 abgearbeitet,
+alle Tests PASS). Nächstes: Phase-2-Besprechung mit Andreas (heute Abend) +
+MWOS-Abgleich (E$Diff, SS-Nummern, F$Time-Packung) mit den Laptop-Unterlagen.

@@ -1,10 +1,15 @@
 # ToDo-Liste
 - [x] 0. Phase 0: Fundament (2026-07-02 komplett, Details in ARBEITSPLAN.md)
-- [ ] 1. Phase 1: Kernel-Basis (Syscalls, Device-Modell, Konsole)
+- [x] 1. Phase 1: Kernel-Basis (Syscalls, Device-Modell, Konsole) — KOMPLETT 2026-07-03
   - [x] 1.1 Syscall-Design: OS-9-Nummern + Register (E7, docs/SYSCALLS.md)
   - [x] 1.2 Dispatcher + I$Read/Write/ReadLn/WritLn, F$Exit/ID/Time, REPL, Tests
   - [x] 1.3 Device-Modell + Konsolen-Treiber
-  - [ ] 1.4-1.9 von Claudia vorgeschlagen (Status 💡, siehe ARBEITSPLAN.md) — erst besprechen!
+  - [x] 1.4 I$Dup + I$Close
+  - [x] 1.5 F$PrsNam + F$CmpNam (name.c)
+  - [x] 1.6 I$Attach + I$Detach (namensbasiert)
+  - [x] 1.7 /nil als zweiter Treiber
+  - [x] 1.8 I$GetStt/I$SetStt (SS.Ready, SS.EOF)
+  - [x] 1.9 Echte Uhrzeit (q9_hal_time, F$Time/F$STime)
 - [ ] 2. Phase 2: Modulsystem (Header, q9mod, Directory, Loader)
 - [ ] 3. Phase 3: Filesystem (VFS + erster FS-Typ)
 - [ ] 4. Phase 4: Prozesse (kooperativer Scheduler)
@@ -15,16 +20,19 @@
 
 # Letzter Arbeitsstand
 Zuletzt bearbeitet: 2026-07-03 (zweite Session, Desktop AF-PC)
-Aktuell bei: Phase 1.3 fertig. Device-Modell nach IOMan-Vorbild (device.c:
-Geraete-/Pfadtabelle, Modi READ/WRITE/UPDATE) + /term-Treiber als internes
-Modul (dev_term.c, SCF-artig, Zeilenpuffer im Static Storage). I$-Calls
-laufen ueber die Pfadtabelle, Mode-Check liefert E$BMode. Tests 01-03 PASS
-(nativ; wasm auf diesem Rechner nicht baubar, emsdk fehlt). Doku: docs/DEVICES.md.
-WICHTIG: ARBEITSPLAN.md hat jetzt neues Statusmodell (💡 Vorschlag / 💤 Idle /
-🟢 Ready / 🔄 / ✅ / ⛔) + Wer-Spalte (Claudia/Codex/Andreas). Schritte 1.4-1.9
-und Phase-2-Skizze sind 💡-Vorschlaege von Claudia — erst mit Andreas besprechen
-und mit den Unterlagen auf seinem Laptop abgleichen (Plan-Verlust vom 2026-07-02).
-Neue Arbeitsregel 4: nach jedem Schritt sofort commit+push (Limit-Schutz).
+PHASE 1 KOMPLETT (Kernel v1.80). Andreas hat 1.4-1.9 freigegeben, alle sechs
+Schritte abgearbeitet, je Schritt ein Release-Commit (1.30-1.80):
+- Device-Modell: Geraete-/Pfadtabelle (IOMan), /term + /nil, Attach/Detach
+  per Name (name.c, case-insensitiv), Dup/Close, GetStt/SetStt (SS.Ready/SS.EOF)
+- Echte Uhrzeit: q9_hal_time in beiden HALs, Kalenderlogik 2000-2136 im Kernel,
+  F$Time (Datum/Zeit gepackt + Wochentag), F$STime mit Validierung
+- 22 Selbsttest-Checks, Tests 01-03 PASS (nativ; wasm ungetestet, emsdk fehlt
+  auf AF-PC — auf dem Laptop bauen/testen!)
+OFFEN fuer MWOS-Abgleich (M:\MWOS auf Laptop): E$Diff-Nummer ($E2 vorlaeufig),
+SS-Codes-Nummern, F$Time/F$STime-Registerpackung.
+HEUTE ABEND: Phase-2-Besprechung (Modulsystem, Punkte 2.1-2.4 stehen als Idle).
+ARBEITSPLAN.md-Statusmodell: 💡 Vorschlag / 💤 Idle / 🟢 Ready / 🔄 / ✅ / ⛔
++ Wer-Spalte. Arbeitsregel 4: nach jedem Schritt sofort commit+push.
 Repo: github.com/foellmy51/Q9 (privat). Toolchain: docs/TOOLCHAIN.md
 (Laptop User foell + Desktop AF-PC User AF, dort kein emsdk).
 Erkenntnis des Tages (1.2): Konsolen-Kanal ist UTF-8-Bytestrom; nackte Bytes >0x7F
