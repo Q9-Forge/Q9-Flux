@@ -1,11 +1,12 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   vfs.c                                                                          Ver. 1.00
+// File:   vfs.c                                                                          Ver. 1.10
 // Owner:  AF
-// Desc.:  Q9 VFS-Schicht (Phase 3.2) — Pfad-Routing "/d0/pfad/datei": F$PrsNam trennt Geraet
+// Desc.:  Q9 VFS-Schicht (Phase 3.2/3.4) — Pfad-Routing "/d0/pfad/datei": F$PrsNam trennt Geraet
 //         von Rest-Pfad (name.c), danach entweder klassisches q9_path_open (kein File-Manager,
-//         Rest muss leer sein — /term, /nil) oder Weiterreichen an dev->fm->open (File-Manager
-//         vorhanden — FAT16 kommt in 3.3/3.4). Globales Arbeitsverzeichnis fuer I$ChgDir: EIN
-//         statischer String (kein malloc), pro-Prozess-Variante erst Phase 4.
+//         Rest muss leer sein — /term, /nil) oder Weiterreichen an dev->fm->open/create/makdir/
+//         remove (File-Manager vorhanden — FAT16, seit 3.4 auch schreibend). Globales
+//         Arbeitsverzeichnis fuer I$ChgDir: EIN statischer String (kein malloc), pro-Prozess-
+//         Variante erst Phase 4.
 //
 // Call:   siehe vfs.h
 //
@@ -14,6 +15,9 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 3.2: Initiale Version                                                  │ CF
+// 26-07-04│ 1.10 │ 3.4: q9_vfs_create/makdir/remove (I$Create/I$MakDir/I$Delete ueber      │ CF
+//         │      │ dev->fm->create/makdir/remove, FAT16 schreibend); split_dev_rest als    │ CF
+//         │      │ gemeinsamer Unterbau fuer alle vier Vfs-Ops extrahiert                  │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "vfs.h"
@@ -74,6 +78,44 @@ static int resolve(const char *pathlist, char *out, uint32_t outsz)
     for (uint32_t i = 0; i <= plen; i++) {
         out[clen + 1 + i] = pathlist[i];
     }
+    return 0;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: split_dev_rest
+// Desc.:    Gemeinsamer Unterbau fuer open/create/makdir/remove: loest "pathlist" gegen das
+//           globale Arbeitsverzeichnis auf (resolve), trennt per F$PrsNam Geraetename/Rest-Pfad,
+//           haengt das Geraet an (q9_dev_attach). "*restout" zeigt danach auf den Rest-Pfad OHNE
+//           fuehrenden '/' (leer = Geraete-Wurzel). Der Aufrufer MUSS bei Erfolg q9_dev_detach()
+//           aufrufen, sobald das Geraet nicht mehr gebraucht wird (bei q9_vfs_open/create haelt
+//           der offene Pfad selbst den Link, bei makdir/remove detacht diese Funktion direkt
+//           nach getaner Arbeit).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int split_dev_rest(const char *pathlist, q9_dev_t **devout, const char **restout)
+{
+    static char resolved[Q9_CWD_MAXLEN + 80];              /* kein malloc — kein Reentrancy-Bedarf */
+    const char *devname;
+    uint32_t    devlen;
+    const char *rest;
+    int         err;
+
+    err = resolve(pathlist, resolved, sizeof(resolved));
+    if (err != 0) {
+        return err;
+    }
+    err = q9_name_parse(resolved, &devname, &devlen);       /* erstes Element = Geraetename         */
+    if (err != 0) {
+        return err;
+    }
+    rest = devname + devlen;                                /* Rest inkl. evtl. fuehrendem '/'      */
+    if (*rest == '/') {
+        rest++;
+    }
+    err = q9_dev_attach(devname, devout);
+    if (err != 0) {
+        return err;
+    }
+    *restout = rest;
     return 0;
 }
 
@@ -145,6 +187,90 @@ int q9_vfs_open(const char *pathlist, uint8_t mode)
 }
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_vfs_create
+// Desc.:    I$Create-Unterbau (3.4): wie q9_vfs_open, aber ruft dev->fm->create() statt open().
+// Call:     path = q9_vfs_create("/d0/NEU.TXT", Q9_MODE_WRITE)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_vfs_create(const char *pathlist, uint8_t mode)
+{
+    q9_dev_t   *dev;
+    const char *rest;
+    int         err;
+    int         path;
+
+    if (mode == 0) {
+        return -E_BMODE;
+    }
+    err = split_dev_rest(pathlist, &dev, &rest);
+    if (err != 0) {
+        return -err;
+    }
+    if (!dev->fm || !dev->fm->create) {                     /* Geraet kennt kein I$Create           */
+        q9_dev_detach(dev);
+        return -E_UNKSVC;
+    }
+    path = q9_path_open_dev(dev, mode);
+    if (path < 0) {
+        q9_dev_detach(dev);
+        return path;
+    }
+    err = dev->fm->create(dev, q9_path_get((uint32_t)path), rest, str_len(rest), mode);
+    if (err != 0) {
+        q9_path_close((uint32_t)path);                      /* detacht dev ueber q9_path_close      */
+        return -err;
+    }
+    return path;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_vfs_makdir
+// Desc.:    I$MakDir-Unterbau (3.4): Geraet/Rest trennen, dev->fm->makdir() aufrufen.
+// Call:     err = q9_vfs_makdir("/d0/NEUDIR")
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_vfs_makdir(const char *pathlist)
+{
+    q9_dev_t   *dev;
+    const char *rest;
+    int         err;
+
+    err = split_dev_rest(pathlist, &dev, &rest);
+    if (err != 0) {
+        return err;
+    }
+    if (!dev->fm || !dev->fm->makdir) {
+        q9_dev_detach(dev);
+        return E_UNKSVC;
+    }
+    err = dev->fm->makdir(dev, rest, str_len(rest));
+    q9_dev_detach(dev);
+    return err;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_vfs_remove
+// Desc.:    I$Delete-Unterbau (3.4): Geraet/Rest trennen, dev->fm->remove() aufrufen.
+// Call:     err = q9_vfs_remove("/d0/ALT.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_vfs_remove(const char *pathlist)
+{
+    q9_dev_t   *dev;
+    const char *rest;
+    int         err;
+
+    err = split_dev_rest(pathlist, &dev, &rest);
+    if (err != 0) {
+        return err;
+    }
+    if (!dev->fm || !dev->fm->remove) {
+        q9_dev_detach(dev);
+        return E_UNKSVC;
+    }
+    err = dev->fm->remove(dev, rest, str_len(rest));
+    q9_dev_detach(dev);
+    return err;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_vfs_chdir
 // Desc.:    I$ChgDir-Unterbau: setzt das globale Arbeitsverzeichnis. 0 = ok, E$PNNF = leer/zu lang.
 // Call:     err = q9_vfs_chdir("/d0/pfad")
@@ -191,5 +317,5 @@ void q9_dev_set_fm(q9_dev_t *dev, const q9_fm_t *fm)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF vfs.c                                                                               Ver. 1.00
+// EOF vfs.c                                                                               Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

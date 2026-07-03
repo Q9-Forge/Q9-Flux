@@ -58,16 +58,16 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $16 | F$STime  | ✅ implementiert (Phase 1.9) |
 | $80 | I$Attach | ✅ implementiert (Phase 1.6) |
 | $81 | I$Detach | ✅ implementiert (Phase 1.6) |
-| $89 | I$Read   | ✅ implementiert |
-| $8A | I$Write  | ✅ implementiert |
+| $89 | I$Read   | ✅ implementiert (seit 3.3: routet über `fm->read()`, wenn ein File-Manager hinter dem Pfad hängt) |
+| $8A | I$Write  | ✅ implementiert (seit 3.4: routet über `fm->write()`, wenn ein File-Manager hinter dem Pfad hängt) |
 | $8B | I$ReadLn | ✅ implementiert |
 | $8C | I$WritLn | ✅ implementiert |
 | $82 | I$Dup    | ✅ implementiert (Phase 1.4) |
 | $84 | I$Open   | ✅ implementiert (Phase 3.2: VFS-Pfad-Routing; seit 3.3 FAT16 an /d0) |
-| $83 | I$Create | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
-| $85 | I$MakDir | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
+| $83 | I$Create | ✅ implementiert (Phase 3.4: FAT16 — legt neuen 8.3-Dirent an, `E$UnkSvc` ohne File-Manager) |
+| $85 | I$MakDir | ✅ implementiert (Phase 3.4: FAT16 — neuer Cluster mit `.`/`..`, `E$UnkSvc` ohne File-Manager) |
 | $86 | I$ChgDir | ✅ implementiert (Phase 3.2: globales Arbeitsverzeichnis) |
-| $87 | I$Delete | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
+| $87 | I$Delete | ✅ implementiert (Phase 3.4: FAT16 — Cluster-Kette freigeben + Dirent als gelöscht markieren) |
 | $88 | I$Seek   | ✅ implementiert (Phase 3.3: über `fm->seek()`, sonst `E$UnkSvc`) |
 | $8D | I$GetStt | ✅ Grundgerüst (Phase 1.8: SS.Ready, SS.EOF; 3.1: SS.BlkRd auf /d0) |
 | $8E | I$SetStt | ✅ Grundgerüst (Phase 3.1: SS.BlkWr auf /d0) |
@@ -125,6 +125,11 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 
 - I$WritLn schreibt bis einschließlich CR (oder LF) oder bis d1 erreicht ist;
   CR wird auf der Konsole als CR+LF ausgegeben.
+- **Seit Phase 3.4**: hat das Gerät hinter dem Pfad einen File-Manager MIT `write`-Op
+  (`q9_dev_t.fm`, z.B. FAT16 an `/d0`), geht I$Write (nicht I$WritLn — Zeilenmodus ergibt für
+  Dateien keinen Sinn, analog zu I$Read/I$ReadLn) an `fm->write()` statt an die Treiber-Op —
+  schreibt ab der über I$Open/I$Create an `q9_path_t.fmctx` gebundenen Position, alloziert bei
+  Bedarf neue Cluster ans Kettenende und aktualisiert Größe/Start-Cluster im Directory-Eintrag.
 
 ### I$Attach ($80) / I$Detach ($81) — seit Phase 1.6
 
@@ -220,11 +225,33 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
   kommt erst mit echten Prozessen in Phase 4). Direkt nach dem Boot: `/` (nur absolute Pfade
   funktionieren, bis ein I$ChgDir gesetzt wurde). Zu langer/leerer Pfad → `E$PNNF`.
 
-### I$Create ($83) / I$MakDir ($85) / I$Delete ($87) — Gerüst seit Phase 3.2
+### I$Create ($83) / I$MakDir ($85) / I$Delete ($87) — seit Phase 3.4 (FAT16 schreibend)
 
-Liefern aktuell `E$UnkSvc` — echte Semantik kommt mit FAT16 schreibend (Phase 3.4), wenn ein
-File-Manager auch `create`/`makdir`/`remove` sinnvoll implementieren kann (VFS-seitig sind die
-q9_fm_t-Funktionszeiger dafür schon vorgesehen, siehe docs/DEVICES.md).
+| Register | I$Create Input               | I$Create Output       | I$MakDir/I$Delete Input |
+|----------|-------------------------------|------------------------|--------------------------|
+| d0.b     | Zugriffsmodus (Q9_MODE_...)  | —                      | —                        |
+| a0       | Pathlist ("/d0/pfad/NEU.TXT") | —                      | Pathlist                 |
+| d0.w     | —                              | neue Pfadnummer        | —                        |
+
+- Ohne File-Manager hinter dem Geräte (z.B. `/term`, `/nil`) → `E$UnkSvc` (unverändert seit 3.2 —
+  diese Geräte kennen kein Dateisystem).
+- **FAT16 (`/d0`, seit 3.3 erkannt)**:
+  - **I$Create**: legt einen neuen 8.3-Directory-Eintrag an (Größe 0, noch ohne Cluster — der
+    erste Cluster kommt erst mit dem ersten I$Write dazu) und öffnet ihn direkt (liefert eine
+    Pfadnummer wie I$Open). **Nur 8.3-Namen** — ein Name, der LFN-Einträge bräuchte (>8+3
+    Zeichen, mehr als ein Punkt, ungültige Zeichen), liefert `E$BPNam` (LFN-**Schreiben** ist
+    bewusst nicht implementiert, siehe ARBEITSPLAN.md/Ideenspeicher). Existiert der Name bereits
+    → ebenfalls `E$BPNam` (OS-9-Vorbild: I$Create auf einen vorhandenen Namen ist ein Fehler,
+    anders als I$Open).
+  - **I$MakDir**: wie I$Create, alloziert aber sofort einen Datencluster mit den Standard-
+    Einträgen `.` (zeigt auf sich selbst) und `..` (zeigt auf das Elternverzeichnis, `0` = Root)
+    — wichtig für Interop mit macOS/Windows, die diese Einträge beim Navigieren erwarten.
+  - **I$Delete**: sucht den Directory-Eintrag, gibt seine komplette Cluster-Kette frei (beide
+    FAT-Kopien) und markiert den Eintrag als gelöscht (erstes Namensbyte `DIRENT_FREE`, $E5).
+    Verzeichnisse werden **nicht** auf Leerheit geprüft (bewusst einfach gehalten).
+  - **FAT-Updates gehen immer in BEIDE FAT-Kopien** (freie Cluster werden linear ab Cluster 2
+    gesucht) — wichtig für Interop, macOS/Windows lesen im Zweifel die zweite Kopie.
+  - Details/Interop-Nachweis: docs/DEVICES.md, ARBEITSPLAN.md (Schritt 3.4).
 
 ### I$Seek ($88) — seit Phase 3.3
 
@@ -318,8 +345,10 @@ q9_fm_t-Funktionszeiger dafür schon vorgesehen, siehe docs/DEVICES.md).
 4. ~~Kein Dateisystem hinter I$Open vor Phase 3.3~~ — seit Phase 3.3 hat `/d0` produktiv
    einen File-Manager (FAT16 lesend), sofern das gemountete Image erkannt wurde. Ohne
    erkanntes FAT16-Image bzw. bei anderen Geräten (`/term`, `/nil`) bleibt I$Open auf leeren
-   Rest-Pfad beschränkt (wie bisher). I$Create/I$MakDir/I$Delete sind weiterhin bis 3.4
-   (FAT16 schreibend) reine Gerüste (`E$UnkSvc`).
+   Rest-Pfad beschränkt (wie bisher). ~~I$Create/I$MakDir/I$Delete sind reine Gerüste~~ — seit
+   Phase 3.4 implementiert FAT16 auch das Schreiben (s.o.); ohne File-Manager weiterhin
+   `E$UnkSvc`. **LFN-Schreiben bleibt bewusst außen vor** (nur 8.3-Namen beim Anlegen).
 
 **Erstellt**: 2026-07-03
-**Letzte Aktualisierung**: 2026-07-04 (Phase 3.3: FAT16 lesend über I$Open/I$Read/I$Seek)
+**Letzte Aktualisierung**: 2026-07-04 (Phase 3.4: FAT16 schreibend über I$Create/I$Write/
+I$MakDir/I$Delete)

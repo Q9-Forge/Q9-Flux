@@ -19,6 +19,8 @@
 // 26-07-03│ 1.50 │ 2.3b-d: E$BMHP/E$BMCRC/E$DirFul/E$ModBsy ergänzt (MWOS-verifiziert)   │ CF
 // 26-07-03│ 1.60 │ 3.1: SS.BlkRd/SS.BlkWr ergänzt (Roh-Blockzugriff /d0)                 │ CF
 // 26-07-04│ 1.70 │ 3.2: E$PNNF ergänzt (VFS: Pfad-Routing/I$Open/I$ChgDir)               │ CF
+// 26-07-04│ 1.80 │ 3.4: I$Write jetzt echt (FAT16-Routing); E$DirFul auch fuer volle     │ CF
+//         │      │ FAT16-Directorys wiederverwendet (kein neuer Code noetig, MWOS-Wert)   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H

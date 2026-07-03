@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   vfs.h                                                                           Ver. 1.10
+// File:   vfs.h                                                                           Ver. 1.20
 // Owner:  AF
 // Desc.:  Q9 VFS-Schicht (Phase 3.2, OS-9-Vorbild: IOMan/RBF-Trennung, docs/MODULES.md). Routet
 //         Pfade der Form "/d0/pfad/datei" (F$PrsNam trennt Geraet/Rest) an einen optionalen
@@ -26,6 +26,9 @@
 // 26-07-04│ 1.10 │ 3.3: q9_fm_t um read/seek erweitert (Datei-I/O ueber File-Manager,      │ CF
 //         │      │ noetig fuer FAT16); I$Read/I$Seek im Dispatcher routen jetzt auf den    │
 //         │      │ File-Manager, wenn einer am Geraet haengt                              │
+// 26-07-04│ 1.20 │ 3.4: q9_fm_t um write erweitert (FAT16 schreibend braucht I$Write,      │ CF
+//         │      │ sonst waere I$Create ohne Nutzen); create/makdir/remove jetzt "echt"    │
+//         │      │ dokumentiert (FAT16-Implementierung in fat16.c)                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_VFS_H
 #define Q9_VFS_H
@@ -53,27 +56,40 @@ typedef struct q9_fm {
     int (*open)  (q9_dev_t *dev, q9_path_t *p, const char *restpath, uint32_t len, uint8_t mode);
 
     //────────────────────────────────────────────────────────────────────────────────────────────
-    // create: neue Datei "restpath" anlegen (I$Create). Gerüst bis 3.4 (FAT16 schreibend) —
-    // darf bis dahin unimplementiert E$UnkSvc liefern.
+    // create (3.4): neue Datei "restpath" anlegen (I$Create) — legt einen leeren (Groesse 0,
+    // noch ohne Cluster) Directory-Eintrag an und befuellt p->fmctx wie open(). Nur 8.3-Namen
+    // (kein LFN-Schreiben, Ideenspeicher/ARBEITSPLAN.md) — ungueltiger/zu langer Name -> E$BPNam.
     //────────────────────────────────────────────────────────────────────────────────────────────
     int (*create)(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint32_t len, uint8_t mode);
 
     //────────────────────────────────────────────────────────────────────────────────────────────
-    // makdir: neues Verzeichnis "restpath" anlegen (I$MakDir). Gerüst bis 3.4.
+    // makdir (3.4): neues Verzeichnis "restpath" anlegen (I$MakDir) — alloziert einen Cluster,
+    // legt "." und ".." darin an, schreibt den Directory-Eintrag (ATTR_DIRECTORY) im Elternver-
+    // zeichnis. Nur 8.3-Namen, wie create().
     //────────────────────────────────────────────────────────────────────────────────────────────
     int (*makdir)(q9_dev_t *dev, const char *restpath, uint32_t len);
 
     //────────────────────────────────────────────────────────────────────────────────────────────
-    // remove: Datei/Verzeichnis "restpath" loeschen (I$Delete). Gerüst bis 3.4.
+    // remove (3.4): Datei/Verzeichnis "restpath" loeschen (I$Delete) — gibt die komplette
+    // Cluster-Kette frei (beide FAT-Kopien) und markiert den Directory-Eintrag als geloescht
+    // (erstes Namensbyte = DIRENT_FREE, $E5).
     //────────────────────────────────────────────────────────────────────────────────────────────
     int (*remove)(q9_dev_t *dev, const char *restpath, uint32_t len);
 
     //────────────────────────────────────────────────────────────────────────────────────────────
     // read (3.3): liest aus der ueber open() an p->fmctx gebundenen Datei. *n ist in/out (max.
     // Bytes rein, tatsaechlich gelesene Bytes raus). E$EOF, wenn die Position bereits am Dateiende
-    // steht. Kein File-Manager mit Schreibzugriff hier noetig (3.3 = nur lesend).
+    // steht.
     //────────────────────────────────────────────────────────────────────────────────────────────
     int (*read) (q9_dev_t *dev, q9_path_t *p, uint8_t *buf, uint32_t *n);
+
+    //────────────────────────────────────────────────────────────────────────────────────────────
+    // write (3.4): schreibt ab der aktuellen Position der ueber open()/create() gebundenen Datei.
+    // *n ist in/out (Bytes rein/tatsaechlich geschrieben). Alloziert bei Bedarf neue Cluster ans
+    // Kettenende (FAT-Aenderungen gehen in BEIDE FAT-Kopien), aktualisiert Groesse/Cluster im
+    // Directory-Eintrag. Ohne freien Platz (Directory voll oder Datentraeger voll) -> E$NotRdy.
+    //────────────────────────────────────────────────────────────────────────────────────────────
+    int (*write)(q9_dev_t *dev, q9_path_t *p, const uint8_t *buf, uint32_t *n);
 
     //────────────────────────────────────────────────────────────────────────────────────────────
     // seek (3.3): setzt die Position der ueber open() an p->fmctx gebundenen Datei absolut auf
@@ -99,6 +115,31 @@ typedef struct q9_fm {
 // Call:     path = q9_vfs_open("/d0/pfad/datei", Q9_MODE_READ)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_vfs_open(const char *pathlist, uint8_t mode);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_vfs_create
+// Desc.:    I$Create-Unterbau (3.4): wie q9_vfs_open, aber legt die Datei neu an (dev->fm->create)
+//           statt eine vorhandene zu oeffnen. Ohne File-Manager hinter dem Geraet -> E$UnkSvc
+//           (Geraete wie /term/nil kennen kein I$Create). Rückgabe >= 0: Pfadnummer, < 0: -Fehler.
+// Call:     path = q9_vfs_create("/d0/NEU.TXT", Q9_MODE_WRITE)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_vfs_create(const char *pathlist, uint8_t mode);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_vfs_makdir
+// Desc.:    I$MakDir-Unterbau (3.4): trennt Geraet/Rest-Pfad wie q9_vfs_open, reicht den Rest an
+//           dev->fm->makdir() weiter. E$UnkSvc ohne File-Manager. 0 = ok, sonst Fehlercode.
+// Call:     err = q9_vfs_makdir("/d0/NEUDIR")
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_vfs_makdir(const char *pathlist);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_vfs_remove
+// Desc.:    I$Delete-Unterbau (3.4): trennt Geraet/Rest-Pfad wie q9_vfs_open, reicht den Rest an
+//           dev->fm->remove() weiter. E$UnkSvc ohne File-Manager. 0 = ok, sonst Fehlercode.
+// Call:     err = q9_vfs_remove("/d0/ALT.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_vfs_remove(const char *pathlist);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_vfs_chdir
@@ -128,5 +169,5 @@ void q9_dev_set_fm(q9_dev_t *dev, const q9_fm_t *fm);
 #endif // Q9_VFS_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF vfs.h                                                                               Ver. 1.10
+// EOF vfs.h                                                                               Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

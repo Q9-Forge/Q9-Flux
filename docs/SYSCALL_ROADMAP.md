@@ -22,8 +22,8 @@ Kern des Syscall-Interfaces, größtenteils in Phase 1 fertig geworden.
 
 | # | Name | Beschreibung | Status | Notiz |
 |---|------|--------------|--------|-------|
-| $89 | I$Read | Rohdaten lesen | ✅ | Phase 1.2 |
-| $8A | I$Write | Rohdaten schreiben | ✅ | Phase 1.2 |
+| $89 | I$Read | Rohdaten lesen | ✅ | Phase 1.2; seit 3.3 über `fm->read()` (FAT16), wenn vorhanden |
+| $8A | I$Write | Rohdaten schreiben | ✅ | Phase 1.2; seit 3.4 über `fm->write()` (FAT16), wenn vorhanden |
 | $8B | I$ReadLn | Zeile lesen | ✅ | Phase 1.2 |
 | $8C | I$WritLn | Zeile schreiben | ✅ | Phase 1.2 |
 | $82 | I$Dup | Pfad duplizieren | ✅ | Phase 1.4 |
@@ -33,10 +33,10 @@ Kern des Syscall-Interfaces, größtenteils in Phase 1 fertig geworden.
 | $8D | I$GetStt | Pfad-Status abfragen | ✅ | Phase 1.8 (SS.Ready, SS.EOF) |
 | $8E | I$SetStt | Pfad-Status setzen | ✅ | Phase 1.8 (Grundgerüst, noch keine SS-Codes) |
 | $84 | I$Open | Datei öffnen (Pfadname) | ✅ | Phase 3.2 (VFS-Routing); seit 3.3 FAT16 an /d0 |
-| $83 | I$Create | Datei anlegen | ✅ Gerüst | Phase 3.2: `E$UnkSvc`, echte Semantik Phase 3.4 |
-| $85 | I$MakDir | Verzeichnis anlegen | ✅ Gerüst | Phase 3.2: `E$UnkSvc`, echte Semantik Phase 3.4 |
+| $83 | I$Create | Datei anlegen | ✅ | Phase 3.4: FAT16 — neuer 8.3-Dirent, `E$UnkSvc` ohne File-Manager |
+| $85 | I$MakDir | Verzeichnis anlegen | ✅ | Phase 3.4: FAT16 — neuer Cluster + `.`/`..`, `E$UnkSvc` ohne File-Manager |
 | $86 | I$ChgDir | Arbeitsverzeichnis wechseln | ✅ | Phase 3.2 (EIN globaler String, pro-Prozess erst Phase 4) |
-| $87 | I$Delete | Datei löschen | ✅ Gerüst | Phase 3.2: `E$UnkSvc`, echte Semantik Phase 3.4 |
+| $87 | I$Delete | Datei löschen | ✅ | Phase 3.4: FAT16 — Cluster-Kette freigeben + Dirent löschen, `E$UnkSvc` ohne File-Manager |
 | $88 | I$Seek | Position ändern | ✅ | Phase 3.3: über `fm->seek()` (FAT16), sonst `E$UnkSvc` |
 | $92 | I$SGetSt | GetStt über System-Pfadnummer | 🟢 Phase 3/4 | Sonderfall für System-Pfade |
 

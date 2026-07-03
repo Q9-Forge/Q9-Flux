@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.h                                                                        Ver. 1.40
+// File:   device.h                                                                        Ver. 1.50
 // Owner:  AF
 // Desc.:  Q9 Device-Modell (OS-9-Vorbild: IOMan). Gerätetabelle + Pfadtabelle im Kernel,
 //         Treiber sind interne Module mit einheitlichen I/O-Operationen (q9_drv_t).
@@ -17,6 +17,8 @@
 // 26-07-03│ 1.30 │ 1.8: getstat/setstat-Ops im Treiber-Interface                          │ CF
 // 26-07-04│ 1.40 │ 3.2: q9_dev.fm (optionaler File-Manager) + q9_path.fmctx (Datei-       │ CF
 //         │      │      Kontext pro Pfad) für die VFS-Schicht (vfs.h)                     │
+// 26-07-04│ 1.50 │ 3.4: Q9_FMCTX_SIZE 16 -> 24 (FAT16 schreibend braucht zusaetzlich       │ CF
+//         │      │      Elternverzeichnis-Cluster + Directory-Slot-Index im Kontext)       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVICE_H
 #define Q9_DEVICE_H
@@ -71,10 +73,12 @@ struct q9_dev {
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
 //  fmctx: Datei-Kontext pro Pfad, vom File-Manager selbst verwaltet (kein malloc!) — z.B.
-//  aktuelle Position/Cluster (FAT16, ab 3.3). Feste Byte-Groesse statt void*, damit der
+//  aktuelle Position/Cluster (FAT16, ab 3.3) sowie (ab 3.4) die Fundstelle des Directory-
+//  Eintrags (Elternverzeichnis-Cluster + Slot-Index), damit I$Write nach dem Wachsen einer
+//  Datei Groesse/Start-Cluster zurueckschreiben kann. Feste Byte-Groesse statt void*, damit der
 //  Kontext direkt IN der (statischen) Pfadtabelle liegt, ohne einen externen Pool zu brauchen.
 //  Für Geräte ohne File-Manager (fm == NULL) unbenutzt.
-#define Q9_FMCTX_SIZE 16
+#define Q9_FMCTX_SIZE 24
 
 typedef struct q9_path {
     q9_dev_t *dev;                                     /* NULL = entry free                      */
@@ -161,5 +165,5 @@ q9_path_t *q9_path_get(uint32_t path);
 #endif // Q9_DEVICE_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.h                                                                            Ver. 1.40
+// EOF device.h                                                                            Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

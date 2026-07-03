@@ -113,7 +113,7 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 | 3.1 | Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/ | ✅ | Claudia | dev_d0.c neu: SS.BlkRd($14)/SS.BlkWr($15) aus MWOS sg_codes.h übernommen (RBF-Vorbild), reine Ops read/write/readln/writln bewusst E$UnkSvc (kein Byte-Strom ohne VFS, kommt in 3.2). q9disk.img bleibt HAL-seitig (lazy erzeugt), jetzt .gitignore't. Test 04 (04_test_blkdev.py) + 2 neue Selbsttest-Checks (Roundtrip LBA 1, E$Param/E$UnkSvc). docs/DEVICES.md + SYSCALLS.md aktualisiert. `make test` PASS, warnungsfrei |
 | 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | ✅ | Claudia | `src/kernel/vfs.c/.h` neu: `q9_fm_t` (open/create/makdir/remove, restpath-String statt OS-9-Pfaddeskriptor-Internas — schmal genug für einen künftigen 68k-Manager-Adapter). `q9_dev_t.fm` (device.h, NULL = kein Dateisystem) + `q9_path_t.fmctx[16]` (Datei-Kontext pro Pfad, kein malloc). `q9_vfs_open` löst relative Pfade gegen ein globales `cwd` auf, trennt Gerät/Rest per F$PrsNam, routet an `dev->fm->open` oder (kein fm) ans alte `q9_path_open`-Verhalten (Rest muss leer sein, sonst `E$PNNF` neu — MWOS-verifiziert). `I$Open`/`I$ChgDir` im Dispatcher (syscall.c) verdrahtet; `I$Create`/`I$MakDir`/`I$Delete` bewusst nur Gerüst (`E$UnkSvc`, echte Semantik erst 3.4). Kein FAT16 hier (kommt separat in 3.3/3.4). 5 neue Selbsttest-Checks (Test-File-Manager im Selbsttest beweist Routing) + neues `test/05_test_vfs.py`. docs/SYSCALLS.md + SYSCALL_ROADMAP.md + DEVICES.md aktualisiert. `make test` PASS, warnungsfrei. wasm ungetestet (emsdk fehlt weiterhin lokal). |
 | 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | ✅ | Claudia | `src/kernel/fat16.c/.h` neu — Boot-Sektor (BPB) plausibilisieren, Root-Dir + Unterverzeichnisse durchsuchen (8.3 UND LFN, Namensteile rückwärts zusammengesetzt), FAT16-Cluster-Ketten folgen ($FFF8-$FFFF = Ende), Datei-Kontext `fat16_ctx_t` (16 Byte, passt exakt in `Q9_FMCTX_SIZE`: start_cluster/cur_cluster/pos/size). **Design-Entscheidung**: `q9_fm_t` (vfs.h) um `read`/`seek`-Funktionszeiger erweitert (zusätzlich zu open/create/makdir/remove aus 3.2) — I$Read/I$Seek brauchen den Datei-Kontext im Pfad, das kann nur der File-Manager interpretieren, nicht der Block-Treiber. Dispatcher (syscall.c): I$Read routet auf `fm->read()`, wenn ein File-Manager mit read-Op hinter dem Pfad steht (sonst wie bisher an den Treiber); I$Seek ist komplett neu und liefert ohne passenden File-Manager `E$UnkSvc`. Verdrahtung: `q9_dev_init()` (device.c) versucht `q9_fat16_mount()` direkt nach der `/d0`-Registrierung und setzt `q9_dev_set_fm(d0, &q9_fat16_fm)` NUR bei erkanntem FAT16-Superfloppy (Boot-Sektor-Plausibilisierung: BytesPerSector/SectorsPerCluster/FATSize16/RootEntryCount/Boot-Signatur $55AA) — sonst bleibt `/d0` wie bisher ohne Dateisystem. **Nebenbei gefundener und behobener Bug**: der ältere 3.1-Selbsttest (SS.BlkWr/SS.BlkRd-Roundtrip auf LBA 1) überschrieb dauerhaft Testdaten auf LBA 1 — bei einem echten FAT16-Image liegt dort typischerweise die erste FAT-Kopie, der Roundtrip hätte ein gemountetes Dateisystem im Selbsttest zerstört. Jetzt sichert/stellt der Test LBA 1 wieder her. Ebenso mussten die 3.2-VFS-Selbsttests (Test-File-Manager) den *vorherigen* File-Manager von `/d0` merken und zurücksetzen statt hart auf NULL zu setzen (sonst hätte der VFS-Test den produktiven FAT16-Manager aus dem Selbsttest herausgerissen). 5 neue Selbsttest-Checks (nur aktiv, wenn `/d0` beim Boot als FAT16 erkannt wurde — sonst kein FEHLER, sondern stiller Skip) + neues `test/06_test_fat16.py` (baut ein FAT16-Superfloppy-Image komplett per Python-Stdlib von Hand: Boot-Sektor/BPB, 2 FAT-Kopien, Root-Directory mit einer 8.3-Datei, einer LFN-Datei mit langem Namen und einem Unterverzeichnis samt verschachtelter Datei; kein externes Tool wie hdiutil/newfs_msdos nötig). docs/SYSCALLS.md (I$Read-Routing, neuer I$Seek-Abschnitt, Funktionsnummern-Tabelle), docs/SYSCALL_ROADMAP.md, docs/DEVICES.md (q9_fm_t-Erweiterung, fmctx-FAT16-Layout-Tabelle, neuer FAT16-File-Manager-Abschnitt) aktualisiert. `make test` PASS, warnungsfrei (jetzt 6 Testskripte). wasm ungetestet (emsdk fehlt weiterhin lokal, siehe Geparkt). **Nächster Schritt: 3.4** (FAT16 schreibend) — diese Session macht damit NICHT weiter. |
-| 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | 🟢 | Claudia | nach 3.3; Gegentest: von Q9 geschriebene Datei am Mac mounten und lesen |
+| 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | ✅ | Claudia | fat16.c/.h: I$Create/I$MakDir/I$Delete/I$Write echt implementiert, FAT-Ketten allozieren/freigeben (beide FAT-Kopien synchron), nur 8.3-Namen (E$BPNam bei LFN-Bedarf/Duplikat). Details siehe „Erledigt" unten |
 | 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | 🟢 | Claudia | Nagelprobe Phase 2 + 3 zusammen; braucht erste Speicherverwaltung (Modul-Puffer) — Umfang beim Design klären |
 | 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | 🟢 | Claudia | kann nach hinten rutschen, nativ reicht zum Entwickeln von 3.1–3.5 |
 
@@ -172,6 +172,38 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 3.4 (FAT16 schreibend)** ✅: `fat16.c/.h` um I$Create/I$MakDir/I$Delete
+  und einen echten `fat16_write` erweitert (vorher Gerüste seit 3.2). Neue Helfer: `fat_alloc`
+  (freien Cluster linear ab 2 suchen, als EOC markieren), `fat_set`/`fat_free_chain` (FAT-Eintrag
+  setzen bzw. komplette Kette freigeben — **immer in beide FAT-Kopien**, wichtig für Interop mit
+  macOS/Windows, die im Zweifel die zweite Kopie lesen), `dir_alloc_slot` (freien/gelöschten
+  Directory-Slot suchen, Unterverzeichnis-Kette bei Bedarf um einen genullten Cluster verlängern
+  — Root-Directory ist fester Bereich und wächst NICHT), `resolve_parent` (Pfad bis zum
+  Elternverzeichnis auflösen + letztes Namenselement liefern), `make_83name` (validiert reinen
+  8.3-Namen, `E$BPNam` bei LFN-pflichtigem Namen — **LFN-Schreiben bleibt Ideenspeicher**).
+  `fat16_create`: legt Dirent mit Cluster=0/Größe=0 an (erster Cluster kommt lazy mit dem ersten
+  I$Write), `E$BPNam` bei bereits vergebenem Namen (kein Truncate-Flag im mode-Byte — ein I$Open
+  im Update-Modus reicht zum Überschreiben). `fat16_makdir`: alloziert sofort einen Cluster mit
+  `.`/`..`-Standardeinträgen (`..` im Root-Unterverzeichnis zeigt auf Cluster 0 — FAT16-Konvention).
+  `fat16_remove`: gibt Cluster-Kette frei, markiert Dirent als gelöscht (`DIRENT_FREE`/$E5) —
+  bewusst KEINE Prüfung auf "Verzeichnis nicht leer" (Ideenspeicher, falls später nötig).
+  `fat16_write`: Read-Modify-Write pro Sektor, alloziert neue Cluster ans Kettenende bei Bedarf,
+  schreibt am Ende Größe (und ggf. Start-Cluster) ins Directory zurück (`fmctx.dir_start`/
+  `dir_index` dafür in 3.4 neu, seit I$Open/I$Create mitgeführt). `fat16_ctx_t` dafür um
+  `dir_start`/`dir_index` erweitert (16 → 24 Byte, `Q9_FMCTX_SIZE` in device.h angepasst).
+  Dispatcher (syscall.c): I$Create/I$MakDir/I$Delete routen jetzt echt auf `fm->create/makdir/
+  remove()` (statt `E$UnkSvc`); I$Write routet auf `fm->write()`, wenn ein File-Manager mit
+  write-Op hinter dem Pfad steht (sonst weiter an die Treiber-Op, rückwärtskompatibel).
+  Makefile: `test`-Target löscht `q9disk.img` vor dem Lauf (sonst kann ein FAT16-Image aus einem
+  früheren Lauf — z.B. mit dem 06-Selbsttest-`NEUDIR`— die Tests 01-05 verwirren, bevor 06 es neu
+  aufbaut). `test/06_test_fat16.py` um I$Create/I$Write/I$MakDir/I$Delete-Checks samt Python-
+  Nachvalidierung erweitert (beide FAT-Kopien identisch, gelöschte Einträge/freie Cluster
+  tatsächlich frei). docs/SYSCALLS.md/SYSCALL_ROADMAP.md/DEVICES.md aktualisiert. `make test`
+  PASS, warnungsfrei (6 Testskripte, alle Checks grün). wasm ungetestet (emsdk fehlt lokal
+  weiterhin, siehe Geparkt). **Gegentest (von Q9 geschriebene Datei am Mac mounten) NICHT
+  durchgeführt** — Selbsttest validiert stattdessen per Python direkt auf dem Image (beide
+  FAT-Kopien, Dirent-Zustand); bei Bedarf mit Andreas nachholen. **Nächster Ready-Schritt: 3.5**
+  (F$Load: Modul aus Datei laden) oder 3.6 (wasm-HAL OPFS).
 - **2026-07-04 — Phase 3.3 (FAT16 lesend)** ✅: `src/kernel/fat16.c/.h` neu — erster echter
   File-Manager an `/d0`. Boot-Sektor (BPB) plausibilisieren (BytesPerSector `==Q9_BLK_SIZE`,
   SectorsPerCluster Zweierpotenz, FATSize16/RootEntryCount/NumFATs `!=0`, Boot-Signatur
@@ -311,15 +343,19 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 (autonomer Lauf) — **Phase 3.3 (FAT16 lesend)
-abgeschlossen**: `src/kernel/fat16.c/.h` (Boot-Sektor/Root-Dir/Cluster-Ketten, 8.3+LFN-Namen,
-File-Manager an `/d0` nur bei erkanntem FAT16-Superfloppy), `q9_fm_t` um `read`/`seek`
-erweitert, `I$Read` routet auf den File-Manager, `I$Seek` neu im Dispatcher. Nebenbei zwei
-Selbsttest-Bugfixes (LBA-1-Restore im 3.1-Test, fm-Restore im 3.2-Test — beide hätten sonst
-ein produktiv gemountetes FAT16 im Selbsttest zerstört). `make test` PASS, warnungsfrei
-(6 Testskripte, 45 Selbsttest-Checks inkl. FAT16). wasm ungetestet (emsdk fehlt lokal).
-Nächster Ready-Schritt für Claudia: **3.4** (FAT16 schreibend) — diese Session hat NICHT
-daran weitergearbeitet.
+**Letzte Aktualisierung**: 2026-07-04 (autonomer Lauf) — **Phase 3.4 (FAT16 schreibend)
+abgeschlossen**: `src/kernel/fat16.c/.h` um I$Create/I$MakDir/I$Delete + echtes I$Write
+erweitert (FAT-Ketten allozieren/freigeben in beiden FAT-Kopien, Directory-Slots
+suchen/anlegen/löschen, nur 8.3-Namen). Dispatcher (syscall.c) routet die drei Syscalls jetzt
+echt auf den File-Manager statt `E$UnkSvc`. `make test` PASS, warnungsfrei (6 Testskripte, alle
+Checks grün inkl. Python-Nachvalidierung des Disk-Images). wasm ungetestet (emsdk fehlt lokal).
+Gegentest am Mac (Mount der von Q9 geschriebenen Datei) nicht durchgeführt — bei Bedarf mit
+Andreas nachholen. Nächster Ready-Schritt: **3.5** (F$Load) oder **3.6** (wasm-HAL OPFS).
+Davor: **Phase 3.3 (FAT16 lesend) abgeschlossen**: `src/kernel/fat16.c/.h` (Boot-Sektor/Root-Dir/
+Cluster-Ketten, 8.3+LFN-Namen, File-Manager an `/d0` nur bei erkanntem FAT16-Superfloppy),
+`q9_fm_t` um `read`/`seek` erweitert, `I$Read` routet auf den File-Manager, `I$Seek` neu im
+Dispatcher. Nebenbei zwei Selbsttest-Bugfixes (LBA-1-Restore im 3.1-Test, fm-Restore im
+3.2-Test). `make test` PASS, warnungsfrei (6 Testskripte, 45 Selbsttest-Checks inkl. FAT16).
 Davor: **Phase 3.2 (VFS-Schicht) abgeschlossen**: `src/kernel/vfs.c/.h` (Pfad-Routing,
 File-Manager-Interface `q9_fm_t`, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für
 I$ChgDir), `I$Open`/`I$ChgDir` implementiert, `I$Create`/`I$MakDir`/`I$Delete` als Gerüst,

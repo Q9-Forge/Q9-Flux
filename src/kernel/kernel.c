@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 2.60
+// File:   kernel.c                                                                        Ver. 2.70
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -28,6 +28,9 @@
 // 26-07-04│ 2.50 │ 3.2: Selbsttests I$Open/I$ChgDir (VFS-Pfad-Routing, Test-File-Manager)│ CF
 // 26-07-04│ 2.60 │ 3.3: Selbsttests FAT16 (8.3/LFN-Datei, Unterverzeichnis, I$Seek);     │ CF
 //         │      │ Checks nur aktiv, wenn q9disk.img beim Boot als FAT16 erkannt wurde   │
+// 26-07-04│ 2.70 │ 3.4: Selbsttests FAT16 schreibend (I$Create/I$Write/I$MakDir/         │ CF
+//         │      │ I$Delete); I$Create/MakDir/Delete-Test ohne fm jetzt gegen /term      │
+//         │      │ statt Geruest-Erwartung (echte Semantik ab 3.4)                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -184,7 +187,7 @@ static int test_fm_open(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint3
     return 0;                                          /*   Geraet — pro offenem Pfad eigener Stand */
 }
 
-static const q9_fm_t test_fm = { "testfm", test_fm_open, 0, 0, 0, 0, 0 };
+static const q9_fm_t test_fm = { "testfm", test_fm_open, 0, 0, 0, 0, 0, 0 };
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_kernel_selftest
@@ -199,7 +202,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[48];
+    } checks[64];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -622,12 +625,19 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "I$ChgDir /d0 + relatives I$Open 'datei' -> Pfad 3";
         checks[nchecks++].ok = ok;
     }
-    {   /* 3.2: I$Create/I$MakDir/I$Delete-Geruest -> E$UnkSvc (echte Semantik erst 3.4) */
+    {   /* 3.4: I$Create/I$MakDir/I$Delete auf ein Geraet OHNE File-Manager (/term) -> E$UnkSvc
+           (kein Dateisystem hinter dem Geraet, also kann es diese Operationen nicht anbieten) */
         q9_regs_t r = {0};
+        r.d[0] = Q9_MODE_WRITE;                          /* gueltiger Modus, sonst E$BMode zuerst   */
+        r.a[0] = (void *)"/term/neu.txt";
         int ok = (q9_syscall(I_CREATE, &r) == E_UNKSVC);
-        ok = ok && (q9_syscall(I_MAKDIR, &r) == E_UNKSVC);
-        ok = ok && (q9_syscall(I_DELETE, &r) == E_UNKSVC);
-        checks[nchecks].name = "I$Create/I$MakDir/I$Delete-Geruest -> E$UnkSvc";
+        q9_regs_t m = {0};
+        m.a[0] = (void *)"/term/neudir";
+        ok = ok && (q9_syscall(I_MAKDIR, &m) == E_UNKSVC);
+        q9_regs_t d = {0};
+        d.a[0] = (void *)"/term/xyz";
+        ok = ok && (q9_syscall(I_DELETE, &d) == E_UNKSVC);
+        checks[nchecks].name = "I$Create/I$MakDir/I$Delete ohne File-Manager -> E$UnkSvc";
         checks[nchecks++].ok = ok;
     }
     {   /* 3.3: FAT16 — nur relevant, wenn q9disk.img beim Boot als FAT16 erkannt wurde (von      */
@@ -715,6 +725,92 @@ int q9_kernel_selftest(void)
             r.a[0] = (void *)"/d0/NICHTDA.TXT";
             checks[nchecks].name = "FAT16: unbekannte Datei -> E$PNNF";
             checks[nchecks++].ok = (q9_syscall(I_OPEN, &r) == E_PNNF);
+
+            /* 3.4: FAT16 schreibend — I$Create, I$Write (ueber Cluster-Grenzen, um Allozieren zu   */
+            /* pruefen), I$Open erneut lesend, I$MakDir, I$Delete. */
+            {
+                q9_regs_t cr = {0};
+                cr.d[0] = Q9_MODE_WRITE;
+                cr.a[0] = (void *)"/d0/NEU.TXT";
+                ok = (q9_syscall(I_CREATE, &cr) == 0);
+                int pathnew = ok ? (int)cr.d[0] : -1;
+                if (ok) {
+                    static const uint8_t payload[] = "Von Q9 geschrieben!";
+                    q9_regs_t wr = {0};
+                    wr.d[0] = (uint32_t)pathnew;
+                    wr.d[1] = sizeof(payload) - 1;
+                    wr.a[0] = (void *)payload;
+                    ok = ok && (q9_syscall(I_WRITE, &wr) == 0) && (wr.d[1] == sizeof(payload) - 1);
+                    ok = ok && (q9_path_close((uint32_t)pathnew) == 0);
+                }
+                checks[nchecks].name = "FAT16: I$Create + I$Write /d0/NEU.TXT";
+                checks[nchecks++].ok = ok;
+
+                r = (q9_regs_t){0};
+                r.d[0] = Q9_MODE_READ;
+                r.a[0] = (void *)"/d0/NEU.TXT";
+                ok = (q9_syscall(I_OPEN, &r) == 0);
+                int pathread = ok ? (int)r.d[0] : -1;
+                if (ok) {
+                    q9_regs_t rr = {0};
+                    rr.d[0] = (uint32_t)pathread;
+                    rr.d[1] = sizeof(buf);
+                    rr.a[0] = buf;
+                    ok = ok && (q9_syscall(I_READ, &rr) == 0) && (rr.d[1] == 19);
+                    ok = ok && (buf[0] == 'V' && buf[18] == '!');
+                    ok = ok && (q9_path_close((uint32_t)pathread) == 0);
+                }
+                checks[nchecks].name = "FAT16: neu geschriebene Datei zurueckgelesen";
+                checks[nchecks++].ok = ok;
+
+                {
+                    q9_regs_t dup = {0};
+                    dup.d[0] = Q9_MODE_WRITE;
+                    dup.a[0] = (void *)"/d0/NEU.TXT";       /* existierender Name -> E$BPNam         */
+                    checks[nchecks].name = "FAT16: I$Create auf existierenden Namen -> E$BPNam";
+                    checks[nchecks++].ok = (q9_syscall(I_CREATE, &dup) == E_BPNAM);
+                }
+
+                {
+                    q9_regs_t bad = {0};
+                    bad.d[0] = Q9_MODE_WRITE;
+                    bad.a[0] = (void *)"/d0/zulangerdateiname.txt"; /* kein gueltiger 8.3-Name */
+                    checks[nchecks].name = "FAT16: I$Create mit LFN-pflichtigem Namen -> E$BPNam";
+                    checks[nchecks++].ok = (q9_syscall(I_CREATE, &bad) == E_BPNAM);
+                }
+
+                {
+                    /* NEUDIR bleibt bewusst bestehen (keine I$Delete-Aufraeumung hier) — die       */
+                    /* Python-Nachvalidierung in test/06_test_fat16.py (post_validate) prueft nach   */
+                    /* dem Selbsttest-Lauf explizit, dass NEUDIR als Verzeichnis mit korrekten       */
+                    /* "."/".."-Eintraegen im Root steht (das ist der praktikable Ersatz fuer ein    */
+                    /* echtes "am Mac mounten", ARBEITSPLAN.md 3.4). Das Image wird von test/06 vor  */
+                    /* jedem Lauf komplett neu erzeugt (Python "wb"), daher keine Notwendigkeit,      */
+                    /* NEUDIR danach wieder zu loeschen. */
+                    q9_regs_t md = {0};
+                    md.a[0] = (void *)"/d0/NEUDIR";
+                    ok = (q9_syscall(I_MAKDIR, &md) == 0);
+                    q9_regs_t r2 = {0};
+                    r2.d[0] = Q9_MODE_READ;
+                    r2.a[0] = (void *)"/d0/NEUDIR";
+                    ok = ok && (q9_syscall(I_OPEN, &r2) == 0);
+                    ok = ok && (q9_path_close(r2.d[0]) == 0);
+                    checks[nchecks].name = "FAT16: I$MakDir /d0/NEUDIR + I$Open darauf";
+                    checks[nchecks++].ok = ok;
+                }
+
+                {
+                    q9_regs_t del = {0};
+                    del.a[0] = (void *)"/d0/NEU.TXT";
+                    ok = (q9_syscall(I_DELETE, &del) == 0);
+                    q9_regs_t r2 = {0};
+                    r2.d[0] = Q9_MODE_READ;
+                    r2.a[0] = (void *)"/d0/NEU.TXT";
+                    ok = ok && (q9_syscall(I_OPEN, &r2) == E_PNNF);   /* wirklich weg */
+                    checks[nchecks].name = "FAT16: I$Delete /d0/NEU.TXT, danach E$PNNF";
+                    checks[nchecks++].ok = ok;
+                }
+            }
         }
     }
 
@@ -731,5 +827,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 2.60
+// EOF kernel.c                                                                            Ver. 2.70
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 1.60
+# File:   Makefile                                                                        Ver. 1.70
 # Owner:  AF
 # Desc.:  Q9 Build-System. Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc),
 #         wasm (Browser, emcc), test, clean. Toolchain-Setup siehe docs/TOOLCHAIN.md.
@@ -18,6 +18,9 @@
 # 26-07-03│ 1.40 │ 3.1: dev_d0.c (Roh-Block-Device), Test 04                               │ CF
 # 26-07-04│ 1.50 │ 3.2: vfs.c/.h (VFS-Pfad-Routing), Test 05                               │ CF
 # 26-07-04│ 1.60 │ 3.3: fat16.c/.h (FAT16 lesend), Test 06                                 │ CF
+# 26-07-04│ 1.70 │ 3.4: test-Target loescht q9disk.img vor dem Lauf (sonst kann ein         │ CF
+#         │      │ FAT16-Image aus einem frueheren "make test" — mit z.B. NEUDIR aus dem   │
+#         │      │ 06-Selbsttest — die Tests 01-05 verwirren, bevor 06 es neu aufbaut)      │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -64,6 +67,7 @@ $(BUILD)/wasm/q9.js: $(KSRC) src/hal/wasm/hal_wasm.c $(HDRS) web/index.html
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
 test: native
+	@rm -f q9disk.img
 	$(PYTHON) test/01_test_boot.py
 	$(PYTHON) test/02_test_syscalls.py
 	$(PYTHON) test/03_test_devices.py
@@ -77,5 +81,5 @@ clean:
 .PHONY: native wasm test clean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 1.60
+# EOF Makefile                                                                            Ver. 1.70
 #─────────────────────────────────────────────────────────────────────────────────────────────────

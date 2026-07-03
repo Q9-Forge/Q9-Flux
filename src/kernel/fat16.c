@@ -1,12 +1,14 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   fat16.c                                                                        Ver. 1.00
+// File:   fat16.c                                                                        Ver. 1.10
 // Owner:  AF
-// Desc.:  Q9 FAT16-File-Manager, lesend (Phase 3.3). Boot-Sektor (BPB) parsen, Root-Directory
-//         und Unterverzeichnisse durchsuchen (8.3- und LFN-Namen), Cluster-Ketten der FAT folgen,
-//         Datei-Inhalt lesen. Nur Superfloppy (kein MBR, Boot-Sektor bei LBA 0 des Block-Device).
-//         Zugriff auf den Datentraeger AUSSCHLIESSLICH ueber q9_hal_blk_read (Q9_BLK_SIZE-Byte-
-//         Bloecke) — kein direkter Treiberzugriff, kein malloc (ein statischer 512-Byte-Sektor-
-//         Puffer fuer alle Lesevorgaenge, da Q9 nicht nebenlaeufig ist).
+// Desc.:  Q9 FAT16-File-Manager, lesend + schreibend (Phase 3.3/3.4). Boot-Sektor (BPB) parsen,
+//         Root-Directory und Unterverzeichnisse durchsuchen (8.3- und LFN-Namen lesen, NUR 8.3
+//         beim Anlegen — LFN-Schreiben ist Ideenspeicher, ARBEITSPLAN.md), Cluster-Ketten der FAT
+//         folgen/allozieren/freigeben, Datei-Inhalt lesen/schreiben. Nur Superfloppy (kein MBR,
+//         Boot-Sektor bei LBA 0 des Block-Device). Zugriff auf den Datentraeger AUSSCHLIESSLICH
+//         ueber q9_hal_blk_read/write (Q9_BLK_SIZE-Byte-Bloecke) — kein direkter Treiberzugriff,
+//         kein malloc (ein statischer 512-Byte-Sektor-Puffer fuer alle Zugriffe, da Q9 nicht
+//         nebenlaeufig ist).
 //
 //         Datei-Kontext pro Pfad (q9_path_t.fmctx, 16 Byte, device.h) — Layout (siehe fat16_ctx_t
 //         unten): start_cluster (Cluster der Datei; 0 = Root-Directory-Pseudo-Eintrag),
@@ -22,11 +24,17 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 3.3: Initiale Version                                                  │ CF
+// 26-07-04│ 1.10 │ 3.4: I$Create/I$MakDir/I$Delete + I$Write echt implementiert. FAT-      │ CF
+//         │      │ Ketten allozieren/freigeben (freie Cluster linear ab 2 gesucht, beide   │
+//         │      │ FAT-Kopien synchron gehalten). Directory-Eintrag im Elternverzeichnis   │
+//         │      │ (Root oder Unterverzeichnis) finden/anlegen/loeschen. Nur 8.3-Namen bei │
+//         │      │ neuen Dateien/Verzeichnissen (LFN-Schreiben -> Ideenspeicher)           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
 #include "fat16.h"
+#include "name.h"
 #include "syscall.h"
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -103,7 +111,7 @@ typedef struct fat16_lfnent {
 #define DIRENT_END     0x00                                 /* Ende des Directory                     */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
-//║ FILE CONTEXT (q9_path_t.fmctx, 16 Byte — device.h Q9_FMCTX_SIZE)                              ║
+//║ FILE CONTEXT (q9_path_t.fmctx, 24 Byte — device.h Q9_FMCTX_SIZE)                              ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
 #pragma pack(push, 1)
@@ -112,7 +120,14 @@ typedef struct fat16_ctx {
     uint32_t cur_cluster;                               /* Cluster, in dem "pos" gerade liegt      */
     uint32_t pos;                                        /* aktuelle Byte-Position in der Datei     */
     uint32_t size;                                       /* Dateigroesse (Root-Dir: Bytes gesamt)   */
-} fat16_ctx_t;
+    uint32_t dir_start;                                 /* 3.4: Elternverzeichnis (0 = Root) —     */
+                                                        /*   noetig, um nach I$Write den Directory- */
+                                                        /*   Eintrag (Groesse/Start-Cluster)        */
+                                                        /*   zurueckzuschreiben. 0xFFFFFFFF = kein  */
+                                                        /*   Dirent zum Zurueckschreiben (Root-Dir- */
+                                                        /*   Pseudo-Datei selbst, nur lesend)       */
+    uint32_t dir_index;                                 /* 3.4: Slot-Index im Elternverzeichnis     */
+} fat16_ctx_t;                                          /* 24 Byte gesamt                          */
 #pragma pack(pop)
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -122,6 +137,8 @@ typedef struct fat16_ctx {
 static int      mounted        = 0;
 static uint32_t fat_start_lba;                          /* erste FAT-Kopie                        */
 static uint32_t fatsz;                                  /* Sektoren pro FAT-Kopie                  */
+static uint32_t numfats;                                /* Anzahl FAT-Kopien (3.4: alle werden     */
+                                                        /*   synchron gehalten, Standard = 2)      */
 static uint32_t root_start_lba;
 static uint32_t root_sectors;                           /* Root-Directory-Region in Sektoren       */
 static uint32_t data_start_lba;                         /* Cluster 2 beginnt hier                  */
@@ -163,6 +180,81 @@ static uint32_t fat_next(uint32_t clus)
         return 0xFFFFFFFFu;
     }
     return (uint32_t)secbuf[off] | ((uint32_t)secbuf[off + 1] << 8);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat_set
+// Desc.:    Schreibt einen FAT16-Eintrag ("clus" -> "val", z.B. Kettenglied oder FAT16_FREE/EOC)
+//           in BEIDE FAT-Kopien (Standard-Konvention, wichtig fuer Interop mit macOS/newfs_msdos:
+//           ein Treiber, der nur die erste Kopie liest, sieht sonst inkonsistente Daten, sobald
+//           er irgendwann die zweite Kopie zur Reparatur heranzieht). 0 = ok, E$NotRdy bei I/O-
+//           Fehler.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int fat_set(uint32_t clus, uint16_t val)
+{
+    uint32_t byteoff = clus * 2u;
+    uint32_t off     = byteoff % Q9_BLK_SIZE;
+
+    for (uint32_t f = 0; f < numfats; f++) {
+        uint32_t lba = fat_start_lba + f * fatsz + byteoff / Q9_BLK_SIZE;
+        if (q9_hal_blk_read(lba, secbuf) != 0) {
+            return E_NOTRDY;
+        }
+        secbuf[off]     = (uint8_t)(val & 0xffu);
+        secbuf[off + 1] = (uint8_t)(val >> 8);
+        if (q9_hal_blk_write(lba, secbuf) != 0) {
+            return E_NOTRDY;
+        }
+    }
+    return 0;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat_alloc
+// Desc.:    Sucht linear ab Cluster 2 den ersten freien Cluster (FAT-Eintrag == FAT16_FREE),
+//           markiert ihn als Kettenende ($FFFF — im gueltigen EOC-Bereich $FFF8-$FFFF, s.o.) in
+//           beiden FAT-Kopien und liefert seine Nummer. 0 = Datentraeger voll/Fehler.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint32_t fat_alloc(void)
+{
+    /* Obere Grenze: wie viele Cluster passen rein rechnerisch in "fatsz" FAT-Sektoren
+       (256 16-Bit-Eintraege je Sektor) — die eigentliche Datentraegergroesse (totsec/BPB) wird
+       beim Mount nicht gemerkt, diese Grenze ist konservativ genug (nie kleiner als die echte
+       Cluster-Anzahl, da die FAT immer mindestens so viele Eintraege hat wie es Cluster gibt). */
+    uint32_t lastclus = fatsz * (Q9_BLK_SIZE / 2u);
+
+    for (uint32_t c = 2; c < lastclus; c++) {
+        uint32_t v = fat_next(c);
+        if (v == 0xFFFFFFFFu) {
+            return 0;                                   /* I/O-Fehler                              */
+        }
+        if (v == FAT16_FREE) {
+            if (fat_set(c, 0xFFFFu) != 0) {              /* explizites EOC, s. Aufgabenstellung     */
+                return 0;
+            }
+            return c;
+        }
+    }
+    return 0;                                           /* Datentraeger voll                        */
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat_free_chain
+// Desc.:    Gibt die komplette Cluster-Kette ab "start" frei (alle Glieder auf FAT16_FREE, beide
+//           FAT-Kopien). Bricht bei Kettenende/Fehler sauber ab.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void fat_free_chain(uint32_t start)
+{
+    uint32_t c = start;
+
+    while (c >= 2u && c < FAT16_EOC_MIN) {
+        uint32_t next = fat_next(c);
+        fat_set(c, FAT16_FREE);
+        if (next == 0xFFFFFFFFu) {
+            break;
+        }
+        c = next;
+    }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -280,14 +372,250 @@ static int read_dir_slot(uint32_t dirstart, uint32_t index, fat16_dirent_t *out)
     return (out->name[0] != DIRENT_END);
 }
 
+static int dir_find_idx(uint32_t dirstart, const char *name, uint32_t len, fat16_dirent_t *out,
+                         uint32_t *outidx);
+static int dir_find(uint32_t dirstart, const char *name, uint32_t len, fat16_dirent_t *out);
+static void split_first(const char *path, uint32_t len, const char **elem, uint32_t *elemlen,
+                         const char **restp, uint32_t *restlen);
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: dir_find
-// Desc.:    Sucht im Directory "dirstart" (0 = Root) nach "name" (Laenge "len", ein einzelnes
-//           Pfadelement ohne '/'). Vergleicht sowohl den zusammengesetzten LFN-Namen (falls LFN-
-//           Eintraege vorausgehen) als auch den 8.3-Namen. Liefert den gefundenen Dirent in "out".
-//           0 = gefunden, E$PNNF = nicht gefunden/Lesefehler.
+// Function: write_dir_slot
+// Desc.:    Schreibt "de" (32 Byte) in den "index"-ten Slot eines Directory ("dirstart", 0 =
+//           Root). Gegenstueck zu read_dir_slot — anders als beim Lesen wird bei einem
+//           Unterverzeichnis NICHT automatisch die Kette verlaengert, wenn "index" ausserhalb
+//           der bisherigen Kette liegt (das macht dir_alloc_slot() vorher explizit). 0 = ok,
+//           E$NotRdy bei I/O-Fehler, E$PARAM wenn der Slot ausserhalb des Directory liegt.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static int dir_find(uint32_t dirstart, const char *name, uint32_t len, fat16_dirent_t *out)
+static int write_dir_slot(uint32_t dirstart, uint32_t index, const fat16_dirent_t *de)
+{
+    uint32_t entsperclus  = clus_bytes() / 32u;
+    uint32_t entspersec   = Q9_BLK_SIZE / 32u;
+    uint32_t lba;
+    uint32_t slot_in_sec;
+
+    if (dirstart == 0) {
+        uint32_t entsperroot = root_bytes / 32u;
+        if (index >= entsperroot) {
+            return E_PARAM;
+        }
+        lba = root_start_lba + (index * 32u) / Q9_BLK_SIZE;
+        slot_in_sec = index % entspersec;
+    } else {
+        uint32_t clusidx = index / entsperclus;
+        uint32_t inclus  = index % entsperclus;
+        uint32_t clus    = cluster_at_offset(dirstart, clusidx);
+        if (clus == 0) {
+            return E_PARAM;
+        }
+        lba = clus_to_lba(clus) + (inclus * 32u) / Q9_BLK_SIZE;
+        slot_in_sec = inclus % entspersec;
+    }
+    if (q9_hal_blk_read(lba, secbuf) != 0) {
+        return E_NOTRDY;
+    }
+    for (uint32_t i = 0; i < 32; i++) {
+        secbuf[slot_in_sec * 32u + i] = ((const uint8_t *)de)[i];
+    }
+    if (q9_hal_blk_write(lba, secbuf) != 0) {
+        return E_NOTRDY;
+    }
+    return 0;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: dir_alloc_slot
+// Desc.:    Sucht im Directory "dirstart" (0 = Root) den ersten freien Slot (DIRENT_FREE oder
+//           DIRENT_END) und liefert dessen Index in "*outidx". Bei einem Unterverzeichnis wird
+//           die Cluster-Kette bei Bedarf um einen neuen (genullten) Cluster verlaengert, wenn
+//           kein freier Slot mehr in der bisherigen Kette liegt (Root-Directory ist ein fester
+//           Bereich fester Groesse und kann NICHT wachsen — Standard-FAT16-Einschraenkung).
+//           0 = ok, E$NotRdy bei Datentraeger voll/I-O-Fehler.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int dir_alloc_slot(uint32_t dirstart, uint32_t *outidx)
+{
+    fat16_dirent_t de;
+    uint32_t       idx;
+
+    for (idx = 0; ; idx++) {
+        int used = read_dir_slot(dirstart, idx, &de);
+        if (!used) {
+            /* read_dir_slot liefert 0 sowohl bei einem echten DIRENT_END-Slot (der Slot IST      */
+            /* lesbar, nur "leer") als auch, wenn die Kette/der Root-Bereich zu Ende ist. Wir      */
+            /* muessen unterscheiden: liegt idx noch innerhalb des Bereichs, ist es ein freier      */
+            /* Slot; sonst muss (bei einem Unterverzeichnis) ein neuer Cluster angehaengt werden.   */
+            uint32_t entsperclus = clus_bytes() / 32u;
+            if (dirstart == 0) {
+                uint32_t entsperroot = root_bytes / 32u;
+                if (idx < entsperroot) {
+                    *outidx = idx;                       /* echter DIRENT_END-Slot im Root-Bereich  */
+                    return 0;
+                }
+                return E_NOTRDY;                         /* Root-Directory voll, kann nicht wachsen */
+            } else {
+                uint32_t clusidx = idx / entsperclus;
+                uint32_t clus    = cluster_at_offset(dirstart, clusidx);
+                if (clus != 0) {
+                    *outidx = idx;                       /* echter DIRENT_END-Slot in der Kette      */
+                    return 0;
+                }
+                /* Kette zu kurz -> letzten Cluster suchen und einen neuen anhaengen */
+                {
+                    uint32_t last = dirstart;
+                    uint32_t n;
+                    for (;;) {
+                        n = fat_next(last);
+                        if (n == 0xFFFFFFFFu) {
+                            return E_NOTRDY;
+                        }
+                        if (n >= FAT16_EOC_MIN) {
+                            break;
+                        }
+                        last = n;
+                    }
+                    {
+                        uint32_t newc = fat_alloc();
+                        if (newc == 0) {
+                            return E_NOTRDY;              /* Datentraeger voll                       */
+                        }
+                        if (fat_set(last, (uint16_t)newc) != 0) {
+                            return E_NOTRDY;
+                        }
+                        /* neuen Cluster mit Nullbytes initialisieren (DIRENT_END ueberall, $00) */
+                        for (uint32_t i = 0; i < Q9_BLK_SIZE; i++) {
+                            secbuf[i] = 0;
+                        }
+                        for (uint32_t s = 0; s < sec_per_clus; s++) {
+                            if (q9_hal_blk_write(clus_to_lba(newc) + s, secbuf) != 0) {
+                                return E_NOTRDY;
+                            }
+                        }
+                        *outidx = idx;                    /* erster Slot im frisch angehaengten Cluster */
+                        return 0;
+                    }
+                }
+            }
+        }
+        if ((uint8_t)de.name[0] == DIRENT_FREE) {
+            *outidx = idx;                                /* wiederverwendbarer geloeschter Slot      */
+            return 0;
+        }
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: make_83name
+// Desc.:    Validiert "name" (Laenge "len") als reinen 8.3-Namen und baut das 11-Byte-Directory-
+//           Feld ("NAME    EXT", grossgeschrieben, space-gepolstert) in "out11". Erlaubt sind die
+//           OS-9-Namenszeichen minus Punkt/Slash als Sonderzeichen (Basis <=8, Erweiterung <=3,
+//           genau ein Punkt als Trenner erlaubt). E$BPNam bei ungueltigem/zu langem Namen (z.B.
+//           LFN-pflichtige Namen — LFN-SCHREIBEN ist bewusst nicht implementiert, Ideenspeicher).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int make_83name(const char *name, uint32_t len, uint8_t *out11)
+{
+    uint32_t baselen = 0, extlen = 0;
+    uint32_t dot = len;
+    int      i;
+
+    if (len == 0 || len > 12) {                          /* "12345678.123" max. */
+        return E_BPNAM;
+    }
+    for (i = 0; i < (int)len; i++) {
+        if (name[i] == '.') {
+            if (dot != len) {                             /* zweiter Punkt -> kein gueltiger 8.3-Name */
+                return E_BPNAM;
+            }
+            dot = (uint32_t)i;
+        }
+    }
+    baselen = (dot == len) ? len : dot;
+    extlen  = (dot == len) ? 0 : (len - dot - 1u);
+    if (baselen == 0 || baselen > 8 || extlen > 3) {
+        return E_BPNAM;
+    }
+    for (uint32_t k = 0; k < 11; k++) {
+        out11[k] = ' ';
+    }
+    for (uint32_t k = 0; k < baselen; k++) {
+        char c = name[k];
+        if (c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        }
+        if (!q9_name_is_char(c) || c == '.') {
+            return E_BPNAM;
+        }
+        out11[k] = (uint8_t)c;
+    }
+    for (uint32_t k = 0; k < extlen; k++) {
+        char c = name[dot + 1u + k];
+        if (c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        }
+        if (!q9_name_is_char(c) || c == '.') {
+            return E_BPNAM;
+        }
+        out11[8 + k] = (uint8_t)c;
+    }
+    return 0;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: resolve_parent
+// Desc.:    Loest "restpath" bis zum VORLETZTEN Pfadelement auf (das Elternverzeichnis) und
+//           liefert dessen Start-Cluster (0 = Root) in "*parent_dirstart" sowie Start/Laenge des
+//           letzten Elements (des anzulegenden/zu loeschenden Namens) in "*lastname"/"*lastlen".
+//           E$PNNF, wenn ein Zwischenelement fehlt oder keine Datei ist.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int resolve_parent(const char *restpath, uint32_t len, uint32_t *parent_dirstart,
+                           const char **lastname, uint32_t *lastlen)
+{
+    uint32_t    dirstart = 0;
+    const char *cur = restpath;
+    uint32_t    curlen = len;
+
+    if (len == 0) {
+        return E_BPNAM;                                  /* kein Name angegeben (Wurzel selbst)     */
+    }
+    for (;;) {
+        const char     *elem;
+        uint32_t        elemlen;
+        const char     *rest;
+        uint32_t        restlen;
+        fat16_dirent_t  de;
+        int             err;
+
+        split_first(cur, curlen, &elem, &elemlen, &rest, &restlen);
+        if (elemlen == 0) {
+            return E_PNNF;
+        }
+        if (!rest) {                                     /* letztes Element: das ist der Name       */
+            *parent_dirstart = dirstart;
+            *lastname        = elem;
+            *lastlen         = elemlen;
+            return 0;
+        }
+        err = dir_find(dirstart, elem, elemlen, &de);
+        if (err != 0) {
+            return err;
+        }
+        if (!(de.attr & ATTR_DIRECTORY)) {
+            return E_PNNF;
+        }
+        dirstart = de.fstcluslo;
+        cur      = rest;
+        curlen   = restlen;
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: dir_find_idx
+// Desc.:    Wie dir_find(), liefert zusaetzlich den Slot-Index des gefundenen 8.3-/LFN-Alias-
+//           Eintrags in "*outidx" (3.4, noetig fuer I$Write, um den Directory-Eintrag spaeter
+//           gezielt zu ueberschreiben — LFN-Vorlaufeintraege zaehlen NICHT als Fundstelle, das
+//           Alias-Slot ist massgeblich, denn NUR dort stehen Cluster/Groesse). "outidx" darf NULL
+//           sein (dann identisch zu dir_find()).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int dir_find_idx(uint32_t dirstart, const char *name, uint32_t len, fat16_dirent_t *out,
+                         uint32_t *outidx)
 {
     fat16_dirent_t de;
     char           lfnbuf[261];                          /* max. 20 LFN-Eintraege * 13 Zeichen      */
@@ -337,6 +665,9 @@ static int dir_find(uint32_t dirstart, const char *name, uint32_t len, fat16_dir
         }
         if (have_lfn && lfnlen == len && ci_eq(name, len, lfnbuf)) {
             *out = de;
+            if (outidx) {
+                *outidx = idx;
+            }
             return 0;
         }
         {
@@ -344,12 +675,27 @@ static int dir_find(uint32_t dirstart, const char *name, uint32_t len, fat16_dir
             uint32_t n83 = dirent_name83(&de, name83);
             if (n83 == len && ci_eq(name, len, name83)) {
                 *out = de;
+                if (outidx) {
+                    *outidx = idx;
+                }
                 return 0;
             }
         }
         have_lfn = 0;
     }
     return E_PNNF;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: dir_find
+// Desc.:    Sucht im Directory "dirstart" (0 = Root) nach "name" (Laenge "len", ein einzelnes
+//           Pfadelement ohne '/'). Vergleicht sowohl den zusammengesetzten LFN-Namen (falls LFN-
+//           Eintraege vorausgehen) als auch den 8.3-Namen. Liefert den gefundenen Dirent in "out".
+//           0 = gefunden, E$PNNF = nicht gefunden/Lesefehler.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int dir_find(uint32_t dirstart, const char *name, uint32_t len, fat16_dirent_t *out)
+{
+    return dir_find_idx(dirstart, name, len, out, 0);
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -380,9 +726,12 @@ static void split_first(const char *path, uint32_t len, const char **elem, uint3
 // Desc.:    Loest "restpath" (Laenge "len", KEIN fuehrender '/', s. vfs.h) ab dem Root-Directory
 //           Element fuer Element auf. Leerer restpath -> Root-Directory selbst (Pseudo-Dirent
 //           mit attr=ATTR_DIRECTORY, fstcluslo=0, filesize=root_bytes). 0 = gefunden (out gesetzt,
-//           is_root zeigt den Root-Sonderfall an), sonst E$PNNF.
+//           is_root zeigt den Root-Sonderfall an), sonst E$PNNF. Liefert zusaetzlich (3.4) das
+//           Elternverzeichnis ("*out_dirstart") und den Slot-Index des gefundenen Eintrags
+//           ("*out_diridx") — ungenutzt bei is_root (Root-Directory hat kein Eltern-Slot).
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static int resolve_path(const char *restpath, uint32_t len, fat16_dirent_t *out, int *is_root)
+static int resolve_path(const char *restpath, uint32_t len, fat16_dirent_t *out, int *is_root,
+                         uint32_t *out_dirstart, uint32_t *out_diridx)
 {
     uint32_t dirstart = 0;                               /* 0 = Root-Directory                     */
     const char *cur = restpath;
@@ -398,17 +747,20 @@ static int resolve_path(const char *restpath, uint32_t len, fat16_dirent_t *out,
         uint32_t    elemlen;
         const char *rest;
         uint32_t    restlen;
+        uint32_t    idx;
         int         err;
 
         split_first(cur, curlen, &elem, &elemlen, &rest, &restlen);
         if (elemlen == 0) {
             return E_PNNF;
         }
-        err = dir_find(dirstart, elem, elemlen, out);
+        err = dir_find_idx(dirstart, elem, elemlen, out, &idx);
         if (err != 0) {
             return err;
         }
         if (!rest) {                                     /* letztes Element gefunden                */
+            *out_dirstart = dirstart;
+            *out_diridx   = idx;
             return 0;
         }
         if (!(out->attr & ATTR_DIRECTORY)) {              /* Zwischenelement ist keine Datei-Datei   */
@@ -429,7 +781,10 @@ static int resolve_path(const char *restpath, uint32_t len, fat16_dirent_t *out,
 // Desc.:    I$Open-Unterbau: loest restpath auf, befuellt p->fmctx (fat16_ctx_t). Verzeichnisse
 //           duerfen geoeffnet werden (Position/Groesse wie eine Datei — I$Read liefert dann die
 //           rohen 32-Byte-Directory-Eintraege; ausreichend fuer 3.3, ein eigener I$Read-Dirent-
-//           Modus ist nicht gefordert). E$PNNF, wenn der Pfad nicht existiert.
+//           Modus ist nicht gefordert). E$PNNF, wenn der Pfad nicht existiert. Seit 3.4 auch im
+//           Schreib-/Update-Modus erlaubt (eine bereits mit I$Create angelegte oder bestehende
+//           Datei zum Weiterschreiben/Ueberschreiben oeffnen) — I$Write beginnt dann an Position 0
+//           und ueberschreibt, Anhaengen braucht vorher ein I$Seek ans Dateiende (OS-9-Semantik).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int fat16_open(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint32_t len, uint8_t mode)
 {
@@ -437,27 +792,29 @@ static int fat16_open(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint32_
     fat16_ctx_t    ctx;
     int            is_root;
     int            err;
+    uint32_t       pdirstart = 0, pdiridx = 0;
 
-    (void)dev;
+    (void)dev; (void)mode;
     if (!mounted) {
         return E_NOTRDY;
     }
-    if (mode & Q9_MODE_WRITE) {                          /* 3.3 = nur lesend                       */
-        return E_UNKSVC;
-    }
-    err = resolve_path(restpath, len, &de, &is_root);
+    err = resolve_path(restpath, len, &de, &is_root, &pdirstart, &pdiridx);
     if (err != 0) {
         return err;
     }
     if (is_root) {
         ctx.start_cluster = 0;
         ctx.size          = root_bytes;
+        ctx.dir_start      = 0xFFFFFFFFu;                 /* Root-Dir-Pseudo-Datei: kein Dirent      */
+        ctx.dir_index      = 0;
     } else {
         ctx.start_cluster = de.fstcluslo;
         ctx.size          = de.filesize;
         if (de.attr & ATTR_DIRECTORY) {                   /* Directory-Groesse ist im Eintrag 0 —    */
             ctx.size = 0xFFFFFFFFu;                       /* Kette bis EOC folgen (I$Read-Grenzwert) */
         }
+        ctx.dir_start = pdirstart;
+        ctx.dir_index = pdiridx;
     }
     ctx.cur_cluster = ctx.start_cluster;
     ctx.pos         = 0;
@@ -581,29 +938,313 @@ static int fat16_seek(q9_dev_t *dev, q9_path_t *p, uint32_t pos)
         if (ctx.cur_cluster == 0 && pos < ctx.size) {
             return E_PARAM;                              /* Kette kuerzer als erwartet               */
         }
-    }
+    } else if (ctx.dir_start != 0xFFFFFFFFu && pos != 0) {
+        return E_PARAM;                                  /* frisch angelegte, noch leere Datei (3.4) */
+    }                                                     /*   ohne Cluster -> nur Position 0 gueltig */
     for (uint32_t i = 0; i < sizeof(ctx); i++) {
         p->fmctx[i] = ((const uint8_t *)&ctx)[i];
     }
     return 0;
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat16_create
+// Desc.:    I$Create-Unterbau (3.4): legt eine neue, leere Datei im Elternverzeichnis von
+//           "restpath" an. Nur 8.3-Namen (make_83name) — kein LFN-Schreiben. Existiert der Name
+//           bereits, wird das als Fehler behandelt (E$BPNam — Q9 hat kein Truncate-Flag im
+//           mode-Byte, ein I$Open im Update-Modus reicht zum Ueberschreiben). Legt den
+//           Directory-Eintrag mit Cluster=0/Groesse=0 an (der erste I$Write alloziert den ersten
+//           Cluster lazy) und befuellt p->fmctx wie fat16_open.
+//────────────────────────────────────────────────────────────────────────────────────────────────
 static int fat16_create(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint32_t len, uint8_t mode)
 {
-    (void)dev; (void)p; (void)restpath; (void)len; (void)mode;
-    return E_UNKSVC;                                     /* 3.4: FAT16 schreibend                   */
+    uint32_t       parent;
+    const char    *lastname;
+    uint32_t       lastlen;
+    uint8_t        name11[11];
+    fat16_dirent_t existing;
+    fat16_dirent_t de;
+    fat16_ctx_t    ctx;
+    uint32_t       slot;
+    int            err;
+
+    (void)mode;
+    (void)dev;
+    if (!mounted) {
+        return E_NOTRDY;
+    }
+    err = resolve_parent(restpath, len, &parent, &lastname, &lastlen);
+    if (err != 0) {
+        return err;
+    }
+    err = make_83name(lastname, lastlen, name11);
+    if (err != 0) {
+        return err;
+    }
+    if (dir_find(parent, lastname, lastlen, &existing) == 0) {
+        return E_BPNAM;                                  /* Name bereits vergeben (kein Truncate-Flag*/
+    }                                                     /*   im mode-Byte, s. Funktionskopf oben)   */
+    err = dir_alloc_slot(parent, &slot);
+    if (err != 0) {
+        return err;
+    }
+    for (uint32_t i = 0; i < sizeof(de); i++) {
+        ((uint8_t *)&de)[i] = 0;
+    }
+    for (uint32_t i = 0; i < 11; i++) {
+        ((uint8_t *)&de)[i] = name11[i];
+    }
+    de.attr = ATTR_ARCHIVE;
+    err = write_dir_slot(parent, slot, &de);
+    if (err != 0) {
+        return err;
+    }
+
+    ctx.start_cluster = 0;
+    ctx.cur_cluster    = 0;
+    ctx.pos            = 0;
+    ctx.size           = 0;
+    ctx.dir_start      = parent;
+    ctx.dir_index      = slot;
+    for (uint32_t i = 0; i < sizeof(ctx); i++) {
+        p->fmctx[i] = ((const uint8_t *)&ctx)[i];
+    }
+    return 0;
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat16_makdir
+// Desc.:    I$MakDir-Unterbau (3.4): legt ein neues Unterverzeichnis an — alloziert einen
+//           Cluster, initialisiert ihn mit "." (zeigt auf sich selbst) und ".." (zeigt auf das
+//           Elternverzeichnis, 0 = Root — FAT16-Konvention: ".." im Root-Unterverzeichnis hat
+//           Cluster 0, obwohl das Root-Directory selbst gar keinen Cluster besitzt), und legt den
+//           Directory-Eintrag (ATTR_DIRECTORY) im Elternverzeichnis an. Nur 8.3-Namen.
+//────────────────────────────────────────────────────────────────────────────────────────────────
 static int fat16_makdir(q9_dev_t *dev, const char *restpath, uint32_t len)
 {
-    (void)dev; (void)restpath; (void)len;
-    return E_UNKSVC;                                     /* 3.4                                     */
+    uint32_t       parent;
+    const char    *lastname;
+    uint32_t       lastlen;
+    uint8_t        name11[11];
+    fat16_dirent_t existing;
+    fat16_dirent_t de;
+    uint32_t       slot;
+    uint32_t       newclus;
+    int            err;
+
+    (void)dev;
+    if (!mounted) {
+        return E_NOTRDY;
+    }
+    err = resolve_parent(restpath, len, &parent, &lastname, &lastlen);
+    if (err != 0) {
+        return err;
+    }
+    err = make_83name(lastname, lastlen, name11);
+    if (err != 0) {
+        return err;
+    }
+    if (dir_find(parent, lastname, lastlen, &existing) == 0) {
+        return E_BPNAM;                                  /* Name bereits vergeben (kein Truncate-Flag*/
+    }                                                     /*   im mode-Byte, s. Funktionskopf oben)   */
+    newclus = fat_alloc();
+    if (newclus == 0) {
+        return E_NOTRDY;                                 /* Datentraeger voll                        */
+    }
+
+    /* Neuen Cluster nullen, dann "." und ".." als erste zwei Eintraege schreiben (Standard-FAT-
+       Konvention, wichtig fuer Interop mit macOS/anderen FAT-Treibern). */
+    for (uint32_t i = 0; i < Q9_BLK_SIZE; i++) {
+        secbuf[i] = 0;
+    }
+    for (uint32_t s = 0; s < sec_per_clus; s++) {
+        if (q9_hal_blk_write(clus_to_lba(newclus) + s, secbuf) != 0) {
+            fat_free_chain(newclus);
+            return E_NOTRDY;
+        }
+    }
+    for (uint32_t i = 0; i < sizeof(de); i++) {
+        ((uint8_t *)&de)[i] = 0;
+    }
+    de.name[0] = '.'; de.name[1] = ' '; de.name[2] = ' '; de.name[3] = ' ';
+    de.name[4] = ' '; de.name[5] = ' '; de.name[6] = ' '; de.name[7] = ' ';
+    de.ext[0]  = ' '; de.ext[1]  = ' '; de.ext[2]  = ' ';
+    de.attr      = ATTR_DIRECTORY;
+    de.fstcluslo = (uint16_t)newclus;
+    if (write_dir_slot(newclus, 0, &de) != 0) {
+        fat_free_chain(newclus);
+        return E_NOTRDY;
+    }
+    de.name[1] = '.';
+    de.fstcluslo = (uint16_t)parent;                      /* ".." zeigt aufs Elternverzeichnis        */
+    if (write_dir_slot(newclus, 1, &de) != 0) {           /* (Root -> 0, FAT16-Konvention)            */
+        fat_free_chain(newclus);
+        return E_NOTRDY;
+    }
+
+    err = dir_alloc_slot(parent, &slot);
+    if (err != 0) {
+        fat_free_chain(newclus);
+        return err;
+    }
+    for (uint32_t i = 0; i < sizeof(de); i++) {
+        ((uint8_t *)&de)[i] = 0;
+    }
+    for (uint32_t i = 0; i < 11; i++) {
+        ((uint8_t *)&de)[i] = name11[i];
+    }
+    de.attr      = ATTR_DIRECTORY;
+    de.fstcluslo = (uint16_t)newclus;
+    de.filesize  = 0;                                     /* Verzeichnisse haben Groesse 0 im Eintrag */
+    err = write_dir_slot(parent, slot, &de);
+    if (err != 0) {
+        fat_free_chain(newclus);
+        return err;
+    }
+    return 0;
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat16_remove
+// Desc.:    I$Delete-Unterbau (3.4): loescht Datei ODER Unterverzeichnis unter "restpath". Gibt
+//           die komplette Cluster-Kette frei (beide FAT-Kopien, fat_free_chain) und markiert den
+//           Directory-Eintrag als geloescht (erstes Namensbyte = DIRENT_FREE). Bewusst KEINE
+//           Pruefung auf "Verzeichnis nicht leer" (Q9 hat noch kein rekursives Loeschen/keine
+//           Schutzsemantik dafuer definiert — Ideenspeicher, falls das mal noetig wird).
+//────────────────────────────────────────────────────────────────────────────────────────────────
 static int fat16_remove(q9_dev_t *dev, const char *restpath, uint32_t len)
 {
-    (void)dev; (void)restpath; (void)len;
-    return E_UNKSVC;                                     /* 3.4                                     */
+    uint32_t       parent;
+    const char    *lastname;
+    uint32_t       lastlen;
+    fat16_dirent_t de;
+    uint32_t       slot;
+    int            err;
+
+    (void)dev;
+    if (!mounted) {
+        return E_NOTRDY;
+    }
+    err = resolve_parent(restpath, len, &parent, &lastname, &lastlen);
+    if (err != 0) {
+        return err;
+    }
+    err = dir_find_idx(parent, lastname, lastlen, &de, &slot);
+    if (err != 0) {
+        return err;
+    }
+    if (de.fstcluslo != 0) {
+        fat_free_chain(de.fstcluslo);
+    }
+    de.name[0] = DIRENT_FREE;
+    return write_dir_slot(parent, slot, &de);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat16_write
+// Desc.:    I$Write-Unterbau (3.4): schreibt ab der aktuellen Position (fmctx) bis zu *n Bytes.
+//           Alloziert bei Bedarf neue Cluster ans Kettenende (ueber fat_alloc/fat_set, BEIDE
+//           FAT-Kopien), aktualisiert danach Groesse (und bei der allerersten Allozierung den
+//           Start-Cluster) im Directory-Eintrag. *n = tatsaechlich geschriebene Bytes.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int fat16_write(q9_dev_t *dev, q9_path_t *p, const uint8_t *buf, uint32_t *n)
+{
+    fat16_ctx_t ctx;
+    uint32_t    want = *n;
+    uint32_t    got  = 0;
+    int         grew = 0;                                /* Groesse/Cluster im Dirent aktualisieren? */
+
+    (void)dev;
+    if (!mounted) {
+        return E_NOTRDY;
+    }
+    for (uint32_t i = 0; i < sizeof(ctx); i++) {
+        ((uint8_t *)&ctx)[i] = p->fmctx[i];
+    }
+    if (ctx.dir_start == 0xFFFFFFFFu) {                   /* Root-Directory-Pseudo-Datei: kein Ziel   */
+        return E_UNKSVC;                                  /*   fuer I$Write (kein normaler Dateiinhalt)*/
+    }
+    while (got < want) {
+        uint32_t off_in_clus = ctx.pos % clus_bytes();
+        uint32_t lba;
+        uint32_t off_in_sec;
+        uint32_t avail;
+
+        if (ctx.cur_cluster == 0) {                       /* Datei hat noch KEINEN Cluster (Create)   */
+            uint32_t c = fat_alloc();
+            if (c == 0) {
+                *n = got;
+                return got > 0 ? 0 : E_NOTRDY;            /* Datentraeger voll                        */
+            }
+            ctx.start_cluster = c;
+            ctx.cur_cluster   = c;
+            grew = 1;
+        } else if (off_in_clus == 0 && ctx.pos != 0) {    /* Cluster-Grenze -> naechster/neuer Cluster */
+            uint32_t nextc = fat_next(ctx.cur_cluster);
+            if (nextc == 0xFFFFFFFFu) {
+                *n = got;
+                return got > 0 ? 0 : E_NOTRDY;
+            }
+            if (nextc >= FAT16_EOC_MIN || nextc < 2u) {   /* Kettenende -> neuen Cluster anhaengen     */
+                uint32_t newc = fat_alloc();
+                if (newc == 0) {
+                    *n = got;
+                    return got > 0 ? 0 : E_NOTRDY;
+                }
+                if (fat_set(ctx.cur_cluster, (uint16_t)newc) != 0) {
+                    *n = got;
+                    return got > 0 ? 0 : E_NOTRDY;
+                }
+                nextc = newc;
+            }
+            ctx.cur_cluster = nextc;
+        }
+
+        lba = clus_to_lba(ctx.cur_cluster) + off_in_clus / Q9_BLK_SIZE;
+        off_in_sec = off_in_clus % Q9_BLK_SIZE;
+        avail = Q9_BLK_SIZE - off_in_sec;
+        if (clus_bytes() - off_in_clus < avail) {
+            avail = clus_bytes() - off_in_clus;
+        }
+        if (avail > want - got) {
+            avail = want - got;
+        }
+        /* Sektor lesen (Read-Modify-Write, falls nur ein Teil des Sektors geschrieben wird),
+           dann die neuen Bytes einmischen und zurueckschreiben. */
+        if (q9_hal_blk_read(lba, secbuf) != 0) {
+            *n = got;
+            return got > 0 ? 0 : E_NOTRDY;
+        }
+        for (uint32_t i = 0; i < avail; i++) {
+            secbuf[off_in_sec + i] = buf[got + i];
+        }
+        if (q9_hal_blk_write(lba, secbuf) != 0) {
+            *n = got;
+            return got > 0 ? 0 : E_NOTRDY;
+        }
+        got     += avail;
+        ctx.pos += avail;
+    }
+    if (ctx.pos > ctx.size) {
+        ctx.size = ctx.pos;
+        grew = 1;
+    }
+    for (uint32_t i = 0; i < sizeof(ctx); i++) {
+        p->fmctx[i] = ((const uint8_t *)&ctx)[i];
+    }
+    *n = got;
+    if (grew) {
+        /* Directory-Eintrag (Start-Cluster/Groesse) im Elternverzeichnis nachziehen — die
+           Fundstelle (dir_start/dir_index) wurde beim I$Open/I$Create in fmctx abgelegt, genau
+           fuer diesen Zweck (device.h/vfs.h-Kommentar zum erweiterten Q9_FMCTX_SIZE). */
+        fat16_dirent_t de;
+        if (read_dir_slot(ctx.dir_start, ctx.dir_index, &de)) {
+            de.fstcluslo = (uint16_t)ctx.start_cluster;
+            de.filesize  = ctx.size;
+            write_dir_slot(ctx.dir_start, ctx.dir_index, &de); /* Fehler hier wuerde die Datei     */
+        }                                                      /* inhaltlich trotzdem korrekt lassen,*/
+    }                                                          /* nur die Metadaten waeren veraltet   */
+    return 0;
 }
 
 const q9_fm_t q9_fat16_fm = {
@@ -613,6 +1254,7 @@ const q9_fm_t q9_fat16_fm = {
     fat16_makdir,
     fat16_remove,
     fat16_read,
+    fat16_write,
     fat16_seek,
 };
 
@@ -651,6 +1293,7 @@ int q9_fat16_mount(void)
 
     fat_start_lba  = bpb.reservedsecs;
     fatsz          = bpb.fatsz16;
+    numfats        = bpb.numfats;
     root_start_lba = fat_start_lba + (uint32_t)bpb.numfats * fatsz;
     root_sectors   = ((uint32_t)bpb.rootentcnt * 32u + Q9_BLK_SIZE - 1u) / Q9_BLK_SIZE;
     root_bytes     = (uint32_t)bpb.rootentcnt * 32u;
@@ -662,5 +1305,5 @@ int q9_fat16_mount(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF fat16.c                                                                            Ver. 1.00
+// EOF fat16.c                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

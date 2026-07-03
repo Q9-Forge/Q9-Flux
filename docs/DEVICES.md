@@ -104,7 +104,7 @@ q9_vfs_open (vfs.c)
    ├─ nein -> altes Verhalten: Rest-Pfad MUSS leer sein (E$PNNF sonst) — /term, /nil
    └─ ja   -> Rest-Pfad an dev->fm->open() weiterreichen
    ▼
-File-Manager (q9_fm_t, ab 3.3: FAT16 an /d0)
+File-Manager (q9_fm_t, ab 3.3: FAT16 an /d0, lesend + seit 3.4 schreibend)
    │  fuellt Datei-Kontext im Pfad-Deskriptor (q9_path_t.fmctx)
    ▼
 Treiber (q9_drv_t) — liest/schreibt Bloecke fuer den File-Manager
@@ -123,6 +123,7 @@ typedef struct q9_fm {
     int (*makdir)(q9_dev_t *dev, const char *restpath, uint32_t len);
     int (*remove)(q9_dev_t *dev, const char *restpath, uint32_t len);
     int (*read)  (q9_dev_t *dev, q9_path_t *p, uint8_t *buf, uint32_t *n);     /* seit 3.3 */
+    int (*write) (q9_dev_t *dev, q9_path_t *p, const uint8_t *buf, uint32_t *n); /* seit 3.4 */
     int (*seek)  (q9_dev_t *dev, q9_path_t *p, uint32_t pos);                  /* seit 3.3 */
 } q9_fm_t;
 ```
@@ -141,63 +142,104 @@ typedef struct q9_fm {
   (syscall.c) prüft bei I$Read zuerst, ob `p->dev->fm->read` gesetzt ist, und routet dorthin;
   sonst (wie bisher) an die Treiber-Op. I$Seek existiert erst seit 3.3 und liefert `E$UnkSvc`,
   wenn kein File-Manager mit `seek`-Op hinter dem Pfad steht.
-- `create`/`makdir`/`remove` bleiben Teil der Schnittstelle, aber weiterhin nur Gerüst — echte
-  FAT16-Implementierung folgt in 3.4 (schreibend). Der Kernel-Syscall-Dispatcher (syscall.c)
-  liefert `I$Create`/`I$MakDir`/`I$Delete` bis dahin direkt `E$UnkSvc`.
+- **Design-Entscheidung 3.4**: `q9_fm_t` wurde zusätzlich um `write` erweitert (I$Write
+  routet analog zu I$Read auf `fm->write()`, wenn vorhanden). `create`/`makdir`/`remove`
+  bekommen jetzt echte Semantik (FAT16 — s.u.), statt wie bis 3.2/3.3 nur `E$UnkSvc` zu liefern.
 
 ### Datei-Kontext pro Pfad (`q9_path_t.fmctx`, device.h)
 
-Jeder offene Pfad hat ein festes Byte-Array (`Q9_FMCTX_SIZE` = 16 Byte) für File-Manager-
-eigenen Zustand — **kein malloc**, der Kontext liegt direkt in der (statischen) Pfadtabelle.
-Der Kernel fasst das Feld nie an, nur der File-Manager hinter dem jeweiligen Gerät
-interpretiert es. Für Geräte ohne File-Manager unbenutzt (bleibt 0).
+Jeder offene Pfad hat ein festes Byte-Array (`Q9_FMCTX_SIZE`) für File-Manager-eigenen
+Zustand — **kein malloc**, der Kontext liegt direkt in der (statischen) Pfadtabelle. Der
+Kernel fasst das Feld nie an, nur der File-Manager hinter dem jeweiligen Gerät interpretiert
+es. Für Geräte ohne File-Manager unbenutzt (bleibt 0). **Seit 3.4**: `Q9_FMCTX_SIZE` von 16
+auf **24 Byte** vergrößert — FAT16 schreibend braucht zusätzlich die Fundstelle des eigenen
+Directory-Eintrags (Elternverzeichnis-Cluster + Slot-Index), um nach einem I$Write, das die
+Datei wachsen lässt, Größe/Start-Cluster im Directory zurückzuschreiben.
 
-**FAT16-Belegung (seit 3.3, `fat16_ctx_t` in fat16.c)** — passt exakt in die 16 Byte:
+**FAT16-Belegung (`fat16_ctx_t` in fat16.c)** — passt exakt in die 24 Byte:
 
 | Offset | Feld            | Bedeutung |
 |--------|-----------------|-----------|
-| 0      | `start_cluster` | Start-Cluster der Datei; `0` = Root-Directory-Pseudo-Datei (fester Bereich, keine Kette) |
-| 4      | `cur_cluster`   | Cluster, in dem die aktuelle Position liegt (Cache, um nicht bei jedem Read die Kette neu abzulaufen) |
+| 0      | `start_cluster` | Start-Cluster der Datei; `0` = Root-Directory-Pseudo-Datei (fester Bereich, keine Kette), oder (seit 3.4) noch kein Cluster alloziert (frisch per I$Create angelegt) |
+| 4      | `cur_cluster`   | Cluster, in dem die aktuelle Position liegt (Cache, um nicht bei jedem Read/Write die Kette neu abzulaufen) |
 | 8      | `pos`           | aktuelle Byte-Position in der Datei |
 | 12     | `size`          | Dateigröße (`0xFFFFFFFF` bei Unterverzeichnissen — Ende zeigt sich erst über die Cluster-Kette) |
+| 16     | `dir_start`     | *(seit 3.4)* Elternverzeichnis des eigenen Directory-Eintrags (`0` = Root); `0xFFFFFFFF` bei der Root-Pseudo-Datei selbst (kein Eintrag zum Zurückschreiben) |
+| 20     | `dir_index`     | *(seit 3.4)* Slot-Index im Elternverzeichnis — zusammen mit `dir_start` die Fundstelle für das I$Write-Directory-Update |
 
-### FAT16-File-Manager (fat16.c/.h) — seit Phase 3.3
+### FAT16-File-Manager (fat16.c/.h) — seit Phase 3.3, schreibend seit Phase 3.4
 
-Erster echter File-Manager, **nur lesend**, **nur Superfloppy** (Boot-Sektor bei LBA 0 des
-Block-Device, keine Partitionstabelle — MBR-Partitionen sind Ideenspeicher). Layout nach
-öffentlich dokumentierter FAT16-Spezifikation (Boot-Sektor/BPB, Root-Directory-Region fester
-Größe, 16-Bit-FAT-Einträge, 8.3-Verzeichniseinträge, LFN-Einträge mit Attribut `$0F`) —
-eigene C99-Implementierung, kein Copyright-Code übernommen. Design-Referenz für den
-File-Manager-Schnitt: "OS-9 Insights" (Dibble), nur konzeptionell gelesen.
+Erster echter File-Manager, **nur Superfloppy** (Boot-Sektor bei LBA 0 des Block-Device, keine
+Partitionstabelle — MBR-Partitionen sind Ideenspeicher). Layout nach öffentlich dokumentierter
+FAT16-Spezifikation (Boot-Sektor/BPB, Root-Directory-Region fester Größe, 16-Bit-FAT-Einträge,
+8.3-Verzeichniseinträge, LFN-Einträge mit Attribut `$0F`) — eigene C99-Implementierung, kein
+Copyright-Code übernommen. Design-Referenz für den File-Manager-Schnitt: "OS-9 Insights"
+(Dibble), nur konzeptionell gelesen.
 
 - **Mount**: `q9_fat16_mount()` liest den Boot-Sektor über `q9_hal_blk_read(0, ...)` und
   prüft ihn auf Plausibilität (BytesPerSector `== Q9_BLK_SIZE`, SectorsPerCluster
   Zweierpotenz, FATSize16/RootEntryCount/NumFATs `!= 0`, Boot-Signatur `$55AA`). Bei Erfolg
-  wird die Geometrie (FAT-Start/Root-Dir-Start/Datenregion-Start/Cluster-Größe) in
-  statischen Variablen gemerkt — kein malloc, ein Q9 kennt genau einen Datenträger.
+  wird die Geometrie (FAT-Start/Root-Dir-Start/Datenregion-Start/Cluster-Größe, Anzahl
+  FAT-Kopien) in statischen Variablen gemerkt — kein malloc, ein Q9 kennt genau einen
+  Datenträger.
 - **Verdrahtung ans Gerät**: `q9_dev_init()` (device.c) ruft `q9_fat16_mount()` direkt nach
   der `/d0`-Registrierung; nur bei Erfolg wird `q9_dev_set_fm(d0, &q9_fat16_fm)` gesetzt —
   ist das Image kein FAT16-Superfloppy (z.B. leer, oder ein generisches Testimage wie in
   Test 04), bleibt `/d0` ohne File-Manager wie vor 3.3 (Rest-Pfad muss dann leer sein).
-- **Verzeichnisse lesen**: `dir_find()` durchsucht Root- oder Unterverzeichnisse Slot für
-  Slot; LFN-Einträge (Attribut `$0F`) liegen laut Spezifikation in ABsteigender
-  Sequenznummer VOR dem zugehörigen 8.3-Eintrag — die Namensteile werden dabei von hinten
-  nach vorne zu einem vollständigen Namen zusammengesetzt und sowohl gegen den LFN-Namen als
-  auch den 8.3-Namen verglichen (case-insensitiv).
-- **Cluster-Ketten**: `fat_next()` liest den nächsten Cluster aus der ersten FAT-Kopie
+- **Verzeichnisse lesen**: `dir_find()`/`dir_find_idx()` durchsuchen Root- oder
+  Unterverzeichnisse Slot für Slot; LFN-Einträge (Attribut `$0F`) liegen laut Spezifikation in
+  ABsteigender Sequenznummer VOR dem zugehörigen 8.3-Eintrag — die Namensteile werden dabei
+  von hinten nach vorne zu einem vollständigen Namen zusammengesetzt und sowohl gegen den
+  LFN-Namen als auch den 8.3-Namen verglichen (case-insensitiv). `dir_find_idx()` liefert
+  zusätzlich den Slot-Index (seit 3.4, für I$Write-Directory-Updates und I$Delete gebraucht).
+- **Cluster-Ketten lesen**: `fat_next()` liest den nächsten Cluster aus der ersten FAT-Kopie
   (16-Bit-Little-Endian-Einträge); Kettenende ist `$FFF8`–`$FFFF`. Ein einziger statischer
-  512-Byte-Sektor-Puffer (`secbuf`) reicht für alle Lesevorgänge, da Q9 nicht nebenläufig ist.
-- **I$Read/I$Seek**: routen über die neuen `q9_fm_t`-Felder `read`/`seek` (s.o.). `fat16_read`
-  folgt bei Cluster-Grenzen automatisch der Kette weiter; `fat16_seek` setzt Position und
-  passenden Cluster-Zeiger neu.
-- **Nur lesend**: `create`/`makdir`/`remove` liefern weiterhin `E$UnkSvc` — Schreiben kommt
-  in Phase 3.4.
+  512-Byte-Sektor-Puffer (`secbuf`) reicht für alle Zugriffe, da Q9 nicht nebenläufig ist.
+- **I$Read/I$Seek**: routen über die `q9_fm_t`-Felder `read`/`seek`. `fat16_read` folgt bei
+  Cluster-Grenzen automatisch der Kette weiter; `fat16_seek` setzt Position und passenden
+  Cluster-Zeiger neu.
+- **Cluster-Ketten allozieren/freigeben (3.4)**: `fat_alloc()` sucht linear ab Cluster 2 den
+  ersten freien Cluster (FAT-Eintrag `== FAT16_FREE`, `$0000`) und markiert ihn sofort als
+  Kettenende (`$FFFF`) — **in BEIDEN FAT-Kopien** (`fat_set()` schreibt immer alle
+  `numfats`-Kopien synchron, wichtig für Interop: ein Reader, der nur die zweite Kopie
+  heranzieht, sieht sonst inkonsistente Daten). `fat_free_chain()` läuft eine komplette Kette
+  ab und setzt jedes Glied in beiden Kopien auf `FAT16_FREE` zurück.
+- **I$Write (`fat16_write`)**: schreibt ab der aktuellen Position, alloziert bei Bedarf neue
+  Cluster ans Kettenende (auch den allerersten Cluster einer per I$Create angelegten, noch
+  leeren Datei), Read-Modify-Write pro Sektor (falls nur ein Teil geschrieben wird). Wächst die
+  Datei, wird danach über `dir_start`/`dir_index` (fmctx) der Directory-Eintrag im
+  Elternverzeichnis nachgezogen (Start-Cluster + neue Größe).
+- **I$Create (`fat16_create`)**: löst den Pfad bis zum Elternverzeichnis auf
+  (`resolve_parent`), validiert das letzte Element als reinen 8.3-Namen (`make_83name` — nur
+  `A-Z0-9_$`, Basis ≤8, Erweiterung ≤3, genau ein Punkt; **kein LFN-Schreiben**, Ideenspeicher/
+  ARBEITSPLAN.md), lehnt bereits vorhandene Namen ab (`E$BPNam`, OS-9-Vorbild), sucht/alloziert
+  einen freien Directory-Slot (`dir_alloc_slot` — verlängert bei Unterverzeichnissen bei Bedarf
+  die Cluster-Kette; das Root-Directory ist ein fester Bereich fester Größe und kann NICHT
+  wachsen) und schreibt einen neuen Eintrag (Attribut `ARCHIVE`, Cluster 0, Größe 0 — der erste
+  Cluster kommt beim ersten I$Write dazu).
+- **I$MakDir (`fat16_makdir`)**: wie I$Create, alloziert aber sofort einen Datencluster mit
+  Standard-`.`/`..`-Einträgen (`.` zeigt auf sich selbst, `..` auf das Elternverzeichnis,
+  `0` = Root) — Standard-FAT-Konvention, wichtig für Interop mit macOS/Windows.
+- **I$Delete (`fat16_remove`)**: sucht den Directory-Eintrag (`dir_find_idx`), gibt seine
+  komplette Cluster-Kette frei (`fat_free_chain`, beide FAT-Kopien) und markiert den Eintrag
+  als gelöscht (erstes Namensbyte `DIRENT_FREE`, `$E5` — Rest des 11-Byte-Namensfelds bleibt
+  unverändert stehen, FAT16-Konvention). Verzeichnisse werden nicht auf Leerheit geprüft.
+- **Nur der Reserve-/Boot-Sektor-Bereich wird nie angefasst** — Schreibzugriffe beschränken
+  sich auf FAT-Kopien, Directory-Bereich und Datencluster (wichtig für Interop, s.u.).
 
 **Wichtiger Seiteneffekt-Fix (3.3)**: der ältere `/d0`-Selbsttest "SS.BlkWr/SS.BlkRd
 Roundtrip" (Phase 3.1) schrieb testweise auf LBA 1 und ließ das Testmuster stehen — bei einem
 echten FAT16-Image liegt dort typischerweise die erste FAT-Kopie. Der Selbsttest sichert LBA 1
 seit 3.3 vor dem Test und stellt ihn danach wieder her, damit er ein zuvor gemountetes FAT16
 läuft nicht mehr zerstört.
+
+**Interop-Nachweis (3.4)**: das von Q9 per I$Create/I$Write/I$MakDir/I$Delete geschriebene
+Image wurde zusätzlich zur Python-Nachvalidierung (`test/06_test_fat16.py`, `post_validate()`)
+testweise mit `hdiutil attach -imagekey diskimage-class=CRawDiskImage` gemountet — macOS
+erkennt das Volume (`Q9TESTVOL`), zeigt `HELLO.TXT`/die LFN-Datei korrekt an und liest
+`NEUDIR` als echtes Verzeichnis mit funktionierenden `.`/`..`-Einträgen. Kein produktiver
+Bestandteil des Testlaufs (`hdiutil` ist nicht auf jeder Entwicklungsmaschine verfügbar) —
+die Python-Nachvalidierung bleibt der reproduzierbare, CI-taugliche Interop-Beleg.
 
 ### Globales Arbeitsverzeichnis (I$ChgDir)
 
@@ -208,10 +250,10 @@ gegen dieses Verzeichnis aufgelöst (`q9_vfs_cwd()`, vfs.c).
 
 ## Ausblick
 
-- **Phase 3.4**: FAT16 schreibend — `I$Create`/`I$MakDir`/`I$Delete` bekommen echte Semantik
-  (FAT-Ketten allozieren/freigeben, neue 8.3-Einträge; LFN-Schreiben bleibt Ideenspeicher)
+- **Phase 3.5**: F$Load komplettieren — Modul aus Datei laden (nutzt jetzt FAT16 lesend UND
+  schreibend als Fundament), braucht erste Speicherverwaltung
 - **Phase 6+**: Treiber als echte Q9-Module (Typ 2) statt einkompiliert
 
 **Erstellt**: 2026-07-03
-**Zuletzt aktualisiert**: 2026-07-04 (Phase 3.3: FAT16-File-Manager lesend an /d0, q9_fm_t um
-read/seek erweitert)
+**Zuletzt aktualisiert**: 2026-07-04 (Phase 3.4: FAT16-File-Manager schreibend — I$Create/
+I$Write/I$MakDir/I$Delete, q9_fm_t um write erweitert, Q9_FMCTX_SIZE 16 -> 24 Byte)
