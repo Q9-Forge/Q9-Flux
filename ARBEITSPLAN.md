@@ -80,6 +80,21 @@ kombinierten `q9_dev_t`?
 
 ---
 
+## 💭 Ideenspeicher (noch nicht eingeplant)
+
+Ideen, die während der Arbeit auftauchen, aber (noch) kein Teil der Planung
+sind — keine 💡-Vorschläge zur Freigabe, sondern eine reine Merkliste ohne
+Zeitdruck. Kein Status, keine Phase, kein „Wer" — schaffen es vielleicht
+irgendwann als 💡-Vorschlag in eine echte Phase, müssen aber nicht. Unterschied
+zu „⛔ Geparkt": dort stehen akute Klärungsbedarfe für laufende Arbeit, hier
+Zukunftsideen ohne Handlungsdruck.
+
+| Idee | Kontext | Warum (noch) nicht eingeplant |
+|------|---------|-------------------------------|
+| Kernel-Tabellen als Datenmodule verpacken (analog OS-9s `F$DatMod`) | docs/MODULES.md, Abschnitt 5 | Setzt das Modulsystem (Phase 2) voraus; passt nur zu read-mostly Daten, nicht zu häufig mutierenden Tabellen (Pfad/Geräte); keine MMU-Durchsetzung vorhanden (weder WASM noch aktuelles 68k-Ziel) |
+
+---
+
 ## ⛔ Geparkt / mit Andreas zu besprechen
 
 - **emsdk fehlt auf dem Desktop AF-PC**: wasm-Build/Browser-Test dort aktuell nicht
@@ -112,5 +127,6 @@ kombinierten `q9_dev_t`?
 
 **Letzte Aktualisierung**: 2026-07-03 — **Phase 1 komplett**, Syscall-Roadmap
 erstellt (docs/SYSCALL_ROADMAP.md), E$Diff-Bug gefunden + behoben (E$Differ,
-$A5). Nächstes: Phase-2-Besprechung mit Andreas (heute Abend) + Rest-MWOS-
-Abgleich (SS-Nummern, F$Time-Packung) mit den Laptop-Unterlagen.
+$A5), neuer Abschnitt „💭 Ideenspeicher" für unverbindliche Zukunftsideen
+eingeführt. Nächstes: Phase-2-Besprechung mit Andreas (heute Abend) +
+Rest-MWOS-Abgleich (SS-Nummern, F$Time-Packung) mit den Laptop-Unterlagen.
