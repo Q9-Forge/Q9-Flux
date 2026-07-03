@@ -175,21 +175,18 @@ WASM kennt keine Hardware-IRQs.
 
 ---
 
-## ⚠ Gefundener Fehler beim MWOS-Abgleich (2026-07-03)
+## ✅ Gefundener und behobener Fehler (2026-07-03)
 
 Beim Erstellen dieser Liste in `errno.h` nachgeschaut: **`E_DIFF` in `syscall.h`
-hat den falschen Wert.** Wir nutzen aktuell `0xE2` (als vorläufig markiert),
-aber laut offizieller `errno.h`:
+hatte den falschen Wert** (`0xE2`, als vorläufig markiert). Laut offizieller
+`errno.h` ist `0xE2` tatsächlich **`E_NOCHLD`** ("No Children") — der
+Fehlercode, den `F$Wait` liefert, wenn ein Prozess keine Kinder zum Warten
+hat. Das hätte in Phase 4 (F$Wait) kollidiert.
 
-- `0xE2` ist tatsächlich **`E_NOCHLD`** ("No Children") — der Fehlercode, den
-  `F$Wait` liefert, wenn ein Prozess keine Kinder zum Warten hat. Sobald
-  Phase 4 (F$Wait) kommt, würde das mit unserem `E_DIFF` kollidieren!
-- Der richtige Code für „Namen unterschiedlich" ist **`E_DIFFER` = `0xA5`**
-  ("Arguments to F$ChkNam are different" — F$CmpNam ist vermutlich der
-  Nachfolgename für das, was hier als F$ChkNam referenziert wird).
-
-**Empfehlung:** `E_DIFF` in `src/kernel/syscall.h` von `0xe2` auf `0xa5`
-korrigieren und in `E_DIFFER` umbenennen, bevor Phase 4 anfängt.
+Der richtige Code für „Namen unterschiedlich" ist **`E_DIFFER` = `0xA5`**
+("Arguments to F$ChkNam are different"). **Behoben** noch am selben Tag:
+`E_DIFF` → `E_DIFFER` (`0xa5`) in `syscall.h`, `name.c`, `kernel.c`-Selbsttest
+und `docs/SYSCALLS.md` angepasst.
 
 **Erstellt**: 2026-07-03
 **Quelle**: `M:\MWOS\PACKAGES\OS9_Professional_V3.0\DEFS\funcs.h` + `errno.h`

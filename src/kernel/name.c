@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   name.c                                                                          Ver. 1.00
+// File:   name.c                                                                          Ver. 1.10
 // Owner:  AF
 // Desc.:  Pathlist-Namensparsing nach OS-9-Regeln — Unterbau für F$PrsNam/F$CmpNam und
 //         alles Namensbasierte (I$Attach 1.6, VFS Phase 3).
@@ -11,6 +11,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-03│ 1.00 │ Initiale Version: q9_name_parse, q9_name_cmp                           │ CF
+// 26-07-03│ 1.10 │ Bugfix: E_DIFF($E2) -> E_DIFFER($A5), MWOS-verifiziert                │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "name.h"
@@ -64,7 +65,7 @@ int q9_name_parse(const char *pathlist, const char **start, uint32_t *len)
 int q9_name_cmp(const char *a, uint32_t len, const char *b)
 {
     if (len == 0) {
-        return E_DIFF;
+        return E_DIFFER;
     }
     for (uint32_t i = 0; i < len; i++) {
         char ca = a[i];
@@ -76,12 +77,12 @@ int q9_name_cmp(const char *a, uint32_t len, const char *b)
             cb -= 0x20;
         }
         if (ca != cb) {
-            return E_DIFF;
+            return E_DIFFER;
         }
     }
     return 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF name.c                                                                              Ver. 1.00
+// EOF name.c                                                                              Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

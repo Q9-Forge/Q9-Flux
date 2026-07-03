@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 1.30
+// File:   syscall.h                                                                       Ver. 1.40
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -15,6 +15,7 @@
 // 26-07-03│ 1.10 │ 1.5: E$BPNam + E$Diff (vorläufig) ergänzt                             │ CF
 // 26-07-03│ 1.20 │ 1.6: E$MNF ergänzt                                                     │ CF
 // 26-07-03│ 1.30 │ 1.8: SS.*-Statuscodes ergänzt                                          │ CF
+// 26-07-03│ 1.40 │ Bugfix: E$Diff($E2) kollidierte mit E$NoChld -> E_DIFFER($A5)         │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -80,6 +81,7 @@ typedef struct q9_regs {
 //║ ERROR CODES (= OS-9, MWOS errno.h)                                                           ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
+#define E_DIFFER  0xa5                                 /* names differ (F$CmpNam)                 */
 #define E_PTHFUL  0xc8                                 /* path table full                        */
 #define E_BPNUM   0xc9                                 /* bad path number                        */
 #define E_BMODE   0xcb                                 /* bad access mode                        */
@@ -89,9 +91,6 @@ typedef struct q9_regs {
 #define E_BPNAM   0xd7                                 /* bad path name                          */
 #define E_MNF     0xdd                                 /* module not found (unbekanntes Gerät)   */
 #define E_PARAM   0xe1                                 /* bad parameter                          */
-#define E_DIFF    0xe2                                 /* names differ (F$CmpNam) — VORLÄUFIG:   */
-                                                       /*   OS-9 setzt nur Carry; Nummer beim    */
-                                                       /*   MWOS-Abgleich prüfen (M:\MWOS)       */
 #define E_NOTRDY  0xf6                                 /* device not ready                       */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -116,5 +115,5 @@ int q9_proc_halted(void);
 #endif // Q9_SYSCALL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.h                                                                           Ver. 1.30
+// EOF syscall.h                                                                           Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

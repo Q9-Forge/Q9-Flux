@@ -53,7 +53,7 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $06 | F$Exit   | ✅ implementiert (Phase-1-Semantik: hält Proto-Prozess an) |
 | $0C | F$ID     | ✅ implementiert (liefert Proto-Prozess-ID 1) |
 | $10 | F$PrsNam | ✅ implementiert (Phase 1.5) |
-| $11 | F$CmpNam | ✅ implementiert (Phase 1.5, E$Diff-Nummer vorläufig) |
+| $11 | F$CmpNam | ✅ implementiert (Phase 1.5) |
 | $15 | F$Time   | ✅ implementiert (Phase 1.9: echte Uhrzeit via HAL) |
 | $16 | F$STime  | ✅ implementiert (Phase 1.9) |
 | $80 | I$Attach | ✅ implementiert (Phase 1.6) |
@@ -158,8 +158,7 @@ F$CmpNam vergleicht zwei Namen fester Länge, **case-insensitiv**:
 | a0       | Name 1                   |
 | a1       | Name 2                   |
 
-- Gleich → 0; verschieden → `E$Diff` ($E2, **vorläufige Nummer** — OS-9 setzt
-  nur Carry; beim MWOS-Abgleich prüfen). Wildcards: noch keine.
+- Gleich → 0; verschieden → `E$Differ` ($A5, MWOS-verifiziert). Wildcards: noch keine.
 
 ### I$GetStt ($8D) / I$SetStt ($8E) — seit Phase 1.8
 

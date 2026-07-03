@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.80
+// File:   kernel.c                                                                        Ver. 1.90
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -19,6 +19,7 @@
 // 26-07-03│ 1.60 │ 1.7: /nil im Banner + Selbsttest                                       │ CF
 // 26-07-03│ 1.70 │ 1.8: Selbsttests I$GetStt/I$SetStt                                     │ CF
 // 26-07-03│ 1.80 │ 1.9: Selbsttests F$STime/F$Time                                        │ CF
+// 26-07-03│ 1.90 │ Bugfix: F$CmpNam-Selbsttest nutzt jetzt E_DIFFER($A5)                  │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -258,7 +259,7 @@ int q9_kernel_selftest(void)
         r.d[1] = 4;
         int ok = (q9_syscall(F_CMPNAM, &r) == 0);
         r.a[1] = (void *)"trem";
-        ok = ok && (q9_syscall(F_CMPNAM, &r) == E_DIFF);
+        ok = ok && (q9_syscall(F_CMPNAM, &r) == E_DIFFER);
         checks[nchecks].name = "F$CmpNam TERM=term, TERM!=trem";
         checks[nchecks++].ok = ok;
     }
@@ -356,5 +357,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.80
+// EOF kernel.c                                                                            Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────

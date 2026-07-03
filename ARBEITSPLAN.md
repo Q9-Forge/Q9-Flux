@@ -98,9 +98,14 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
   (SS.Ready/SS.EOF), echte Uhrzeit (q9_hal_time, F$Time/F$STime, Kalender 2000–2136).
   22 Selbsttest-Checks, Tests 01–03 PASS. **Phase 1 damit abgeschlossen** (Kernel v1.80).
   Offen für MWOS-Abgleich: E$Diff-Nummer ($E2), SS-Nummern, F$Time-Packung.
+- **2026-07-03 — Syscall-Roadmap + Bugfix** ✅: docs/SYSCALL_ROADMAP.md — alle 97
+  OS-9-Syscalls (MWOS Professional V3.0) mit Status/Phase erfasst. Dabei gefunden
+  und sofort behoben: E$Diff war $E2 (hätte mit E$NoChld/F$Wait in Phase 4
+  kollidiert), korrekt lt. MWOS ist E$Differ = $A5. Kernel v1.90, Tests PASS.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 — **Phase 1 komplett** (1.4–1.9 abgearbeitet,
-alle Tests PASS). Nächstes: Phase-2-Besprechung mit Andreas (heute Abend) +
-MWOS-Abgleich (E$Diff, SS-Nummern, F$Time-Packung) mit den Laptop-Unterlagen.
+**Letzte Aktualisierung**: 2026-07-03 — **Phase 1 komplett**, Syscall-Roadmap
+erstellt (docs/SYSCALL_ROADMAP.md), E$Diff-Bug gefunden + behoben (E$Differ,
+$A5). Nächstes: Phase-2-Besprechung mit Andreas (heute Abend) + Rest-MWOS-
+Abgleich (SS-Nummern, F$Time-Packung) mit den Laptop-Unterlagen.
