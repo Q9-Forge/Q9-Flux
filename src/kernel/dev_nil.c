@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   dev_nil.c                                                                       Ver. 1.00
+// File:   dev_nil.c                                                                       Ver. 1.10
 // Owner:  AF
 // Desc.:  Null-Device /nil als internes Modul (OS-9-Vorbild: /nil). Schreiben verwirft die
 //         Daten, Lesen liefert E$EOF. Zweiter Treiber im System — beweist, dass das
@@ -12,6 +12,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-03│ 1.00 │ Initiale Version                                                       │ CF
+// 26-07-03│ 1.10 │ 1.8: getstat (SS.EOF -> E$EOF)                                         │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
@@ -66,6 +67,20 @@ static int nil_writln(q9_dev_t *dev, const uint8_t *buf, uint32_t *n)
     return 0;
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: nil_getstat
+// Desc.:    SS.EOF: /nil steht immer am Dateiende -> E$EOF. Alles andere: E$UnkSvc.
+// Call:     Treiber-Op getstat (I$GetStt)
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int nil_getstat(q9_dev_t *dev, uint32_t code, q9_regs_t *r)
+{
+    (void)dev; (void)r;
+    if (code == SS_EOF) {
+        return E_EOF;
+    }
+    return E_UNKSVC;
+}
+
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ MODULE EXPORT                                                                                ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
@@ -77,8 +92,10 @@ const q9_drv_t q9_drv_nil = {
     nil_write,
     nil_readln,
     nil_writln,
+    nil_getstat,
+    0,                                                 /* setstat: nothing to configure          */
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF dev_nil.c                                                                           Ver. 1.00
+// EOF dev_nil.c                                                                           Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

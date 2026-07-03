@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.60
+// File:   kernel.c                                                                        Ver. 1.70
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -17,6 +17,7 @@
 // 26-07-03│ 1.40 │ 1.5: Selbsttests F$PrsNam/F$CmpNam                                     │ CF
 // 26-07-03│ 1.50 │ 1.6: Selbsttests I$Attach/I$Detach                                     │ CF
 // 26-07-03│ 1.60 │ 1.7: /nil im Banner + Selbsttest                                       │ CF
+// 26-07-03│ 1.70 │ 1.8: Selbsttests I$GetStt/I$SetStt                                     │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -299,6 +300,29 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "/nil: Write verwirft, Read -> E$EOF";
         checks[nchecks++].ok = ok;
     }
+    {   /* I$GetStt: SS.Ready without input -> E$NotRdy, SS.EOF on /term -> ok */
+        q9_regs_t r = {0};
+        r.d[0] = 0;                                    /* stdin                                  */
+        r.d[1] = SS_READY;
+        int ok = (q9_syscall(I_GETSTT, &r) == E_NOTRDY);
+        r.d[1] = SS_EOF;
+        ok = ok && (q9_syscall(I_GETSTT, &r) == 0);
+        r.d[1] = 0x7f;                                 /* unsupported SS code                    */
+        ok = ok && (q9_syscall(I_GETSTT, &r) == E_UNKSVC);
+        checks[nchecks].name = "I$GetStt SS.Ready/SS.EOF auf /term";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* I$GetStt SS.EOF on /nil reports E$EOF; I$SetStt has no codes yet */
+        q9_regs_t r = {0};
+        int path = q9_path_open("/nil", Q9_MODE_READ);
+        r.d[0] = (uint32_t)path;
+        r.d[1] = SS_EOF;
+        int ok = (path == 3 && q9_syscall(I_GETSTT, &r) == E_EOF);
+        ok = ok && (q9_syscall(I_SETSTT, &r) == E_UNKSVC);
+        ok = ok && (q9_path_close(3) == 0);
+        checks[nchecks].name = "I$GetStt /nil SS.EOF -> E$EOF, SetStt -> E$UnkSvc";
+        checks[nchecks++].ok = ok;
+    }
 
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
@@ -313,5 +337,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.60
+// EOF kernel.c                                                                            Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────

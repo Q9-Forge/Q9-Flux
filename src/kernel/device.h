@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.h                                                                        Ver. 1.20
+// File:   device.h                                                                        Ver. 1.30
 // Owner:  AF
 // Desc.:  Q9 Device-Modell (OS-9-Vorbild: IOMan). Gerätetabelle + Pfadtabelle im Kernel,
 //         Treiber sind interne Module mit einheitlichen I/O-Operationen (q9_drv_t).
@@ -14,6 +14,7 @@
 // 26-07-03│ 1.00 │ Initiale Version: Geräte-/Pfadtabelle, Treiber-Ops, Modi               │ CF
 // 26-07-03│ 1.10 │ 1.4: q9_path_dup ergänzt                                               │ CF
 // 26-07-03│ 1.20 │ 1.6: q9_dev_attach/detach (namensbasiert)                              │ CF
+// 26-07-03│ 1.30 │ 1.8: getstat/setstat-Ops im Treiber-Interface                          │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVICE_H
 #define Q9_DEVICE_H
@@ -35,6 +36,8 @@ typedef struct q9_dev q9_dev_t;
 //  Alle I/O-Ops: *n ist in/out (max. Bytes rein, tatsächliche Bytes raus).
 //  Rückgabe 0 = Erfolg, sonst OS-9-Fehlercode (z.B. E$NotRdy).
 
+struct q9_regs;                                        /* fwd (syscall.h)                        */
+
 typedef struct q9_drv {
     const char *name;                                  /* driver module name                     */
     int (*init)  (q9_dev_t *dev);                      /* attach static storage, init hardware   */
@@ -42,6 +45,8 @@ typedef struct q9_drv {
     int (*write) (q9_dev_t *dev, const uint8_t *buf, uint32_t *n);  /* raw/cooked per driver    */
     int (*readln)(q9_dev_t *dev, uint8_t *buf, uint32_t *n);        /* line incl. CR, edited    */
     int (*writln)(q9_dev_t *dev, const uint8_t *buf, uint32_t *n);  /* stops after CR/LF        */
+    int (*getstat)(q9_dev_t *dev, uint32_t code, struct q9_regs *r); /* SS.* — NULL = E$UnkSvc  */
+    int (*setstat)(q9_dev_t *dev, uint32_t code, struct q9_regs *r); /* SS.* — NULL = E$UnkSvc  */
 } q9_drv_t;
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -134,5 +139,5 @@ q9_path_t *q9_path_get(uint32_t path);
 #endif // Q9_DEVICE_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.h                                                                            Ver. 1.20
+// EOF device.h                                                                            Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

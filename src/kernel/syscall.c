@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.40
+// File:   syscall.c                                                                       Ver. 1.50
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -15,6 +15,7 @@
 // 26-07-03│ 1.20 │ 1.4: I$Dup + I$Close                                                   │ CF
 // 26-07-03│ 1.30 │ 1.5: F$PrsNam + F$CmpNam                                               │ CF
 // 26-07-03│ 1.40 │ 1.6: I$Attach + I$Detach                                               │ CF
+// 26-07-03│ 1.50 │ 1.8: I$GetStt + I$SetStt                                               │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -152,6 +153,20 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     case I_CLOSE:                                      /* d0.w path                              */
         return q9_path_close(r->d[0] & 0xffffu);
 
+    case I_GETSTT:                                     /* d0.w path, d1.w SS code, Rest je Code  */
+    case I_SETSTT: {
+        q9_path_t *p = q9_path_get(r->d[0] & 0xffffu);
+        int (*op)(q9_dev_t *, uint32_t, q9_regs_t *);
+        if (!p) {
+            return E_BPNUM;
+        }
+        op = (func == I_GETSTT) ? p->dev->drv->getstat : p->dev->drv->setstat;
+        if (!op) {
+            return E_UNKSVC;
+        }
+        return op(p->dev, r->d[1] & 0xffffu, r);
+    }
+
     case I_ATTACH: {                                   /* d0.b mode, a0 devname -> a2 device     */
         q9_dev_t *dev;
         int       err;
@@ -226,5 +241,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.40
+// EOF syscall.c                                                                           Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

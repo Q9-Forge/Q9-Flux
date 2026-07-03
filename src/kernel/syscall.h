@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 1.20
+// File:   syscall.h                                                                       Ver. 1.30
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -14,6 +14,7 @@
 // 26-07-03│ 1.00 │ Initiale Version: Registersatz, F$/I$-Nummern, Fehlercodes             │ CF
 // 26-07-03│ 1.10 │ 1.5: E$BPNam + E$Diff (vorläufig) ergänzt                             │ CF
 // 26-07-03│ 1.20 │ 1.6: E$MNF ergänzt                                                     │ CF
+// 26-07-03│ 1.30 │ 1.8: SS.*-Statuscodes ergänzt                                          │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -67,6 +68,15 @@ typedef struct q9_regs {
 #define I_CLOSE   0x8f                                 /* I$Close:  Close Path                   */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+//║ STATUS CODES für I$GetStt/I$SetStt (= OS-9 SS.*; Nummern beim MWOS-Abgleich prüfen)          ║
+//╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+
+#define SS_OPT    0x00                                 /* SS.Opt:   path options (später)        */
+#define SS_READY  0x01                                 /* SS.Ready: data ready?                  */
+#define SS_SIZE   0x02                                 /* SS.Size:  file size (später, VFS)      */
+#define SS_EOF    0x06                                 /* SS.EOF:   test for end of file         */
+
+//╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ ERROR CODES (= OS-9, MWOS errno.h)                                                           ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
@@ -106,5 +116,5 @@ int q9_proc_halted(void);
 #endif // Q9_SYSCALL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.h                                                                           Ver. 1.20
+// EOF syscall.h                                                                           Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

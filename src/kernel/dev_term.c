@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   dev_term.c                                                                      Ver. 1.00
+// File:   dev_term.c                                                                      Ver. 1.10
 // Owner:  AF
 // Desc.:  Konsolen-Treiber /term als internes Modul (OS-9-Vorbild: SCF + scf-Treiber).
 //         Zeilen-Editierung (Echo, Backspace), CR -> CR+LF beim Schreiben, Roh-Lesen ohne Echo.
@@ -12,6 +12,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: read/write/readln/writln, Zeilenpuffer im Storage    │ CF
+// 26-07-03│ 1.10 │ 1.8: getstat (SS.Ready, SS.EOF)                                        │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -179,6 +180,33 @@ static int term_writln(q9_dev_t *dev, const uint8_t *buf, uint32_t *n)
     return 0;
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: term_getstat
+// Desc.:    SS.Ready: pollt Eingabe in den Zeilenpuffer; d1.l = gesammelte Zeichen,
+//           E$NotRdy wenn keine. SS.EOF: Terminal ist nie am Dateiende -> 0.
+// Call:     Treiber-Op getstat (I$GetStt)
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int term_getstat(q9_dev_t *dev, uint32_t code, q9_regs_t *r)
+{
+    term_state_t *st = (term_state_t *)dev->storage;
+
+    switch (code) {
+    case SS_READY:
+        poll_line(st);
+        if (st->linelen == 0 && !st->line_done) {
+            return E_NOTRDY;
+        }
+        r->d[1] = st->linelen;
+        return 0;
+
+    case SS_EOF:
+        return 0;                                      /* a terminal never reaches EOF           */
+
+    default:
+        return E_UNKSVC;
+    }
+}
+
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ MODULE EXPORT                                                                                ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
@@ -190,8 +218,10 @@ const q9_drv_t q9_drv_term = {
     term_write,
     term_readln,
     term_writln,
+    term_getstat,
+    0,                                                 /* setstat: no SS.* codes yet             */
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF dev_term.c                                                                          Ver. 1.00
+// EOF dev_term.c                                                                          Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

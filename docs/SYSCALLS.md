@@ -63,6 +63,8 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $8C | I$WritLn | ✅ implementiert |
 | $82 | I$Dup    | ✅ implementiert (Phase 1.4) |
 | $84 | I$Open   | geplant (Phase 3, VFS) |
+| $8D | I$GetStt | ✅ Grundgerüst (Phase 1.8: SS.Ready, SS.EOF) |
+| $8E | I$SetStt | ✅ Grundgerüst (Phase 1.8: noch keine SS-Codes) |
 | $8F | I$Close  | ✅ implementiert (Phase 1.4; Pfadnamen-Open kommt in Phase 3) |
 
 Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
@@ -157,6 +159,24 @@ F$CmpNam vergleicht zwei Namen fester Länge, **case-insensitiv**:
 
 - Gleich → 0; verschieden → `E$Diff` ($E2, **vorläufige Nummer** — OS-9 setzt
   nur Carry; beim MWOS-Abgleich prüfen). Wildcards: noch keine.
+
+### I$GetStt ($8D) / I$SetStt ($8E) — seit Phase 1.8
+
+| Register | Input                       | Output (je nach Code)   |
+|----------|-----------------------------|-------------------------|
+| d0.w     | Pfadnummer                  | —                       |
+| d1.w     | Status-Code (SS.*)          | SS.Ready: Zeichen im Eingabepuffer |
+
+Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
+
+| Code | Name     | Gerät | Verhalten |
+|------|----------|-------|-----------|
+| $01  | SS.Ready | /term | pollt Eingabe; d1.l = gesammelte Zeichen, sonst `E$NotRdy` — der saubere Weg zu prüfen, ob Eingabe ansteht |
+| $06  | SS.EOF   | /term | nie am Dateiende → 0 |
+| $06  | SS.EOF   | /nil  | immer am Dateiende → `E$EOF` |
+
+- Unbekannte Codes bzw. Treiber ohne getstat/setstat-Op → `E$UnkSvc`.
+- I$SetStt hat noch keine Codes (SS.Opt für Pfadoptionen kommt später).
 
 ### F$Exit ($06)
 
