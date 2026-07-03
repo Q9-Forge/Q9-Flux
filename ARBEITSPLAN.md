@@ -76,7 +76,7 @@ echter Datei) bzw. Phase 4 (Prozess-Stacks/Heaps).
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 2.1 | Modul-Header + CRC32-Routine im Kernel | 🟢 | Claudia | Entwurf aus PROJECT.md/docs/MODULES.md wird beim Implementieren von 2.3a live finalisiert, keine separate Vorab-Spezifikation |
+| 2.1 | Modul-Header + CRC32-Routine im Kernel | ✅ | Claudia | src/kernel/module.h/.c neu: q9_modhdr_t (28 Byte, #pragma pack, Offsets exakt wie PROJECT.md), q9_crc32 (bitweise CRC-32/ISO-HDLC, kein Table, kein malloc). Selbsttest: Referenzwert "123456789" -> $CBF43926. make test PASS, warnungsfrei |
 | 2.3a | Suchfunktion: ROM-Image-Blob nach Sync-Bytes durchsuchen, nach Fund um ModuleSize zum nächsten Modul springen | 🟢 | Claudia | Testmodule: zur Laufzeit im Selbsttest gebaut (eigene CRC32-Routine berechnet die CRC selbst — testet beides zugleich), plus kleines statisches Test-ROM-Image (gültiges Modul / kaputte CRC / kein Sync als Negativtests) |
 | 2.3b | Validierung: Sync/Größe plausibilisieren, CRC32 nachrechnen | 🟢 | Claudia | Zwei-Stufen-Check (Header-Parity vor CRC) wie bei OS-9 bewusst NICHT übernommen — Q9-Module sind klein genug |
 | 2.3c | Bekanntmachen: Directory-Eintrag anlegen, Namenskollisions-/Revision-Regel (höhere Revision gewinnt, bei Gleichstand bleibt das etablierte Modul) | 🟢 | Claudia | Directory als statisches Array (kein malloc im Kernel, wie devtab/pathtab) |
@@ -120,6 +120,14 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-03 — Phase 2.1 (Modul-Header + CRC32)** ✅: `src/kernel/module.h` neu (q9_modhdr_t,
+  28 Byte via `#pragma pack(push,1)`, Offsets exakt wie PROJECT.md-Entwurf: Sync/HeaderSize/
+  ModuleSize/NameOffset/Type/Language/Attribute/Revision/ExecOffset/DataSize/CRC32; Type-/Language-/
+  Attribute-Konstanten aus PROJECT.md übernommen). `src/kernel/module.c` neu: `q9_crc32` — bitweise
+  CRC-32/ISO-HDLC (Poly $EDB88320 reflektiert, Init/Final $FFFFFFFF, wie ZIP/Ethernet), bewusst ohne
+  Tabelle (kein malloc im Kernel, Q9-Module klein genug). Selbsttest-Check gegen den bekannten
+  Referenzwert für "123456789" ($CBF43926). Makefile KSRC/HDRS ergänzt. `make test` PASS,
+  warnungsfrei. **Nächster Schritt: 2.3a** (Suchfunktion im ROM-Image-Blob).
 - **2026-07-03 — Phase 1.10 (POSIX-HAL)** ✅: `src/hal/posix/hal_posix.c` neu (termios
   raw+nonblocking statt conio, clock_gettime statt GetTickCount64, sonst identisch zur
   Windows-HAL: Disk-Image, localtime). Makefile: `native`-Target waehlt HAL automatisch
@@ -153,8 +161,6 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 1.10 (POSIX-HAL)
-abgeschlossen.** Q9 baut jetzt auch auf macOS/Linux, `make test` PASS,
-warnungsfrei. Damit ist die Voraussetzung fuer den autonomen Betrieb
-(docs/AUTONOMIE.md) erfuellt. Naechster Schritt: 2.1/2.3a implementieren
-(Modulsystem, siehe Phase-2-Besprechung 2026-07-03 abends weiter oben).
+**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 2.1 (Modul-Header +
+CRC32) abgeschlossen.** module.h/.c neu, `make test` PASS, warnungsfrei.
+Naechster Schritt: 2.3a (Suchfunktion im ROM-Image-Blob nach Sync-Bytes).

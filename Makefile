@@ -14,6 +14,7 @@
 # 26-07-03│ 1.10 │ 1.3: device.c + dev_term.c, Test 03                                     │ CF
 # 26-07-03│ 1.20 │ 1.10: POSIX-HAL (macOS/Linux), native-Target waehlt HAL per OS,          │ CF
 #         │      │ PYTHON-Erkennung (python3 vs. python) fuer test-Target                  │
+# 26-07-03│ 1.30 │ 2.1: module.c/.h (Modul-Header + CRC32)                                 │ CF
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -23,9 +24,9 @@ PYTHON  = $(shell command -v python3 2>/dev/null || command -v python)
 
 BUILD   = build
 KSRC    = src/kernel/kernel.c src/kernel/syscall.c src/kernel/device.c src/kernel/dev_term.c \
-          src/kernel/dev_nil.c src/kernel/name.c
+          src/kernel/dev_nil.c src/kernel/name.c src/kernel/module.c
 HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h src/kernel/device.h \
-          src/kernel/name.h
+          src/kernel/name.h src/kernel/module.h
 
 # native-HAL nach Betriebssystem waehlen: Windows (w64devkit setzt $OS=Windows_NT) = conio,
 # alles andere (macOS/Linux) = POSIX/termios.
