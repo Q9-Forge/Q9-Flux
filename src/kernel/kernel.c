@@ -21,10 +21,12 @@
 // 26-07-03│ 1.80 │ 1.9: Selbsttests F$STime/F$Time                                        │ CF
 // 26-07-03│ 1.90 │ Bugfix: F$CmpNam-Selbsttest nutzt jetzt E_DIFFER($A5)                  │ CF
 // 26-07-03│ 2.00 │ Bugfix: F$STime/F$Time-Selbsttest an d0=Zeit/d1=Datum angepasst        │ CF
+// 26-07-03│ 2.10 │ 2.1: Selbsttest q9_crc32 (Referenzwert "123456789")                    │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
+#include "module.h"
 #include "syscall.h"
 #include "kernel.h"
 
@@ -139,7 +141,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[24];
+    } checks[25];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -343,6 +345,11 @@ int q9_kernel_selftest(void)
         b.d[1] = (2026u << 16) | (13u << 8) | 3u;      /* Monat 13 im Datum (jetzt d1)           */
         checks[nchecks].name = "F$STime Monat 13 -> E$Param";
         checks[nchecks++].ok = (q9_syscall(F_STIME, &b) == E_PARAM);
+    }
+    {   /* q9_crc32: Standard-Referenzwert fuer CRC-32/ISO-HDLC ueber "123456789" */
+        static const uint8_t ref[] = "123456789";
+        checks[nchecks].name = "q9_crc32 Referenzwert (123456789 -> $CBF43926)";
+        checks[nchecks++].ok = (q9_crc32(ref, sizeof(ref) - 1) == 0xCBF43926u);
     }
 
     for (int i = 0; i < nchecks; i++) {
