@@ -117,6 +117,27 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 | 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | 🟢 | Claudia | Nagelprobe Phase 2 + 3 zusammen; braucht erste Speicherverwaltung (Modul-Puffer) — Umfang beim Design klären |
 | 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | 🟢 | Claudia | kann nach hinten rutschen, nativ reicht zum Entwickeln von 3.1–3.5 |
 
+### Phase 4 — Prozesse (Vorschläge, 2026-07-03 spät mit Andreas besprochen)
+
+Grundsatzentscheidung **E8** (PROJECT.md): **Step-Modell statt Stack-Umschaltung** —
+WASM kennt keinen Stack-Wechsel, also verwaltet der Scheduler Prozess-**Zustände**
+(Active/Waiting/Sleeping) und ruft pro `q9_kernel_step()`-Tick den nächsten aktiven
+Prozess als Step-Funktion. Blockieren = Zustandswechsel + Weckgrund, nie ein
+eingefrorener Stack. Ausführung ist pro Language-Byte austauschbar (intern/C =
+Step-Funktion auf dem Kernel-Stack; 68k später = Musashi-Kontext; WASM = Instanz) —
+die emulierten Prozesse werden also die einfachsten. F$Fork ist OS-9-semantisch
+(neuer Prozess aus Modul, kein Unix-Fork) und baut direkt auf dem Modul-Directory
+aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
+(F$AllPD & Co.) bleiben 🚫 wie in docs/SYSCALL_ROADMAP.md aussortiert.
+
+| # | Schritt | Status | Wer | Notizen |
+|---|---------|--------|-----|---------|
+| 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | 💡 | — | Kern von allem; REPL wird erster echter Prozess |
+| 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | 💡 | — | F$Exit existiert als Stub aus 1.2 — bekommt jetzt echte Semantik |
+| 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | 💡 | — | danach fühlt sich I$ReadLn blockierend an, ohne je einen Stack einzufrieren |
+| 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | 💡 | — | Scheduler bleibt Round-Robin, Priorität erstmal nur Datenfeld — Aging lohnt erst bei echter Konkurrenz |
+| 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | 💡 | — | konzeptionell unabhängig vom Kern, bewusst eigener Schritt |
+
 ---
 
 ## 💭 Ideenspeicher (noch nicht eingeplant)
