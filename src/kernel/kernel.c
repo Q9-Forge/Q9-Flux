@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 2.70
+// File:   kernel.c                                                                        Ver. 2.80
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -31,6 +31,12 @@
 // 26-07-04│ 2.70 │ 3.4: Selbsttests FAT16 schreibend (I$Create/I$Write/I$MakDir/         │ CF
 //         │      │ I$Delete); I$Create/MakDir/Delete-Test ohne fm jetzt gegen /term      │
 //         │      │ statt Geruest-Erwartung (echte Semantik ab 3.4)                       │
+// 26-07-04│ 2.80 │ 3.5: Selbsttests F$Load (Modul per I$Create/I$Write nach /d0          │ CF
+//         │      │ geschrieben, F$Load laedt+validiert+registriert, F$Link findet es     │
+//         │      │ danach ueber den Namen, F$UnLink baut beide Referenzen sauber ab,      │
+//         │      │ fehlende Datei -> E$PNNF, kaputter Sync -> E$BMHP); Testdateien werden  │
+//         │      │ danach per I$Delete wieder entfernt (haelt den FAT16-Cluster-Zustand    │
+//         │      │ fuer die 3.4-Nachvalidierung in test/06 unveraendert)                  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -797,6 +803,114 @@ int q9_kernel_selftest(void)
                     ok = ok && (q9_path_close(r2.d[0]) == 0);
                     checks[nchecks].name = "FAT16: I$MakDir /d0/NEUDIR + I$Open darauf";
                     checks[nchecks++].ok = ok;
+                }
+
+                /* 3.5: F$Load — Modul aus einer echten Datei (statt nur ROM-Image) laden, validieren,
+                   registrieren. Q9 schreibt sich das Testmodul selbst per I$Create/I$Write auf /d0
+                   (Nagelprobe Phase 2 + 3 zusammen: derselbe FAT16-Schreibpfad wie oben, diesmal mit
+                   echtem Modul-Byte-Inhalt statt Text). Bewusst VOR dem I$Delete von /d0/NEU.TXT
+                   platziert (statt danach): dir_alloc_slot (fat16.c) vergibt neue Directory-Slots
+                   zuerst an bereits geloeschte/freie Eintraege — liefe dieser Block NACH dem
+                   NEU.TXT-Delete, wuerde I$Create(/d0/LOADMOD.BIN) genau dessen frisch freigewordenen
+                   Slot (und Cluster 6) wiederverwenden und damit den DIRENT_FREE-Marker ueberschreiben,
+                   den die Python-Nachvalidierung in test/06_test_fat16.py (post_validate) anschliessend
+                   erwartet. Aufraeumen per I$Delete am Ende dieses Blocks stellt den Zustand vor dem
+                   Block wieder her (eigene Slots/Cluster wieder frei), sodass der NEU.TXT-Test danach
+                   unveraendert funktioniert. */
+                {
+                    static uint8_t modbuf[128];
+                    build_module(modbuf, "loadmod", Q9_MOD_PRGRM, Q9_MOD_M68K, 1);
+                    uint32_t modlen = ((const q9_modhdr_t *)modbuf)->modsize;
+
+                    q9_regs_t cr = {0};
+                    cr.d[0] = Q9_MODE_WRITE;
+                    cr.a[0] = (void *)"/d0/LOADMOD.BIN";
+                    ok = (q9_syscall(I_CREATE, &cr) == 0);
+                    int pathmod = ok ? (int)cr.d[0] : -1;
+                    if (ok) {
+                        q9_regs_t wr = {0};
+                        wr.d[0] = (uint32_t)pathmod;
+                        wr.d[1] = modlen;
+                        wr.a[0] = (void *)modbuf;
+                        ok = ok && (q9_syscall(I_WRITE, &wr) == 0) && (wr.d[1] == modlen);
+                        ok = ok && (q9_path_close((uint32_t)pathmod) == 0);
+                    }
+                    checks[nchecks].name = "F$Load: Testmodul nach /d0/LOADMOD.BIN geschrieben";
+                    checks[nchecks++].ok = ok;
+
+                    q9_regs_t ld = {0};
+                    ld.a[0] = (void *)"/d0/LOADMOD.BIN";
+                    ok = (q9_syscall(F_LOAD, &ld) == 0);
+                    ok = ok && (ld.a[1] != 0) && (ld.d[0] == 1);      /* Revision 1                */
+                    ok = ok && (((const q9_modhdr_t *)ld.a[1])->execoff == Q9_MOD_HDRSIZE);
+                    ok = ok && ((const uint8_t *)ld.a[2] == (const uint8_t *)ld.a[1] + Q9_MOD_HDRSIZE);
+                    checks[nchecks].name = "F$Load: /d0/LOADMOD.BIN geladen, validiert, registriert";
+                    checks[nchecks++].ok = ok;
+
+                    /* Nagelprobe: das per F$Load registrierte Modul ist jetzt ganz normal per
+                       F$Link ueber seinen Namen ansprechbar — genau wie ein ROM-Modul. */
+                    q9_regs_t lk = {0};
+                    static const char loadmodname[] = "loadmod";
+                    lk.a[0] = (void *)loadmodname;
+                    lk.d[1] = Q9_MOD_PRGRM;
+                    ok = (q9_syscall(F_LINK, &lk) == 0);
+                    ok = ok && (lk.a[1] == ld.a[1]) && (lk.d[0] == 1);
+                    checks[nchecks].name = "F$Load + F$Link: dasselbe Modul ueber den Namen erreichbar";
+                    checks[nchecks++].ok = ok;
+
+                    q9_regs_t un1 = {0};
+                    un1.a[1] = ld.a[1];
+                    ok = (q9_syscall(F_UNLINK, &un1) == 0);           /* F$Load-Referenz senken     */
+                    q9_regs_t un2 = {0};
+                    un2.a[1] = lk.a[1];
+                    ok = ok && (q9_syscall(F_UNLINK, &un2) == 0);     /* F$Link-Referenz senken     */
+                    checks[nchecks].name = "F$UnLink: beide Referenzen auf loadmod sauber abgebaut";
+                    checks[nchecks++].ok = ok;
+
+                    q9_regs_t missing = {0};
+                    missing.a[0] = (void *)"/d0/NICHTDA.MOD";
+                    checks[nchecks].name = "F$Load: fehlende Datei -> E$PNNF";
+                    checks[nchecks++].ok = (q9_syscall(F_LOAD, &missing) == E_PNNF);
+
+                    /* Ungueltiges Modul (kaputte Sync-Bytes) -> E$BMHP, kein Directory-Eintrag */
+                    {
+                        static uint8_t badbuf[64];
+                        build_module(badbuf, "badmod", Q9_MOD_PRGRM, Q9_MOD_M68K, 1);
+                        badbuf[0] = 0x00;                              /* Sync kaputt -> Header ungueltig */
+                        uint32_t badlen = ((const q9_modhdr_t *)badbuf)->modsize;
+
+                        q9_regs_t bcr = {0};
+                        bcr.d[0] = Q9_MODE_WRITE;
+                        bcr.a[0] = (void *)"/d0/BADMOD.BIN";
+                        int bok = (q9_syscall(I_CREATE, &bcr) == 0);
+                        int pathbad = bok ? (int)bcr.d[0] : -1;
+                        if (bok) {
+                            q9_regs_t bwr = {0};
+                            bwr.d[0] = (uint32_t)pathbad;
+                            bwr.d[1] = badlen;
+                            bwr.a[0] = (void *)badbuf;
+                            bok = bok && (q9_syscall(I_WRITE, &bwr) == 0);
+                            bok = bok && (q9_path_close((uint32_t)pathbad) == 0);
+                        }
+                        q9_regs_t bld = {0};
+                        bld.a[0] = (void *)"/d0/BADMOD.BIN";
+                        bok = bok && (q9_syscall(F_LOAD, &bld) == E_BMHP);
+                        checks[nchecks].name = "F$Load: kaputter Sync -> E$BMHP, kein Directory-Eintrag";
+                        checks[nchecks++].ok = bok;
+
+                        q9_regs_t bdel = {0};
+                        bdel.a[0] = (void *)"/d0/BADMOD.BIN";
+                        q9_syscall(I_DELETE, &bdel);           /* Cluster/Directory-Slot wieder frei  */
+                    }
+
+                    /* Aufraeumen: /d0/LOADMOD.BIN wieder loeschen, damit dieser Block denselben
+                       FAT16-Zustand (freie Cluster/Directory-Slots) hinterlaesst wie er ihn vorfand —
+                       die Python-Nachvalidierung in test/06_test_fat16.py prueft feste Cluster-Nummern
+                       fuer NEU.TXT/NEUDIR und wuerde sonst durch die zusaetzlichen Dateien hier
+                       verfaelscht. */
+                    q9_regs_t delmod = {0};
+                    delmod.a[0] = (void *)"/d0/LOADMOD.BIN";
+                    q9_syscall(I_DELETE, &delmod);
                 }
 
                 {

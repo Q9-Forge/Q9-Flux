@@ -250,10 +250,9 @@ gegen dieses Verzeichnis aufgelöst (`q9_vfs_cwd()`, vfs.c).
 
 ## Ausblick
 
-- **Phase 3.5**: F$Load komplettieren — Modul aus Datei laden (nutzt jetzt FAT16 lesend UND
-  schreibend als Fundament), braucht erste Speicherverwaltung
 - **Phase 6+**: Treiber als echte Q9-Module (Typ 2) statt einkompiliert
 
 **Erstellt**: 2026-07-03
-**Zuletzt aktualisiert**: 2026-07-04 (Phase 3.4: FAT16-File-Manager schreibend — I$Create/
-I$Write/I$MakDir/I$Delete, q9_fm_t um write erweitert, Q9_FMCTX_SIZE 16 -> 24 Byte)
+**Zuletzt aktualisiert**: 2026-07-04 (Phase 3.5: F$Load über die VFS-Schicht — Modul aus einer
+Datei hinter einem beliebigen File-Manager laden, statischer Load-Puffer-Pool in module.c;
+Details siehe docs/SYSCALLS.md)

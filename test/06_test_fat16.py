@@ -1,7 +1,7 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   06_test_fat16.py                                                                Ver. 1.10
+# File:   06_test_fat16.py                                                                Ver. 1.20
 # Owner:  AF
-# Desc.:  FAT16-Test (Phase 3.3/3.4): baut von Hand ein minimales FAT16-Superfloppy-Image
+# Desc.:  FAT16-Test (Phase 3.3/3.4/3.5): baut von Hand ein minimales FAT16-Superfloppy-Image
 #         (Boot-Sektor/BPB + 2 FAT-Kopien + Root-Directory + Datenregion) nach oeffentlich
 #         dokumentiertem Layout, schreibt es als q9disk.img und laesst Q9 im Selbsttest daraus
 #         lesen: eine 8.3-Datei, eine Datei mit langem Namen (LFN-Eintraege), eine Datei in einem
@@ -17,6 +17,15 @@
 #         Ersatz fuer "am Mac mounten" (ARBEITSPLAN.md 3.4-Notiz), weil er dieselbe Interop-Aussage
 #         belegt: ein voellig unabhaengiger Leser versteht das von Q9 geschriebene Rohformat.
 #
+#         Seit 3.5 (F$Load) prueft derselbe Selbsttest-Lauf zusaetzlich, dass Q9 ein Modul aus
+#         einer echten Datei auf /d0 laden kann (Nagelprobe Phase 2 + 3 zusammen): der Kernel-
+#         Selbsttest (kernel.c) schreibt sich das Testmodul selbst per I$Create/I$Write, ruft
+#         F$Load auf und raeumt seine Testdateien danach selbst wieder per I$Delete auf — bewusst
+#         NICHT als zweiter `--selftest`-Prozesslauf in einem eigenen Testskript, weil ein erneuter
+#         Lauf gegen dasselbe (schon veraenderte) Image nicht idempotent waere (z.B. I$MakDir
+#         /d0/NEUDIR ein zweites Mal wuerde einen doppelten Directory-Eintrag anlegen) — alle
+#         F$Load-Checks laufen deshalb in DIESEM EINEN Selbsttest-Aufruf mit.
+#
 # Call:   python test/06_test_fat16.py   (aus dem Projekt-Root, nach "make native")
 #
 # Edition History
@@ -26,6 +35,8 @@
 # 26-07-04│ 1.00 │ Initiale Version                                                        │ CF
 # 26-07-04│ 1.10 │ 3.4: Checks fuer I$Create/I$Write/I$MakDir/I$Delete + post_validate()   │ CF
 #         │      │ (unabhaengige Python-Nachvalidierung des von Q9 geschriebenen Images)   │ CF
+# 26-07-04│ 1.20 │ 3.5: Checks fuer F$Load (Modul aus Datei laden/validieren/registrieren, │ CF
+#         │      │ F$Link danach ueber den Namen, F$UnLink, Fehlerfaelle E$PNNF/E$BMHP)    │ CF
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 import os
 import struct
@@ -230,6 +241,18 @@ def main() -> int:
         "FAT16: I$Create LFN-Name -> E$BPNam":
             "[ok] FAT16: I$Create mit LFN-pflichtigem Namen -> E$BPNam" in result.stdout,
         "FAT16: I$MakDir + I$Open":       "[ok] FAT16: I$MakDir /d0/NEUDIR + I$Open darauf" in result.stdout,
+        "F$Load: Testmodul geschrieben":
+            "[ok] F$Load: Testmodul nach /d0/LOADMOD.BIN geschrieben" in result.stdout,
+        "F$Load: geladen/validiert/registriert":
+            "[ok] F$Load: /d0/LOADMOD.BIN geladen, validiert, registriert" in result.stdout,
+        "F$Load + F$Link: ueber den Namen erreichbar":
+            "[ok] F$Load + F$Link: dasselbe Modul ueber den Namen erreichbar" in result.stdout,
+        "F$UnLink: beide Referenzen (F$Load+F$Link) abgebaut":
+            "[ok] F$UnLink: beide Referenzen auf loadmod sauber abgebaut" in result.stdout,
+        "F$Load: fehlende Datei -> E$PNNF":
+            "[ok] F$Load: fehlende Datei -> E$PNNF" in result.stdout,
+        "F$Load: kaputter Sync -> E$BMHP":
+            "[ok] F$Load: kaputter Sync -> E$BMHP, kein Directory-Eintrag" in result.stdout,
         "FAT16: I$Delete + E$PNNF":       "[ok] FAT16: I$Delete /d0/NEU.TXT, danach E$PNNF" in result.stdout,
         "SYSCALL TEST PASS":               "SYSCALL TEST PASS" in result.stdout,
     }
@@ -309,6 +332,20 @@ def post_validate(img_path: str):
         msgs.append("[FEHLER] Python-Nachvalidierung: kein geloeschter NEU.TXT-Eintrag im Root gefunden")
         ok = False
 
+    # 3.5: F$Load-Testdateien (/d0/LOADMOD.BIN, /d0/BADMOD.BIN) raeumt der Kernel-Selbsttest selbst
+    # per I$Delete wieder auf (kernel.c) — hier unabhaengig bestaetigt, dass davon kein AKTIVER
+    # (nicht geloeschter) Directory-Eintrag mehr im Root steht, sonst wuerden sie bei einem
+    # naechsten Testlauf Directory-Slots/Cluster dauerhaft binden.
+    leftover = [e for e in root_entries
+                if e["name"][0:1] != b"\xe5" and e["name"][0:1] != b"\x00" and
+                ((e["name"] == b"LOADMOD " and e["ext"] == b"BIN") or
+                 (e["name"] == b"BADMOD  " and e["ext"] == b"BIN"))]
+    if not leftover:
+        msgs.append("[ok] Python-Nachvalidierung: F$Load-Testdateien (LOADMOD.BIN/BADMOD.BIN) sauber aufgeraeumt")
+    else:
+        msgs.append(f"[FEHLER] Python-Nachvalidierung: F$Load-Testdateien nicht aufgeraeumt: {leftover}")
+        ok = False
+
     if neudir is not None:
         msgs.append(f"[ok] Python-Nachvalidierung: NEUDIR im Root als Verzeichnis gefunden (Cluster {neudir['clus']})")
         data_start = root_start + root_sectors
@@ -347,5 +384,5 @@ if __name__ == "__main__":
     sys.exit(main())
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF 06_test_fat16.py                                                                    Ver. 1.10
+# EOF 06_test_fat16.py                                                                    Ver. 1.20
 #─────────────────────────────────────────────────────────────────────────────────────────────────

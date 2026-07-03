@@ -146,6 +146,26 @@ Genau das Pendant zu Q9s künftigem Modul-Directory (Phase 2.3, ARBEITSPLAN).
   linkt automatisch das erste. → **Direktes Vorbild für Q9s „ROM-Image"-Idee**
   (Phase 2.3: „Module aus eingebautem ROM-Image").
 
+  **Q9-Umsetzung (Phase 3.5)**: `q9_mod_load` (module.c) liest **genau EIN**
+  Modul pro Datei (kein Mehrfach-Modul-Handling wie beim echten F$Load — passt
+  zur Phase-2-Entscheidung "Modul-Gruppen erstmal nicht", siehe Ideenspeicher
+  oben). Die Datei wird über die VFS-Schicht geöffnet (`q9_vfs_open`, braucht
+  einen File-Manager hinter dem Gerät, z.B. FAT16 an `/d0`) und **komplett** in
+  einen statischen **Load-Puffer-Pool** kopiert — anders als beim ROM-Image
+  (in-place referenziert, siehe Phase-2-Intro in ARBEITSPLAN.md) liegen
+  FAT16-Cluster nicht zusammenhängend im Speicher, eine Datei kann also nicht
+  ohne Kopie referenziert werden. Das ist die **erste echte Speicherverwaltung
+  im Kernel** (kein malloc, hartes Projektprinzip): `Q9_MOD_LOADBUF_COUNT` = 4
+  statische Puffer à `Q9_MOD_LOADBUF_SIZE` = 4096 Byte (module.h) — reicht für
+  die aktuell winzigen Q9-Module (Test-Module < 200 Byte) mit deutlicher Luft
+  nach oben; Dimensionierung ist eine reine Konstante, bei Bedarf ohne
+  Strukturänderung hochsetzbar. Jeder Directory-Eintrag merkt sich, ob und
+  welcher Load-Puffer dahintersteckt (`loadbuf`-Feld, -1 = ROM/eingebaut);
+  fällt der Link-Count eines aus einer Datei geladenen Moduls auf 0, gibt
+  `q9_mod_unlink` den Puffer sofort frei (anders als ein ROM-Modul, das bei
+  Link-Count 0 registriert bleibt) — sonst wäre der kleine Pool nach wenigen
+  Load/Unlink-Zyklen erschöpft.
+
 ### Namenskollision & Revision-Regel
 
 Beim Eintragen eines neuen Moduls (`F$VModul`) wird die Directory zuerst nach

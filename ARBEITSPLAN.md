@@ -114,7 +114,7 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 | 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | ✅ | Claudia | `src/kernel/vfs.c/.h` neu: `q9_fm_t` (open/create/makdir/remove, restpath-String statt OS-9-Pfaddeskriptor-Internas — schmal genug für einen künftigen 68k-Manager-Adapter). `q9_dev_t.fm` (device.h, NULL = kein Dateisystem) + `q9_path_t.fmctx[16]` (Datei-Kontext pro Pfad, kein malloc). `q9_vfs_open` löst relative Pfade gegen ein globales `cwd` auf, trennt Gerät/Rest per F$PrsNam, routet an `dev->fm->open` oder (kein fm) ans alte `q9_path_open`-Verhalten (Rest muss leer sein, sonst `E$PNNF` neu — MWOS-verifiziert). `I$Open`/`I$ChgDir` im Dispatcher (syscall.c) verdrahtet; `I$Create`/`I$MakDir`/`I$Delete` bewusst nur Gerüst (`E$UnkSvc`, echte Semantik erst 3.4). Kein FAT16 hier (kommt separat in 3.3/3.4). 5 neue Selbsttest-Checks (Test-File-Manager im Selbsttest beweist Routing) + neues `test/05_test_vfs.py`. docs/SYSCALLS.md + SYSCALL_ROADMAP.md + DEVICES.md aktualisiert. `make test` PASS, warnungsfrei. wasm ungetestet (emsdk fehlt weiterhin lokal). |
 | 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | ✅ | Claudia | `src/kernel/fat16.c/.h` neu — Boot-Sektor (BPB) plausibilisieren, Root-Dir + Unterverzeichnisse durchsuchen (8.3 UND LFN, Namensteile rückwärts zusammengesetzt), FAT16-Cluster-Ketten folgen ($FFF8-$FFFF = Ende), Datei-Kontext `fat16_ctx_t` (16 Byte, passt exakt in `Q9_FMCTX_SIZE`: start_cluster/cur_cluster/pos/size). **Design-Entscheidung**: `q9_fm_t` (vfs.h) um `read`/`seek`-Funktionszeiger erweitert (zusätzlich zu open/create/makdir/remove aus 3.2) — I$Read/I$Seek brauchen den Datei-Kontext im Pfad, das kann nur der File-Manager interpretieren, nicht der Block-Treiber. Dispatcher (syscall.c): I$Read routet auf `fm->read()`, wenn ein File-Manager mit read-Op hinter dem Pfad steht (sonst wie bisher an den Treiber); I$Seek ist komplett neu und liefert ohne passenden File-Manager `E$UnkSvc`. Verdrahtung: `q9_dev_init()` (device.c) versucht `q9_fat16_mount()` direkt nach der `/d0`-Registrierung und setzt `q9_dev_set_fm(d0, &q9_fat16_fm)` NUR bei erkanntem FAT16-Superfloppy (Boot-Sektor-Plausibilisierung: BytesPerSector/SectorsPerCluster/FATSize16/RootEntryCount/Boot-Signatur $55AA) — sonst bleibt `/d0` wie bisher ohne Dateisystem. **Nebenbei gefundener und behobener Bug**: der ältere 3.1-Selbsttest (SS.BlkWr/SS.BlkRd-Roundtrip auf LBA 1) überschrieb dauerhaft Testdaten auf LBA 1 — bei einem echten FAT16-Image liegt dort typischerweise die erste FAT-Kopie, der Roundtrip hätte ein gemountetes Dateisystem im Selbsttest zerstört. Jetzt sichert/stellt der Test LBA 1 wieder her. Ebenso mussten die 3.2-VFS-Selbsttests (Test-File-Manager) den *vorherigen* File-Manager von `/d0` merken und zurücksetzen statt hart auf NULL zu setzen (sonst hätte der VFS-Test den produktiven FAT16-Manager aus dem Selbsttest herausgerissen). 5 neue Selbsttest-Checks (nur aktiv, wenn `/d0` beim Boot als FAT16 erkannt wurde — sonst kein FEHLER, sondern stiller Skip) + neues `test/06_test_fat16.py` (baut ein FAT16-Superfloppy-Image komplett per Python-Stdlib von Hand: Boot-Sektor/BPB, 2 FAT-Kopien, Root-Directory mit einer 8.3-Datei, einer LFN-Datei mit langem Namen und einem Unterverzeichnis samt verschachtelter Datei; kein externes Tool wie hdiutil/newfs_msdos nötig). docs/SYSCALLS.md (I$Read-Routing, neuer I$Seek-Abschnitt, Funktionsnummern-Tabelle), docs/SYSCALL_ROADMAP.md, docs/DEVICES.md (q9_fm_t-Erweiterung, fmctx-FAT16-Layout-Tabelle, neuer FAT16-File-Manager-Abschnitt) aktualisiert. `make test` PASS, warnungsfrei (jetzt 6 Testskripte). wasm ungetestet (emsdk fehlt weiterhin lokal, siehe Geparkt). **Nächster Schritt: 3.4** (FAT16 schreibend) — diese Session macht damit NICHT weiter. |
 | 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | ✅ | Claudia | fat16.c/.h: I$Create/I$MakDir/I$Delete/I$Write echt implementiert, FAT-Ketten allozieren/freigeben (beide FAT-Kopien synchron), nur 8.3-Namen (E$BPNam bei LFN-Bedarf/Duplikat). Details siehe „Erledigt" unten |
-| 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | 🟢 | Claudia | Nagelprobe Phase 2 + 3 zusammen; braucht erste Speicherverwaltung (Modul-Puffer) — Umfang beim Design klären |
+| 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | ✅ | Claudia | q9_mod_load (module.c) — statischer Load-Puffer-Pool (4x4096 Byte, kein malloc), Directory-Eintraege merken Puffer-Herkunft, automatische Freigabe bei Link-Count 0. Details siehe „Erledigt" unten |
 | 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | 🟢 | Claudia | kann nach hinten rutschen, nativ reicht zum Entwickeln von 3.1–3.5 |
 
 ### Phase 4 — Prozesse (Vorschläge, 2026-07-03 spät mit Andreas besprochen)
@@ -172,6 +172,35 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 3.5 (F$Load)** ✅: `q9_mod_load` (module.c/.h) — Modul aus einer echten
+  Datei laden (statt nur ROM-Image), ueber die VFS-Schicht (`q9_vfs_open`, braucht einen File-
+  Manager hinter dem Geraet, z.B. FAT16 an `/d0`). Erste Speicherverwaltung im Kernel: statischer
+  Load-Puffer-Pool (`Q9_MOD_LOADBUF_COUNT` = 4 Slots à `Q9_MOD_LOADBUF_SIZE` = 4096 Byte, kein
+  malloc). **Design-Entscheidung** (Umfang war laut Notiz zu klaeren): die ganze Datei WIRD das
+  Modul — anders als beim ROM-Image gibt es keine Sync-Suche, der Header MUSS bei Byte 0 stehen
+  (deshalb bekam `q9_mod_validate` zusaetzlich eine explizite Sync-Pruefung, die vorher implizit
+  durch den vorgeschalteten ROM-Scan abgedeckt war). Q9 nimmt bewusst den vollen Dateipfad
+  entgegen statt (wie echtes OS-9) eine Execution-Search-List aus Verzeichnissen zu durchsuchen —
+  Q9 hat noch keine Suchliste (kommt fruehestens mit Prozessen/Shell in Phase 4). `mod_register_ex`
+  (gemeinsamer Unterbau von `q9_mod_register` und `q9_mod_load`) merkt sich in der Modul-Directory
+  zusaetzlich die Puffer-Herkunft (ROM/eingebaut vs. Load-Puffer-Index) — **Lebensdauer-
+  Unterschied**: ein ROM-Modul bleibt bei Link-Count 0 registriert (kostet ja keinen Speicher),
+  ein per F$Load geladenes Modul wird bei Link-Count 0 SOFORT aus der Directory entfernt und sein
+  Puffer freigegeben (`q9_mod_unlink` erweitert) — sonst waere der kleine Puffer-Pool nach wenigen
+  Load/Unlink-Zyklen erschoepft. Kein Ghost/Sticky-Attribut ausgewertet (Ideenspeicher). Neuer
+  Fehlercode `E$NoRAM` ($ED, MWOS-verifiziert) fuer vollen Puffer-Pool/zu grosse Datei. Dispatcher
+  (syscall.c): neuer Case F_LOAD, liefert wie F$Link a1=Header/a2=Einsprung/d0.b=Revision.
+  Selbsttest (kernel.c) schreibt sich ein Testmodul selbst per I$Create/I$Write auf `/d0/LOADMOD.BIN`
+  (Nagelprobe Phase 2+3 zusammen), laedt es per F$Load, prueft F$Link auf denselben Header, baut
+  beide Referenzen per F$UnLink ab, sowie Fehlerfaelle (fehlende Datei -> E$PNNF, kaputte Sync-
+  Bytes -> E$BMHP). Testdateien werden am Ende selbst wieder geloescht (`test/06_test_fat16.py`
+  hat nur 16 Root-Slots/8 Cluster; die Python-Nachvalidierung dort prueft feste Cluster-Nummern
+  fuer NEU.TXT/NEUDIR und wuerde sonst durch liegengebliebene Load-Testdateien verfaelscht — die
+  F$Load-Checks laufen deshalb bewusst VOR dem NEU.TXT-Delete, s. Kommentar in kernel.c). docs/
+  SYSCALLS.md (neuer F$Load-Abschnitt), docs/SYSCALL_ROADMAP.md, docs/MODULES.md (Load-Puffer-
+  Pool-Abschnitt unter F$Load), docs/DEVICES.md aktualisiert. `make test` PASS, warnungsfrei
+  (6 Testskripte, mehrfach wiederholt zur Determinismus-Pruefung). wasm ungetestet (emsdk fehlt
+  lokal weiterhin, siehe Geparkt). **Naechster Ready-Schritt: 3.6** (wasm-HAL OPFS).
 - **2026-07-04 — Phase 3.4 (FAT16 schreibend)** ✅: `fat16.c/.h` um I$Create/I$MakDir/I$Delete
   und einen echten `fat16_write` erweitert (vorher Gerüste seit 3.2). Neue Helfer: `fat_alloc`
   (freien Cluster linear ab 2 suchen, als EOC markieren), `fat_set`/`fat_free_chain` (FAT-Eintrag
@@ -349,16 +378,21 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 (autonomer Lauf) — **Phase 3.4 (FAT16 schreibend)
-abgeschlossen**: `src/kernel/fat16.c/.h` um I$Create/I$MakDir/I$Delete + echtes I$Write
-erweitert (FAT-Ketten allozieren/freigeben in beiden FAT-Kopien, Directory-Slots
-suchen/anlegen/löschen, nur 8.3-Namen). Dispatcher (syscall.c) routet die drei Syscalls jetzt
-echt auf den File-Manager statt `E$UnkSvc`. `make test` PASS, warnungsfrei (6 Testskripte, alle
-Checks grün inkl. Python-Nachvalidierung des Disk-Images). wasm ungetestet (emsdk fehlt lokal).
-Gegentest zusätzlich mit `hdiutil attach -imagekey diskimage-class=CRawDiskImage` + `diskutil
-mount` durchgeführt: macOS erkennt und mountet das von Q9 geschriebene Image, `NEUDIR` erscheint
-als echtes Verzeichnis, sauber wieder ausgehängt (`diskutil eject`). Nächster Ready-Schritt:
-**3.5** (F$Load) oder **3.6** (wasm-HAL OPFS).
+**Letzte Aktualisierung**: 2026-07-04 (autonomer Lauf) — **Phase 3.5 (F$Load) abgeschlossen**:
+`q9_mod_load` (module.c/.h) lädt ein Modul aus einer echten Datei über die VFS-Schicht (statt nur
+ROM-Image) — erste Speicherverwaltung im Kernel (statischer Load-Puffer-Pool, 4×4096 Byte, kein
+malloc), automatische Freigabe bei Link-Count 0 (anders als ROM-Module). Dispatcher (syscall.c)
+neuer Case F$Load, liefert wie F$Link a1=Header/a2=Einsprung/d0.b=Revision. `q9_mod_validate`
+bekam eine explizite Sync-Prüfung (F$Load hat keine vorgeschaltete ROM-Scan-Suche). `make test`
+PASS, warnungsfrei (6 Testskripte). wasm ungetestet (emsdk fehlt lokal). Nächster Ready-Schritt:
+**3.6** (wasm-HAL OPFS).
+Davor: **Phase 3.4 (FAT16 schreibend) abgeschlossen**: `src/kernel/fat16.c/.h` um I$Create/
+I$MakDir/I$Delete + echtes I$Write erweitert (FAT-Ketten allozieren/freigeben in beiden
+FAT-Kopien, Directory-Slots suchen/anlegen/löschen, nur 8.3-Namen). Dispatcher (syscall.c) routet
+die drei Syscalls jetzt echt auf den File-Manager statt `E$UnkSvc`. Gegentest zusätzlich mit
+`hdiutil attach -imagekey diskimage-class=CRawDiskImage` + `diskutil mount` durchgeführt: macOS
+erkennt und mountet das von Q9 geschriebene Image, `NEUDIR` erscheint als echtes Verzeichnis,
+sauber wieder ausgehängt (`diskutil eject`).
 Davor: **Phase 3.3 (FAT16 lesend) abgeschlossen**: `src/kernel/fat16.c/.h` (Boot-Sektor/Root-Dir/
 Cluster-Ketten, 8.3+LFN-Namen, File-Manager an `/d0` nur bei erkanntem FAT16-Superfloppy),
 `q9_fm_t` um `read`/`seek` erweitert, `I$Read` routet auf den File-Manager, `I$Seek` neu im

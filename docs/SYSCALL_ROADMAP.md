@@ -47,9 +47,9 @@ Herzstück von Phase 2 (siehe PROJECT.md).
 | # | Name | Beschreibung | Status | Notiz |
 |---|------|--------------|--------|-------|
 | $00 | F$Link | Modul verknüpfen (aus Directory) | ✅ | Phase 2.3d, Directory aus 2.3c |
-| $02 | F$UnLink | Modul lösen | ✅ | Phase 2.3d |
+| $02 | F$UnLink | Modul lösen | ✅ | Phase 2.3d; seit 3.5 gibt sie F$Load-Puffer bei Link=0 frei |
 | $1D | F$UnLoad | Modul per Name lösen | 🟢 Phase 2 | Komfortvariante von F$UnLink |
-| $01 | F$Load | Modul aus Datei laden | 🟢 Phase 2/3 | erst mit VFS voll nutzbar |
+| $01 | F$Load | Modul aus Datei laden | ✅ | Phase 3.5: q9_mod_load, statischer Load-Puffer-Pool (4x4096 Byte) |
 | $17 | F$CRC | CRC erzeugen | 🟢 Phase 2 | für Modul-Header, in `q9mod` mitgedacht (PROJECT.md) |
 | $26 | F$SetCRC | Modul-Header + CRC setzen | 🟢 Phase 2 | evtl. nur in `q9mod`-Tool statt Kernel-Syscall |
 | $2E | F$VModul | Modul validieren (Header/CRC) | 🟢 Phase 2 | Loader-Baustein |

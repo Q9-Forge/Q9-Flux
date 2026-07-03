@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 1.70
+// File:   syscall.h                                                                       Ver. 1.90
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -21,6 +21,7 @@
 // 26-07-04│ 1.70 │ 3.2: E$PNNF ergänzt (VFS: Pfad-Routing/I$Open/I$ChgDir)               │ CF
 // 26-07-04│ 1.80 │ 3.4: I$Write jetzt echt (FAT16-Routing); E$DirFul auch fuer volle     │ CF
 //         │      │ FAT16-Directorys wiederverwendet (kein neuer Code noetig, MWOS-Wert)   │
+// 26-07-04│ 1.90 │ 3.5: E$NoRAM ergaenzt (F$Load: Modul-Puffer-Pool voll/Datei zu gross) │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -105,6 +106,8 @@ typedef struct q9_regs {
 #define E_BMCRC   0xe8                                 /* bad module CRC (2.3b)                  */
 #define E_BMHP    0xec                                 /* bad module header (2.3b, keine echte   */
                                                         /*   Parity-Pruefung — Q9 macht das nicht) */
+#define E_NORAM   0xed                                 /* no RAM available (3.5: Load-Puffer-    */
+                                                        /*   Pool voll/Datei zu gross)             */
 #define E_NOTRDY  0xf6                                 /* device not ready                       */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -129,5 +132,5 @@ int q9_proc_halted(void);
 #endif // Q9_SYSCALL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.h                                                                           Ver. 1.70
+// EOF syscall.h                                                                           Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────

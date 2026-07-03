@@ -1,15 +1,16 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   module.h                                                                        Ver. 1.30
+// File:   module.h                                                                        Ver. 1.40
 // Owner:  AF
 // Desc.:  Q9-Modul-Header (Phase 2, Entwurf aus PROJECT.md/docs/MODULES.md) + CRC32-Routine +
-//         ROM-Image-Suche/Validierung + Modul-Directory (Bekanntmachen) + F$Link/F$UnLink-
+//         ROM-Image-Suche/Validierung + Modul-Directory (Bekanntmachen) + F$Link/F$UnLink/F$Load-
 //         Unterbau. Konzepttreu zu OS-9, aber NICHT binärkompatibel (Entscheidung E2).
 //         Boot-Pipeline (docs/MODULES.md): Suchen (2.3a) -> Validieren (2.3b) ->
-//         Bekanntmachen (2.3c) -> Link/Unlink (2.3d).
+//         Bekanntmachen (2.3c) -> Link/Unlink (2.3d) -> Load aus Datei (3.5).
 //
 // Call:   crc = q9_crc32(data, len); hdr = q9_mod_scan_first(rom, romlen);
 //         err = q9_mod_validate(rom, romlen, hdr); err = q9_mod_register(hdr);
 //         err = q9_mod_link("name", type, lang, &hdr); err = q9_mod_unlink(hdr)
+//         err = q9_mod_load("/d0/DRIVER.MOD", &hdr)
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -19,6 +20,10 @@
 // 26-07-03│ 1.10 │ 2.3a: q9_mod_scan_first/next (ROM-Image-Suche nach Sync-Bytes)         │ CF
 // 26-07-03│ 1.20 │ 2.3b: q9_mod_validate (Groesse/Nameoffset/CRC32)                       │ CF
 // 26-07-03│ 1.30 │ 2.3c+d: Modul-Directory (q9_mod_register/find) + F$Link/UnLink-Unterbau│ CF
+// 26-07-04│ 1.40 │ 3.5: F$Load-Unterbau (q9_mod_load) — Modul aus Datei statt nur ROM-    │ CF
+//         │      │ Image. Erste Speicherverwaltung im Kernel: statischer Load-Puffer-Pool │
+//         │      │ (Q9_MOD_LOADBUF_COUNT Slots, kein malloc, Design-Entscheidung siehe    │
+//         │      │ ARBEITSPLAN.md Schritt 3.5)                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_MODULE_H
 #define Q9_MODULE_H
@@ -28,6 +33,15 @@
 #define Q9_MOD_SYNC0   0x51                                /* 'Q' — Modul-Sync-Byte 0             */
 #define Q9_MOD_SYNC1   0x39                                /* '9' — Modul-Sync-Byte 1             */
 #define Q9_MOD_HDRSIZE 0x1C                                /* Header-Groesse in Bytes             */
+
+/* F$Load (3.5): statischer Puffer-Pool fuer aus Datei geladene Module (kein malloc im Kernel,
+   wie ueberall sonst in Q9). Q9_MOD_LOADBUF_COUNT begrenzt, wie viele Module gleichzeitig aus
+   einer Datei geladen sein duerfen (Ideenspeicher, falls das mal knapp wird); Q9_MOD_LOADBUF_SIZE
+   begrenzt die maximale Dateigroesse pro geladenem Modul — beides bewusst klein gehalten, Q9-
+   Module sind winzig (Test-Module < 100 Byte). Ueberschreitet eine Datei die Groesse oder sind
+   alle Slots belegt -> E$NoRAM ($ED, MWOS-verifiziert). */
+#define Q9_MOD_LOADBUF_COUNT 4
+#define Q9_MOD_LOADBUF_SIZE  4096
 
 /* Type ($0C) — was das Modul ist (siehe PROJECT.md) */
 #define Q9_MOD_PRGRM   1                                   /* Programm-Modul                      */
@@ -149,8 +163,28 @@ int q9_mod_link(const char *name, uint8_t type, uint8_t lang, const q9_modhdr_t 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_mod_unlink(const q9_modhdr_t *hdr);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_mod_load
+// Desc.:    F$Load-Unterbau (3.5): oeffnet "pathlist" ueber die VFS-Schicht (q9_vfs_open, braucht
+//           einen File-Manager hinter dem Geraet, z.B. FAT16 an /d0), liest die Datei komplett in
+//           einen freien Load-Puffer, validiert sie als Q9-Modul (q9_mod_validate — Header MUSS
+//           bei Byte 0 der Datei stehen, anders als beim ROM-Image gibt es hier keine Sync-Suche:
+//           die ganze Datei IST ein Modul), traegt sie in die Modul-Directory ein (q9_mod_register)
+//           und erhoeht den Link-Count wie F$Link. Abweichend von OS-9 (das eine Suchliste aus
+//           Verzeichnissen durchsucht und nur den Modulnamen entgegennimmt) nimmt Q9 bewusst einen
+//           vollen Pfadnamen zur Datei entgegen — Q9 hat noch keine Execution-Search-List (kommt
+//           erst mit Prozessen/Shell in Phase 4, Ideenspeicher). E$NoRAM, wenn kein Load-Puffer
+//           frei ist oder die Datei nicht hineinpasst; E$BMHP/E$BMCRC bei ungueltigem Modul;
+//           sonst Fehler von q9_vfs_open/I$Read. Bei Namenskollision mit hoeherer/gleicher
+//           Revision eines bereits registrierten Moduls (ROM oder anderer Load-Puffer) gewinnt wie
+//           bei q9_mod_register das etablierte Modul — *out zeigt dann auf DESSEN Header, der
+//           eigene Load-Puffer wird sofort wieder freigegeben.
+// Call:     err = q9_mod_load("/d0/HELLO.MOD", &hdr)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_mod_load(const char *pathlist, const q9_modhdr_t **out);
+
 #endif // Q9_MODULE_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF module.h                                                                            Ver. 1.30
+// EOF module.h                                                                            Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
