@@ -139,6 +139,7 @@ Tests in `test/` (01_test_..., PASS/FAIL, standalone).
 | E5 | Kein WASM-Interpreter auf 68k | Performance; wasm2c+vbcc als Weg zu nativem Code |
 | E6 | CPU-Emulation im Browser via Web Worker | UI-Thread bleibt frei; auch nötig wegen Timer-Drosselung in versteckten Tabs |
 | E7 | Syscall-Nummern, Fehlercodes und Registerkonventionen = OS-9 (Quelle: MWOS funcs.h/errno.h); virtueller Registersatz im 68k-Layout (d0-d7/a0-a7), Spez. in docs/SYSCALLS.md | OS-9-Software (68k+6809) mechanisch abbildbar, Runtimes werden dünne Register-Mapper |
+| E8 | Prozessmodell = Step-Modell ohne Stack-Umschaltung (2026-07-03): Scheduler verwaltet Zustände (Active/Waiting/Sleeping) und ruft pro Tick den nächsten aktiven Prozess als Step-Funktion; Blockieren = Zustandswechsel, kein eingefrorener Stack. Prozess-Ausführung pro Language-Byte austauschbar: intern/C = Step-Funktion auf dem Kernel-Stack (kein eigener Stack nötig), 68k später = Musashi-CPU-Kontext, WASM = Instanz | WASM erlaubt keine Stack-Umschaltung (Asyncify zu teuer/komplex); konsequente Fortsetzung des nicht-blockierenden q9_kernel_step()-Designs aus 0.2; interne C-Prozesse müssen dafür kooperativ in Häppchen geschrieben werden (kein blockierendes while(1)) |
 
 ## ❓ Offene Entscheidungen
 
