@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.c                                                                        Ver. 1.10
+// File:   device.c                                                                        Ver. 1.20
 // Owner:  AF
 // Desc.:  Q9 Device-Modell — Geräte- und Pfadtabelle (OS-9-Vorbild: IOMan). Registriert die
 //         internen Treiber-Module und verwaltet offene Pfade. Kein malloc, alles statisch.
@@ -12,9 +12,11 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: Tabellen, open/close/get, /term auf Pfaden 0/1/2     │ CF
 // 26-07-03│ 1.10 │ 1.4: q9_path_dup (niedrigste freie Nummer, OS-9-Semantik)              │ CF
+// 26-07-03│ 1.20 │ 1.6: q9_dev_attach/detach ueber Pathlist-Namen                         │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
+#include "name.h"
 #include "syscall.h"
 
 extern const q9_drv_t q9_drv_term;                     /* internal driver modules (dev_term.c)   */
@@ -37,6 +39,15 @@ static int str_eq(const char *a, const char *b)
         b++;
     }
     return *a == *b;
+}
+
+static uint32_t str_len(const char *s)
+{
+    uint32_t n = 0;
+    while (s[n]) {
+        n++;
+    }
+    return n;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -95,6 +106,51 @@ q9_dev_t *q9_dev_find(const char *name)
         }
     }
     return 0;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_dev_attach
+// Desc.:    Gerät per Pathlist-Name suchen ("/term" oder "term", case-insensitiv) und
+//           Link-Count erhöhen. 0 = ok, E$BPNam = ungültiger Name, E$MNF = unbekannt.
+// Call:     err = q9_dev_attach("/term", &dev)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_dev_attach(const char *pathlist, q9_dev_t **out)
+{
+    const char *nm;
+    uint32_t    len;
+    int         err = q9_name_parse(pathlist, &nm, &len);
+
+    if (err != 0) {
+        return err;
+    }
+    for (int i = 0; i < Q9_NDEVS; i++) {
+        if (devtab[i].drv && str_len(devtab[i].name) == len &&
+            q9_name_cmp(nm, len, devtab[i].name) == 0) {
+            devtab[i].links++;
+            *out = &devtab[i];
+            return 0;
+        }
+    }
+    return E_MNF;                                      /* no device descriptor of that name      */
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_dev_detach
+// Desc.:    Per q9_dev_attach geholtes Gerät freigeben (Link-Count runter).
+//           E$Param, wenn der Zeiger kein gültiger Gerätetabellen-Eintrag ist.
+// Call:     err = q9_dev_detach(dev)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_dev_detach(q9_dev_t *dev)
+{
+    for (int i = 0; i < Q9_NDEVS; i++) {
+        if (dev == &devtab[i] && devtab[i].drv) {
+            if (devtab[i].links > 0) {
+                devtab[i].links--;
+            }
+            return 0;
+        }
+    }
+    return E_PARAM;
 }
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
@@ -179,5 +235,5 @@ q9_path_t *q9_path_get(uint32_t path)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.c                                                                            Ver. 1.10
+// EOF device.c                                                                            Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

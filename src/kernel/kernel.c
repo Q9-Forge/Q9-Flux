@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.40
+// File:   kernel.c                                                                        Ver. 1.50
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -15,6 +15,7 @@
 // 26-07-03│ 1.20 │ 1.3: q9_dev_init() beim Boot, Selbsttests für Device-Modell            │ CF
 // 26-07-03│ 1.30 │ 1.4: Selbsttests I$Dup/I$Close                                         │ CF
 // 26-07-03│ 1.40 │ 1.5: Selbsttests F$PrsNam/F$CmpNam                                     │ CF
+// 26-07-03│ 1.50 │ 1.6: Selbsttests I$Attach/I$Detach                                     │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -258,6 +259,30 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "F$CmpNam TERM=term, TERM!=trem";
         checks[nchecks++].ok = ok;
     }
+    {   /* I$Attach finds /term by pathlist name and bumps the link count */
+        q9_regs_t  r = {0};
+        q9_dev_t  *term  = q9_dev_find("term");
+        uint8_t    links = term ? term->links : 0;
+        r.a[0] = (void *)"/TERM";                      /* case-insensitive, leading slash        */
+        int ok = (q9_syscall(I_ATTACH, &r) == 0 &&
+                  (q9_dev_t *)r.a[2] == term && term->links == links + 1);
+        checks[nchecks].name = "I$Attach /TERM -> Geraet term";
+        checks[nchecks++].ok = ok;
+
+        q9_regs_t d = {0};
+        d.a[2] = r.a[2];
+        ok = (q9_syscall(I_DETACH, &d) == 0 && term && term->links == links);
+        d.a[2] = (void *)&d;                           /* not a device table entry               */
+        ok = ok && (q9_syscall(I_DETACH, &d) == E_PARAM);
+        checks[nchecks].name = "I$Detach gibt frei, Fremdzeiger -> E$Param";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* unknown device name is rejected */
+        q9_regs_t r = {0};
+        r.a[0] = (void *)"/disk0";
+        checks[nchecks].name = "I$Attach /disk0 -> E$MNF";
+        checks[nchecks++].ok = (q9_syscall(I_ATTACH, &r) == E_MNF);
+    }
 
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
@@ -272,5 +297,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.40
+// EOF kernel.c                                                                            Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

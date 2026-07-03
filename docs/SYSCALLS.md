@@ -55,6 +55,8 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $10 | F$PrsNam | ✅ implementiert (Phase 1.5) |
 | $11 | F$CmpNam | ✅ implementiert (Phase 1.5, E$Diff-Nummer vorläufig) |
 | $15 | F$Time   | ✅ provisorisch (siehe Abweichungen) |
+| $80 | I$Attach | ✅ implementiert (Phase 1.6) |
+| $81 | I$Detach | ✅ implementiert (Phase 1.6) |
 | $89 | I$Read   | ✅ implementiert |
 | $8A | I$Write  | ✅ implementiert |
 | $8B | I$ReadLn | ✅ implementiert |
@@ -104,6 +106,20 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 
 - I$WritLn schreibt bis einschließlich CR (oder LF) oder bis d1 erreicht ist;
   CR wird auf der Konsole als CR+LF ausgegeben.
+
+### I$Attach ($80) / I$Detach ($81) — seit Phase 1.6
+
+| Register | I$Attach Input             | I$Attach Output | I$Detach Input |
+|----------|----------------------------|-----------------|----------------|
+| d0.b     | Zugriffsmodus (noch ignoriert) | —           | —              |
+| a0       | Gerätename ("/term")       | —               | —              |
+| a2       | —                          | Gerätetabellen-Eintrag | Gerätetabellen-Eintrag |
+
+- Name wird per F$PrsNam-Logik geparst (führender `/` optional, case-insensitiv).
+- Unbekanntes Gerät → `E$MNF` (wie OS-9: kein Descriptor-Modul gefunden);
+  ungültiger Name → `E$BPNam`; ungültiger a2 bei Detach → `E$Param`.
+- Attach/Detach zählen den Link-Count des Geräts hoch/runter. Da Treiber noch
+  einkompiliert sind (bis Phase 2), wird bei Link-Count 0 noch nichts entladen.
 
 ### I$Dup ($82) / I$Close ($8F) — seit Phase 1.4
 

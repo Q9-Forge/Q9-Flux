@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.30
+// File:   syscall.c                                                                       Ver. 1.40
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -14,6 +14,7 @@
 // 26-07-03│ 1.10 │ 1.3: I/O über Device-Modell/Pfadtabelle, Mode-Check (E$BMode)          │ CF
 // 26-07-03│ 1.20 │ 1.4: I$Dup + I$Close                                                   │ CF
 // 26-07-03│ 1.30 │ 1.5: F$PrsNam + F$CmpNam                                               │ CF
+// 26-07-03│ 1.40 │ 1.6: I$Attach + I$Detach                                               │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -151,6 +152,23 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     case I_CLOSE:                                      /* d0.w path                              */
         return q9_path_close(r->d[0] & 0xffffu);
 
+    case I_ATTACH: {                                   /* d0.b mode, a0 devname -> a2 device     */
+        q9_dev_t *dev;
+        int       err;
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        err = q9_dev_attach((const char *)r->a[0], &dev);
+        if (err != 0) {
+            return err;
+        }
+        r->a[2] = dev;
+        return 0;
+    }
+
+    case I_DETACH:                                     /* a2 device                              */
+        return q9_dev_detach((q9_dev_t *)r->a[2]);
+
     case F_PRSNAM: {                                   /* a0 pathlist -> a0 name, a1 past-end,   */
         const char *start;                             /*   d1.w len, d0.b delimiter char        */
         uint32_t    len;
@@ -208,5 +226,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.30
+// EOF syscall.c                                                                           Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

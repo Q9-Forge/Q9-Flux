@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.h                                                                        Ver. 1.10
+// File:   device.h                                                                        Ver. 1.20
 // Owner:  AF
 // Desc.:  Q9 Device-Modell (OS-9-Vorbild: IOMan). Gerätetabelle + Pfadtabelle im Kernel,
 //         Treiber sind interne Module mit einheitlichen I/O-Operationen (q9_drv_t).
@@ -13,6 +13,7 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: Geräte-/Pfadtabelle, Treiber-Ops, Modi               │ CF
 // 26-07-03│ 1.10 │ 1.4: q9_path_dup ergänzt                                               │ CF
+// 26-07-03│ 1.20 │ 1.6: q9_dev_attach/detach (namensbasiert)                              │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVICE_H
 #define Q9_DEVICE_H
@@ -83,6 +84,23 @@ int q9_dev_init(void);
 q9_dev_t *q9_dev_find(const char *name);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_dev_attach
+// Desc.:    Sucht ein Gerät per Pathlist-Name ("/term" oder "term", case-insensitiv) und erhöht
+//           seinen Link-Count. 0 = ok (*out gesetzt), E$BPNam = ungültiger Name,
+//           E$MNF = Gerät unbekannt.
+// Call:     err = q9_dev_attach("/term", &dev)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_dev_attach(const char *pathlist, q9_dev_t **out);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_dev_detach
+// Desc.:    Gibt ein per q9_dev_attach geholtes Gerät wieder frei (Link-Count runter).
+//           E$Param, wenn der Zeiger kein gültiger Gerätetabellen-Eintrag ist.
+// Call:     err = q9_dev_detach(dev)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_dev_detach(q9_dev_t *dev);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_path_open
 // Desc.:    Öffnet einen Pfad auf ein Gerät. Rückgabe >= 0: Pfadnummer,
 //           < 0: negierter OS-9-Fehlercode (-E$PthFul, -E$NotRdy = Gerät unbekannt).
@@ -115,5 +133,5 @@ q9_path_t *q9_path_get(uint32_t path);
 #endif // Q9_DEVICE_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.h                                                                            Ver. 1.10
+// EOF device.h                                                                            Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
