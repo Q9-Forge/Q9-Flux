@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.10
+// File:   syscall.c                                                                       Ver. 2.20
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -26,6 +26,7 @@
 // 26-07-04│ 2.10 │ 3.4: I$Write routet analog zu I$Read auf fm->write(); I$Create/        │ CF
 //         │      │ I$MakDir/I$Delete jetzt echt ueber q9_vfs_open + fm->create/makdir/    │ CF
 //         │      │ remove (FAT16 schreibend)                                             │ CF
+// 26-07-04│ 2.20 │ 3.5: F$Load ueber q9_mod_load (Modul aus Datei statt nur ROM-Image)    │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -398,6 +399,22 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         }
         return q9_mod_unlink((const q9_modhdr_t *)r->a[1]);
 
+    case F_LOAD: {                                       /* a0 pathlist -> a1 header, a2 Einsprung,*/
+        const q9_modhdr_t *hdr;                          /*   d0.b rev (wie F$Link)                */
+        int                 err;
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        err = q9_mod_load((const char *)r->a[0], &hdr);
+        if (err != 0) {
+            return err;
+        }
+        r->a[1] = (void *)hdr;
+        r->a[2] = (uint8_t *)hdr + hdr->execoff;
+        r->d[0] = hdr->rev;
+        return 0;
+    }
+
     case F_EXIT:                                       /* real semantics arrive with phase 4     */
         proc_halted = 1;
         return 0;
@@ -456,5 +473,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 2.10
+// EOF syscall.c                                                                           Ver. 2.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

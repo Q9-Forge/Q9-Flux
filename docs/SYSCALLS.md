@@ -46,8 +46,8 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | Nummer | Name     | Status Phase 1 |
 |--------|----------|----------------|
 | $00 | F$Link   | ✅ implementiert (Phase 2.3d: sucht Modul-Directory nach Name+Type+Language) |
-| $01 | F$Load   | geplant (Phase 2/3) |
-| $02 | F$UnLink | ✅ implementiert (Phase 2.3d) |
+| $01 | F$Load   | ✅ implementiert (Phase 3.5: Modul aus Datei, siehe unten) |
+| $02 | F$UnLink | ✅ implementiert (Phase 2.3d; seit 3.5 gibt sie F$Load-Puffer bei Link-Count 0 frei) |
 | $03 | F$Fork   | geplant (Phase 4, Prozesse) |
 | $04 | F$Wait   | geplant (Phase 4) |
 | $06 | F$Exit   | ✅ implementiert (Phase-1-Semantik: hält Proto-Prozess an) |
@@ -329,6 +329,45 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
   eigenen a1/a2-Konvention (a1 = "das gefundene Ding", a2 = "wo man
   reinspringt", konsistent mit I$Attach a2 = Geräte-Handle).
 
+### F$Load ($01) — seit Phase 3.5
+
+| Register | Input                                   | Output                          |
+|----------|------------------------------------------|----------------------------------|
+| a0       | Pathlist zur Moduldatei ("/d0/HELLO.MOD") | —                               |
+| a1       | —                                          | Modul-Header-Zeiger              |
+| a2       | —                                          | Einsprung (Header + ExecOffset)  |
+| d0.b     | —                                          | Revision                         |
+
+- Oeffnet die Datei ueber die VFS-Schicht (`q9_vfs_open`, braucht einen File-
+  Manager hinter dem Geraet, z.B. FAT16 an `/d0` seit 3.3), liest sie
+  **komplett** in einen von `Q9_MOD_LOADBUF_COUNT` (4) statischen Load-
+  Puffern (`Q9_MOD_LOADBUF_SIZE` = 4096 Byte, kein malloc im Kernel — erste
+  Speicherverwaltung des Kernels, ARBEITSPLAN.md Schritt 3.5), validiert sie
+  als Q9-Modul (`q9_mod_validate` — die ganze Datei IST das Modul, anders als
+  beim ROM-Image gibt es **keine Sync-Suche**: der Header MUSS bei Byte 0
+  stehen) und traegt sie in die Modul-Directory ein (`q9_mod_register`),
+  danach wie F$Link ein Link-Count-Anstieg.
+- **Abweichung von OS-9** (zusaetzlich zu Entscheidung E2): echtes OS-9
+  durchsucht eine Execution-Search-List aus Verzeichnissen anhand des reinen
+  Modulnamens; Q9 hat noch keine Suchliste (kommt fruehestens mit Prozessen/
+  Shell in Phase 4) und nimmt deshalb bewusst den vollen Dateipfad entgegen.
+- Fehlercodes: `E$PNNF`/sonstige VFS-Fehler beim Oeffnen (Datei fehlt),
+  `E$BMHP` bei ungueltigem Header (auch falsche Sync-Bytes — `q9_mod_validate`
+  prueft die seit 3.5 explizit, nicht nur der ROM-Scan-Pfad), `E$BMCRC` bei
+  CRC-Mismatch, `E$NoRAM` ($ED), wenn kein Load-Puffer mehr frei ist ODER die
+  Datei nicht in einen Puffer passt (4096 Byte Obergrenze).
+- **Lebensdauer**: anders als ein ROM-Modul (das bei Link-Count 0 registriert
+  bleibt, es kostet ja keinen Speicher) wird ein per F$Load geladenes Modul
+  bei Link-Count 0 **sofort** wieder aus der Directory entfernt und sein
+  Load-Puffer freigegeben (`q9_mod_unlink`) — der kleine Puffer-Pool waere
+  sonst nach wenigen Load/Unlink-Zyklen erschoepft. Kein Ghost/Sticky-
+  Attribut ($40) ausgewertet (Ideenspeicher, falls ein Modul trotz
+  Link-Count 0 resident bleiben soll).
+- Namenskollision mit einem bereits registrierten Modul gleicher oder
+  hoeherer Revision: wie `q9_mod_register` gewinnt das etablierte Modul,
+  `a1` zeigt dann auf DESSEN Header statt auf das frisch geladene; der
+  eigene Load-Puffer wird sofort wieder freigegeben.
+
 ---
 
 ## Bewusste Abweichungen von OS-9 (Phase-1-Stand)
@@ -350,5 +389,5 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
    `E$UnkSvc`. **LFN-Schreiben bleibt bewusst außen vor** (nur 8.3-Namen beim Anlegen).
 
 **Erstellt**: 2026-07-03
-**Letzte Aktualisierung**: 2026-07-04 (Phase 3.4: FAT16 schreibend über I$Create/I$Write/
-I$MakDir/I$Delete)
+**Letzte Aktualisierung**: 2026-07-04 (Phase 3.5: F$Load über q9_mod_load — Modul aus Datei
+statt nur ROM-Image, statischer Load-Puffer-Pool, siehe eigener Abschnitt oben)
