@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.70
+// File:   syscall.c                                                                       Ver. 1.90
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -19,6 +19,8 @@
 // 26-07-03│ 1.60 │ 1.9: F$Time echte Uhrzeit + F$STime, Kalenderlogik                     │ CF
 // 26-07-03│ 1.70 │ Bugfix: F$Time/F$STime d0/d1 vertauscht (MWOS: d0=Zeit,d1=Datum)        │ CF
 // 26-07-03│ 1.80 │ 2.3d: F$Link/F$UnLink ueber q9_mod_link/unlink (Modul-Directory)       │ CF
+// 26-07-04│ 1.90 │ 3.2: I$Open/I$ChgDir ueber die VFS-Schicht (vfs.c); I$Create/I$MakDir/ │ CF
+//         │      │ I$Delete als Geruest (E$UnkSvc, echte Semantik erst 3.4)               │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -26,6 +28,7 @@
 #include "module.h"
 #include "name.h"
 #include "syscall.h"
+#include "vfs.h"
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ KERNEL STATE (Phase 1: one proto process)                                                    ║
@@ -276,6 +279,30 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     case I_DETACH:                                     /* a2 device                              */
         return q9_dev_detach((q9_dev_t *)r->a[2]);
 
+    case I_OPEN: {                                      /* d0.b mode, a0 pathlist -> d0.w path    */
+        int p;
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        p = q9_vfs_open((const char *)r->a[0], (uint8_t)r->d[0]);
+        if (p < 0) {
+            return -p;
+        }
+        r->d[0] = (uint32_t)p;
+        return 0;
+    }
+
+    case I_CHGDIR:                                      /* a0 pathlist                            */
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        return q9_vfs_chdir((const char *)r->a[0]);
+
+    case I_CREATE:                                      /* Geruest — echte Semantik erst 3.4      */
+    case I_MAKDIR:
+    case I_DELETE:
+        return E_UNKSVC;
+
     case F_PRSNAM: {                                   /* a0 pathlist -> a0 name, a1 past-end,   */
         const char *start;                             /*   d1.w len, d0.b delimiter char        */
         uint32_t    len;
@@ -380,5 +407,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.70
+// EOF syscall.c                                                                           Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────

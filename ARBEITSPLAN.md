@@ -111,7 +111,7 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
 | 3.1 | Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/ | ✅ | Claudia | dev_d0.c neu: SS.BlkRd($14)/SS.BlkWr($15) aus MWOS sg_codes.h übernommen (RBF-Vorbild), reine Ops read/write/readln/writln bewusst E$UnkSvc (kein Byte-Strom ohne VFS, kommt in 3.2). q9disk.img bleibt HAL-seitig (lazy erzeugt), jetzt .gitignore't. Test 04 (04_test_blkdev.py) + 2 neue Selbsttest-Checks (Roundtrip LBA 1, E$Param/E$UnkSvc). docs/DEVICES.md + SYSCALLS.md aktualisiert. `make test` PASS, warnungsfrei |
-| 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | 🟢 | Claudia | Manager-Schnitt vorm Festlegen mit dem Dibble-Buch abgleichen; Schnittstelle so schneiden, dass später ein 68k-Manager-Adapter andocken kann (siehe Ideenspeicher) |
+| 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | ✅ | Claudia | `src/kernel/vfs.c/.h` neu: `q9_fm_t` (open/create/makdir/remove, restpath-String statt OS-9-Pfaddeskriptor-Internas — schmal genug für einen künftigen 68k-Manager-Adapter). `q9_dev_t.fm` (device.h, NULL = kein Dateisystem) + `q9_path_t.fmctx[16]` (Datei-Kontext pro Pfad, kein malloc). `q9_vfs_open` löst relative Pfade gegen ein globales `cwd` auf, trennt Gerät/Rest per F$PrsNam, routet an `dev->fm->open` oder (kein fm) ans alte `q9_path_open`-Verhalten (Rest muss leer sein, sonst `E$PNNF` neu — MWOS-verifiziert). `I$Open`/`I$ChgDir` im Dispatcher (syscall.c) verdrahtet; `I$Create`/`I$MakDir`/`I$Delete` bewusst nur Gerüst (`E$UnkSvc`, echte Semantik erst 3.4). Kein FAT16 hier (kommt separat in 3.3/3.4). 5 neue Selbsttest-Checks (Test-File-Manager im Selbsttest beweist Routing) + neues `test/05_test_vfs.py`. docs/SYSCALLS.md + SYSCALL_ROADMAP.md + DEVICES.md aktualisiert. `make test` PASS, warnungsfrei. wasm ungetestet (emsdk fehlt weiterhin lokal). |
 | 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | 🟢 | Claudia | nur Superfloppy; Test: am Mac befülltes Image, Dateien aus Q9 heraus lesen |
 | 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | 🟢 | Claudia | nach 3.3; Gegentest: von Q9 geschriebene Datei am Mac mounten und lesen |
 | 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | 🟢 | Claudia | Nagelprobe Phase 2 + 3 zusammen; braucht erste Speicherverwaltung (Modul-Puffer) — Umfang beim Design klären |
@@ -172,6 +172,33 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 3.2 (VFS-Schicht)** ✅: `src/kernel/vfs.c/.h` neu — Pfad-Routing für
+  `/d0/pfad/datei`: `q9_vfs_open` löst relative Pfade (kein führendes `/`) zuerst gegen ein
+  globales Arbeitsverzeichnis auf (`cwd`, statischer String, `Q9_CWD_MAXLEN`=63 — pro-Prozess-
+  Variante erst Phase 4, Entscheidung E8), trennt dann per F$PrsNam Gerätename/Rest-Pfad.
+  Neue File-Manager-Schnittstelle `q9_fm_t` (vfs.h) — analog zu `q9_drv_t` (device.h), aber
+  eine Stufe höher (Pfade/Dateien statt Blöcke/Zeichen): `open`/`create`/`makdir`/`remove`
+  nehmen einen Rest-Pfad-**String** entgegen (bewusst kein OS-9-Pfaddeskriptor-Struct) — Schnitt
+  mit dem Dibble-Buch ("OS-9 Insights") abgeglichen und so geschnitten, dass später ein
+  68k-Manager-Adapter (Ideenspeicher) dieselbe C-Schnittstelle hinter einer Trap-Bridge
+  bedienen könnte, ohne den Kernel-Teil anzufassen. `q9_dev_t` bekommt ein optionales
+  `fm`-Feld (NULL = kein Dateisystem, Grundzustand aller Geräte inkl. `/d0` vor 3.3);
+  `q9_path_t` bekommt `fmctx[16]` (Datei-Kontext pro Pfad, File-Manager-eigenes Byte-Array,
+  kein malloc — ab 3.3 z.B. FAT16-Cluster/Position). Geräte OHNE File-Manager (`/term`, `/nil`)
+  verhalten sich unverändert: Rest-Pfad muss leer sein, sonst neuer Fehlercode `E$PNNF`
+  ($D8, "Path Name Not Found", MWOS-verifiziert) statt E$MNF/E$BPNam — sauberer als vorher,
+  weil es explizit "Pfad im Dateisystem nicht gefunden" von "Gerät unbekannt" unterscheidet.
+  `device.c` bekommt `q9_path_open_dev` (Pfad auf bereits aufgelöstes Gerät öffnen, ohne
+  erneuten Namens-Lookup) als gemeinsamen Unterbau für `q9_path_open` und `q9_vfs_open`.
+  Dispatcher (syscall.c): `I$Open`/`I$ChgDir` echt implementiert; `I$Create`/`I$MakDir`/
+  `I$Delete` bewusst nur Gerüst (`E$UnkSvc`) — echte Semantik erst mit FAT16 schreibend (3.4).
+  5 neue Selbsttest-Checks (u.a. ein Test-File-Manager NUR im Selbsttest, der beweist, dass
+  das Routing bis zum Datei-Kontext im Pfad funktioniert, ohne dass FAT16 existieren muss) +
+  neues `test/05_test_vfs.py`. docs/SYSCALLS.md (I$Open/I$ChgDir/I$Create/I$MakDir/I$Delete +
+  E$PNNF), docs/SYSCALL_ROADMAP.md, docs/DEVICES.md (VFS-Abschnitt + Schichtendiagramm)
+  aktualisiert. `make test` PASS, warnungsfrei (40 Selbsttest-Checks). wasm ungetestet (emsdk
+  fehlt lokal weiterhin, siehe Geparkt). **Kein FAT16 in diesem Schritt** — das ist 3.3/3.4,
+  bewusst separat. **Nächster Schritt: 3.3** (FAT16 lesend).
 - **2026-07-03 — Phase 3.1 (Block-Device /d0)** ✅: `src/kernel/dev_d0.c` neu — reiner
   Blockzugriff über I$GetStt/I$SetStt: SS.BlkRd($14)/SS.BlkWr($15) (Codes aus MWOS
   `sg_codes.h`, RBF-Vorbild), d2.l = LBA, a0 = Puffer (Q9_BLK_SIZE Byte), delegiert an
@@ -251,13 +278,18 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 (autonomer Lauf) — **Phase 3.1 (Block-Device
-/d0) abgeschlossen**, `make test` PASS, warnungsfrei (36 Selbsttest-Checks).
-Nächster Ready-Schritt für Claudia: **3.2** (VFS-Schicht). Davor: Phase 3 freigegeben,
-3.1–3.6 auf 🟢 Ready (Wer=Claudia) gestellt; Phase-3-Vorbesprechung mit Andreas:
-Schritte 3.1–3.6 als 💡 eingetragen (O1 = FAT16 entschieden, LFN lesen ja / schreiben
-Ideenspeicher, Superfloppy zuerst, Dibble-Buch als Design-Referenz), drei neue
-Ideenspeicher-Einträge (LFN-Schreiben, MBR-Partitionen, Original-RBF/PCF via Musashi).
+**Letzte Aktualisierung**: 2026-07-04 (autonomer Lauf) — **Phase 3.2 (VFS-Schicht)
+abgeschlossen**: `src/kernel/vfs.c/.h` (Pfad-Routing, File-Manager-Interface `q9_fm_t`,
+Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir), `I$Open`/`I$ChgDir`
+implementiert, `I$Create`/`I$MakDir`/`I$Delete` als Gerüst, neuer Fehlercode `E$PNNF`.
+`make test` PASS, warnungsfrei (40 Selbsttest-Checks). wasm ungetestet (emsdk fehlt
+lokal). Nächster Ready-Schritt für Claudia: **3.3** (FAT16 lesend).
+Davor: **Phase 3.1 (Block-Device /d0) abgeschlossen**, `make test` PASS, warnungsfrei
+(36 Selbsttest-Checks). Phase 3 freigegeben, 3.1–3.6 auf 🟢 Ready (Wer=Claudia) gestellt;
+Phase-3-Vorbesprechung mit Andreas: Schritte 3.1–3.6 als 💡 eingetragen (O1 = FAT16
+entschieden, LFN lesen ja / schreiben Ideenspeicher, Superfloppy zuerst, Dibble-Buch als
+Design-Referenz), drei neue Ideenspeicher-Einträge (LFN-Schreiben, MBR-Partitionen,
+Original-RBF/PCF via Musashi).
 Davor: **Phase 2.3 (Modul-Directory) komplett abgeschlossen** — 2.3b
 (q9_mod_validate), 2.3c (q9_mod_register/find, Directory), 2.3d (F$Link/F$UnLink),
 `make test` PASS, warnungsfrei (34 Selbsttest-Checks). 2.2/2.4 bleiben 💤 bis

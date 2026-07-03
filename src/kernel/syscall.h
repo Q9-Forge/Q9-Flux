@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 1.40
+// File:   syscall.h                                                                       Ver. 1.70
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -18,6 +18,7 @@
 // 26-07-03│ 1.40 │ Bugfix: E$Diff($E2) kollidierte mit E$NoChld -> E_DIFFER($A5)         │ CF
 // 26-07-03│ 1.50 │ 2.3b-d: E$BMHP/E$BMCRC/E$DirFul/E$ModBsy ergänzt (MWOS-verifiziert)   │ CF
 // 26-07-03│ 1.60 │ 3.1: SS.BlkRd/SS.BlkWr ergänzt (Roh-Blockzugriff /d0)                 │ CF
+// 26-07-04│ 1.70 │ 3.2: E$PNNF ergänzt (VFS: Pfad-Routing/I$Open/I$ChgDir)               │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -96,6 +97,7 @@ typedef struct q9_regs {
 #define E_BPADDR  0xd2                                 /* bad parameter address                  */
 #define E_EOF     0xd3                                 /* end of file                            */
 #define E_BPNAM   0xd7                                 /* bad path name                          */
+#define E_PNNF    0xd8                                 /* path name not found (3.2, VFS)         */
 #define E_MNF     0xdd                                 /* module not found (unbekanntes Gerät)   */
 #define E_PARAM   0xe1                                 /* bad parameter                          */
 #define E_BMCRC   0xe8                                 /* bad module CRC (2.3b)                  */
@@ -125,5 +127,5 @@ int q9_proc_halted(void);
 #endif // Q9_SYSCALL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.h                                                                           Ver. 1.40
+// EOF syscall.h                                                                           Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────

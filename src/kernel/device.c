@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.c                                                                        Ver. 1.30
+// File:   device.c                                                                        Ver. 1.50
 // Owner:  AF
 // Desc.:  Q9 Device-Modell — Geräte- und Pfadtabelle (OS-9-Vorbild: IOMan). Registriert die
 //         internen Treiber-Module und verwaltet offene Pfade. Kein malloc, alles statisch.
@@ -15,6 +15,7 @@
 // 26-07-03│ 1.20 │ 1.6: q9_dev_attach/detach ueber Pathlist-Namen                         │ CF
 // 26-07-03│ 1.30 │ 1.7: /nil registriert, q9_path_open namensbasiert                      │ CF
 // 26-07-03│ 1.40 │ 3.1: /d0 registriert (Roh-Block-Device)                                │ CF
+// 26-07-04│ 1.50 │ 3.2: dev_add setzt dev->fm = 0 (File-Manager kommt ueber vfs.c dazu)   │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
@@ -65,6 +66,7 @@ static int dev_add(const char *name, const q9_drv_t *drv)
         if (!devtab[i].drv) {
             devtab[i].name    = name;
             devtab[i].drv     = drv;
+            devtab[i].fm      = 0;                     /* kein File-Manager (vfs.c traegt das ein) */
             devtab[i].storage = 0;
             devtab[i].links   = 0;
             return drv->init(&devtab[i]);
@@ -183,14 +185,34 @@ int q9_path_open(const char *devname, uint8_t mode)
     if (err != 0) {
         return -err;
     }
+    err = q9_path_open_dev(dev, mode);
+    if (err < 0) {
+        q9_dev_detach(dev);
+    }
+    return err;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_path_open_dev
+// Desc.:    Öffnet einen Pfad auf ein BEREITS aufgelöstes Gerät (kein Namens-Lookup, kein
+//           zusätzliches Attach) — Unterbau für q9_path_open und die VFS-Schicht (vfs.c), die
+//           das Gerät schon über F$PrsNam+q9_dev_attach ermittelt hat. Rückgabe >= 0: Pfadnummer,
+//           < 0: negierter Fehlercode (E$PthFul bei voller Pfadtabelle; Aufrufer muss bei
+//           Fehlschlag selbst q9_dev_detach(dev) nachholen, falls er zuvor attach'ed hat).
+// Call:     path = q9_path_open_dev(dev, Q9_MODE_READ)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_path_open_dev(q9_dev_t *dev, uint8_t mode)
+{
     for (int i = 0; i < Q9_NPATHS; i++) {
         if (!pathtab[i].dev) {
             pathtab[i].dev  = dev;
             pathtab[i].mode = mode;
+            for (uint32_t j = 0; j < Q9_FMCTX_SIZE; j++) {
+                pathtab[i].fmctx[j] = 0;
+            }
             return i;
         }
     }
-    q9_dev_detach(dev);
     return -E_PTHFUL;
 }
 
@@ -249,5 +271,5 @@ q9_path_t *q9_path_get(uint32_t path)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.c                                                                            Ver. 1.30
+// EOF device.c                                                                            Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

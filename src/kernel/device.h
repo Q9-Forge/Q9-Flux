@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.h                                                                        Ver. 1.30
+// File:   device.h                                                                        Ver. 1.40
 // Owner:  AF
 // Desc.:  Q9 Device-Modell (OS-9-Vorbild: IOMan). Gerätetabelle + Pfadtabelle im Kernel,
 //         Treiber sind interne Module mit einheitlichen I/O-Operationen (q9_drv_t).
@@ -15,6 +15,8 @@
 // 26-07-03│ 1.10 │ 1.4: q9_path_dup ergänzt                                               │ CF
 // 26-07-03│ 1.20 │ 1.6: q9_dev_attach/detach (namensbasiert)                              │ CF
 // 26-07-03│ 1.30 │ 1.8: getstat/setstat-Ops im Treiber-Interface                          │ CF
+// 26-07-04│ 1.40 │ 3.2: q9_dev.fm (optionaler File-Manager) + q9_path.fmctx (Datei-       │ CF
+//         │      │      Kontext pro Pfad) für die VFS-Schicht (vfs.h)                     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVICE_H
 #define Q9_DEVICE_H
@@ -29,6 +31,8 @@
 #define Q9_MODE_UPDATE (Q9_MODE_READ | Q9_MODE_WRITE)
 
 typedef struct q9_dev q9_dev_t;
+
+struct q9_fm;                                          /* fwd (vfs.h) — File-Manager-Interface   */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ DRIVER OPERATIONS (internal module interface)                                                ║
@@ -54,19 +58,28 @@ typedef struct q9_drv {
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
 struct q9_dev {
-    const char     *name;                              /* device name, e.g. "term"               */
-    const q9_drv_t *drv;                               /* driver module                          */
-    void           *storage;                           /* driver static storage (set by init)    */
-    uint8_t         links;                             /* open path count                        */
+    const char       *name;                            /* device name, e.g. "term"               */
+    const q9_drv_t   *drv;                             /* driver module                          */
+    const struct q9_fm *fm;                             /* optional File-Manager (vfs.h);        */
+                                                        /*   NULL = kein Dateisystem (wie /term)  */
+    void             *storage;                         /* driver static storage (set by init)    */
+    uint8_t           links;                            /* open path count                        */
 };
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ PATH DESCRIPTOR                                                                              ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
+//  fmctx: Datei-Kontext pro Pfad, vom File-Manager selbst verwaltet (kein malloc!) — z.B.
+//  aktuelle Position/Cluster (FAT16, ab 3.3). Feste Byte-Groesse statt void*, damit der
+//  Kontext direkt IN der (statischen) Pfadtabelle liegt, ohne einen externen Pool zu brauchen.
+//  Für Geräte ohne File-Manager (fm == NULL) unbenutzt.
+#define Q9_FMCTX_SIZE 16
+
 typedef struct q9_path {
     q9_dev_t *dev;                                     /* NULL = entry free                      */
     uint8_t   mode;                                    /* Q9_MODE_...                            */
+    uint8_t   fmctx[Q9_FMCTX_SIZE];                    /* File-Manager-Kontext (3.2), s.o.        */
 } q9_path_t;
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -115,6 +128,15 @@ int q9_dev_detach(q9_dev_t *dev);
 int q9_path_open(const char *devname, uint8_t mode);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_path_open_dev
+// Desc.:    Öffnet einen Pfad auf ein bereits per q9_dev_attach aufgelöstes Gerät (kein Namens-
+//           Lookup) — Unterbau für q9_path_open und die VFS-Schicht (vfs.c). Rückgabe >= 0:
+//           Pfadnummer, < 0: -E$PthFul. Bei Fehlschlag muss der Aufrufer selbst detachen.
+// Call:     path = q9_path_open_dev(dev, Q9_MODE_READ)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_path_open_dev(q9_dev_t *dev, uint8_t mode);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_path_dup
 // Desc.:    Dupliziert einen offenen Pfad (gleiches Gerät, gleicher Modus) auf die niedrigste
 //           freie Pfadnummer (OS-9-Semantik). Rückgabe >= 0: neue Pfadnummer, < 0: -Fehlercode.
@@ -139,5 +161,5 @@ q9_path_t *q9_path_get(uint32_t path);
 #endif // Q9_DEVICE_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.h                                                                            Ver. 1.30
+// EOF device.h                                                                            Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
