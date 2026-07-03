@@ -1,0 +1,73 @@
+# Autonomer Betrieb — Claudia arbeitet den Arbeitsplan selbstständig ab
+
+Ziel: Eine geplante Aufgabe (Claude Code Desktop, "Scheduled Task") prüft stündlich
+den ARBEITSPLAN und bearbeitet **genau einen** 🟢-Ready-Schritt pro Lauf.
+Die Steuerung liegt komplett beim Statusmodell: **nur was Andreas auf 🟢 Ready
+stellt, wird angefasst.** Nichts Ready = Lauf beendet sich sofort (minimaler
+Verbrauch).
+
+## Bausteine
+
+1. **`.claude/settings.json`** (in diesem Repo, wandert per git auf jeden Rechner):
+   erlaubt git/make/gcc/clang/python sowie Lesen/Schreiben im Projekt ohne
+   Berechtigungsdialog. `git push --force` bleibt verboten.
+2. **Geplante Aufgabe** in der Claude-Code-Desktop-App (pro Rechner einmal anlegen,
+   Prompt siehe unten). Die App muss laufen; verpasste Läufe werden beim nächsten
+   Start nachgeholt.
+3. **Einmal "Run now"** nach dem Anlegen: dabei erteilte Genehmigungen werden an
+   der Aufgabe gespeichert und gelten für alle künftigen Läufe.
+
+## Einrichtung auf einem neuen Rechner (z.B. Mac Mini)
+
+1. Repo clonen: `git clone https://github.com/foellmy51/Q9.git` (gh auth nötig)
+2. Toolchain: macOS = Xcode Command Line Tools (`xcode-select --install`, liefert
+   clang + make) + Python 3. Windows = w64devkit (siehe docs/TOOLCHAIN.md).
+3. **Achtung macOS/Linux:** Bauen/Testen geht erst, wenn die POSIX-HAL existiert
+   (Schritt 1.10 im ARBEITSPLAN) — die native HAL ist bis dahin Windows-only
+   (conio.h). Schritt 1.10 idealerweise direkt auf dem Mac umsetzen und testen.
+4. In der Claude-Code-App eine geplante Aufgabe anlegen (stündlich, `0 * * * *`)
+   mit dem Prompt unten — oder einfach Claudia sagen:
+   *"Lies docs/AUTONOMIE.md im Q9-Repo und richte die geplante Aufgabe ein."*
+5. Einmal "Run now" klicken und die Berechtigungsdialoge durchwinken.
+
+## Prompt für die geplante Aufgabe
+
+```
+Du bist Claudia und arbeitest autonom am Q9-Projekt (modulares Mini-OS in
+OS-9-Tradition) von Andreas.
+
+1. Wechsle ins Q9-Repo (Windows: D:\projecs\Q9; macOS: ~/projects/Q9 bzw. wo
+   es geclont ist) und hole den aktuellen Stand: git pull.
+2. Lies ARBEITSPLAN.md. Statusmodell: 💡 Vorschlag · 💤 Idle · 🟢 Ready ·
+   🔄 in Arbeit · ✅ fertig · ⛔ blockiert.
+3. Beende OHNE Änderungen, wenn: kein 🟢-Ready-Schritt mit Wer=Claudia
+   existiert, ODER bereits ein Schritt auf 🔄 steht, ODER git pull fehlschlägt.
+4. Sonst: bearbeite den ERSTEN 🟢-Ready-Schritt (niedrigste Nummer) — und
+   danach Schluss, auch wenn weitere warten (schont die Nutzungslimits).
+
+Regeln: Nur EIN Schritt pro Lauf. 💡/💤 niemals anfassen. Bei Blockade: ⛔
+setzen, unter "Geparkt" dokumentieren, committen, beenden. Nach Abschluss:
+Status ✅ + Notiz im ARBEITSPLAN, sofort git commit + git push (Stil:
+"Release X.YZ: <Titel> (<Nr>)", Deutsch, ASCII im Body). Code-Stil exakt wie
+im Bestand (Box-Header, Edition History mit CF, portables C99, kein malloc im
+Kernel); Versionsnummern pflegen. Doku (docs/SYSCALLS.md, docs/DEVICES.md)
+mitziehen, Selbsttest + test/-Skripte erweitern.
+
+Build & Test: make test muss PASS sein, Build warnungsfrei.
+- Windows: vorher $env:PATH = "C:\Users\AF\w64devkit\bin;$env:PATH"
+- macOS: clang/make aus den Xcode CLT; erst möglich ab POSIX-HAL (1.10)
+- make wasm nur, wo emsdk installiert ist — sonst Code schreiben und
+  "wasm ungetestet" in den Notizen vermerken.
+
+Fasse am Ende in 2–3 Sätzen zusammen, was getan wurde (oder warum nichts).
+```
+
+## Betriebsregeln
+
+- **Nur EIN Rechner** sollte die Aufgabe aktiv laufen haben (sonst Push-Konflikte;
+  das 🔄-Kriterium schützt nur teilweise). Beim Umzug auf den Mac Mini die
+  Aufgabe auf dem Windows-PC pausieren/löschen.
+- Läufe verbrauchen die normalen Abo-Limits (5h-Fenster/Woche). Drosseln =
+  weniger Ready-Punkte freigeben oder Zeitplan strecken (z.B. alle 2h).
+
+**Erstellt**: 2026-07-03

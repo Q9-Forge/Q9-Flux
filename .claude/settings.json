@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Edit(./**)",
+      "Write(./**)",
+      "Bash(git *)",
+      "Bash(make *)",
+      "Bash(gcc *)",
+      "Bash(clang *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "PowerShell(git *)",
+      "PowerShell(make *)",
+      "PowerShell(gcc *)",
+      "PowerShell(python *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(rm -rf /*)"
+    ]
+  }
+}
