@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 2.20
+// File:   kernel.c                                                                        Ver. 2.60
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -26,10 +26,13 @@
 // 26-07-03│ 2.30 │ 2.3b-d: Selbsttests Validierung/Directory/F$Link/F$UnLink             │ CF
 // 26-07-03│ 2.40 │ 3.1: /d0 im Banner + Selbsttests SS.BlkRd/SS.BlkWr                    │ CF
 // 26-07-04│ 2.50 │ 3.2: Selbsttests I$Open/I$ChgDir (VFS-Pfad-Routing, Test-File-Manager)│ CF
+// 26-07-04│ 2.60 │ 3.3: Selbsttests FAT16 (8.3/LFN-Datei, Unterverzeichnis, I$Seek);     │ CF
+//         │      │ Checks nur aktiv, wenn q9disk.img beim Boot als FAT16 erkannt wurde   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
+#include "fat16.h"
 #include "module.h"
 #include "syscall.h"
 #include "vfs.h"
@@ -182,7 +185,7 @@ static int test_fm_open(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint3
     return 0;                                          /*   Geraet — pro offenem Pfad eigener Stand */
 }
 
-static const q9_fm_t test_fm = { "testfm", test_fm_open, 0, 0, 0 };
+static const q9_fm_t test_fm = { "testfm", test_fm_open, 0, 0, 0, 0, 0 };
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_kernel_selftest
@@ -502,19 +505,28 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "F$Link: unbekannter Name -> E$MNF";
         checks[nchecks++].ok = (q9_syscall(F_LINK, &miss) == E_MNF);
     }
-    {   /* 3.1: /d0 Block-Device — SS.BlkWr/SS.BlkRd-Roundtrip ueber die HAL (q9disk.img) */
+    {   /* 3.1: /d0 Block-Device — SS.BlkWr/SS.BlkRd-Roundtrip ueber die HAL (q9disk.img).        */
+        /*      LBA 1 wird dafuer benutzt und danach WIEDERHERGESTELLT (3.3: /d0 kann inzwischen  */
+        /*      ein echtes FAT16-Image sein, dessen FAT typischerweise bei LBA 1 beginnt — dieser */
+        /*      Test darf sie nicht dauerhaft mit Testmuster ueberschreiben). */
         static uint8_t wbuf[Q9_BLK_SIZE];
         static uint8_t rbuf[Q9_BLK_SIZE];
+        static uint8_t origbuf[Q9_BLK_SIZE];
         q9_regs_t r = {0};
         int path = q9_path_open("/d0", Q9_MODE_UPDATE);
         int ok = (path == 3);
+        int had_orig;
+
+        r.d[0] = (uint32_t)path;
+        r.d[1] = SS_BLKRD;
+        r.d[2] = 1;                                     /* LBA 1 vorher sichern                   */
+        r.a[0] = origbuf;
+        had_orig = ok && (q9_syscall(I_GETSTT, &r) == 0);
 
         for (uint32_t i = 0; i < sizeof(wbuf); i++) {
             wbuf[i] = (uint8_t)(i * 7 + 3);
         }
-        r.d[0] = (uint32_t)path;
         r.d[1] = SS_BLKWR;
-        r.d[2] = 1;                                     /* LBA 1                                  */
         r.a[0] = wbuf;
         ok = ok && (q9_syscall(I_SETSTT, &r) == 0);
 
@@ -526,6 +538,12 @@ int q9_kernel_selftest(void)
         }
         checks[nchecks].name = "/d0: SS.BlkWr/SS.BlkRd Roundtrip (LBA 1)";
         checks[nchecks++].ok = ok;
+
+        if (had_orig) {
+            r.d[1] = SS_BLKWR;
+            r.a[0] = origbuf;
+            q9_syscall(I_SETSTT, &r);                    /* LBA 1 wiederherstellen                 */
+        }
 
         r.d[1] = SS_BLKWR;
         r.a[0] = 0;
@@ -552,8 +570,9 @@ int q9_kernel_selftest(void)
         checks[nchecks++].ok = ok;
     }
     {   /* 3.2: I$Open auf ein Geraet MIT File-Manager — Rest-Pfad wird durchgereicht */
-        q9_dev_t *d0 = q9_dev_find("d0");
-        int ok = (d0 != 0);
+        q9_dev_t     *d0 = q9_dev_find("d0");
+        const q9_fm_t *saved_fm = d0 ? d0->fm : 0;      /* 3.3 kann hier bereits FAT16 haengen —   */
+        int ok = (d0 != 0);                             /*   nach dem Test wiederherstellen         */
         if (ok) {
             q9_dev_set_fm(d0, &test_fm);
         }
@@ -569,13 +588,14 @@ int q9_kernel_selftest(void)
         bad.a[0] = (void *)"/d0/unbekannt";
         ok = ok && (q9_syscall(I_OPEN, &bad) == E_PNNF);
         if (d0) {
-            q9_dev_set_fm(d0, 0);                      /* Test-File-Manager wieder entfernen      */
+            q9_dev_set_fm(d0, saved_fm);                /* urspruenglichen File-Manager zurueck     */
         }
         checks[nchecks].name = "I$Open: /d0/datei ueber Test-File-Manager, /d0/unbekannt -> E$PNNF";
         checks[nchecks++].ok = ok;
     }
     {   /* 3.2: I$ChgDir setzt das globale Arbeitsverzeichnis, relative I$Open loest dagegen auf */
-        q9_dev_t *d0 = q9_dev_find("d0");
+        q9_dev_t     *d0 = q9_dev_find("d0");
+        const q9_fm_t *saved_fm = d0 ? d0->fm : 0;
         if (d0) {
             q9_dev_set_fm(d0, &test_fm);                /* Test-File-Manager fuer den relativen Fall */
         }
@@ -598,7 +618,7 @@ int q9_kernel_selftest(void)
         back.a[0] = (void *)"/";
         ok = ok && (q9_syscall(I_CHGDIR, &back) == 0);
         if (d0) {
-            q9_dev_set_fm(d0, 0);                       /* Test-File-Manager wieder entfernen      */
+            q9_dev_set_fm(d0, saved_fm);                 /* urspruenglichen File-Manager zurueck     */
         }
         checks[nchecks].name = "I$ChgDir /d0 + relatives I$Open 'datei' -> Pfad 3";
         checks[nchecks++].ok = ok;
@@ -610,6 +630,93 @@ int q9_kernel_selftest(void)
         ok = ok && (q9_syscall(I_DELETE, &r) == E_UNKSVC);
         checks[nchecks].name = "I$Create/I$MakDir/I$Delete-Geruest -> E$UnkSvc";
         checks[nchecks++].ok = ok;
+    }
+    {   /* 3.3: FAT16 — nur relevant, wenn q9disk.img beim Boot als FAT16 erkannt wurde (von      */
+        /*      test/06_test_fat16.py per Python vorbereitet; sonst hat /d0 kein fm, Checks       */
+        /*      werden dann still uebersprungen — kein FEHLER, das Image ist z.B. bei Test 04/05  */
+        /*      absichtlich kein FAT16). */
+        q9_dev_t *d0 = q9_dev_find("d0");
+        if (d0 && d0->fm) {
+            q9_regs_t r = {0};
+            uint8_t   buf[64];
+            int       ok;
+
+            r.d[0] = Q9_MODE_READ;
+            r.a[0] = (void *)"/d0/HELLO.TXT";             /* 8.3-Name, per Python-Skript angelegt */
+            ok = (q9_syscall(I_OPEN, &r) == 0);
+            int path83 = ok ? (int)r.d[0] : -1;
+            if (ok) {
+                q9_regs_t rr = {0};
+                rr.d[0] = (uint32_t)path83;
+                rr.d[1] = sizeof(buf);
+                rr.a[0] = buf;
+                ok = ok && (q9_syscall(I_READ, &rr) == 0) && (rr.d[1] == 12);
+                ok = ok && (buf[0] == 'H' && buf[1] == 'a' && buf[11] == '9');  /* "Hallo Q9!!!9" */
+                ok = ok && (q9_path_close((uint32_t)path83) == 0);
+            }
+            checks[nchecks].name = "FAT16: 8.3-Datei /d0/HELLO.TXT lesen (Inhalt+Groesse)";
+            checks[nchecks++].ok = ok;
+
+            r = (q9_regs_t){0};
+            r.d[0] = Q9_MODE_READ;
+            r.a[0] = (void *)"/d0/This is a very long filename.txt";  /* erzwingt LFN-Eintraege   */
+            ok = (q9_syscall(I_OPEN, &r) == 0);
+            int pathlfn = ok ? (int)r.d[0] : -1;
+            if (ok) {
+                q9_regs_t rr = {0};
+                rr.d[0] = (uint32_t)pathlfn;
+                rr.d[1] = sizeof(buf);
+                rr.a[0] = buf;
+                ok = ok && (q9_syscall(I_READ, &rr) == 0) && (rr.d[1] == 9);
+                ok = ok && (buf[0] == 'L' && buf[8] == '!');            /* "Langname!" */
+                ok = ok && (q9_path_close((uint32_t)pathlfn) == 0);
+            }
+            checks[nchecks].name = "FAT16: LFN-Datei (langer Name) lesen";
+            checks[nchecks++].ok = ok;
+
+            r = (q9_regs_t){0};
+            r.d[0] = Q9_MODE_READ;
+            r.a[0] = (void *)"/d0/SUBDIR/NESTED.TXT";      /* Unterverzeichnis + Datei darin       */
+            ok = (q9_syscall(I_OPEN, &r) == 0);
+            int pathsub = ok ? (int)r.d[0] : -1;
+            if (ok) {
+                q9_regs_t rr = {0};
+                rr.d[0] = (uint32_t)pathsub;
+                rr.d[1] = sizeof(buf);
+                rr.a[0] = buf;
+                ok = ok && (q9_syscall(I_READ, &rr) == 0) && (rr.d[1] > 0);
+                ok = ok && (q9_path_close((uint32_t)pathsub) == 0);
+            }
+            checks[nchecks].name = "FAT16: Datei in Unterverzeichnis lesen";
+            checks[nchecks++].ok = ok;
+
+            r = (q9_regs_t){0};
+            r.d[0] = Q9_MODE_READ;
+            r.a[0] = (void *)"/d0/HELLO.TXT";
+            ok = (q9_syscall(I_OPEN, &r) == 0);
+            int pathseek = ok ? (int)r.d[0] : -1;
+            if (ok) {
+                q9_regs_t sk = {0};
+                q9_regs_t rr = {0};
+                sk.d[0] = (uint32_t)pathseek;
+                sk.d[1] = 6;                               /* I$Seek auf Position 6                */
+                ok = ok && (q9_syscall(I_SEEK, &sk) == 0);
+                rr.d[0] = (uint32_t)pathseek;
+                rr.d[1] = sizeof(buf);
+                rr.a[0] = buf;
+                ok = ok && (q9_syscall(I_READ, &rr) == 0) && (rr.d[1] == 6);
+                ok = ok && (buf[0] == 'Q');                 /* "Hallo Q9!!!9"[6..] == "Q9!!!9"       */
+                ok = ok && (q9_path_close((uint32_t)pathseek) == 0);
+            }
+            checks[nchecks].name = "FAT16: I$Seek + I$Read ab Position 6";
+            checks[nchecks++].ok = ok;
+
+            r = (q9_regs_t){0};
+            r.d[0] = Q9_MODE_READ;
+            r.a[0] = (void *)"/d0/NICHTDA.TXT";
+            checks[nchecks].name = "FAT16: unbekannte Datei -> E$PNNF";
+            checks[nchecks++].ok = (q9_syscall(I_OPEN, &r) == E_PNNF);
+        }
     }
 
     for (int i = 0; i < nchecks; i++) {
@@ -625,5 +732,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 2.50
+// EOF kernel.c                                                                            Ver. 2.60
 //────────────────────────────────────────────────────────────────────────────────────────────────

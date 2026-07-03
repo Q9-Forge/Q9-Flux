@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   vfs.h                                                                           Ver. 1.00
+// File:   vfs.h                                                                           Ver. 1.10
 // Owner:  AF
 // Desc.:  Q9 VFS-Schicht (Phase 3.2, OS-9-Vorbild: IOMan/RBF-Trennung, docs/MODULES.md). Routet
 //         Pfade der Form "/d0/pfad/datei" (F$PrsNam trennt Geraet/Rest) an einen optionalen
@@ -23,6 +23,9 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 3.2: Initiale Version — q9_fm_t, q9_vfs_open/chdir, globales Arbeits-   │ CF
 //         │      │ verzeichnis                                                            │ CF
+// 26-07-04│ 1.10 │ 3.3: q9_fm_t um read/seek erweitert (Datei-I/O ueber File-Manager,      │ CF
+//         │      │ noetig fuer FAT16); I$Read/I$Seek im Dispatcher routen jetzt auf den    │
+//         │      │ File-Manager, wenn einer am Geraet haengt                              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_VFS_H
 #define Q9_VFS_H
@@ -64,6 +67,20 @@ typedef struct q9_fm {
     // remove: Datei/Verzeichnis "restpath" loeschen (I$Delete). Gerüst bis 3.4.
     //────────────────────────────────────────────────────────────────────────────────────────────
     int (*remove)(q9_dev_t *dev, const char *restpath, uint32_t len);
+
+    //────────────────────────────────────────────────────────────────────────────────────────────
+    // read (3.3): liest aus der ueber open() an p->fmctx gebundenen Datei. *n ist in/out (max.
+    // Bytes rein, tatsaechlich gelesene Bytes raus). E$EOF, wenn die Position bereits am Dateiende
+    // steht. Kein File-Manager mit Schreibzugriff hier noetig (3.3 = nur lesend).
+    //────────────────────────────────────────────────────────────────────────────────────────────
+    int (*read) (q9_dev_t *dev, q9_path_t *p, uint8_t *buf, uint32_t *n);
+
+    //────────────────────────────────────────────────────────────────────────────────────────────
+    // seek (3.3): setzt die Position der ueber open() an p->fmctx gebundenen Datei absolut auf
+    // "pos" (I$Seek-Semantik: absolute Byte-Position, kein SEEK_CUR/END wie bei Unix). E$Param,
+    // wenn "pos" hinter dem Dateiende liegt.
+    //────────────────────────────────────────────────────────────────────────────────────────────
+    int (*seek) (q9_dev_t *dev, q9_path_t *p, uint32_t pos);
 } q9_fm_t;
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -111,5 +128,5 @@ void q9_dev_set_fm(q9_dev_t *dev, const q9_fm_t *fm);
 #endif // Q9_VFS_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF vfs.h                                                                               Ver. 1.00
+// EOF vfs.h                                                                               Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

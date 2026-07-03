@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.c                                                                        Ver. 1.50
+// File:   device.c                                                                        Ver. 1.60
 // Owner:  AF
 // Desc.:  Q9 Device-Modell — Geräte- und Pfadtabelle (OS-9-Vorbild: IOMan). Registriert die
 //         internen Treiber-Module und verwaltet offene Pfade. Kein malloc, alles statisch.
@@ -16,9 +16,12 @@
 // 26-07-03│ 1.30 │ 1.7: /nil registriert, q9_path_open namensbasiert                      │ CF
 // 26-07-03│ 1.40 │ 3.1: /d0 registriert (Roh-Block-Device)                                │ CF
 // 26-07-04│ 1.50 │ 3.2: dev_add setzt dev->fm = 0 (File-Manager kommt ueber vfs.c dazu)   │ CF
+// 26-07-04│ 1.60 │ 3.3: q9_dev_init versucht FAT16-Mount auf /d0, setzt fm nur bei        │ CF
+//         │      │ erkanntem Superfloppy-Image (q9_fat16_mount, fat16.c)                  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
+#include "fat16.h"
 #include "name.h"
 #include "syscall.h"
 
@@ -99,6 +102,9 @@ int q9_dev_init(void)
     if (err != 0) {
         return err;
     }
+    if (q9_fat16_mount() == 0) {                       /* 3.3: FAT16 nur, wenn das Image echt ein */
+        q9_dev_set_fm(q9_dev_find("d0"), &q9_fat16_fm); /*   FAT16-Superfloppy ist (Boot-Sektor-   */
+    }                                                   /*   Erkennung, siehe fat16.c)             */
     for (int i = 0; i < 3; i++) {                      /* stdin/stdout/stderr                    */
         if (q9_path_open("term", Q9_MODE_UPDATE) != i) {
             return E_PTHFUL;
@@ -271,5 +277,5 @@ q9_path_t *q9_path_get(uint32_t path)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.c                                                                            Ver. 1.50
+// EOF device.c                                                                            Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
