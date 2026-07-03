@@ -144,7 +144,7 @@ Tests in `test/` (01_test_..., PASS/FAIL, standalone).
 
 | # | Frage | Stand |
 |---|-------|-------|
-| O1 | Erster Filesystem-Typ: FAT16 (Interop) vs. eigenes FS (Lehrreich) | Tendenz FAT16, VFS hält beides offen |
+| O1 | Erster Filesystem-Typ: FAT16 (Interop) vs. eigenes FS (Lehrreich) | **Entschieden 2026-07-03: FAT16** (inkl. LFN-Lesen); VFS hält weitere FS-Typen offen (Details: ARBEITSPLAN.md Phase 3) |
 | O2 | Grafik-Device: Framebuffer-Layout, Auflösung, Register — im Emulator entwerfen, später in Hardware (CPLD/FPGA)? | Design steht aus, Phase ≥5 |
 | O4 | 68k-Board-Emulation: nur CPU (Musashi) oder auch QUICC-Peripherie für Phase 7 | zu klären in Phase 6/7 |
 | O5 | WASM-Runtime für den nativen PC-Build: WAMR vs. wasm3 vs. wasmtime (eingebettet als LANG_WASM-Runtime, damit die native Version voll benutzbar ist, nicht nur Debug) | zu klären ab Phase 2 |
