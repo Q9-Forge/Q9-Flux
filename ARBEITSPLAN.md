@@ -90,6 +90,33 @@ echter Datei) bzw. Phase 4 (Prozess-Stacks/Heaps).
 - **Speicherverwaltung**: nicht Teil von Phase 2 (siehe oben, in-place Referenzierung reicht).
 - **PC-seitiges Inspektions-Tool** (`ident`/`dump`-artig): nicht nötig, Selbsttest-Muster reicht zur Verifikation. → Ideenspeicher, als `--dump`-Modus in `q9mod` statt eigenes Tool, falls später gebraucht.
 
+### Phase 3 — Filesystem (Vorschläge, 2026-07-03 spät mit Andreas vorbesprochen)
+
+Grundentscheidungen aus der Besprechung: **O1 = FAT16** als erster FS-Typ
+(Interop: dasselbe Image lässt sich am Mac/PC mounten und befüllen — `hdiutil
+attach -imagekey diskimage-class=CRawDiskImage q9disk.img`, formatieren mit
+`newfs_msdos -F 16`). Andreas' Bedenken gegen 8.3-Namen ist durch LFN-Lesen
+ausgeräumt (macOS erzeugt beim Mount ohnehin LFN-Einträge); LFN-**Schreiben**
+ist deutlich fummeliger (8.3-Alias-Generierung, Mehrfach-Einträge) → erstmal
+nicht (Ideenspeicher). Reihenfolge lesend vor schreibend, weil `F$Load` (der
+wichtigste Kunde) nur Lesen braucht. Image-Format zunächst **Superfloppy**
+(Boot-Sektor bei LBA 0, keine Partitionstabelle); MBR-Partitionen später als
+Schicht zwischen Block-Device und VFS (Ideenspeicher, spätestens Phase 7 mit
+SD-Karte nötig). Design-Referenz für den File-Manager-Schnitt: Buch **„OS-9
+Insights" (Peter Dibble)** — ältere Auflage enthält einen FAT16-File-Manager;
+als Vorlage lesen, Code aber NICHT übernehmen (Copyright), eigene
+C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
+(kein eigenes PC-Tool nötig).
+
+| # | Schritt | Status | Wer | Notizen |
+|---|---------|--------|-----|---------|
+| 3.1 | Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/ | 💡 | — | kleinster Schritt, testbar ganz ohne FS; HAL-Seite existiert schon (nativ: q9disk.img) |
+| 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | 💡 | — | Manager-Schnitt vorm Festlegen mit dem Dibble-Buch abgleichen; Schnittstelle so schneiden, dass später ein 68k-Manager-Adapter andocken kann (siehe Ideenspeicher) |
+| 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | 💡 | — | nur Superfloppy; Test: am Mac befülltes Image, Dateien aus Q9 heraus lesen |
+| 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | 💡 | — | nach 3.3; Gegentest: von Q9 geschriebene Datei am Mac mounten und lesen |
+| 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | 💡 | — | Nagelprobe Phase 2 + 3 zusammen; braucht erste Speicherverwaltung (Modul-Puffer) — Umfang beim Design klären |
+| 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | 💡 | — | kann nach hinten rutschen, nativ reicht zum Entwickeln von 3.1–3.5 |
+
 ---
 
 ## 💭 Ideenspeicher (noch nicht eingeplant)
@@ -107,6 +134,9 @@ Zukunftsideen ohne Handlungsdruck.
 | Modul-Gruppen (gemeinsames Unlink mehrerer zusammen geladener Module) | docs/MODULES.md, Abschnitt 4 | Braucht Multi-Modul-Dateien, die es noch nicht gibt (Phase-2-Besprechung 2026-07-03) |
 | OS-9-Dreiklang File-Manager/Treiber/Descriptor statt kombiniertem `q9_dev_t` | docs/MODULES.md, Abschnitt 3 | Lohnt sich erst bei mehreren Instanzen desselben Treibers mit unterschiedlicher Konfiguration (Phase-2-Besprechung 2026-07-03) |
 | `--dump`-Modus in `q9mod` (Modul-Header lesbar anzeigen, "ident"-artig) | Phase-2-Besprechung 2026-07-03 | Selbsttest-Muster reicht zur Verifikation während der Entwicklung; kein PC-Tool nötig, bis mal ein echtes produziertes Modul von Hand inspiziert werden muss |
+| LFN-Schreiben im FAT16-Manager (lange Namen beim Anlegen neuer Dateien) | Phase-3-Besprechung 2026-07-03 | 8.3-Alias-Generierung + Mehrfach-Directory-Einträge = viel Kleinkram; LFN-Lesen (3.3) deckt den Alltagsfall (am Mac befüllte Images) schon ab |
+| MBR-Partitionstabelle: Partitionen als Sub-Block-Devices (z.B. `/d0.1`), MBR-Parser als dünne Schicht zwischen Block-Device und VFS | Phase-3-Besprechung 2026-07-03 | Superfloppy reicht für Phase 3; spätestens Phase 7 (SD-Karte am 68k-Board ist praktisch immer partitioniert) nötig — Einstiegspunkt im Code bleibt frei, gut testbar mit hdiutil/fdisk-Images |
+| Original-OS-9-File-Manager (RBF, PCF) via Musashi-Emulator laufen lassen, nativer Übergang erst am Treiber-Entry (HLE-Muster) | Phase-3-Besprechung 2026-07-03; PROJECT.md Phase 6 | Braucht bit-exakten Nachbau der OS-9-Kernelstrukturen (Path-Descriptor, Static Storage, System-State-Calls) — lohnt v.a. für RBF (echte OS-9-Disketten lesen!), für FAT ist nativ schneller. Frühestens Phase 6. ACHTUNG Lizenz: MWOS-Module dürfen nicht weitergegeben werden — nur für Andreas' privaten Gebrauch |
 
 ---
 
@@ -186,9 +216,12 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 2.3 (Modul-Directory)
-komplett abgeschlossen.** 2.3b (q9_mod_validate), 2.3c (q9_mod_register/find,
-Directory) und 2.3d (F$Link/F$UnLink) in module.h/.c und syscall.c, docs/
-SYSCALLS.md + SYSCALL_ROADMAP.md aktualisiert, `make test` PASS, warnungsfrei
-(34 Selbsttest-Checks). Kein Ready-Schritt mehr offen für Claudia — 2.2/2.4
-sind 💤 bis Andreas sie freigibt.
+**Letzte Aktualisierung**: 2026-07-03 spät, Mac Mini — **Phase-3-Vorbesprechung
+mit Andreas**: Schritte 3.1–3.6 als 💡 eingetragen (O1 = FAT16 entschieden,
+LFN lesen ja / schreiben Ideenspeicher, Superfloppy zuerst, Dibble-Buch als
+Design-Referenz), drei neue Ideenspeicher-Einträge (LFN-Schreiben,
+MBR-Partitionen, Original-RBF/PCF via Musashi). Davor: **Phase 2.3
+(Modul-Directory) komplett abgeschlossen** — 2.3b (q9_mod_validate), 2.3c
+(q9_mod_register/find, Directory), 2.3d (F$Link/F$UnLink), `make test` PASS,
+warnungsfrei (34 Selbsttest-Checks). Kein Ready-Schritt offen für Claudia —
+2.2/2.4 sind 💤, 3.1–3.6 sind 💡 bis Andreas freigibt.
