@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.30
+// File:   kernel.c                                                                        Ver. 1.40
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -14,6 +14,7 @@
 // 26-07-03│ 1.10 │ Syscall-Schicht: REPL über I$ReadLn/I$WritLn, F$Exit, Selbsttest       │ CF
 // 26-07-03│ 1.20 │ 1.3: q9_dev_init() beim Boot, Selbsttests für Device-Modell            │ CF
 // 26-07-03│ 1.30 │ 1.4: Selbsttests I$Dup/I$Close                                         │ CF
+// 26-07-03│ 1.40 │ 1.5: Selbsttests F$PrsNam/F$CmpNam                                     │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -228,6 +229,35 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "I$Close gibt Duplikat frei";
         checks[nchecks++].ok = ok;
     }
+    {   /* F$PrsNam splits "/term/xyz" into name "term" + delimiter '/' */
+        q9_regs_t r = {0};
+        static const char pl[] = "/term/xyz";
+        r.a[0] = (void *)pl;
+        int ok = (q9_syscall(F_PRSNAM, &r) == 0 &&
+                  r.d[1] == 4 && (const char *)r.a[0] == pl + 1 &&
+                  (const char *)r.a[1] == pl + 5 && r.d[0] == '/');
+        r.a[0] = r.a[1];                               /* chain: parse the next element         */
+        ok = ok && (q9_syscall(F_PRSNAM, &r) == 0 && r.d[1] == 3);
+        checks[nchecks].name = "F$PrsNam '/term/xyz' -> term, xyz";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* empty pathlist element is rejected */
+        q9_regs_t r = {0};
+        r.a[0] = (void *)"//x";
+        checks[nchecks].name = "F$PrsNam '//x' -> E$BPNam";
+        checks[nchecks++].ok = (q9_syscall(F_PRSNAM, &r) == E_BPNAM);
+    }
+    {   /* F$CmpNam: case-insensitive match, mismatch -> E$Diff */
+        q9_regs_t r = {0};
+        r.a[0] = (void *)"TERM";
+        r.a[1] = (void *)"term";
+        r.d[1] = 4;
+        int ok = (q9_syscall(F_CMPNAM, &r) == 0);
+        r.a[1] = (void *)"trem";
+        ok = ok && (q9_syscall(F_CMPNAM, &r) == E_DIFF);
+        checks[nchecks].name = "F$CmpNam TERM=term, TERM!=trem";
+        checks[nchecks++].ok = ok;
+    }
 
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
@@ -242,5 +272,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.30
+// EOF kernel.c                                                                            Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

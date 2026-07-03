@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.20
+// File:   syscall.c                                                                       Ver. 1.30
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -13,10 +13,12 @@
 // 26-07-03│ 1.00 │ Initiale Version: Dispatcher, I$Read/Write/ReadLn/WritLn, F$Exit/ID    │ CF
 // 26-07-03│ 1.10 │ 1.3: I/O über Device-Modell/Pfadtabelle, Mode-Check (E$BMode)          │ CF
 // 26-07-03│ 1.20 │ 1.4: I$Dup + I$Close                                                   │ CF
+// 26-07-03│ 1.30 │ 1.5: F$PrsNam + F$CmpNam                                               │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
+#include "name.h"
 #include "syscall.h"
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -149,6 +151,30 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     case I_CLOSE:                                      /* d0.w path                              */
         return q9_path_close(r->d[0] & 0xffffu);
 
+    case F_PRSNAM: {                                   /* a0 pathlist -> a0 name, a1 past-end,   */
+        const char *start;                             /*   d1.w len, d0.b delimiter char        */
+        uint32_t    len;
+        int         err;
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        err = q9_name_parse((const char *)r->a[0], &start, &len);
+        if (err != 0) {
+            return err;
+        }
+        r->a[0] = (void *)start;
+        r->a[1] = (void *)(start + len);
+        r->d[0] = (uint32_t)(uint8_t)start[len];
+        r->d[1] = len;
+        return 0;
+    }
+
+    case F_CMPNAM:                                     /* a0 name1, d1.w len, a1 name2           */
+        if (!r->a[0] || !r->a[1]) {
+            return E_BPADDR;
+        }
+        return q9_name_cmp((const char *)r->a[0], r->d[1] & 0xffffu, (const char *)r->a[1]);
+
     case F_EXIT:                                       /* real semantics arrive with phase 4     */
         proc_halted = 1;
         return 0;
@@ -182,5 +208,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.20
+// EOF syscall.c                                                                           Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

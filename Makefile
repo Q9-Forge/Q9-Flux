@@ -19,8 +19,10 @@ EMCC    = emcc
 CFLAGS  = -std=c99 -Wall -Wextra -O2
 
 BUILD   = build
-KSRC    = src/kernel/kernel.c src/kernel/syscall.c src/kernel/device.c src/kernel/dev_term.c
-HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h src/kernel/device.h
+KSRC    = src/kernel/kernel.c src/kernel/syscall.c src/kernel/device.c src/kernel/dev_term.c \
+          src/kernel/name.c
+HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h src/kernel/device.h \
+          src/kernel/name.h
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows, w64devkit)

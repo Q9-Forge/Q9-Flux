@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 1.00
+// File:   syscall.h                                                                       Ver. 1.10
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -12,6 +12,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: Registersatz, F$/I$-Nummern, Fehlercodes             │ CF
+// 26-07-03│ 1.10 │ 1.5: E$BPNam + E$Diff (vorläufig) ergänzt                             │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -74,7 +75,11 @@ typedef struct q9_regs {
 #define E_UNKSVC  0xd0                                 /* unknown service request                */
 #define E_BPADDR  0xd2                                 /* bad parameter address                  */
 #define E_EOF     0xd3                                 /* end of file                            */
+#define E_BPNAM   0xd7                                 /* bad path name                          */
 #define E_PARAM   0xe1                                 /* bad parameter                          */
+#define E_DIFF    0xe2                                 /* names differ (F$CmpNam) — VORLÄUFIG:   */
+                                                       /*   OS-9 setzt nur Carry; Nummer beim    */
+                                                       /*   MWOS-Abgleich prüfen (M:\MWOS)       */
 #define E_NOTRDY  0xf6                                 /* device not ready                       */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -99,5 +104,5 @@ int q9_proc_halted(void);
 #endif // Q9_SYSCALL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.h                                                                           Ver. 1.00
+// EOF syscall.h                                                                           Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

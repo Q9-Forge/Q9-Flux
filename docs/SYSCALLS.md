@@ -52,6 +52,8 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $04 | F$Wait   | geplant (Phase 4) |
 | $06 | F$Exit   | ✅ implementiert (Phase-1-Semantik: hält Proto-Prozess an) |
 | $0C | F$ID     | ✅ implementiert (liefert Proto-Prozess-ID 1) |
+| $10 | F$PrsNam | ✅ implementiert (Phase 1.5) |
+| $11 | F$CmpNam | ✅ implementiert (Phase 1.5, E$Diff-Nummer vorläufig) |
 | $15 | F$Time   | ✅ provisorisch (siehe Abweichungen) |
 | $89 | I$Read   | ✅ implementiert |
 | $8A | I$Write  | ✅ implementiert |
@@ -113,6 +115,32 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
   **niedrigste freie** Pfadnummer — OS-9-Semantik, wichtig für spätere I/O-Umlenkung.
 - I$Close gibt den Pfadeintrag frei; geschlossene/ungültige Pfade → `E$BPNum`,
   volle Pfadtabelle bei Dup → `E$PthFul`.
+
+### F$PrsNam ($10) / F$CmpNam ($11) — seit Phase 1.5
+
+F$PrsNam parst das nächste Pathlist-Element (führender `/` wird übersprungen;
+gültige Namenszeichen: `A-Z a-z 0-9 _ . $`):
+
+| Register | Input          | Output                              |
+|----------|----------------|-------------------------------------|
+| d0       | —              | d0.b = Trennzeichen nach dem Namen  |
+| d1       | —              | d1.w = Namenslänge                  |
+| a0       | Pathlist-Ptr   | Start des Namens (nach `/`)         |
+| a1       | —              | erstes Zeichen NACH dem Namen       |
+
+- Kein gültiger Name an der Position → `E$BPNam`. Ketten-Parsing: nächster
+  Aufruf mit a0 = a1 des vorherigen.
+
+F$CmpNam vergleicht zwei Namen fester Länge, **case-insensitiv**:
+
+| Register | Input                    |
+|----------|--------------------------|
+| d1.w     | Länge                    |
+| a0       | Name 1                   |
+| a1       | Name 2                   |
+
+- Gleich → 0; verschieden → `E$Diff` ($E2, **vorläufige Nummer** — OS-9 setzt
+  nur Carry; beim MWOS-Abgleich prüfen). Wildcards: noch keine.
 
 ### F$Exit ($06)
 
