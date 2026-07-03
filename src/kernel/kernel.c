@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 2.00
+// File:   kernel.c                                                                        Ver. 2.20
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -22,6 +22,7 @@
 // 26-07-03│ 1.90 │ Bugfix: F$CmpNam-Selbsttest nutzt jetzt E_DIFFER($A5)                  │ CF
 // 26-07-03│ 2.00 │ Bugfix: F$STime/F$Time-Selbsttest an d0=Zeit/d1=Datum angepasst        │ CF
 // 26-07-03│ 2.10 │ 2.1: Selbsttest q9_crc32 (Referenzwert "123456789")                    │ CF
+// 26-07-03│ 2.20 │ 2.3a: Selbsttests q9_mod_scan_first/next                              │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -141,7 +142,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[25];
+    } checks[30];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -350,6 +351,33 @@ int q9_kernel_selftest(void)
         static const uint8_t ref[] = "123456789";
         checks[nchecks].name = "q9_crc32 Referenzwert (123456789 -> $CBF43926)";
         checks[nchecks++].ok = (q9_crc32(ref, sizeof(ref) - 1) == 0xCBF43926u);
+    }
+    {   /* q9_mod_scan_first/next: zwei Module lueckenlos im ROM-Image, Sprung um ModuleSize */
+        static uint8_t rom[2 * Q9_MOD_HDRSIZE];
+        q9_modhdr_t   *h1 = (q9_modhdr_t *)rom;
+        q9_modhdr_t   *h2 = (q9_modhdr_t *)(rom + Q9_MOD_HDRSIZE);
+
+        h1->sync[0] = Q9_MOD_SYNC0;
+        h1->sync[1] = Q9_MOD_SYNC1;
+        h1->modsize = Q9_MOD_HDRSIZE;                  /* zweites Modul folgt direkt              */
+        h2->sync[0] = Q9_MOD_SYNC0;
+        h2->sync[1] = Q9_MOD_SYNC1;
+        h2->modsize = Q9_MOD_HDRSIZE;                  /* Sprung fuehrt aus dem Blob heraus        */
+
+        const q9_modhdr_t *first = q9_mod_scan_first(rom, sizeof(rom));
+        int ok = (first == h1);
+        if (ok) {
+            const q9_modhdr_t *second = q9_mod_scan_next(rom, sizeof(rom), first);
+            ok = ok && (second == h2);
+            ok = ok && second && (q9_mod_scan_next(rom, sizeof(rom), second) == 0);
+        }
+        checks[nchecks].name = "q9_mod_scan_first/next: 2 Module, Ende erkannt";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* q9_mod_scan_first: kein Sync im Blob -> NULL */
+        static uint8_t rom[Q9_MOD_HDRSIZE] = {0};
+        checks[nchecks].name = "q9_mod_scan_first ohne Sync -> NULL";
+        checks[nchecks++].ok = (q9_mod_scan_first(rom, sizeof(rom)) == 0);
     }
 
     for (int i = 0; i < nchecks; i++) {
