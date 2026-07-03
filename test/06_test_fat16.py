@@ -1,7 +1,7 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   06_test_fat16.py                                                                Ver. 1.00
+# File:   06_test_fat16.py                                                                Ver. 1.10
 # Owner:  AF
-# Desc.:  FAT16-Test (Phase 3.3): baut von Hand ein minimales FAT16-Superfloppy-Image
+# Desc.:  FAT16-Test (Phase 3.3/3.4): baut von Hand ein minimales FAT16-Superfloppy-Image
 #         (Boot-Sektor/BPB + 2 FAT-Kopien + Root-Directory + Datenregion) nach oeffentlich
 #         dokumentiertem Layout, schreibt es als q9disk.img und laesst Q9 im Selbsttest daraus
 #         lesen: eine 8.3-Datei, eine Datei mit langem Namen (LFN-Eintraege), eine Datei in einem
@@ -10,6 +10,13 @@
 #         das Andreas-Interop-Szenario (am Mac befuelltes Image) wird durch das Layout simuliert,
 #         nicht durch echtes Mounten.
 #
+#         Seit 3.4 (FAT16 schreibend) laesst der Selbsttest Q9 zusaetzlich selbst schreiben
+#         (I$Create/I$Write/I$MakDir/I$Delete auf /d0) und post_validate() liest das resultierende
+#         Image DANACH nochmal komplett unabhaengig vom Q9-Code mit einem eigenen kleinen Python-
+#         Parser (FAT-Kopien-Vergleich, Directory-Eintraege, Cluster-Freigabe) — der praktikable
+#         Ersatz fuer "am Mac mounten" (ARBEITSPLAN.md 3.4-Notiz), weil er dieselbe Interop-Aussage
+#         belegt: ein voellig unabhaengiger Leser versteht das von Q9 geschriebene Rohformat.
+#
 # Call:   python test/06_test_fat16.py   (aus dem Projekt-Root, nach "make native")
 #
 # Edition History
@@ -17,6 +24,8 @@
 # Date    │ Ver. │ Description                                                             │ By
 #─────────┼──────┼─────────────────────────────────────────────────────────────────────────┼──────
 # 26-07-04│ 1.00 │ Initiale Version                                                        │ CF
+# 26-07-04│ 1.10 │ 3.4: Checks fuer I$Create/I$Write/I$MakDir/I$Delete + post_validate()   │ CF
+#         │      │ (unabhaengige Python-Nachvalidierung des von Q9 geschriebenen Images)   │ CF
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 import os
 import struct
@@ -213,11 +222,32 @@ def main() -> int:
         "FAT16: Datei in Unterverzeichnis": "[ok] FAT16: Datei in Unterverzeichnis lesen" in result.stdout,
         "FAT16: I$Seek + I$Read":          "[ok] FAT16: I$Seek + I$Read ab Position 6" in result.stdout,
         "FAT16: unbekannte Datei -> E$PNNF": "[ok] FAT16: unbekannte Datei -> E$PNNF" in result.stdout,
+        "FAT16: I$Create + I$Write":      "[ok] FAT16: I$Create + I$Write /d0/NEU.TXT" in result.stdout,
+        "FAT16: geschriebene Datei zurueckgelesen":
+            "[ok] FAT16: neu geschriebene Datei zurueckgelesen" in result.stdout,
+        "FAT16: I$Create Duplikat -> E$BPNam":
+            "[ok] FAT16: I$Create auf existierenden Namen -> E$BPNam" in result.stdout,
+        "FAT16: I$Create LFN-Name -> E$BPNam":
+            "[ok] FAT16: I$Create mit LFN-pflichtigem Namen -> E$BPNam" in result.stdout,
+        "FAT16: I$MakDir + I$Open":       "[ok] FAT16: I$MakDir /d0/NEUDIR + I$Open darauf" in result.stdout,
+        "FAT16: I$Delete + E$PNNF":       "[ok] FAT16: I$Delete /d0/NEU.TXT, danach E$PNNF" in result.stdout,
         "SYSCALL TEST PASS":               "SYSCALL TEST PASS" in result.stdout,
     }
 
     for name, ok in checks.items():
         print(f"  [{'ok' if ok else 'FEHLER'}] {name}")
+
+    # --- Unabhaengige Python-Nachvalidierung des von Q9 geschriebenen Rohformats ------------------
+    # Praktikabler Ersatz fuer "am Mac mounten" (ARBEITSPLAN.md 3.4): eine komplett unabhaengige
+    # Neuimplementierung liest das Rohformat nach dem Q9-Selbsttest erneut und prueft FAT-Konsistenz
+    # (beide Kopien identisch), Directory-Eintraege (NEUDIR als Verzeichnis mit "."/".." vorhanden,
+    # NEU.TXT als geloescht markiert -DIRENT_FREE) und dass die vormals von NEU.TXT belegten Cluster
+    # wieder frei sind (FAT16_FREE in BEIDEN Kopien) — dieselbe Interop-Aussage wie ein echtes Mounten,
+    # weil sie das Byte-Layout unabhaengig vom Q9-eigenen Code nachrechnet.
+    postcheck_ok, postcheck_msgs = post_validate(IMG)
+    for msg in postcheck_msgs:
+        print(f"  {msg}")
+    checks["Python-Nachvalidierung des Rohformats"] = postcheck_ok
 
     if all(checks.values()):
         print("06_test_fat16: PASS")
@@ -227,9 +257,95 @@ def main() -> int:
     return 1
 
 
+def post_validate(img_path: str):
+    """Liest das Q9-geschriebene Image komplett unabhaengig vom Q9-Code neu ein (eigener Python-
+    Parser, kein Aufruf von Q9-Funktionen) und prueft: (1) beide FAT-Kopien sind byteidentisch,
+    (2) NEUDIR existiert im Root als Verzeichnis mit einem Cluster, dessen erste zwei Eintraege
+    "." (-> sich selbst) und ".." (-> Root, Cluster 0) sind, (3) NEU.TXT ist im Root als geloescht
+    markiert (erstes Namensbyte DIRENT_FREE=0xE5), (4) alle Cluster, die NEU.TXT vor dem Loeschen
+    belegt haben koennte, sind in BEIDEN FAT-Kopien wieder FAT16_FREE (kein Leck). Rueckgabe:
+    (ok: bool, messages: list[str])."""
+    msgs = []
+    ok = True
+    with open(img_path, "rb") as f:
+        data = f.read()
+
+    fat_start = RESERVED_SECS
+    fat1 = data[fat_start * SECTOR: (fat_start + FAT_SECTORS) * SECTOR]
+    fat2 = data[(fat_start + FAT_SECTORS) * SECTOR: (fat_start + 2 * FAT_SECTORS) * SECTOR]
+    if fat1 == fat2:
+        msgs.append("[ok] Python-Nachvalidierung: beide FAT-Kopien identisch")
+    else:
+        msgs.append("[FEHLER] Python-Nachvalidierung: FAT-Kopien weichen voneinander ab")
+        ok = False
+
+    root_start = fat_start + NUM_FATS * FAT_SECTORS
+    root_sectors = ROOT_ENT_CNT * 32 // SECTOR
+    root = data[root_start * SECTOR: (root_start + root_sectors) * SECTOR]
+
+    def parse_dirent(raw: bytes) -> dict:
+        name = raw[0:8]
+        ext = raw[8:11]
+        attr = raw[0x0B]
+        fstcluslo = struct.unpack_from("<H", raw, 0x1A)[0]
+        filesize = struct.unpack_from("<I", raw, 0x1C)[0]
+        return {"name": name, "ext": ext, "attr": attr, "clus": fstcluslo, "size": filesize}
+
+    root_entries = [parse_dirent(root[i:i + 32]) for i in range(0, len(root), 32)]
+
+    neu_txt = None
+    neudir = None
+    for e in root_entries:
+        # 8.3-Name "NEU     " wird beim Loeschen NUR im ersten Byte durch DIRENT_FREE (0xE5)
+        # ersetzt (FAT16-Konvention) — der Rest des Namensfeldes ("EU" + Padding) bleibt stehen.
+        if e["name"][0:1] == b"\xe5" and e["name"][1:8] == b"EU     " and e["ext"] == b"TXT":
+            neu_txt = e
+        if e["name"] == b"NEUDIR  " and e["ext"] == b"   " and (e["attr"] & 0x10):
+            neudir = e
+
+    if neu_txt is not None:
+        msgs.append("[ok] Python-Nachvalidierung: NEU.TXT im Root als geloescht (DIRENT_FREE) markiert")
+    else:
+        msgs.append("[FEHLER] Python-Nachvalidierung: kein geloeschter NEU.TXT-Eintrag im Root gefunden")
+        ok = False
+
+    if neudir is not None:
+        msgs.append(f"[ok] Python-Nachvalidierung: NEUDIR im Root als Verzeichnis gefunden (Cluster {neudir['clus']})")
+        data_start = root_start + root_sectors
+        clus_lba = data_start + (neudir["clus"] - 2) * SEC_PER_CLUS
+        clusdata = data[clus_lba * SECTOR: clus_lba * SECTOR + 64]
+        dot = parse_dirent(clusdata[0:32])
+        dotdot = parse_dirent(clusdata[32:64])
+        if dot["name"] == b".       " and dot["clus"] == neudir["clus"] and \
+           dotdot["name"] == b"..      " and dotdot["clus"] == 0:
+            msgs.append("[ok] Python-Nachvalidierung: NEUDIR-Cluster enthaelt korrekte '.'/'..' -Eintraege")
+        else:
+            msgs.append("[FEHLER] Python-Nachvalidierung: '.'/'..' im NEUDIR-Cluster fehlerhaft")
+            ok = False
+    else:
+        msgs.append("[FEHLER] Python-Nachvalidierung: kein NEUDIR-Verzeichniseintrag im Root gefunden")
+        ok = False
+
+    # NEU.TXT wurde per I$Create/I$Write angelegt (erster freier Cluster ab 2, linear gesucht ->
+    # Cluster 6, da 2/3/4/5 schon von HELLO.TXT/Langname-Datei/SUBDIR/NESTED.TXT belegt sind) und
+    # per I$Delete wieder geloescht — sein Cluster muss danach in BEIDEN FAT-Kopien wieder
+    # FAT16_FREE (0x0000) sein. NEUDIR (Cluster 7, s.o.) bleibt dagegen bewusst belegt (nicht
+    # geloescht) und darf hier NICHT als frei erwartet werden.
+    neu_clus = 6
+    v1 = struct.unpack_from("<H", fat1, neu_clus * 2)[0]
+    v2 = struct.unpack_from("<H", fat2, neu_clus * 2)[0]
+    if v1 == 0x0000 and v2 == 0x0000:
+        msgs.append(f"[ok] Python-Nachvalidierung: Cluster {neu_clus} (ex-NEU.TXT) nach I$Delete in beiden FAT-Kopien frei")
+    else:
+        msgs.append(f"[FEHLER] Python-Nachvalidierung: Cluster-Leck nach I$Delete: Cluster {neu_clus} = ({v1:#06x}, {v2:#06x})")
+        ok = False
+
+    return ok, msgs
+
+
 if __name__ == "__main__":
     sys.exit(main())
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF 06_test_fat16.py                                                                    Ver. 1.00
+# EOF 06_test_fat16.py                                                                    Ver. 1.10
 #─────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.00
+// File:   syscall.c                                                                       Ver. 2.10
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -23,6 +23,9 @@
 //         │      │ I$Delete als Geruest (E$UnkSvc, echte Semantik erst 3.4)               │ CF
 // 26-07-04│ 2.00 │ 3.3: I$Read routet auf fm->read() (FAT16 ueber File-Manager statt      │ CF
 //         │      │ Treiber, wenn vorhanden); I$Seek neu ueber fm->seek()                  │ CF
+// 26-07-04│ 2.10 │ 3.4: I$Write routet analog zu I$Read auf fm->write(); I$Create/        │ CF
+//         │      │ I$MakDir/I$Delete jetzt echt ueber q9_vfs_open + fm->create/makdir/    │ CF
+//         │      │ remove (FAT16 schreibend)                                             │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -161,7 +164,9 @@ static void time_init_lazy(void)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: sc_write
 // Desc.:    I$Write/I$WritLn — d0.w Pfad, a0 Puffer, d1.l Anzahl; out: d1.l geschrieben.
-//           Delegiert an die write/writln-Op des Treibers hinter dem Pfad.
+//           Hat das Geraet hinter dem Pfad einen File-Manager MIT write-Op (ab 3.4, FAT16), geht
+//           I$Write (nicht I$WritLn — Zeilenmodus ergibt fuer Dateien keinen Sinn, analog zu
+//           sc_read) an dessen fm->write(); sonst wie bisher an die write/writln-Op des Treibers.
 // Call:     Dispatcher
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int sc_write(q9_regs_t *r, int line_mode)
@@ -174,8 +179,12 @@ static int sc_write(q9_regs_t *r, int line_mode)
     if (err != 0) {
         return err;
     }
-    err = line_mode ? p->dev->drv->writln(p->dev, (const uint8_t *)r->a[0], &n)
-                    : p->dev->drv->write(p->dev, (const uint8_t *)r->a[0], &n);
+    if (!line_mode && p->dev->fm && p->dev->fm->write) {
+        err = p->dev->fm->write(p->dev, p, (const uint8_t *)r->a[0], &n);
+    } else {
+        err = line_mode ? p->dev->drv->writln(p->dev, (const uint8_t *)r->a[0], &n)
+                        : p->dev->drv->write(p->dev, (const uint8_t *)r->a[0], &n);
+    }
     if (err != 0) {
         return err;
     }
@@ -318,10 +327,30 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         return p->dev->fm->seek(p->dev, p, r->d[1]);
     }
 
-    case I_CREATE:                                      /* Geruest — echte Semantik erst 3.4      */
-    case I_MAKDIR:
-    case I_DELETE:
-        return E_UNKSVC;
+    case I_CREATE: {                                     /* d0.b mode, a0 pathlist -> d0.w path    */
+        int p;
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        p = q9_vfs_create((const char *)r->a[0], (uint8_t)r->d[0]);
+        if (p < 0) {
+            return -p;
+        }
+        r->d[0] = (uint32_t)p;
+        return 0;
+    }
+
+    case I_MAKDIR:                                       /* a0 pathlist                            */
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        return q9_vfs_makdir((const char *)r->a[0]);
+
+    case I_DELETE:                                       /* a0 pathlist                            */
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        return q9_vfs_remove((const char *)r->a[0]);
 
     case F_PRSNAM: {                                   /* a0 pathlist -> a0 name, a1 past-end,   */
         const char *start;                             /*   d1.w len, d0.b delimiter char        */
@@ -427,5 +456,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 2.00
+// EOF syscall.c                                                                           Ver. 2.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
