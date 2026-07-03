@@ -32,7 +32,6 @@
 
 #include "../hal/q9_hal.h"
 #include "device.h"
-#include "fat16.h"
 #include "module.h"
 #include "syscall.h"
 #include "vfs.h"
