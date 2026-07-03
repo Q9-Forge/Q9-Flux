@@ -10,6 +10,7 @@
   - [x] 1.7 /nil als zweiter Treiber
   - [x] 1.8 I$GetStt/I$SetStt (SS.Ready, SS.EOF)
   - [x] 1.9 Echte Uhrzeit (q9_hal_time, F$Time/F$STime)
+  - [x] 1.10 POSIX-HAL (macOS/Linux, termios statt conio)
 - [ ] 2. Phase 2: Modulsystem (Header, q9mod, Directory, Loader)
 - [ ] 3. Phase 3: Filesystem (VFS + erster FS-Typ)
 - [ ] 4. Phase 4: Prozesse (kooperativer Scheduler)
@@ -19,9 +20,19 @@
 - [ ] 8. Phase 8: Vision (6809-Runtime, Netzwerk, wasm2c, Self-Hosting)
 
 # Letzter Arbeitsstand
-Zuletzt bearbeitet: 2026-07-03 (zweite Session, Desktop AF-PC)
-PHASE 1 KOMPLETT (Kernel v1.80). Andreas hat 1.4-1.9 freigegeben, alle sechs
-Schritte abgearbeitet, je Schritt ein Release-Commit (1.30-1.80):
+Zuletzt bearbeitet: 2026-07-03 (dritte Session, Mac Mini, erste Session dort)
+PHASE 1.10 (POSIX-HAL) ABGESCHLOSSEN: src/hal/posix/hal_posix.c neu (termios
+raw+nonblocking statt conio, clock_gettime statt GetTickCount64, Rest wie
+Windows-HAL). Makefile waehlt HAL automatisch per $(OS) (Windows_NT vs. sonst),
+PYTHON-Variable erkennt python3/python. Test 01 generalisiert (Target-Check
+"native-" statt "native-win64"). make test PASS auf macOS (native-macos),
+Build warnungsfrei. Q9 baut damit auf macOS/Linux — Voraussetzung fuer
+24/7-Autonomiebetrieb (docs/AUTONOMIE.md) erfuellt. Naechster Schritt:
+Phase 2 (Modulsystem, 2.1/2.3a), Details siehe ARBEITSPLAN.md.
+
+PHASE 1 (1.1-1.9) KOMPLETT (Kernel v1.80, zweite Session, Desktop AF-PC).
+Andreas hat 1.4-1.9 freigegeben, alle sechs Schritte abgearbeitet, je Schritt
+ein Release-Commit (1.30-1.80):
 - Device-Modell: Geraete-/Pfadtabelle (IOMan), /term + /nil, Attach/Detach
   per Name (name.c, case-insensitiv), Dup/Close, GetStt/SetStt (SS.Ready/SS.EOF)
 - Echte Uhrzeit: q9_hal_time in beiden HALs, Kalenderlogik 2000-2136 im Kernel,
