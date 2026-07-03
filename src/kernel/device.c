@@ -14,6 +14,7 @@
 // 26-07-03│ 1.10 │ 1.4: q9_path_dup (niedrigste freie Nummer, OS-9-Semantik)              │ CF
 // 26-07-03│ 1.20 │ 1.6: q9_dev_attach/detach ueber Pathlist-Namen                         │ CF
 // 26-07-03│ 1.30 │ 1.7: /nil registriert, q9_path_open namensbasiert                      │ CF
+// 26-07-03│ 1.40 │ 3.1: /d0 registriert (Roh-Block-Device)                                │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
@@ -21,7 +22,8 @@
 #include "syscall.h"
 
 extern const q9_drv_t q9_drv_term;                     /* internal driver modules (dev_term.c,   */
-extern const q9_drv_t q9_drv_nil;                      /*   dev_nil.c)                           */
+extern const q9_drv_t q9_drv_nil;                      /*   dev_nil.c, dev_d0.c)                 */
+extern const q9_drv_t q9_drv_d0;
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ KERNEL TABLES                                                                                ║
@@ -88,6 +90,10 @@ int q9_dev_init(void)
         return err;
     }
     err = dev_add("nil", &q9_drv_nil);
+    if (err != 0) {
+        return err;
+    }
+    err = dev_add("d0", &q9_drv_d0);
     if (err != 0) {
         return err;
     }

@@ -24,6 +24,7 @@
 // 26-07-03│ 2.10 │ 2.1: Selbsttest q9_crc32 (Referenzwert "123456789")                    │ CF
 // 26-07-03│ 2.20 │ 2.3a: Selbsttests q9_mod_scan_first/next                              │ CF
 // 26-07-03│ 2.30 │ 2.3b-d: Selbsttests Validierung/Directory/F$Link/F$UnLink             │ CF
+// 26-07-03│ 2.40 │ 3.1: /d0 im Banner + Selbsttests SS.BlkRd/SS.BlkWr                    │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -81,7 +82,7 @@ void q9_kernel_init(void)
     kputs("  target: ");
     kputs(q9_hal_target());
     kputs("\n  syscalls: OS-9-ABI aktiv (docs/SYSCALLS.md)\n");
-    kputs("  devices:  /term (Pfade 0/1/2), /nil\n\n");
+    kputs("  devices:  /term (Pfade 0/1/2), /nil, /d0\n\n");
     kputs("  Phase 1: REPL. Eingabe wird zurückgegeben, 'exit' beendet.\n\n");
     kputs("Q9> ");
 }
@@ -174,7 +175,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[40];
+    } checks[48];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -478,6 +479,40 @@ int q9_kernel_selftest(void)
         miss.a[0] = (void *)noname;
         checks[nchecks].name = "F$Link: unbekannter Name -> E$MNF";
         checks[nchecks++].ok = (q9_syscall(F_LINK, &miss) == E_MNF);
+    }
+    {   /* 3.1: /d0 Block-Device — SS.BlkWr/SS.BlkRd-Roundtrip ueber die HAL (q9disk.img) */
+        static uint8_t wbuf[Q9_BLK_SIZE];
+        static uint8_t rbuf[Q9_BLK_SIZE];
+        q9_regs_t r = {0};
+        int path = q9_path_open("/d0", Q9_MODE_UPDATE);
+        int ok = (path == 3);
+
+        for (uint32_t i = 0; i < sizeof(wbuf); i++) {
+            wbuf[i] = (uint8_t)(i * 7 + 3);
+        }
+        r.d[0] = (uint32_t)path;
+        r.d[1] = SS_BLKWR;
+        r.d[2] = 1;                                     /* LBA 1                                  */
+        r.a[0] = wbuf;
+        ok = ok && (q9_syscall(I_SETSTT, &r) == 0);
+
+        r.d[1] = SS_BLKRD;
+        r.a[0] = rbuf;
+        ok = ok && (q9_syscall(I_GETSTT, &r) == 0);
+        for (uint32_t i = 0; ok && i < sizeof(wbuf); i++) {
+            ok = ok && (rbuf[i] == wbuf[i]);
+        }
+        checks[nchecks].name = "/d0: SS.BlkWr/SS.BlkRd Roundtrip (LBA 1)";
+        checks[nchecks++].ok = ok;
+
+        r.d[1] = SS_BLKWR;
+        r.a[0] = 0;
+        ok = (q9_syscall(I_SETSTT, &r) == E_PARAM);
+        r.d[1] = SS_READY;                               /* unbekannt fuer /d0                     */
+        ok = ok && (q9_syscall(I_GETSTT, &r) == E_UNKSVC);
+        ok = ok && (q9_path_close((uint32_t)path) == 0);
+        checks[nchecks].name = "/d0: NULL-Puffer -> E$Param, unbek. SS-Code -> E$UnkSvc";
+        checks[nchecks++].ok = ok;
     }
 
     for (int i = 0; i < nchecks; i++) {
