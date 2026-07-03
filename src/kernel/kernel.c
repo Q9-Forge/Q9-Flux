@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.50
+// File:   kernel.c                                                                        Ver. 1.60
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -16,6 +16,7 @@
 // 26-07-03│ 1.30 │ 1.4: Selbsttests I$Dup/I$Close                                         │ CF
 // 26-07-03│ 1.40 │ 1.5: Selbsttests F$PrsNam/F$CmpNam                                     │ CF
 // 26-07-03│ 1.50 │ 1.6: Selbsttests I$Attach/I$Detach                                     │ CF
+// 26-07-03│ 1.60 │ 1.7: /nil im Banner + Selbsttest                                       │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -72,7 +73,7 @@ void q9_kernel_init(void)
     kputs("  target: ");
     kputs(q9_hal_target());
     kputs("\n  syscalls: OS-9-ABI aktiv (docs/SYSCALLS.md)\n");
-    kputs("  devices:  /term (Pfade 0/1/2)\n\n");
+    kputs("  devices:  /term (Pfade 0/1/2), /nil\n\n");
     kputs("  Phase 1: REPL. Eingabe wird zurückgegeben, 'exit' beendet.\n\n");
     kputs("Q9> ");
 }
@@ -283,6 +284,21 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "I$Attach /disk0 -> E$MNF";
         checks[nchecks++].ok = (q9_syscall(I_ATTACH, &r) == E_MNF);
     }
+    {   /* second device /nil: write discards, read reports EOF */
+        q9_regs_t r = {0};
+        uint8_t   buf[4];
+        int path = q9_path_open("/nil", Q9_MODE_UPDATE);
+        int ok   = (path == 3);
+        r.d[0] = (uint32_t)path;
+        r.d[1] = sizeof(buf);
+        r.a[0] = buf;
+        ok = ok && (q9_syscall(I_WRITE, &r) == 0 && r.d[1] == sizeof(buf));
+        r.d[1] = sizeof(buf);
+        ok = ok && (q9_syscall(I_READ, &r) == E_EOF);
+        ok = ok && (q9_path_close(3) == 0);
+        checks[nchecks].name = "/nil: Write verwirft, Read -> E$EOF";
+        checks[nchecks++].ok = ok;
+    }
 
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
@@ -297,5 +313,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.50
+// EOF kernel.c                                                                            Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ def main() -> int:
         "Pfade 0/1/2 -> /term":        "[ok] Pfade 0/1/2 -> /term" in result.stdout,
         "Mode-Check E$BMode":          "[ok] I$Write auf Lesepfad -> E$BMode" in result.stdout,
         "close gibt Pfad frei":        "[ok] q9_path_close" in result.stdout,
+        "/nil-Device funktioniert":    "[ok] /nil: Write verwirft, Read -> E$EOF" in result.stdout,
     }
 
     for name, ok in checks.items():

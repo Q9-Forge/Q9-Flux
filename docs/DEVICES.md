@@ -55,6 +55,19 @@ auf /term teilen sich die eine physische Konsole.
 Beim Boot öffnet `q9_dev_init()` die Standardpfade **0/1/2 auf /term im Update-Modus**
 (wie die Standardpfade einer OS-9-Shell).
 
+## Gerät /nil (dev_nil.c) — seit Phase 1.7
+
+Null-Device nach OS-9-Vorbild: Schreiben verwirft die Daten (meldet Erfolg),
+Lesen liefert `E$EOF`. Zustandslos. Zweiter Treiber im System — beweist, dass
+das Device-Modell trägt (2 Treiber, 1 Schnittstelle).
+
+## Namensbasierter Zugriff — seit Phase 1.5/1.6
+
+- `q9_dev_attach("/term")` / `q9_dev_detach(dev)` (Syscalls I$Attach/I$Detach):
+  Gerätesuche per Pathlist-Name (führender `/` optional, **case-insensitiv**,
+  Parsing via name.c), Link-Count-Verwaltung. Unbekannt → `E$MNF`.
+- `q9_path_open("/nil", mode)` läuft ebenfalls über diese Namenslogik.
+
 ## Ausblick
 
 - **Phase 1.x**: I$GetStt/I$SetStt, Geräte per Name über I$Attach/I$Detach

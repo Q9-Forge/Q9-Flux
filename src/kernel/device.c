@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.c                                                                        Ver. 1.20
+// File:   device.c                                                                        Ver. 1.30
 // Owner:  AF
 // Desc.:  Q9 Device-Modell — Geräte- und Pfadtabelle (OS-9-Vorbild: IOMan). Registriert die
 //         internen Treiber-Module und verwaltet offene Pfade. Kein malloc, alles statisch.
@@ -13,13 +13,15 @@
 // 26-07-03│ 1.00 │ Initiale Version: Tabellen, open/close/get, /term auf Pfaden 0/1/2     │ CF
 // 26-07-03│ 1.10 │ 1.4: q9_path_dup (niedrigste freie Nummer, OS-9-Semantik)              │ CF
 // 26-07-03│ 1.20 │ 1.6: q9_dev_attach/detach ueber Pathlist-Namen                         │ CF
+// 26-07-03│ 1.30 │ 1.7: /nil registriert, q9_path_open namensbasiert                      │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
 #include "name.h"
 #include "syscall.h"
 
-extern const q9_drv_t q9_drv_term;                     /* internal driver modules (dev_term.c)   */
+extern const q9_drv_t q9_drv_term;                     /* internal driver modules (dev_term.c,   */
+extern const q9_drv_t q9_drv_nil;                      /*   dev_nil.c)                           */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ KERNEL TABLES                                                                                ║
@@ -82,6 +84,10 @@ static int dev_add(const char *name, const q9_drv_t *drv)
 int q9_dev_init(void)
 {
     int err = dev_add("term", &q9_drv_term);
+    if (err != 0) {
+        return err;
+    }
+    err = dev_add("nil", &q9_drv_nil);
     if (err != 0) {
         return err;
     }
@@ -161,22 +167,24 @@ int q9_dev_detach(q9_dev_t *dev)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_path_open(const char *devname, uint8_t mode)
 {
-    q9_dev_t *dev = q9_dev_find(devname);
+    q9_dev_t *dev;
+    int       err;
 
-    if (!dev) {
-        return -E_NOTRDY;                              /* no such device                         */
-    }
     if (mode == 0) {
         return -E_BMODE;
+    }
+    err = q9_dev_attach(devname, &dev);                /* name lookup + links++                  */
+    if (err != 0) {
+        return -err;
     }
     for (int i = 0; i < Q9_NPATHS; i++) {
         if (!pathtab[i].dev) {
             pathtab[i].dev  = dev;
             pathtab[i].mode = mode;
-            dev->links++;
             return i;
         }
     }
+    q9_dev_detach(dev);
     return -E_PTHFUL;
 }
 
@@ -235,5 +243,5 @@ q9_path_t *q9_path_get(uint32_t path)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.c                                                                            Ver. 1.20
+// EOF device.c                                                                            Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -102,9 +102,10 @@ int q9_dev_detach(q9_dev_t *dev);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_path_open
-// Desc.:    Öffnet einen Pfad auf ein Gerät. Rückgabe >= 0: Pfadnummer,
-//           < 0: negierter OS-9-Fehlercode (-E$PthFul, -E$NotRdy = Gerät unbekannt).
-// Call:     path = q9_path_open("term", Q9_MODE_UPDATE)
+// Desc.:    Öffnet einen Pfad auf ein Gerät (Name per Pathlist-Regeln, "/term" oder "term").
+//           Rückgabe >= 0: Pfadnummer, < 0: negierter OS-9-Fehlercode
+//           (-E$PthFul, -E$MNF = Gerät unbekannt, -E$BPNam, -E$BMode).
+// Call:     path = q9_path_open("/term", Q9_MODE_UPDATE)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_path_open(const char *devname, uint8_t mode);
 
