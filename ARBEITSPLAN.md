@@ -62,7 +62,7 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 | 1.7 | Zweites Gerät /nil (Null-Device) als Mini-Treiber | ✅ | Claudia | dev_nil.c; q9_path_open jetzt namensbasiert ("/nil" mit Slash ok) |
 | 1.8 | I$GetStt/I$SetStt Grundgerüst: SS-Codes für /term (z.B. SS.Ready = Eingabe wartet?) | ✅ | Claudia | getstat/setstat-Ops im Treiber-IF; SS.Ready+SS.EOF; SS-Nummern beim MWOS-Abgleich prüfen |
 | 1.9 | HAL-Erweiterung Echtzeit (q9_hal_time): native = localtime, wasm = Date.now → F$Time liefert echte Uhrzeit + F$STime | ✅ | Claudia | Kalenderlogik 2000–2136, Wochentag in d2; wasm-Teil ungetestet (emsdk fehlt hier) |
-| 1.10 | POSIX-HAL (`src/hal/posix/`, termios statt conio) + Makefile-Target, damit Q9 auf macOS/Linux baut | 💡 | — | Voraussetzung für 24/7-Betrieb auf dem Mac Mini (docs/AUTONOMIE.md) und spätere Cloud-Läufe; am besten direkt auf dem Mac umsetzen + testen |
+| 1.10 | POSIX-HAL (`src/hal/posix/`, termios statt conio) + Makefile-Target, damit Q9 auf macOS/Linux baut | 🟢 | Claudia | Voraussetzung für 24/7-Betrieb auf dem Mac Mini (docs/AUTONOMIE.md) und spätere Cloud-Läufe; direkt auf dem Mac umsetzen + testen; **interaktiv erledigen, bevor die geplante Aufgabe dort aktiviert wird** (sonst schlägt jeder automatische Lauf beim Bauen fehl) |
 
 ### Phase 2 — Modulsystem
 
