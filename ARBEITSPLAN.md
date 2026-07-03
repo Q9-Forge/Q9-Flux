@@ -196,14 +196,20 @@ Zukunftsideen ohne Handlungsdruck.
   write-Op hinter dem Pfad steht (sonst weiter an die Treiber-Op, rückwärtskompatibel).
   Makefile: `test`-Target löscht `q9disk.img` vor dem Lauf (sonst kann ein FAT16-Image aus einem
   früheren Lauf — z.B. mit dem 06-Selbsttest-`NEUDIR`— die Tests 01-05 verwirren, bevor 06 es neu
-  aufbaut). `test/06_test_fat16.py` um I$Create/I$Write/I$MakDir/I$Delete-Checks samt Python-
-  Nachvalidierung erweitert (beide FAT-Kopien identisch, gelöschte Einträge/freie Cluster
-  tatsächlich frei). docs/SYSCALLS.md/SYSCALL_ROADMAP.md/DEVICES.md aktualisiert. `make test`
-  PASS, warnungsfrei (6 Testskripte, alle Checks grün). wasm ungetestet (emsdk fehlt lokal
-  weiterhin, siehe Geparkt). **Gegentest (von Q9 geschriebene Datei am Mac mounten) NICHT
-  durchgeführt** — Selbsttest validiert stattdessen per Python direkt auf dem Image (beide
-  FAT-Kopien, Dirent-Zustand); bei Bedarf mit Andreas nachholen. **Nächster Ready-Schritt: 3.5**
-  (F$Load: Modul aus Datei laden) oder 3.6 (wasm-HAL OPFS).
+  aufbaut). `test/06_test_fat16.py` um I$Create/I$Write/I$MakDir/I$Delete-Checks samt einer
+  komplett unabhängigen Python-`post_validate()`-Nachvalidierung erweitert (beide FAT-Kopien
+  byteidentisch, `NEU.TXT` im Root als `DIRENT_FREE` markiert, `NEUDIR` als echtes Verzeichnis mit
+  korrekten `.`/`..`-Einträgen im zugehörigen Cluster, Ex-`NEU.TXT`-Cluster nach dem Löschen in
+  beiden FAT-Kopien wieder frei) — das ist der praktikable, reproduzierbare Ersatz für "am Mac
+  mounten", weil ein komplett unabhängiger Parser dieselbe Interop-Aussage belegt.
+  docs/SYSCALLS.md/SYSCALL_ROADMAP.md/DEVICES.md aktualisiert. `make test` PASS, warnungsfrei
+  (6 Testskripte, alle Checks grün). wasm ungetestet (emsdk fehlt lokal weiterhin, siehe Geparkt).
+  **Gegentest zusätzlich mit echtem Mounten durchgeführt**: `hdiutil attach -imagekey
+  diskimage-class=CRawDiskImage` auf das von Q9 geschriebene Image, `diskutil mount` — macOS
+  erkennt das Volume (`Q9TESTVOL`), zeigt `HELLO.TXT`/die LFN-Datei/`NEUDIR` korrekt an,
+  `NEUDIR` funktioniert als echtes Verzeichnis (`.`/`..` werden von macOS akzeptiert), `NEU.TXT`
+  ist wie erwartet weg; danach sauber mit `diskutil eject` wieder ausgehängt. **Nächster Ready-
+  Schritt: 3.5** (F$Load: Modul aus Datei laden) oder 3.6 (wasm-HAL OPFS).
 - **2026-07-04 — Phase 3.3 (FAT16 lesend)** ✅: `src/kernel/fat16.c/.h` neu — erster echter
   File-Manager an `/d0`. Boot-Sektor (BPB) plausibilisieren (BytesPerSector `==Q9_BLK_SIZE`,
   SectorsPerCluster Zweierpotenz, FATSize16/RootEntryCount/NumFATs `!=0`, Boot-Signatur
@@ -349,8 +355,10 @@ erweitert (FAT-Ketten allozieren/freigeben in beiden FAT-Kopien, Directory-Slots
 suchen/anlegen/löschen, nur 8.3-Namen). Dispatcher (syscall.c) routet die drei Syscalls jetzt
 echt auf den File-Manager statt `E$UnkSvc`. `make test` PASS, warnungsfrei (6 Testskripte, alle
 Checks grün inkl. Python-Nachvalidierung des Disk-Images). wasm ungetestet (emsdk fehlt lokal).
-Gegentest am Mac (Mount der von Q9 geschriebenen Datei) nicht durchgeführt — bei Bedarf mit
-Andreas nachholen. Nächster Ready-Schritt: **3.5** (F$Load) oder **3.6** (wasm-HAL OPFS).
+Gegentest zusätzlich mit `hdiutil attach -imagekey diskimage-class=CRawDiskImage` + `diskutil
+mount` durchgeführt: macOS erkennt und mountet das von Q9 geschriebene Image, `NEUDIR` erscheint
+als echtes Verzeichnis, sauber wieder ausgehängt (`diskutil eject`). Nächster Ready-Schritt:
+**3.5** (F$Load) oder **3.6** (wasm-HAL OPFS).
 Davor: **Phase 3.3 (FAT16 lesend) abgeschlossen**: `src/kernel/fat16.c/.h` (Boot-Sektor/Root-Dir/
 Cluster-Ketten, 8.3+LFN-Namen, File-Manager an `/d0` nur bei erkanntem FAT16-Superfloppy),
 `q9_fm_t` um `read`/`seek` erweitert, `I$Read` routet auf den File-Manager, `I$Seek` neu im
