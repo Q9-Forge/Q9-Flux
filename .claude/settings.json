@@ -4,20 +4,28 @@
       "Read(./**)",
       "Edit(./**)",
       "Write(./**)",
+      "Read(M:/MWOS/**)",
       "Bash(git *)",
       "Bash(make *)",
       "Bash(gcc *)",
       "Bash(clang *)",
       "Bash(python *)",
       "Bash(python3 *)",
+      "Bash(emcc *)",
       "PowerShell(git *)",
       "PowerShell(make *)",
       "PowerShell(gcc *)",
-      "PowerShell(python *)"
+      "PowerShell(clang *)",
+      "PowerShell(python *)",
+      "PowerShell(python3 *)",
+      "PowerShell(emcc *)"
     ],
     "deny": [
       "Bash(git push --force*)",
       "Bash(rm -rf /*)"
+    ],
+    "additionalDirectories": [
+      "M:/MWOS"
     ]
   }
 }

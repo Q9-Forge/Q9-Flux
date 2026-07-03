@@ -9,13 +9,28 @@ Verbrauch).
 ## Bausteine
 
 1. **`.claude/settings.json`** (in diesem Repo, wandert per git auf jeden Rechner):
-   erlaubt git/make/gcc/clang/python sowie Lesen/Schreiben im Projekt ohne
-   Berechtigungsdialog. `git push --force` bleibt verboten.
-2. **Geplante Aufgabe** in der Claude-Code-Desktop-App (pro Rechner einmal anlegen,
-   Prompt siehe unten). Die App muss laufen; verpasste Läufe werden beim nächsten
-   Start nachgeholt.
-3. **Einmal "Run now"** nach dem Anlegen: dabei erteilte Genehmigungen werden an
-   der Aufgabe gespeichert und gelten für alle künftigen Läufe.
+   erlaubt git/make/gcc/clang/emcc/python sowie Lesen/Schreiben im Projekt ohne
+   Berechtigungsdialog. `git push --force` bleibt verboten. Das ist der robuste
+   Baustein: Muster wie `Bash(git *)` oder `Edit(./**)` decken *jeden* künftigen
+   Ready-Schritt ab, unabhängig von seinem Inhalt — nicht nur den einen Lauf,
+   bei dem sie erteilt wurden.
+2. **Geplante Aufgabe** ("Routinen" in der deutschen UI) in der Claude-Code-
+   Desktop-App (pro Rechner einmal anlegen, Prompt siehe unten). Die App muss
+   laufen; verpasste Läufe werden beim nächsten Start nachgeholt.
+3. **Einmal "Run now"/"Jetzt ausführen"** nach dem Anlegen: dabei erteilte
+   Genehmigungen werden an der Aufgabe gespeichert — das deckt aber **nur
+   das ab, was in genau diesem einen Lauf tatsächlich gebraucht wurde**, nicht
+   pauschal alles Künftige. Der eigentliche Schutz vor Ort-1-Lücken ist die
+   Allowlist in settings.json; "Run now" ist nur die Ergänzung für alles, was
+   nicht über ein Muster in settings.json abgedeckt ist (z.B. Zugriff auf
+   Pfade außerhalb des Projektordners wie `M:\MWOS`, siehe unten).
+
+**Bekannte Lücke:** Alles außerhalb der gelisteten Muster bzw. außerhalb des
+Projektordners löst weiterhin eine Rückfrage aus — bei einem unbeaufsichtigten
+Lauf bleibt das dann vermutlich hängen. `M:\MWOS` (Referenz für den
+MWOS-Abgleich) ist deshalb explizit in `additionalDirectories` +
+`Read(M:/MWOS/**)` aufgenommen. Fällt künftig ein weiterer Pfad/Befehl auf,
+den ein Ready-Schritt braucht: hier ergänzen statt auf "Run now" verlassen.
 
 ## Einrichtung auf einem neuen Rechner (z.B. Mac Mini)
 
