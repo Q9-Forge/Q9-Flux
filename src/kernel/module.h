@@ -1,17 +1,18 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   module.h                                                                        Ver. 1.00
+// File:   module.h                                                                        Ver. 1.10
 // Owner:  AF
-// Desc.:  Q9-Modul-Header (Phase 2, Entwurf aus PROJECT.md/docs/MODULES.md) + CRC32-Routine.
-//         Konzepttreu zu OS-9, aber NICHT binärkompatibel (Entscheidung E2). Reines Datenformat
-//         hier — Suchen/Validieren/Bekanntmachen (2.3a/b/c) folgt in eigenen Modulen.
+// Desc.:  Q9-Modul-Header (Phase 2, Entwurf aus PROJECT.md/docs/MODULES.md) + CRC32-Routine +
+//         ROM-Image-Suche. Konzepttreu zu OS-9, aber NICHT binärkompatibel (Entscheidung E2).
+//         Validieren/Bekanntmachen (2.3b/c) folgt in eigenen Schritten.
 //
-// Call:   crc = q9_crc32(data, len)
+// Call:   crc = q9_crc32(data, len); hdr = q9_mod_scan_first(rom, romlen)
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ 2.1: Modul-Header-Struct + q9_crc32                                    │ CF
+// 26-07-03│ 1.10 │ 2.3a: q9_mod_scan_first/next (ROM-Image-Suche nach Sync-Bytes)         │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_MODULE_H
 #define Q9_MODULE_H
@@ -69,8 +70,26 @@ typedef struct q9_modhdr {
 //════════════════════════════════════════════════════════════════════════════════════════════════
 uint32_t q9_crc32(const uint8_t *data, uint32_t len);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_mod_scan_first
+// Desc.:    Durchsucht ein ROM-Image-Blob byteweise nach den Sync-Bytes ($51 $39). Prüft nur die
+//           Sync-Bytes (Größe/CRC folgt in 2.3b) — liefert einen Zeiger auf den (mutmaßlichen)
+//           Modul-Header, oder NULL, wenn im Blob kein Sync mehr Platz für einen vollen Header hat.
+// Call:     hdr = q9_mod_scan_first(rom, romlen)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+const q9_modhdr_t *q9_mod_scan_first(const uint8_t *rom, uint32_t romlen);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_mod_scan_next
+// Desc.:    Springt von einem gefundenen Modul um dessen ModuleSize weiter und prüft dort erneut
+//           die Sync-Bytes (OS-9-Vorbild: Module liegen im ROM-Image lückenlos hintereinander).
+//           NULL, wenn dort kein Sync steht oder der Sprung aus dem Blob heraus führen würde.
+// Call:     next = q9_mod_scan_next(rom, romlen, hdr)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+const q9_modhdr_t *q9_mod_scan_next(const uint8_t *rom, uint32_t romlen, const q9_modhdr_t *cur);
+
 #endif // Q9_MODULE_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF module.h                                                                            Ver. 1.00
+// EOF module.h                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

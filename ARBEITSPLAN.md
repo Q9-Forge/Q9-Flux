@@ -77,7 +77,7 @@ echter Datei) bzw. Phase 4 (Prozess-Stacks/Heaps).
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
 | 2.1 | Modul-Header + CRC32-Routine im Kernel | ✅ | Claudia | src/kernel/module.h/.c neu: q9_modhdr_t (28 Byte, #pragma pack, Offsets exakt wie PROJECT.md), q9_crc32 (bitweise CRC-32/ISO-HDLC, kein Table, kein malloc). Selbsttest: Referenzwert "123456789" -> $CBF43926. make test PASS, warnungsfrei |
-| 2.3a | Suchfunktion: ROM-Image-Blob nach Sync-Bytes durchsuchen, nach Fund um ModuleSize zum nächsten Modul springen | 🟢 | Claudia | Testmodule: zur Laufzeit im Selbsttest gebaut (eigene CRC32-Routine berechnet die CRC selbst — testet beides zugleich), plus kleines statisches Test-ROM-Image (gültiges Modul / kaputte CRC / kein Sync als Negativtests) |
+| 2.3a | Suchfunktion: ROM-Image-Blob nach Sync-Bytes durchsuchen, nach Fund um ModuleSize zum nächsten Modul springen | ✅ | Claudia | `q9_mod_scan_first`/`q9_mod_scan_next` in module.h/.c; reine Sync-Suche, Größe/CRC-Plausibilisierung bewusst noch nicht hier (kommt in 2.3b) — nur Schutz vor Endlosschleife/Overflow bei ModuleSize. Selbsttest: zwei Module lückenlos im ROM-Image (Sprung + Ende erkannt), Negativtest ohne Sync. `make test` PASS, warnungsfrei |
 | 2.3b | Validierung: Sync/Größe plausibilisieren, CRC32 nachrechnen | 🟢 | Claudia | Zwei-Stufen-Check (Header-Parity vor CRC) wie bei OS-9 bewusst NICHT übernommen — Q9-Module sind klein genug |
 | 2.3c | Bekanntmachen: Directory-Eintrag anlegen, Namenskollisions-/Revision-Regel (höhere Revision gewinnt, bei Gleichstand bleibt das etablierte Modul) | 🟢 | Claudia | Directory als statisches Array (kein malloc im Kernel, wie devtab/pathtab) |
 | 2.3d | F$Link + F$UnLink als Syscalls: Suche nach Name+Type+Language, Link-Count rauf/runter | 🟢 | Claudia | |
@@ -120,6 +120,15 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-03 — Phase 2.3a (Sync-Suche im ROM-Image)** ✅: `q9_mod_scan_first(rom, romlen)`
+  durchsucht ein Blob byteweise nach den Sync-Bytes ($51 $39); `q9_mod_scan_next(rom, romlen, cur)`
+  springt exakt um `modsize` weiter und prüft dort erneut den Sync (Module liegen im ROM-Image
+  lückenlos hintereinander, OS-9-Vorbild). Beide Funktionen prüfen bewusst NUR den Sync — Größen-/
+  CRC-Plausibilisierung ist 2.3b; einzige Ausnahme: ein Mindest-Check auf `modsize >= Q9_MOD_HDRSIZE`
+  plus Overflow-Schutz, damit ein kaputter Header nicht zur Endlosschleife im Aufrufer führt.
+  Selbsttest: zwei Module hintereinander im Blob (Sprung korrekt, Ende danach erkannt), Negativtest
+  ohne Sync-Bytes. `make test` PASS, warnungsfrei. **Nächster Schritt: 2.3b** (Validierung: Größe
+  plausibilisieren, CRC32 nachrechnen).
 - **2026-07-03 — Phase 2.1 (Modul-Header + CRC32)** ✅: `src/kernel/module.h` neu (q9_modhdr_t,
   28 Byte via `#pragma pack(push,1)`, Offsets exakt wie PROJECT.md-Entwurf: Sync/HeaderSize/
   ModuleSize/NameOffset/Type/Language/Attribute/Revision/ExecOffset/DataSize/CRC32; Type-/Language-/
@@ -161,6 +170,7 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 2.1 (Modul-Header +
-CRC32) abgeschlossen.** module.h/.c neu, `make test` PASS, warnungsfrei.
-Naechster Schritt: 2.3a (Suchfunktion im ROM-Image-Blob nach Sync-Bytes).
+**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 2.3a (Sync-Suche im
+ROM-Image) abgeschlossen.** q9_mod_scan_first/next in module.h/.c, `make test`
+PASS, warnungsfrei. Naechster Schritt: 2.3b (Validierung: Groesse
+plausibilisieren, CRC32 nachrechnen).
