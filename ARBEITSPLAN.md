@@ -64,19 +64,31 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 | 1.9 | HAL-Erweiterung Echtzeit (q9_hal_time): native = localtime, wasm = Date.now → F$Time liefert echte Uhrzeit + F$STime | ✅ | Claudia | Kalenderlogik 2000–2136, Wochentag in d2; wasm-Teil ungetestet (emsdk fehlt hier) |
 | 1.10 | POSIX-HAL (`src/hal/posix/`, termios statt conio) + Makefile-Target, damit Q9 auf macOS/Linux baut | 💡 | — | Voraussetzung für 24/7-Betrieb auf dem Mac Mini (docs/AUTONOMIE.md) und spätere Cloud-Läufe; am besten direkt auf dem Mac umsetzen + testen |
 
-### Phase 2 — Modulsystem (Grobskizze, Feinplanung nach Phase-1-Abschluss)
+### Phase 2 — Modulsystem
+
+Feinplanung 2026-07-03 abends mit Andreas besprochen. Reihenfolge folgt dem
+OS-9-Boot-Ablauf aus docs/MODULES.md: **Suchen → Validieren → Bekanntmachen →
+Link/Unlink.** Kein Dateisystem nötig — Module werden aus einem einkompilierten
+„ROM-Image"-Blob **in-place referenziert** (wie OS-9s ROM-Module: PIC-Code
+läuft direkt aus dem ROM, keine Kopie nötig) — deshalb auch **keine
+Speicherverwaltung** für Phase 2 nötig, die kommt erst mit Phase 3 (Laden von
+echter Datei) bzw. Phase 4 (Prozess-Stacks/Heaps).
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 2.1 | Modul-Header final spezifizieren (docs/MODULES.md), CRC32-Routine im Kernel | 💤 | — | Header-Entwurf steht in PROJECT.md; OS-9-Referenz in docs/MODULES.md; Feinplanung nach Phase-1-Abschluss |
-| 2.2 | `tools/q9mod`: Compiler-Output → Q9-Modul (Header, CRC, Custom Section für WASM) | 💤 | — | portables C, läuft auf dem PC |
-| 2.3 | Modul-Directory im Kernel + F$Link/F$UnLink; Module aus eingebautem ROM-Image | 💤 | — | Revision-Tie-Break-Regel + F$Load-Multi-Modul-Muster aus docs/MODULES.md übernehmen |
-| 2.4 | dev_term als echtes Typ-2-Modul (Treiber) aus dem ROM-Image laden | 💤 | — | Nagelprobe: internes Modul → echtes Modul |
+| 2.1 | Modul-Header + CRC32-Routine im Kernel | 🟢 | Claudia | Entwurf aus PROJECT.md/docs/MODULES.md wird beim Implementieren von 2.3a live finalisiert, keine separate Vorab-Spezifikation |
+| 2.3a | Suchfunktion: ROM-Image-Blob nach Sync-Bytes durchsuchen, nach Fund um ModuleSize zum nächsten Modul springen | 🟢 | Claudia | Testmodule: zur Laufzeit im Selbsttest gebaut (eigene CRC32-Routine berechnet die CRC selbst — testet beides zugleich), plus kleines statisches Test-ROM-Image (gültiges Modul / kaputte CRC / kein Sync als Negativtests) |
+| 2.3b | Validierung: Sync/Größe plausibilisieren, CRC32 nachrechnen | 🟢 | Claudia | Zwei-Stufen-Check (Header-Parity vor CRC) wie bei OS-9 bewusst NICHT übernommen — Q9-Module sind klein genug |
+| 2.3c | Bekanntmachen: Directory-Eintrag anlegen, Namenskollisions-/Revision-Regel (höhere Revision gewinnt, bei Gleichstand bleibt das etablierte Modul) | 🟢 | Claudia | Directory als statisches Array (kein malloc im Kernel, wie devtab/pathtab) |
+| 2.3d | F$Link + F$UnLink als Syscalls: Suche nach Name+Type+Language, Link-Count rauf/runter | 🟢 | Claudia | |
+| 2.2 | `tools/q9mod`: Compiler-Output → Q9-Modul (Header, CRC, Custom Section für WASM) | 💤 | — | sinnvoll, sobald echte (nicht handgebaute) Module gebraucht werden — nach 2.3 |
+| 2.4 | dev_term als echtes Typ-2-Modul (Treiber) aus dem ROM-Image laden | 💤 | — | Nagelprobe: internes Modul → echtes Modul; nach 2.2 |
 
-**Design-Fragen für heute Abend** (Details in docs/MODULES.md, Abschnitt „Zusammenfassung"):
-braucht Q9 Modul-Gruppen (gemeinsames Unlink mehrerer Module)? Braucht Q9 den
-OS-9-Dreiklang File-Manager/Treiber/Descriptor, oder bleibt es beim aktuellen
-kombinierten `q9_dev_t`?
+**Entschieden (2026-07-03 abends):**
+- **Modul-Gruppen** (gemeinsames Unlink mehrerer Module): erstmal nicht — braucht Multi-Modul-Dateien, die es noch nicht gibt. → Ideenspeicher.
+- **OS-9-Dreiklang File-Manager/Treiber/Descriptor** vs. kombiniertes `q9_dev_t`: bleibt kombiniert — lohnt sich erst bei mehreren Instanzen desselben Treibers mit unterschiedlicher Konfiguration. → Ideenspeicher, falls der Bedarf mal auftaucht.
+- **Speicherverwaltung**: nicht Teil von Phase 2 (siehe oben, in-place Referenzierung reicht).
+- **PC-seitiges Inspektions-Tool** (`ident`/`dump`-artig): nicht nötig, Selbsttest-Muster reicht zur Verifikation. → Ideenspeicher, als `--dump`-Modus in `q9mod` statt eigenes Tool, falls später gebraucht.
 
 ---
 
@@ -92,6 +104,9 @@ Zukunftsideen ohne Handlungsdruck.
 | Idee | Kontext | Warum (noch) nicht eingeplant |
 |------|---------|-------------------------------|
 | Kernel-Tabellen als Datenmodule verpacken (analog OS-9s `F$DatMod`) | docs/MODULES.md, Abschnitt 5 | Setzt das Modulsystem (Phase 2) voraus; passt nur zu read-mostly Daten, nicht zu häufig mutierenden Tabellen (Pfad/Geräte); keine MMU-Durchsetzung vorhanden (weder WASM noch aktuelles 68k-Ziel) |
+| Modul-Gruppen (gemeinsames Unlink mehrerer zusammen geladener Module) | docs/MODULES.md, Abschnitt 4 | Braucht Multi-Modul-Dateien, die es noch nicht gibt (Phase-2-Besprechung 2026-07-03) |
+| OS-9-Dreiklang File-Manager/Treiber/Descriptor statt kombiniertem `q9_dev_t` | docs/MODULES.md, Abschnitt 3 | Lohnt sich erst bei mehreren Instanzen desselben Treibers mit unterschiedlicher Konfiguration (Phase-2-Besprechung 2026-07-03) |
+| `--dump`-Modus in `q9mod` (Modul-Header lesbar anzeigen, "ident"-artig) | Phase-2-Besprechung 2026-07-03 | Selbsttest-Muster reicht zur Verifikation während der Entwicklung; kein PC-Tool nötig, bis mal ein echtes produziertes Modul von Hand inspiziert werden muss |
 
 ---
 
@@ -131,7 +146,9 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 — **Phase 1 komplett inkl. MWOS-Abgleich**
-(E$Diff→E$Differ, F$Time/F$STime-Register korrigiert), Syscall-Roadmap und
-Modul-Referenz (docs/MODULES.md) stehen, „💭 Ideenspeicher" eingeführt.
-Nächstes: Phase-2-Besprechung mit Andreas (Design-Fragen s. oben).
+**Letzte Aktualisierung**: 2026-07-03 abends — **Phase-2-Besprechung
+abgeschlossen.** Reihenfolge steht (Suchen→Validieren→Bekanntmachen→
+Link/Unlink, kein Dateisystem/keine Speicherverwaltung nötig), 2.1+2.3a–d auf
+🟢 Ready gesetzt, drei Design-Fragen entschieden (Modul-Gruppen nein, Dreiklang
+File-Manager/Treiber/Descriptor nein, PC-Ident-Tool nein — alle drei in den
+Ideenspeicher). Nächster Schritt: 2.1/2.3a implementieren.
