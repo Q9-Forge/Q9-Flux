@@ -110,12 +110,12 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 3.1 | Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/ | 💡 | — | kleinster Schritt, testbar ganz ohne FS; HAL-Seite existiert schon (nativ: q9disk.img) |
-| 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | 💡 | — | Manager-Schnitt vorm Festlegen mit dem Dibble-Buch abgleichen; Schnittstelle so schneiden, dass später ein 68k-Manager-Adapter andocken kann (siehe Ideenspeicher) |
-| 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | 💡 | — | nur Superfloppy; Test: am Mac befülltes Image, Dateien aus Q9 heraus lesen |
-| 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | 💡 | — | nach 3.3; Gegentest: von Q9 geschriebene Datei am Mac mounten und lesen |
-| 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | 💡 | — | Nagelprobe Phase 2 + 3 zusammen; braucht erste Speicherverwaltung (Modul-Puffer) — Umfang beim Design klären |
-| 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | 💡 | — | kann nach hinten rutschen, nativ reicht zum Entwickeln von 3.1–3.5 |
+| 3.1 | Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/ | 🟢 | Claudia | kleinster Schritt, testbar ganz ohne FS; HAL-Seite existiert schon (nativ: q9disk.img) |
+| 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | 🟢 | Claudia | Manager-Schnitt vorm Festlegen mit dem Dibble-Buch abgleichen; Schnittstelle so schneiden, dass später ein 68k-Manager-Adapter andocken kann (siehe Ideenspeicher) |
+| 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | 🟢 | Claudia | nur Superfloppy; Test: am Mac befülltes Image, Dateien aus Q9 heraus lesen |
+| 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | 🟢 | Claudia | nach 3.3; Gegentest: von Q9 geschriebene Datei am Mac mounten und lesen |
+| 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | 🟢 | Claudia | Nagelprobe Phase 2 + 3 zusammen; braucht erste Speicherverwaltung (Modul-Puffer) — Umfang beim Design klären |
+| 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | 🟢 | Claudia | kann nach hinten rutschen, nativ reicht zum Entwickeln von 3.1–3.5 |
 
 ---
 
@@ -216,7 +216,8 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 spät, Mac Mini — **Phase-3-Vorbesprechung
+**Letzte Aktualisierung**: 2026-07-03 spät, Mac Mini — **Phase 3 freigegeben:
+3.1–3.6 auf 🟢 Ready (Wer=Claudia) gestellt.** Davor: Phase-3-Vorbesprechung
 mit Andreas**: Schritte 3.1–3.6 als 💡 eingetragen (O1 = FAT16 entschieden,
 LFN lesen ja / schreiben Ideenspeicher, Superfloppy zuerst, Dibble-Buch als
 Design-Referenz), drei neue Ideenspeicher-Einträge (LFN-Schreiben,
