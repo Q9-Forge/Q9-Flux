@@ -183,5 +183,37 @@ bei Q9s Modulgrößen (WASM, klein) ist der Performance-Vorteil fraglich.
 | `_musage`/`_msymbol` (Kommentar/Symboltabelle) | 🚫 optional, niedrige Priorität |
 | Header-Extension-Mechanismus (`_mhdext`) | 💤 evtl. als Zukunftssicherung übernehmen |
 | Access-Permissions (Owner/Group/World) | 🚫 Q9 ist aktuell Single-User |
+| Kernel-Tabellen als Datenmodule verpacken (analog `F$DatMod`) | 💤 **Option für später, erst wenn das Grundsystem läuft** — siehe Abschnitt 5 |
+
+## 5. Idee (geparkt): Kernel-Tabellen als Datenmodule
+
+Diskutiert am 2026-07-03: Nach der Initialisierung ist der Zugriff auf Daten
+in einem Modul genauso schnell wie auf ein internes statisches Array (nur der
+Pointer wird einmal aufgelöst) — die Idee kostet also **zur Laufzeit nichts**.
+Elegant im Sinne von "alles ist ein Modul" (vgl. Plan 9 „alles ist eine
+Datei" — dort geht's um einheitliche I/O-Operationen, hier eher um
+einheitliche Ablage/Auffindbarkeit, verwandtes Prinzip).
+
+**Wo es passt:** read-mostly Daten wie ein künftiges System-Konfig-Modul
+oder Daten, die zwischen Prozessen geteilt werden — genau der historische
+`F$DatMod`-Anwendungsfall.
+
+**Wo es NICHT passt:** häufig mutierende Kernel-Tabellen (Pfad-/Geräte-
+Tabelle). Die CRC-Prüfung ergibt bei ständig wechselndem Inhalt keinen Sinn
+(entweder ständig neu berechnen oder komplett weglassen — dann bringt das
+Modul-Gewand nichts mehr).
+
+**Warum geparkt, nicht eingeplant:**
+- Setzt das Modulsystem selbst voraus (Phase 2.1–2.3) — geht logisch also
+  frühestens *nach* Phase 2, nicht als Teil davon.
+- Keine Hardware-/Software-Durchsetzung der Kernel/User-Trennung vorhanden
+  (weder WASM noch aktuell geplantes 68k-Target haben eine MMU-Grenze) —
+  wäre also erstmal nur Konvention, keine erzwungene Sicherheit.
+- Zusätzlicher Aufwand ohne akuten Bedarf; passt nicht zum bisherigen
+  "erst simpel & lauffähig"-Vorgehen.
+
+→ Als Option betrachten, **sobald das Grundsystem (Phase 1–2) steht und
+läuft** — dann an einem guten Kandidaten (Konfig-Modul) ausprobieren, nicht
+vorher entscheiden oder gar für Phase 2 einplanen.
 
 **Erstellt**: 2026-07-03
