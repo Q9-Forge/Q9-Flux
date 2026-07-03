@@ -45,9 +45,9 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 
 | Nummer | Name     | Status Phase 1 |
 |--------|----------|----------------|
-| $00 | F$Link   | geplant (Phase 2, Modulsystem) |
+| $00 | F$Link   | ✅ implementiert (Phase 2.3d: sucht Modul-Directory nach Name+Type+Language) |
 | $01 | F$Load   | geplant (Phase 2/3) |
-| $02 | F$UnLink | geplant (Phase 2) |
+| $02 | F$UnLink | ✅ implementiert (Phase 2.3d) |
 | $03 | F$Fork   | geplant (Phase 4, Prozesse) |
 | $04 | F$Wait   | geplant (Phase 4) |
 | $06 | F$Exit   | ✅ implementiert (Phase-1-Semantik: hält Proto-Prozess an) |
@@ -77,10 +77,15 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 | $C8  | E$PthFul  | Pfadtabelle voll |
 | $C9  | E$BPNum   | ungültige Pfadnummer |
 | $CB  | E$BMode   | falscher Zugriffsmodus |
+| $CD  | E$BMID    | ungültiger Modul-Header (2.3b: HeaderSize/ModuleSize/NameOffset) |
+| $CE  | E$DirFul  | Modul-Directory voll (2.3c) |
 | $D0  | E$UnkSvc  | unbekannter Service-Request |
+| $D1  | E$ModBsy  | Modul noch gelinkt (reserviert, MWOS-verifiziert) |
 | $D2  | E$BPAddr  | ungültige Parameter-Adresse |
 | $D3  | E$EOF     | Dateiende |
 | $E1  | E$Param   | ungültiger Parameter |
+| $E8  | E$BMCRC   | Modul-CRC stimmt nicht (2.3b) |
+| $EC  | E$BMHP    | Modul-Header strukturell defekt (2.3b; Q9 macht KEINE separate Parity-Vorabprüfung wie OS-9, der Code wird für alle Strukturchecks vor der CRC verwendet) |
 | $F6  | E$NotRdy  | Gerät nicht bereit |
 
 ---
@@ -214,6 +219,31 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
   1=Julianisch, 2/3=mit Tick-Rate) wird von Q9 noch **nicht** ausgewertet —
   offener Punkt im Ideenspeicher, kein Bug.
 
+### F$Link ($00) / F$UnLink ($02) — seit Phase 2.3d
+
+| Register | F$Link Input                          | F$Link Output                  | F$UnLink Input |
+|----------|----------------------------------------|--------------------------------|-----------------|
+| a0       | Modulname (nullterminiert)             | —                               | —               |
+| d1.b     | Type (0 = beliebig)                    | —                               | —               |
+| d2.b     | Language (0 = beliebig)                | —                               | —               |
+| a1       | —                                       | Modul-Header-Zeiger             | Modul-Header-Zeiger (von F$Link) |
+| a2       | —                                       | Einsprung (Header + ExecOffset) | —               |
+| d0.b     | —                                       | Revision                        | —               |
+
+- Sucht in der Modul-Directory (2.3c: `q9_mod_register`) nach Name (+ Type/
+  Language, falls angegeben) — kein Datei-/ROM-Zugriff hier, das Modul muss
+  vorher per `q9_mod_register` bekannt gemacht worden sein (bei Q9 aktuell
+  nur über den Selbsttest möglich; `F$Load`/Boot-Scan folgt mit 2.4/2.2).
+  Nicht gefunden → `E$MNF`.
+- F$UnLink senkt den Link-Count (Boden bei 0), Directory-Eintrag/Speicher
+  bleiben bestehen — Q9 hält Module aktuell als In-Place-Referenz aufs
+  ROM-Image (kein Entladen nötig, siehe Phase-2-Intro in ARBEITSPLAN.md).
+  Unbekannter Header-Zeiger → `E$MNF`.
+- **Nicht binärkompatibel zu OS-9** (Entscheidung E2): echtes F$Link liefert
+  A2 = Header, A1 = Einsprung; Q9 vertauscht das bewusst zugunsten der
+  eigenen a1/a2-Konvention (a1 = "das gefundene Ding", a2 = "wo man
+  reinspringt", konsistent mit I$Attach a2 = Geräte-Handle).
+
 ---
 
 ## Bewusste Abweichungen von OS-9 (Phase-1-Stand)
@@ -229,4 +259,4 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
    Zugriffsmodus liefert bereits `E$BMode`.
 
 **Erstellt**: 2026-07-03
-**Letzte Aktualisierung**: 2026-07-03 (Phase 1.3: Device-Modell)
+**Letzte Aktualisierung**: 2026-07-03 (Phase 2.3d: F$Link/F$UnLink)

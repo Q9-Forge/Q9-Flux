@@ -78,9 +78,9 @@ echter Datei) bzw. Phase 4 (Prozess-Stacks/Heaps).
 |---|---------|--------|-----|---------|
 | 2.1 | Modul-Header + CRC32-Routine im Kernel | ✅ | Claudia | src/kernel/module.h/.c neu: q9_modhdr_t (28 Byte, #pragma pack, Offsets exakt wie PROJECT.md), q9_crc32 (bitweise CRC-32/ISO-HDLC, kein Table, kein malloc). Selbsttest: Referenzwert "123456789" -> $CBF43926. make test PASS, warnungsfrei |
 | 2.3a | Suchfunktion: ROM-Image-Blob nach Sync-Bytes durchsuchen, nach Fund um ModuleSize zum nächsten Modul springen | ✅ | Claudia | `q9_mod_scan_first`/`q9_mod_scan_next` in module.h/.c; reine Sync-Suche, Größe/CRC-Plausibilisierung bewusst noch nicht hier (kommt in 2.3b) — nur Schutz vor Endlosschleife/Overflow bei ModuleSize. Selbsttest: zwei Module lückenlos im ROM-Image (Sprung + Ende erkannt), Negativtest ohne Sync. `make test` PASS, warnungsfrei |
-| 2.3b | Validierung: Sync/Größe plausibilisieren, CRC32 nachrechnen | 🟢 | Claudia | Zwei-Stufen-Check (Header-Parity vor CRC) wie bei OS-9 bewusst NICHT übernommen — Q9-Module sind klein genug |
-| 2.3c | Bekanntmachen: Directory-Eintrag anlegen, Namenskollisions-/Revision-Regel (höhere Revision gewinnt, bei Gleichstand bleibt das etablierte Modul) | 🟢 | Claudia | Directory als statisches Array (kein malloc im Kernel, wie devtab/pathtab) |
-| 2.3d | F$Link + F$UnLink als Syscalls: Suche nach Name+Type+Language, Link-Count rauf/runter | 🟢 | Claudia | |
+| 2.3b | Validierung: Sync/Größe plausibilisieren, CRC32 nachrechnen | ✅ | Claudia | q9_mod_validate in module.h/.c: HeaderSize/ModuleSize/NameOffset-Strukturchecks vor der vollen CRC32 (billig vor teuer); Zwei-Stufen-Check (Header-Parity vor CRC) wie bei OS-9 bewusst NICHT übernommen — Q9-Module sind klein genug. Neue Fehlercodes E$BMHP($EC)/E$BMCRC($E8), MWOS-verifiziert (lokale Kopie unter /Volumes/SSD1TB/projects/MWOS gefunden). 4 Selbsttest-Checks |
+| 2.3c | Bekanntmachen: Directory-Eintrag anlegen, Namenskollisions-/Revision-Regel (höhere Revision gewinnt, bei Gleichstand bleibt das etablierte Modul) | ✅ | Claudia | q9_mod_register/q9_mod_find in module.c: Directory als statisches Array (Q9_MOD_MAXDIR=8, kein malloc, wie devtab/pathtab). E$DirFul($CE) bei vollem Directory. 2 Selbsttest-Checks (Revision-Gewinn + Gleichstand) |
+| 2.3d | F$Link + F$UnLink als Syscalls: Suche nach Name+Type+Language, Link-Count rauf/runter | ✅ | Claudia | q9_mod_link/q9_mod_unlink in module.c + Dispatcher-Cases F_LINK/F_UNLINK in syscall.c (a0=Name,d1.b=Type,d2.b=Lang -> a1=Header,a2=Einsprung,d0.b=Rev; a1=Header -> UnLink). Bewusst NICHT binärkompatibel zu OS-9s A1/A2-Belegung (Entscheidung E2). E$MNF bei unbekanntem Namen. docs/SYSCALLS.md + SYSCALL_ROADMAP.md aktualisiert. 3 Selbsttest-Checks |
 | 2.2 | `tools/q9mod`: Compiler-Output → Q9-Modul (Header, CRC, Custom Section für WASM) | 💤 | — | sinnvoll, sobald echte (nicht handgebaute) Module gebraucht werden — nach 2.3 |
 | 2.4 | dev_term als echtes Typ-2-Modul (Treiber) aus dem ROM-Image laden | 💤 | — | Nagelprobe: internes Modul → echtes Modul; nach 2.2 |
 
@@ -120,6 +120,22 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-03 — Phase 2.3b+c+d (Validieren, Bekanntmachen, Link/Unlink)** ✅: Boot-Pipeline
+  aus docs/MODULES.md komplett (Suchen 2.3a -> Validieren -> Bekanntmachen -> Link/Unlink).
+  `q9_mod_validate` prüft HeaderSize/ModuleSize/NameOffset (billig) vor der vollen CRC32 (teuer) —
+  OS-9s zusätzliche Header-Parity-Vorabstufe bewusst nicht nachgebaut. `q9_mod_register`/
+  `q9_mod_find` verwalten ein statisches Directory (Q9_MOD_MAXDIR=8, kein malloc) mit der
+  OS-9-Revision-Tie-Break-Regel (höhere Revision gewinnt, bei Gleichstand bleibt das etablierte
+  Modul). `q9_mod_link`/`q9_mod_unlink` + neue Dispatcher-Cases F$Link($00)/F$UnLink($02) in
+  syscall.c (a0=Name, d1.b=Type, d2.b=Lang -> a1=Header, a2=Einsprung, d0.b=Revision) — Q9s
+  eigene a1/a2-Belegung, bewusst nicht binärkompatibel zu OS-9 (Entscheidung E2). Neue,
+  MWOS-verifizierte Fehlercodes E$BMHP($EC), E$BMCRC($E8), E$DirFul($CE), E$ModBsy($D1, aktuell
+  unbenutzt) — Quelle: lokale MWOS-Kopie unter /Volumes/SSD1TB/projects/MWOS/SRC/DEFS/errno.h
+  (kein Zugriff auf den Desktop-AF-PC-Pfad M:\MWOS nötig). docs/SYSCALLS.md (neuer F$Link/
+  F$UnLink-Abschnitt) und docs/SYSCALL_ROADMAP.md aktualisiert. 9 neue Selbsttest-Checks
+  (34 insgesamt), `make test` PASS, warnungsfrei. **Damit ist Phase 2.3 (Modul-Directory)
+  komplett** — offen für Phase 2 sind nur noch 2.2 (`q9mod`-Tool) und 2.4 (dev_term als echtes
+  Modul), beide 💤 bis freigegeben.
 - **2026-07-03 — Phase 2.3a (Sync-Suche im ROM-Image)** ✅: `q9_mod_scan_first(rom, romlen)`
   durchsucht ein Blob byteweise nach den Sync-Bytes ($51 $39); `q9_mod_scan_next(rom, romlen, cur)`
   springt exakt um `modsize` weiter und prüft dort erneut den Sync (Module liegen im ROM-Image
@@ -170,7 +186,9 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 2.3a (Sync-Suche im
-ROM-Image) abgeschlossen.** q9_mod_scan_first/next in module.h/.c, `make test`
-PASS, warnungsfrei. Naechster Schritt: 2.3b (Validierung: Groesse
-plausibilisieren, CRC32 nachrechnen).
+**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 2.3 (Modul-Directory)
+komplett abgeschlossen.** 2.3b (q9_mod_validate), 2.3c (q9_mod_register/find,
+Directory) und 2.3d (F$Link/F$UnLink) in module.h/.c und syscall.c, docs/
+SYSCALLS.md + SYSCALL_ROADMAP.md aktualisiert, `make test` PASS, warnungsfrei
+(34 Selbsttest-Checks). Kein Ready-Schritt mehr offen für Claudia — 2.2/2.4
+sind 💤 bis Andreas sie freigibt.

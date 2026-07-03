@@ -16,6 +16,7 @@
 // 26-07-03│ 1.20 │ 1.6: E$MNF ergänzt                                                     │ CF
 // 26-07-03│ 1.30 │ 1.8: SS.*-Statuscodes ergänzt                                          │ CF
 // 26-07-03│ 1.40 │ Bugfix: E$Diff($E2) kollidierte mit E$NoChld -> E_DIFFER($A5)         │ CF
+// 26-07-03│ 1.50 │ 2.3b-d: E$BMHP/E$BMCRC/E$DirFul/E$ModBsy ergänzt (MWOS-verifiziert)   │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -85,12 +86,18 @@ typedef struct q9_regs {
 #define E_PTHFUL  0xc8                                 /* path table full                        */
 #define E_BPNUM   0xc9                                 /* bad path number                        */
 #define E_BMODE   0xcb                                 /* bad access mode                        */
+#define E_BMID    0xcd                                 /* bad module id (2.3b: hdrsize/typo)     */
+#define E_DIRFUL  0xce                                 /* module directory full (2.3c)           */
 #define E_UNKSVC  0xd0                                 /* unknown service request                */
+#define E_MODBSY  0xd1                                 /* module busy, still linked (2.3d)       */
 #define E_BPADDR  0xd2                                 /* bad parameter address                  */
 #define E_EOF     0xd3                                 /* end of file                            */
 #define E_BPNAM   0xd7                                 /* bad path name                          */
 #define E_MNF     0xdd                                 /* module not found (unbekanntes Gerät)   */
 #define E_PARAM   0xe1                                 /* bad parameter                          */
+#define E_BMCRC   0xe8                                 /* bad module CRC (2.3b)                  */
+#define E_BMHP    0xec                                 /* bad module header (2.3b, keine echte   */
+                                                        /*   Parity-Pruefung — Q9 macht das nicht) */
 #define E_NOTRDY  0xf6                                 /* device not ready                       */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗

@@ -46,8 +46,8 @@ Herzstück von Phase 2 (siehe PROJECT.md).
 
 | # | Name | Beschreibung | Status | Notiz |
 |---|------|--------------|--------|-------|
-| $00 | F$Link | Modul verknüpfen (aus Directory) | 🟢 Phase 2 | Kern des Modul-Directory |
-| $02 | F$UnLink | Modul lösen | 🟢 Phase 2 | |
+| $00 | F$Link | Modul verknüpfen (aus Directory) | ✅ | Phase 2.3d, Directory aus 2.3c |
+| $02 | F$UnLink | Modul lösen | ✅ | Phase 2.3d |
 | $1D | F$UnLoad | Modul per Name lösen | 🟢 Phase 2 | Komfortvariante von F$UnLink |
 | $01 | F$Load | Modul aus Datei laden | 🟢 Phase 2/3 | erst mit VFS voll nutzbar |
 | $17 | F$CRC | CRC erzeugen | 🟢 Phase 2 | für Modul-Header, in `q9mod` mitgedacht (PROJECT.md) |
@@ -167,8 +167,9 @@ WASM kennt keine Hardware-IRQs.
 
 ## Zusammenfassung
 
-- **16 / 97** implementiert (Phase 1 komplett: alle I$-Kern-Calls + F$Exit/ID/Time/STime/PrsNam/CmpNam)
-- **~30** für konkrete künftige Phasen eingeplant (🟢, meist Phase 2–4)
+- **18 / 97** implementiert (Phase 1 komplett: alle I$-Kern-Calls + F$Exit/ID/Time/STime/PrsNam/CmpNam;
+  Phase 2.3d: F$Link/F$UnLink über die Modul-Directory)
+- **~28** für konkrete künftige Phasen eingeplant (🟢, meist Phase 2–4)
 - **~10** optional/ohne feste Phase (💤)
 - **~30** bewusst ignoriert (🚫) — meist OS-9-Interna, die Q9 nicht 1:1 nachbaut, oder WASM-irrelevant
 - **5** mit offenem Design (❓) — Bitmap-Frage (Modul-Directory), Speicherverwaltung Phase 7

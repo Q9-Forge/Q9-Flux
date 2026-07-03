@@ -23,6 +23,7 @@
 // 26-07-03│ 2.00 │ Bugfix: F$STime/F$Time-Selbsttest an d0=Zeit/d1=Datum angepasst        │ CF
 // 26-07-03│ 2.10 │ 2.1: Selbsttest q9_crc32 (Referenzwert "123456789")                    │ CF
 // 26-07-03│ 2.20 │ 2.3a: Selbsttests q9_mod_scan_first/next                              │ CF
+// 26-07-03│ 2.30 │ 2.3b-d: Selbsttests Validierung/Directory/F$Link/F$UnLink             │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -129,6 +130,37 @@ void q9_kernel_step(void)
     kputs("Q9> ");
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: build_module
+// Desc.:    Baut ein minimales, gueltiges Q9-Modul (Header + nullterminierter Name direkt danach)
+//           in buf und rechnet die CRC32 passend (Feld erst 0, dann q9_crc32 ueber alles).
+//           Nur fuer den Selbsttest — buf muss mindestens Q9_MOD_HDRSIZE + strlen(name) + 1 Bytes
+//           gross sein.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void build_module(uint8_t *buf, const char *name, uint8_t type, uint8_t lang, uint8_t rev)
+{
+    q9_modhdr_t *h       = (q9_modhdr_t *)buf;
+    uint32_t     namelen = str_len(name);
+    uint32_t     modsize = Q9_MOD_HDRSIZE + namelen + 1;
+
+    h->sync[0]  = Q9_MOD_SYNC0;
+    h->sync[1]  = Q9_MOD_SYNC1;
+    h->hdrsize  = Q9_MOD_HDRSIZE;
+    h->modsize  = modsize;
+    h->nameoff  = Q9_MOD_HDRSIZE;
+    h->type     = type;
+    h->lang     = lang;
+    h->attr     = 0;
+    h->rev      = rev;
+    h->execoff  = Q9_MOD_HDRSIZE;                   /* Dummy-Einsprung: zeigt auf den Namen    */
+    h->datasize = 0;
+    h->crc32    = 0;
+    for (uint32_t i = 0; i <= namelen; i++) {
+        buf[Q9_MOD_HDRSIZE + i] = (uint8_t)name[i];
+    }
+    h->crc32 = q9_crc32(buf, modsize);
+}
+
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_kernel_selftest
 // Desc.:    Syscall-Selbsttest: prüft Erfolgs- und Fehlerpfade der Phase-1-ABI.
@@ -142,7 +174,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[30];
+    } checks[40];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -378,6 +410,74 @@ int q9_kernel_selftest(void)
         static uint8_t rom[Q9_MOD_HDRSIZE] = {0};
         checks[nchecks].name = "q9_mod_scan_first ohne Sync -> NULL";
         checks[nchecks++].ok = (q9_mod_scan_first(rom, sizeof(rom)) == 0);
+    }
+    {   /* 2.3b: q9_mod_validate — gueltiges Modul (Groesse/Nameoffset/CRC ok) */
+        static uint8_t buf[64];
+        build_module(buf, "vmod", Q9_MOD_DRIVR, Q9_MOD_M68K, 1);
+        checks[nchecks].name = "q9_mod_validate: gueltiges Modul -> 0";
+        checks[nchecks++].ok = (q9_mod_validate(buf, sizeof(buf), (const q9_modhdr_t *)buf) == 0);
+    }
+    {   /* 2.3b: kaputte ModuleSize (kleiner als Header) -> E$BMHP */
+        static uint8_t buf[64];
+        build_module(buf, "vmod", Q9_MOD_DRIVR, Q9_MOD_M68K, 1);
+        ((q9_modhdr_t *)buf)->modsize = Q9_MOD_HDRSIZE - 1;
+        checks[nchecks].name = "q9_mod_validate: ModuleSize < Header -> E$BMHP";
+        checks[nchecks++].ok = (q9_mod_validate(buf, sizeof(buf), (const q9_modhdr_t *)buf) == E_BMHP);
+    }
+    {   /* 2.3b: NameOffset zeigt aus dem Modul heraus -> E$BMHP */
+        static uint8_t buf[64];
+        build_module(buf, "vmod", Q9_MOD_DRIVR, Q9_MOD_M68K, 1);
+        ((q9_modhdr_t *)buf)->nameoff = ((q9_modhdr_t *)buf)->modsize;
+        checks[nchecks].name = "q9_mod_validate: NameOffset ausserhalb -> E$BMHP";
+        checks[nchecks++].ok = (q9_mod_validate(buf, sizeof(buf), (const q9_modhdr_t *)buf) == E_BMHP);
+    }
+    {   /* 2.3b: Datenbyte nach dem Header kaputt -> CRC-Mismatch -> E$BMCRC */
+        static uint8_t buf[64];
+        build_module(buf, "vmod", Q9_MOD_DRIVR, Q9_MOD_M68K, 1);
+        buf[Q9_MOD_HDRSIZE] ^= 0xff;                    /* erstes Namensbyte kippen                */
+        checks[nchecks].name = "q9_mod_validate: kaputtes Byte -> E$BMCRC";
+        checks[nchecks++].ok = (q9_mod_validate(buf, sizeof(buf), (const q9_modhdr_t *)buf) == E_BMCRC);
+    }
+    {   /* 2.3c: q9_mod_register + q9_mod_find — Basisfall, danach Revision-Tie-Break */
+        static uint8_t bufA[64];
+        static uint8_t bufB[64];
+        build_module(bufA, "regmod", Q9_MOD_PRGRM, Q9_MOD_M68K, 1);
+        build_module(bufB, "regmod", Q9_MOD_PRGRM, Q9_MOD_M68K, 2);   /* hoehere Revision           */
+
+        int ok = (q9_mod_register((const q9_modhdr_t *)bufA) == 0);
+        ok = ok && (q9_mod_find("regmod", Q9_MOD_PRGRM, 0) == (const q9_modhdr_t *)bufA);
+        ok = ok && (q9_mod_register((const q9_modhdr_t *)bufB) == 0);
+        ok = ok && (q9_mod_find("regmod", Q9_MOD_PRGRM, 0) == (const q9_modhdr_t *)bufB);
+        checks[nchecks].name = "q9_mod_register/find: hoehere Revision gewinnt";
+        checks[nchecks++].ok = ok;
+
+        build_module(bufA, "regmod", Q9_MOD_PRGRM, Q9_MOD_M68K, 2);   /* Gleichstand: A neu gebaut  */
+        ok = (q9_mod_register((const q9_modhdr_t *)bufA) == 0);
+        ok = ok && (q9_mod_find("regmod", Q9_MOD_PRGRM, 0) == (const q9_modhdr_t *)bufB);
+        checks[nchecks].name = "q9_mod_register: Gleichstand -> etabliertes Modul bleibt";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 2.3d: F$Link/F$UnLink ueber die Directory (regmod ist seit dem vorigen Block bekannt) */
+        q9_regs_t r = {0};
+        static const char name[] = "regmod";
+        r.a[0] = (void *)name;
+        r.d[1] = Q9_MOD_PRGRM;
+        r.d[2] = 0;                                      /* Language: beliebig                     */
+        int ok = (q9_syscall(F_LINK, &r) == 0);
+        ok = ok && (r.a[1] != 0) && (r.d[0] == 2);        /* Revision 2 (gewann den Tie-Break oben)  */
+        checks[nchecks].name = "F$Link: regmod gefunden, Revision im d0";
+        checks[nchecks++].ok = ok;
+
+        q9_regs_t u = {0};
+        u.a[1] = r.a[1];
+        checks[nchecks].name = "F$UnLink: bekanntes Modul -> 0";
+        checks[nchecks++].ok = (q9_syscall(F_UNLINK, &u) == 0);
+
+        q9_regs_t miss = {0};
+        static const char noname[] = "keinmodul";
+        miss.a[0] = (void *)noname;
+        checks[nchecks].name = "F$Link: unbekannter Name -> E$MNF";
+        checks[nchecks++].ok = (q9_syscall(F_LINK, &miss) == E_MNF);
     }
 
     for (int i = 0; i < nchecks; i++) {

@@ -18,10 +18,12 @@
 // 26-07-03│ 1.50 │ 1.8: I$GetStt + I$SetStt                                               │ CF
 // 26-07-03│ 1.60 │ 1.9: F$Time echte Uhrzeit + F$STime, Kalenderlogik                     │ CF
 // 26-07-03│ 1.70 │ Bugfix: F$Time/F$STime d0/d1 vertauscht (MWOS: d0=Zeit,d1=Datum)        │ CF
+// 26-07-03│ 1.80 │ 2.3d: F$Link/F$UnLink ueber q9_mod_link/unlink (Modul-Directory)       │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
+#include "module.h"
 #include "name.h"
 #include "syscall.h"
 
@@ -297,6 +299,28 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
             return E_BPADDR;
         }
         return q9_name_cmp((const char *)r->a[0], r->d[1] & 0xffffu, (const char *)r->a[1]);
+
+    case F_LINK: {                                      /* a0 name, d1.b type, d2.b lang ->       */
+        const q9_modhdr_t *hdr;                         /*   a1 header, a2 Einsprung, d0.b rev    */
+        int                 err;
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        err = q9_mod_link((const char *)r->a[0], (uint8_t)r->d[1], (uint8_t)r->d[2], &hdr);
+        if (err != 0) {
+            return err;
+        }
+        r->a[1] = (void *)hdr;
+        r->a[2] = (uint8_t *)hdr + hdr->execoff;
+        r->d[0] = hdr->rev;
+        return 0;
+    }
+
+    case F_UNLINK:                                      /* a1 header (von F$Link)                 */
+        if (!r->a[1]) {
+            return E_BPADDR;
+        }
+        return q9_mod_unlink((const q9_modhdr_t *)r->a[1]);
 
     case F_EXIT:                                       /* real semantics arrive with phase 4     */
         proc_halted = 1;
