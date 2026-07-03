@@ -122,11 +122,16 @@ Zukunftsideen ohne Handlungsdruck.
   OS-9-Syscalls (MWOS Professional V3.0) mit Status/Phase erfasst. Dabei gefunden
   und sofort behoben: E$Diff war $E2 (hätte mit E$NoChld/F$Wait in Phase 4
   kollidiert), korrekt lt. MWOS ist E$Differ = $A5. Kernel v1.90, Tests PASS.
+- **2026-07-03 — Rest-MWOS-Abgleich abgeschlossen** ✅: SS-Codes (SS.Opt/Ready/
+  Size/EOF) waren schon korrekt (`sg_codes.h` verifiziert). F$Time/F$STime
+  hatten d0/d1 vertauscht (echtes OS-9: d0=Zeit, d1=Datum — bestätigt im
+  OS-9 for 68K Technical Reference Manual) — behoben, Selbsttest angepasst.
+  Kernel v2.00, Tests PASS. **Damit ist der komplette Phase-1-MWOS-Abgleich
+  durch, keine offenen Punkte mehr aus Phase 1.**
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 — **Phase 1 komplett**, Syscall-Roadmap
-erstellt (docs/SYSCALL_ROADMAP.md), E$Diff-Bug gefunden + behoben (E$Differ,
-$A5), neuer Abschnitt „💭 Ideenspeicher" für unverbindliche Zukunftsideen
-eingeführt. Nächstes: Phase-2-Besprechung mit Andreas (heute Abend) +
-Rest-MWOS-Abgleich (SS-Nummern, F$Time-Packung) mit den Laptop-Unterlagen.
+**Letzte Aktualisierung**: 2026-07-03 — **Phase 1 komplett inkl. MWOS-Abgleich**
+(E$Diff→E$Differ, F$Time/F$STime-Register korrigiert), Syscall-Roadmap und
+Modul-Referenz (docs/MODULES.md) stehen, „💭 Ideenspeicher" eingeführt.
+Nächstes: Phase-2-Besprechung mit Andreas (Design-Fragen s. oben).

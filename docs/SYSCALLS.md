@@ -191,21 +191,28 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 | d0.w     | Prozess-ID              |
 | d1.l     | User-ID (Phase 1: 0)    |
 
-### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit
+### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 MWOS-korrigiert
 
 | Register | F$Time Output                          | F$STime Input     |
 |----------|----------------------------------------|-------------------|
-| d0.l     | Datum: (Jahr<<16) \| (Monat<<8) \| Tag | Datum (gleich)    |
-| d1.l     | Zeit: (Std<<16) \| (Min<<8) \| Sek     | Zeit (gleich)     |
+| d0.l     | Zeit: (Std<<16) \| (Min<<8) \| Sek     | Zeit (gleich)     |
+| d1.l     | Datum: (Jahr<<16) \| (Monat<<8) \| Tag | Datum (gleich)    |
 | d2.w     | Wochentag (0 = Sonntag)                | —                 |
 | d3.l     | Millisekunden-Ticks seit Boot          | —                 |
 
+- Registerbelegung MWOS-verifiziert (OS-9 for 68K Technical Reference Manual,
+  Tabelle „Gregorian vs. Julian Time"): **d0 = Zeit, d1 = Datum** — bewusst
+  gegenläufig zur intuitiven Reihenfolge, aber exakt wie im echten OS-9/68K.
+  Die Feld-Packung selbst (Jahr/Monat/Tag bzw. Std/Min/Sek) war von Anfang an
+  korrekt, nur d0/d1 waren zunächst vertauscht (Fix: 2026-07-03).
 - Zeitquelle: `q9_hal_time()` (native: localtime, wasm: `Date`), einmalig beim
   ersten F$Time geholt und über den ms-Ticker fortgeschrieben. Ohne Zeitquelle
   startet die Uhr bei 2000-01-01. F$STime stellt die Kernel-Uhr (nicht die
-  Host-Uhr); ungültige Werte → `E$Param`. Kalenderbereich: 2000–2136 (uint32).
-- **Packung an OS-9/68k angelehnt — beim MWOS-Abgleich prüfen** (Julian-Format
-  über d0.w=1 fehlt noch).
+  Host-Uhr); ungültige Werte → `E$Param` (echtes OS-9 prüft laut Handbuch gar
+  nicht — bewusst strengere Q9-Variante). Kalenderbereich: 2000–2136 (uint32).
+- Der `Format`-Eingabeparameter von echtem F$Time (d0.w: 0=Gregorianisch,
+  1=Julianisch, 2/3=mit Tick-Rate) wird von Q9 noch **nicht** ausgewertet —
+  offener Punkt im Ideenspeicher, kein Bug.
 
 ---
 

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.90
+// File:   kernel.c                                                                        Ver. 2.00
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -20,6 +20,7 @@
 // 26-07-03│ 1.70 │ 1.8: Selbsttests I$GetStt/I$SetStt                                     │ CF
 // 26-07-03│ 1.80 │ 1.9: Selbsttests F$STime/F$Time                                        │ CF
 // 26-07-03│ 1.90 │ Bugfix: F$CmpNam-Selbsttest nutzt jetzt E_DIFFER($A5)                  │ CF
+// 26-07-03│ 2.00 │ Bugfix: F$STime/F$Time-Selbsttest an d0=Zeit/d1=Datum angepasst        │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -328,18 +329,18 @@ int q9_kernel_selftest(void)
     {   /* F$STime/F$Time roundtrip: set 2026-07-03 20:15:00, expect it back (Friday) */
         q9_regs_t s = {0};
         q9_regs_t t = {0};
-        s.d[0] = (2026u << 16) | (7u << 8) | 3u;
-        s.d[1] = (20u << 16) | (15u << 8) | 0u;
+        s.d[0] = (20u << 16) | (15u << 8) | 0u;        /* Zeit: 20:15:00 (d0, MWOS-verifiziert)  */
+        s.d[1] = (2026u << 16) | (7u << 8) | 3u;       /* Datum: 2026-07-03 (d1)                 */
         int ok = (q9_syscall(F_STIME, &s) == 0);
         ok = ok && (q9_syscall(F_TIME, &t) == 0);
-        ok = ok && (t.d[0] == s.d[0]);                 /* same date                              */
-        ok = ok && ((t.d[1] >> 8) == (s.d[1] >> 8));   /* same hour+minute                       */
+        ok = ok && (t.d[1] == s.d[1]);                 /* gleiches Datum                         */
+        ok = ok && ((t.d[0] >> 8) == (s.d[0] >> 8));   /* gleiche Stunde+Minute                  */
         ok = ok && (t.d[2] == 5);                      /* 2026-07-03 ist ein Freitag             */
         checks[nchecks].name = "F$STime/F$Time Roundtrip + Wochentag";
         checks[nchecks++].ok = ok;
 
         q9_regs_t b = {0};
-        b.d[0] = (2026u << 16) | (13u << 8) | 3u;      /* month 13                               */
+        b.d[1] = (2026u << 16) | (13u << 8) | 3u;      /* Monat 13 im Datum (jetzt d1)           */
         checks[nchecks].name = "F$STime Monat 13 -> E$Param";
         checks[nchecks++].ok = (q9_syscall(F_STIME, &b) == E_PARAM);
     }
@@ -357,5 +358,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.90
+// EOF kernel.c                                                                            Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────

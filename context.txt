@@ -28,9 +28,15 @@ Schritte abgearbeitet, je Schritt ein Release-Commit (1.30-1.80):
   F$Time (Datum/Zeit gepackt + Wochentag), F$STime mit Validierung
 - 22 Selbsttest-Checks, Tests 01-03 PASS (nativ; wasm ungetestet, emsdk fehlt
   auf AF-PC — auf dem Laptop bauen/testen!)
-OFFEN fuer MWOS-Abgleich (M:\MWOS auf Laptop): E$Diff-Nummer ($E2 vorlaeufig),
-SS-Codes-Nummern, F$Time/F$STime-Registerpackung.
-HEUTE ABEND: Phase-2-Besprechung (Modulsystem, Punkte 2.1-2.4 stehen als Idle).
+MWOS-ABGLEICH KOMPLETT (M:\MWOS ist auch auf AF-PC gemountet, nicht nur
+Laptop): E$Diff war $E2 (Kollision mit E$NoChld) -> E_DIFFER $A5 korrigiert.
+SS-Codes waren schon korrekt. F$Time/F$STime hatten d0/d1 vertauscht (echtes
+OS-9: d0=Zeit, d1=Datum) -> behoben. Kernel jetzt v2.00. Ausserdem:
+docs/SYSCALL_ROADMAP.md (alle 97 OS-9-Syscalls mit Status) und docs/MODULES.md
+(Modulsystem-Referenz: Header, Directory, Link-Counting, Sticky-Module) neu.
+HEUTE ABEND: Phase-2-Besprechung (Modulsystem, Punkte 2.1-2.4 stehen als Idle,
+Design-Fragen in ARBEITSPLAN.md: Modul-Gruppen? File-Manager/Treiber/
+Descriptor-Dreiteilung? Details in docs/MODULES.md).
 ARBEITSPLAN.md-Statusmodell: 💡 Vorschlag / 💤 Idle / 🟢 Ready / 🔄 / ✅ / ⛔
 + Wer-Spalte. Arbeitsregel 4: nach jedem Schritt sofort commit+push.
 Repo: github.com/foellmy51/Q9 (privat). Toolchain: docs/TOOLCHAIN.md

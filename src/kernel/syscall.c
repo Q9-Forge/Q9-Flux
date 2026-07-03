@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.60
+// File:   syscall.c                                                                       Ver. 1.70
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -17,6 +17,7 @@
 // 26-07-03│ 1.40 │ 1.6: I$Attach + I$Detach                                               │ CF
 // 26-07-03│ 1.50 │ 1.8: I$GetStt + I$SetStt                                               │ CF
 // 26-07-03│ 1.60 │ 1.9: F$Time echte Uhrzeit + F$STime, Kalenderlogik                     │ CF
+// 26-07-03│ 1.70 │ Bugfix: F$Time/F$STime d0/d1 vertauscht (MWOS: d0=Zeit,d1=Datum)        │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -306,28 +307,28 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         r->d[1] = 0;                                   /* super user                             */
         return 0;
 
-    case F_TIME: {                                     /* d0 = date, d1 = time (OS-9-Packung),   */
-        q9_datetime_t dt;                              /* d2.w = Wochentag (0=So), d3 = ms-Ticks */
-        uint32_t      ms = q9_hal_ticks_ms() - boot_ticks;
+    case F_TIME: {                                     /* d0 = Zeit, d1 = Datum (OS-9-Packung,   */
+        q9_datetime_t dt;                              /* MWOS-verifiziert), d2.w = Wochentag    */
+        uint32_t      ms = q9_hal_ticks_ms() - boot_ticks; /* (0=So), d3 = ms-Ticks               */
         uint32_t      now;
         time_init_lazy();
         now = time_base_s + ms / 1000u;
         dt_from_secs(now, &dt);
-        r->d[0] = ((uint32_t)dt.year << 16) | ((uint32_t)dt.month << 8) | dt.day;
-        r->d[1] = ((uint32_t)dt.hour << 16) | ((uint32_t)dt.min << 8) | dt.sec;
+        r->d[0] = ((uint32_t)dt.hour << 16) | ((uint32_t)dt.min << 8) | dt.sec;
+        r->d[1] = ((uint32_t)dt.year << 16) | ((uint32_t)dt.month << 8) | dt.day;
         r->d[2] = (6u + now / 86400u) % 7u;            /* 2000-01-01 war ein Sonnabend           */
         r->d[3] = ms;
         return 0;
     }
 
-    case F_STIME: {                                    /* d0 = date, d1 = time (wie F$Time)      */
+    case F_STIME: {                                    /* d0 = Zeit, d1 = Datum (wie F$Time)     */
         q9_datetime_t dt;
-        dt.year  = (uint16_t)(r->d[0] >> 16);
-        dt.month = (uint8_t)(r->d[0] >> 8);
-        dt.day   = (uint8_t)r->d[0];
-        dt.hour  = (uint8_t)(r->d[1] >> 16);
-        dt.min   = (uint8_t)(r->d[1] >> 8);
-        dt.sec   = (uint8_t)r->d[1];
+        dt.hour  = (uint8_t)(r->d[0] >> 16);
+        dt.min   = (uint8_t)(r->d[0] >> 8);
+        dt.sec   = (uint8_t)r->d[0];
+        dt.year  = (uint16_t)(r->d[1] >> 16);
+        dt.month = (uint8_t)(r->d[1] >> 8);
+        dt.day   = (uint8_t)r->d[1];
         if (dt.year < 2000 || dt.month < 1 || dt.month > 12 || dt.day < 1 ||
             dt.day > mdays[dt.month - 1] + ((dt.month == 2 && is_leap(dt.year)) ? 1 : 0) ||
             dt.hour > 23 || dt.min > 59 || dt.sec > 59) {
@@ -355,5 +356,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.60
+// EOF syscall.c                                                                           Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────
