@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.10
+// File:   kernel.c                                                                        Ver. 1.20
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -12,9 +12,11 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-02│ 1.00 │ Initiale Version: Banner, Echo-Loop                                    │ CF
 // 26-07-03│ 1.10 │ Syscall-Schicht: REPL über I$ReadLn/I$WritLn, F$Exit, Selbsttest       │ CF
+// 26-07-03│ 1.20 │ 1.3: q9_dev_init() beim Boot, Selbsttests für Device-Modell            │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
+#include "device.h"
 #include "syscall.h"
 #include "kernel.h"
 
@@ -57,6 +59,8 @@ static void kputs(const char *s)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_kernel_init(void)
 {
+    q9_dev_init();                                     /* device model first — kputs needs it    */
+
     kputs("\n");
     kputs("  ═══════════════════════════════════════\n");
     kputs("   Q9 v" Q9_VERSION " alpha\n");
@@ -64,7 +68,8 @@ void q9_kernel_init(void)
     kputs("  ═══════════════════════════════════════\n");
     kputs("  target: ");
     kputs(q9_hal_target());
-    kputs("\n  syscalls: OS-9-ABI aktiv (docs/SYSCALLS.md)\n\n");
+    kputs("\n  syscalls: OS-9-ABI aktiv (docs/SYSCALLS.md)\n");
+    kputs("  devices:  /term (Pfade 0/1/2)\n\n");
     kputs("  Phase 1: REPL. Eingabe wird zurückgegeben, 'exit' beendet.\n\n");
     kputs("Q9> ");
 }
@@ -126,7 +131,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[6];
+    } checks[10];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -172,6 +177,35 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "F$Time ok";
         checks[nchecks++].ok = (q9_syscall(F_TIME, &r) == 0);
     }
+    {   /* standard paths 0/1/2 sit on the /term device */
+        q9_dev_t *term = q9_dev_find("term");
+        int ok = (term != 0);
+        for (uint32_t i = 0; i < 3; i++) {
+            q9_path_t *p = q9_path_get(i);
+            ok = ok && p && p->dev == term && p->mode == Q9_MODE_UPDATE;
+        }
+        checks[nchecks].name = "Pfade 0/1/2 -> /term";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* write on a read-only path is rejected with E$BMode */
+        q9_regs_t r = {0};
+        uint8_t   b = 'x';
+        int path = q9_path_open("term", Q9_MODE_READ);
+        r.d[0] = (uint32_t)path;
+        r.d[1] = 1;
+        r.a[0] = &b;
+        checks[nchecks].name = "I$Write auf Lesepfad -> E$BMode";
+        checks[nchecks++].ok = (path == 3 && q9_syscall(I_WRITE, &r) == E_BMODE);
+    }
+    {   /* closing frees the path: same write now yields E$BPNum */
+        q9_regs_t r = {0};
+        uint8_t   b = 'x';
+        r.d[0] = 3;
+        r.d[1] = 1;
+        r.a[0] = &b;
+        checks[nchecks].name = "q9_path_close -> Pfad 3 wieder E$BPNum";
+        checks[nchecks++].ok = (q9_path_close(3) == 0 && q9_syscall(I_WRITE, &r) == E_BPNUM);
+    }
 
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
@@ -186,5 +220,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.10
+// EOF kernel.c                                                                            Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

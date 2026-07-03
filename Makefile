@@ -11,6 +11,7 @@
 # Date    │ Ver. │ Description                                                             │ By
 #─────────┼──────┼─────────────────────────────────────────────────────────────────────────┼──────
 # 26-07-02│ 1.00 │ Initiale Version: native + wasm + test                                  │ CF
+# 26-07-03│ 1.10 │ 1.3: device.c + dev_term.c, Test 03                                     │ CF
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -18,8 +19,8 @@ EMCC    = emcc
 CFLAGS  = -std=c99 -Wall -Wextra -O2
 
 BUILD   = build
-KSRC    = src/kernel/kernel.c src/kernel/syscall.c
-HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h
+KSRC    = src/kernel/kernel.c src/kernel/syscall.c src/kernel/device.c src/kernel/dev_term.c
+HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h src/kernel/device.h
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows, w64devkit)
@@ -47,6 +48,7 @@ $(BUILD)/wasm/q9.js: $(KSRC) src/hal/wasm/hal_wasm.c $(HDRS) web/index.html
 test: native
 	python test/01_test_boot.py
 	python test/02_test_syscalls.py
+	python test/03_test_devices.py
 
 clean:
 	rm -rf $(BUILD)

@@ -1,8 +1,9 @@
 # TOOLCHAIN — Q9 Build-Umgebung
 
-Installiert am 2026-07-02 (durch Claudia, Phase 0.1).
+Es wird auf zwei Rechnern gearbeitet — beide mit portablen Installationen
+ohne Admin-Rechte (Deinstallation = Ordner löschen):
 
-## Komponenten
+## Laptop (User `foell`, eingerichtet 2026-07-02, Phase 0.1)
 
 | Werkzeug | Version | Ort | Zweck |
 |----------|---------|-----|-------|
@@ -11,11 +12,17 @@ Installiert am 2026-07-02 (durch Claudia, Phase 0.1).
 | Python | 3.14 | `C:\Python314` | Tests, spätere Tools |
 | Node.js | vorhanden | `C:\Programme\nodejs` | wird von emsdk genutzt |
 
-Beides portable Installationen ohne Admin-Rechte — Deinstallation = Ordner löschen.
+## Desktop AF-PC (User `AF`, eingerichtet 2026-07-03)
+
+| Werkzeug | Version | Ort | Zweck |
+|----------|---------|-----|-------|
+| w64devkit (gcc, make, busybox-sh) | 2.8.0 / gcc 16.1.0 | `C:\Users\AF\w64devkit` | nativer PC-Build |
+| Emscripten SDK | **noch nicht installiert** | — | wasm-Build hier noch nicht möglich |
+| Python | 3.14 | `C:\Users\AF\AppData\Local\Programs\Python\Python314` | Tests |
 
 ## Umgebung einrichten (pro Shell-Session)
 
-**PowerShell:**
+**PowerShell** (`foell` durch `AF` ersetzen je nach Rechner):
 ```powershell
 $env:PATH = "C:\Users\foell\w64devkit\bin;$env:PATH"   # gcc + make
 C:\Users\foell\emsdk\emsdk_env.ps1                      # emcc (nur für wasm-Builds nötig)

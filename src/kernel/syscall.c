@@ -1,30 +1,27 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.00
+// File:   syscall.c                                                                       Ver. 1.10
 // Owner:  AF
-// Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen (Konsolen-I/O auf Pfaden 0/1/2,
-//         F$Exit, F$ID, F$Time provisorisch). Semantik-Details: docs/SYSCALLS.md
+// Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
+//         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
 //
 // Call:   über q9_syscall(func, &regs), siehe syscall.h
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
-//─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
+//─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: Dispatcher, I$Read/Write/ReadLn/WritLn, F$Exit/ID    │ CF
+// 26-07-03│ 1.10 │ 1.3: I/O über Device-Modell/Pfadtabelle, Mode-Check (E$BMode)          │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
+#include "device.h"
 #include "syscall.h"
 
-#define LINEBUF_SIZE 256
-
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
-//║ KERNEL STATE (Phase 1: one proto process, console paths 0/1/2)                               ║
+//║ KERNEL STATE (Phase 1: one proto process)                                                    ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
-static uint8_t  linebuf[LINEBUF_SIZE];                 /* I$ReadLn line assembly buffer          */
-static uint32_t linelen   = 0;
-static int      line_done = 0;                         /* complete line waiting for pickup       */
 static int      proc_halted = 0;                       /* set by F$Exit until real processes     */
 static uint32_t boot_ticks;
 
@@ -32,48 +29,27 @@ static uint32_t boot_ticks;
 //║ INTERNAL HELPERS                                                                             ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
-static int is_console_path(uint32_t path)
-{
-    return path <= 2;                                  /* 0/1/2 hardwired until phase 3          */
-}
-
-static void con_put_cooked(uint8_t c)
-{
-    if (c == '\r' || c == '\n') {                      /* line end -> CR+LF on the console       */
-        q9_hal_con_put('\r');
-        q9_hal_con_put('\n');
-    } else {
-        q9_hal_con_put((char)c);
-    }
-}
-
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: poll_line
-// Desc.:    Sammelt Konsolen-Zeichen in den Zeilenpuffer (Echo + Backspace, SCF-Verhalten).
-//           Setzt line_done, sobald CR/LF eintrifft. Nicht blockierend.
-// Call:     poll_line()
+// Function: path_check
+// Desc.:    Pfadnummer (d0.w) + Puffer (a0) prüfen: Pfad offen, Modus erlaubt, Adresse gültig.
+//           Liefert den Deskriptor über *out, Rückgabe 0 oder Fehlercode.
+// Call:     err = path_check(r, Q9_MODE_WRITE, &p)
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void poll_line(void)
+static int path_check(q9_regs_t *r, uint8_t need_mode, q9_path_t **out)
 {
-    int c;
+    q9_path_t *p = q9_path_get(r->d[0] & 0xffffu);
 
-    while (!line_done && (c = q9_hal_con_get()) >= 0) {
-        if (c == '\r' || c == '\n') {
-            linebuf[linelen++] = '\r';                 /* OS-9 line terminator is CR             */
-            line_done = 1;
-            con_put_cooked('\r');
-        } else if (c == 0x08 || c == 0x7f) {           /* backspace / delete                     */
-            if (linelen > 0) {
-                linelen--;
-                q9_hal_con_put('\b');
-                q9_hal_con_put(' ');
-                q9_hal_con_put('\b');
-            }
-        } else if (linelen < LINEBUF_SIZE - 1) {
-            linebuf[linelen++] = (uint8_t)c;
-            q9_hal_con_put((char)c);                   /* echo                                   */
-        }
+    if (!p) {
+        return E_BPNUM;
     }
+    if (!(p->mode & need_mode)) {
+        return E_BMODE;
+    }
+    if (!r->a[0]) {
+        return E_BPADDR;
+    }
+    *out = p;
+    return 0;
 }
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -83,28 +59,23 @@ static void poll_line(void)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: sc_write
 // Desc.:    I$Write/I$WritLn — d0.w Pfad, a0 Puffer, d1.l Anzahl; out: d1.l geschrieben.
-//           WritLn stoppt nach CR/LF (inklusive).
+//           Delegiert an die write/writln-Op des Treibers hinter dem Pfad.
 // Call:     Dispatcher
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int sc_write(q9_regs_t *r, int line_mode)
 {
-    const uint8_t *buf = (const uint8_t *)r->a[0];
-    uint32_t       max = r->d[1];
-    uint32_t       n;
+    q9_path_t *p;
+    uint32_t   n = r->d[1];
+    int        err;
 
-    if (!is_console_path(r->d[0] & 0xffffu)) {
-        return E_BPNUM;
+    err = path_check(r, Q9_MODE_WRITE, &p);
+    if (err != 0) {
+        return err;
     }
-    if (!buf) {
-        return E_BPADDR;
-    }
-    for (n = 0; n < max; n++) {
-        uint8_t c = buf[n];
-        con_put_cooked(c);
-        if (line_mode && (c == '\r' || c == '\n')) {
-            n++;
-            break;
-        }
+    err = line_mode ? p->dev->drv->writln(p->dev, (const uint8_t *)r->a[0], &n)
+                    : p->dev->drv->write(p->dev, (const uint8_t *)r->a[0], &n);
+    if (err != 0) {
+        return err;
     }
     r->d[1] = n;
     return 0;
@@ -112,62 +83,29 @@ static int sc_write(q9_regs_t *r, int line_mode)
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: sc_read
-// Desc.:    I$Read — rohe Zeichen ohne Echo, soviel wie da ist (max d1.l).
-//           Liefert E$NotRdy, wenn nichts ansteht (Phase 1: kein Blockieren, siehe SYSCALLS.md).
+// Desc.:    I$Read/I$ReadLn — d0.w Pfad, a0 Puffer, d1.l max; out: d1.l gelesen.
+//           Delegiert an die read/readln-Op des Treibers (E$NotRdy-Semantik siehe SYSCALLS.md).
 // Call:     Dispatcher
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static int sc_read(q9_regs_t *r)
+static int sc_read(q9_regs_t *r, int line_mode)
 {
-    uint8_t *buf = (uint8_t *)r->a[0];
-    uint32_t max = r->d[1];
-    uint32_t n   = 0;
-    int      c;
+    q9_path_t *p;
+    uint32_t   n = r->d[1];
+    int        err;
 
-    if (!is_console_path(r->d[0] & 0xffffu)) {
-        return E_BPNUM;
+    err = path_check(r, Q9_MODE_READ, &p);
+    if (err != 0) {
+        return err;
     }
-    if (!buf) {
+    if (line_mode && n == 0) {
         return E_BPADDR;
     }
-    while (n < max && (c = q9_hal_con_get()) >= 0) {
-        buf[n++] = (uint8_t)c;
-    }
-    if (n == 0) {
-        return E_NOTRDY;
+    err = line_mode ? p->dev->drv->readln(p->dev, (uint8_t *)r->a[0], &n)
+                    : p->dev->drv->read(p->dev, (uint8_t *)r->a[0], &n);
+    if (err != 0) {
+        return err;
     }
     r->d[1] = n;
-    return 0;
-}
-
-//────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: sc_readln
-// Desc.:    I$ReadLn — zeilenweise mit Echo/Editierung, liefert Zeile inkl. CR.
-//           E$NotRdy solange die Zeile nicht komplett ist (Phase 1: kein Blockieren).
-// Call:     Dispatcher
-//────────────────────────────────────────────────────────────────────────────────────────────────
-static int sc_readln(q9_regs_t *r)
-{
-    uint8_t *buf = (uint8_t *)r->a[0];
-    uint32_t max = r->d[1];
-    uint32_t n;
-
-    if (!is_console_path(r->d[0] & 0xffffu)) {
-        return E_BPNUM;
-    }
-    if (!buf || max == 0) {
-        return E_BPADDR;
-    }
-    poll_line();
-    if (!line_done) {
-        return E_NOTRDY;
-    }
-    n = (linelen < max) ? linelen : max;
-    for (uint32_t i = 0; i < n; i++) {
-        buf[i] = linebuf[i];
-    }
-    r->d[1]   = n;
-    linelen   = 0;
-    line_done = 0;
     return 0;
 }
 
@@ -195,8 +133,8 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     switch (func) {
     case I_WRITE:   return sc_write(r, 0);
     case I_WRITLN:  return sc_write(r, 1);
-    case I_READ:    return sc_read(r);
-    case I_READLN:  return sc_readln(r);
+    case I_READ:    return sc_read(r, 0);
+    case I_READLN:  return sc_read(r, 1);
 
     case F_EXIT:                                       /* real semantics arrive with phase 4     */
         proc_halted = 1;
@@ -231,5 +169,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.00
+// EOF syscall.c                                                                           Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

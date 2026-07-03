@@ -1,0 +1,159 @@
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// File:   device.c                                                                        Ver. 1.00
+// Owner:  AF
+// Desc.:  Q9 Device-Modell — Geräte- und Pfadtabelle (OS-9-Vorbild: IOMan). Registriert die
+//         internen Treiber-Module und verwaltet offene Pfade. Kein malloc, alles statisch.
+//
+// Call:   q9_dev_init() beim Boot; danach q9_path_get()/q9_path_open()/q9_path_close()
+//
+// Edition History
+//─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
+// Date    │ Ver. │ Description                                                            │ By
+//─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
+// 26-07-03│ 1.00 │ Initiale Version: Tabellen, open/close/get, /term auf Pfaden 0/1/2     │ CF
+//═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
+
+#include "device.h"
+#include "syscall.h"
+
+extern const q9_drv_t q9_drv_term;                     /* internal driver modules (dev_term.c)   */
+
+//╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+//║ KERNEL TABLES                                                                                ║
+//╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+
+static q9_dev_t  devtab[Q9_NDEVS];
+static q9_path_t pathtab[Q9_NPATHS];
+
+//╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+//║ INTERNAL HELPERS                                                                             ║
+//╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+
+static int str_eq(const char *a, const char *b)
+{
+    while (*a && *a == *b) {
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: dev_add
+// Desc.:    Trägt ein Treiber-Modul als Gerät in die Gerätetabelle ein und ruft dessen init.
+// Call:     dev_add("term", &q9_drv_term)
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int dev_add(const char *name, const q9_drv_t *drv)
+{
+    for (int i = 0; i < Q9_NDEVS; i++) {
+        if (!devtab[i].drv) {
+            devtab[i].name    = name;
+            devtab[i].drv     = drv;
+            devtab[i].storage = 0;
+            devtab[i].links   = 0;
+            return drv->init(&devtab[i]);
+        }
+    }
+    return E_PTHFUL;                                   /* device table full                      */
+}
+
+//╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+//║ API                                                                                          ║
+//╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_dev_init
+// Desc.:    Registriert die internen Treiber-Module und öffnet die Standardpfade 0/1/2
+//           auf /term im Update-Modus (wie OS-9-Shell-Standardpfade).
+// Call:     err = q9_dev_init()
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_dev_init(void)
+{
+    int err = dev_add("term", &q9_drv_term);
+    if (err != 0) {
+        return err;
+    }
+    for (int i = 0; i < 3; i++) {                      /* stdin/stdout/stderr                    */
+        if (q9_path_open("term", Q9_MODE_UPDATE) != i) {
+            return E_PTHFUL;
+        }
+    }
+    return 0;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_dev_find
+// Desc.:    Sucht ein Gerät per Name. NULL = nicht vorhanden.
+// Call:     dev = q9_dev_find("term")
+//════════════════════════════════════════════════════════════════════════════════════════════════
+q9_dev_t *q9_dev_find(const char *name)
+{
+    for (int i = 0; i < Q9_NDEVS; i++) {
+        if (devtab[i].drv && str_eq(devtab[i].name, name)) {
+            return &devtab[i];
+        }
+    }
+    return 0;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_path_open
+// Desc.:    Öffnet einen Pfad auf ein Gerät (niedrigste freie Pfadnummer, wie OS-9).
+//           Rückgabe >= 0: Pfadnummer, < 0: negierter Fehlercode.
+// Call:     path = q9_path_open("term", Q9_MODE_UPDATE)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_path_open(const char *devname, uint8_t mode)
+{
+    q9_dev_t *dev = q9_dev_find(devname);
+
+    if (!dev) {
+        return -E_NOTRDY;                              /* no such device                         */
+    }
+    if (mode == 0) {
+        return -E_BMODE;
+    }
+    for (int i = 0; i < Q9_NPATHS; i++) {
+        if (!pathtab[i].dev) {
+            pathtab[i].dev  = dev;
+            pathtab[i].mode = mode;
+            dev->links++;
+            return i;
+        }
+    }
+    return -E_PTHFUL;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_path_close
+// Desc.:    Schließt einen Pfad und gibt den Tabelleneintrag frei. 0 = ok, sonst E$BPNum.
+// Call:     err = q9_path_close(path)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_path_close(uint32_t path)
+{
+    q9_path_t *p = q9_path_get(path);
+
+    if (!p) {
+        return E_BPNUM;
+    }
+    p->dev->links--;
+    p->dev  = 0;
+    p->mode = 0;
+    return 0;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_path_get
+// Desc.:    Pfadnummer -> Deskriptor. NULL = ungültig oder nicht offen.
+// Call:     p = q9_path_get(pathnum)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+q9_path_t *q9_path_get(uint32_t path)
+{
+    if (path >= Q9_NPATHS || !pathtab[path].dev) {
+        return 0;
+    }
+    return &pathtab[path];
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF device.c                                                                            Ver. 1.00
+//────────────────────────────────────────────────────────────────────────────────────────────────

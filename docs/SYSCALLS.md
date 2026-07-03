@@ -130,7 +130,11 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
    `E$NotRdy`, wenn keine (vollständige) Eingabe ansteht — der Aufrufer pollt.
    Ab Phase 4 blockiert der aufrufende Prozess, wie es sich gehört.
 2. **F$Time** liefert Uptime statt Uhrzeit, bis eine RTC-Quelle da ist (HAL-Erweiterung).
-3. Pfade 0/1/2 (stdin/stdout/stderr) sind fest auf die Konsole verdrahtet, bis das
-   Device-Modell (Phase 1.3) und I$Open/I$Close (Phase 3) existieren.
+3. ~~Pfade 0/1/2 fest verdrahtet~~ — seit Phase 1.3 laufen alle Pfade über das
+   Device-Modell (Pfadtabelle → Treiber-Modul, siehe docs/DEVICES.md). Die
+   Standardpfade 0/1/2 öffnet der Kernel beim Boot auf /term (Update-Modus).
+   User-seitiges I$Open/I$Close mit Pfadnamen kommt in Phase 3; falscher
+   Zugriffsmodus liefert bereits `E$BMode`.
 
 **Erstellt**: 2026-07-03
+**Letzte Aktualisierung**: 2026-07-03 (Phase 1.3: Device-Modell)

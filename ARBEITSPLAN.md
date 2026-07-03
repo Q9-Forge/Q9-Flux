@@ -41,7 +41,7 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 |---|---------|--------|---------|
 | 1.1 | Syscall-Design entschieden (E7): OS-9-Nummern + Registerkonventionen, ABI-Spez in docs/SYSCALLS.md | ✅ | Nummern/Fehlercodes aus Andreas' MWOS-SDK (M:\MWOS) verifiziert |
 | 1.2 | Dispatcher + erste Calls: I$Read/Write/ReadLn/WritLn, F$Exit/ID/Time; Kernel-REPL nutzt eigene Syscalls; Selbsttest + Test 02 | ✅ | E$NotRdy statt Blockieren bis Phase 4 (dokumentiert) |
-| 1.3 | Device-Modell + Konsolen-Treiber als internes Modul (löst fest verdrahtete Pfade 0/1/2 ab) | ⬜ | |
+| 1.3 | Device-Modell + Konsolen-Treiber als internes Modul (löst fest verdrahtete Pfade 0/1/2 ab) | ✅ | device.c/dev_term.c, Mode-Check E$BMode, Test 03; Doku: docs/DEVICES.md |
 
 ---
 
