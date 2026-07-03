@@ -62,7 +62,7 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 | 1.7 | Zweites Gerät /nil (Null-Device) als Mini-Treiber | ✅ | Claudia | dev_nil.c; q9_path_open jetzt namensbasiert ("/nil" mit Slash ok) |
 | 1.8 | I$GetStt/I$SetStt Grundgerüst: SS-Codes für /term (z.B. SS.Ready = Eingabe wartet?) | ✅ | Claudia | getstat/setstat-Ops im Treiber-IF; SS.Ready+SS.EOF; SS-Nummern beim MWOS-Abgleich prüfen |
 | 1.9 | HAL-Erweiterung Echtzeit (q9_hal_time): native = localtime, wasm = Date.now → F$Time liefert echte Uhrzeit + F$STime | ✅ | Claudia | Kalenderlogik 2000–2136, Wochentag in d2; wasm-Teil ungetestet (emsdk fehlt hier) |
-| 1.10 | POSIX-HAL (`src/hal/posix/`, termios statt conio) + Makefile-Target, damit Q9 auf macOS/Linux baut | 🟢 | Claudia | Voraussetzung für 24/7-Betrieb auf dem Mac Mini (docs/AUTONOMIE.md) und spätere Cloud-Läufe; direkt auf dem Mac umsetzen + testen; **interaktiv erledigen, bevor die geplante Aufgabe dort aktiviert wird** (sonst schlägt jeder automatische Lauf beim Bauen fehl) |
+| 1.10 | POSIX-HAL (`src/hal/posix/`, termios statt conio) + Makefile-Target, damit Q9 auf macOS/Linux baut | ✅ | Claudia | src/hal/posix/hal_posix.c (termios raw+nonblocking, clock_gettime, localtime); Makefile waehlt HAL per `$(OS)` (Windows_NT = conio, sonst POSIX), PYTHON-Erkennung (python3/python); Test 01 generalisiert ("native-" statt "native-win64"); `make test` PASS auf macOS (native-macos), warnungsfrei |
 
 ### Phase 2 — Modulsystem
 
@@ -120,6 +120,13 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-03 — Phase 1.10 (POSIX-HAL)** ✅: `src/hal/posix/hal_posix.c` neu (termios
+  raw+nonblocking statt conio, clock_gettime statt GetTickCount64, sonst identisch zur
+  Windows-HAL: Disk-Image, localtime). Makefile: `native`-Target waehlt HAL automatisch
+  per `$(OS)` (Windows_NT → hal_native.c, sonst → hal_posix.c), PYTHON-Variable erkennt
+  python3/python. Test 01 generalisiert (Target-Check "native-" statt "native-win64").
+  `make test` PASS auf dem Mac Mini (native-macos), Build warnungsfrei. **Phase 1 damit
+  auch auf macOS/Linux baubar — Voraussetzung fuer den autonomen Betrieb erfuellt.**
 - **2026-07-02 — Phase 0 komplett** ✅: Toolchain, HAL, Kernel-Gerüst, beide Targets bauen,
   nativer Selftest PASS, Browser-Boot mit Echo verifiziert. Q9 v0.01 alpha läuft.
 - **2026-07-03 — Phase 1.1 + 1.2** ✅: OS-9-Syscall-ABI (E7) spezifiziert und implementiert,
@@ -146,9 +153,8 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 abends — **Phase-2-Besprechung
-abgeschlossen.** Reihenfolge steht (Suchen→Validieren→Bekanntmachen→
-Link/Unlink, kein Dateisystem/keine Speicherverwaltung nötig), 2.1+2.3a–d auf
-🟢 Ready gesetzt, drei Design-Fragen entschieden (Modul-Gruppen nein, Dreiklang
-File-Manager/Treiber/Descriptor nein, PC-Ident-Tool nein — alle drei in den
-Ideenspeicher). Nächster Schritt: 2.1/2.3a implementieren.
+**Letzte Aktualisierung**: 2026-07-03, Mac Mini — **Phase 1.10 (POSIX-HAL)
+abgeschlossen.** Q9 baut jetzt auch auf macOS/Linux, `make test` PASS,
+warnungsfrei. Damit ist die Voraussetzung fuer den autonomen Betrieb
+(docs/AUTONOMIE.md) erfuellt. Naechster Schritt: 2.1/2.3a implementieren
+(Modulsystem, siehe Phase-2-Besprechung 2026-07-03 abends weiter oben).
