@@ -25,12 +25,14 @@
 // 26-07-03│ 2.20 │ 2.3a: Selbsttests q9_mod_scan_first/next                              │ CF
 // 26-07-03│ 2.30 │ 2.3b-d: Selbsttests Validierung/Directory/F$Link/F$UnLink             │ CF
 // 26-07-03│ 2.40 │ 3.1: /d0 im Banner + Selbsttests SS.BlkRd/SS.BlkWr                    │ CF
+// 26-07-04│ 2.50 │ 3.2: Selbsttests I$Open/I$ChgDir (VFS-Pfad-Routing, Test-File-Manager)│ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
 #include "module.h"
 #include "syscall.h"
+#include "vfs.h"
 #include "kernel.h"
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -161,6 +163,26 @@ static void build_module(uint8_t *buf, const char *name, uint8_t type, uint8_t l
     }
     h->crc32 = q9_crc32(buf, modsize);
 }
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: test_fm_open
+// Desc.:    Minimaler Test-File-Manager (3.2-Selbsttest): "open" akzeptiert nur den Rest-Pfad
+//           "datei", legt dessen Laenge im Datei-Kontext (fmctx) ab. Alles andere -> E$PNNF.
+//           Beweist NUR das Routing der VFS-Schicht (device.h/vfs.c) — kein echtes Dateisystem
+//           (das kommt in 3.3/3.4 als FAT16-Manager).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int test_fm_open(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint32_t len, uint8_t mode)
+{
+    (void)dev; (void)mode;
+    if (len != 5 || restpath[0] != 'd' || restpath[1] != 'a' || restpath[2] != 't' ||
+        restpath[3] != 'e' || restpath[4] != 'i') {
+        return E_PNNF;
+    }
+    p->fmctx[0] = (uint8_t)len;                        /* Beweis: Kontext liegt im Pfad, nicht im */
+    return 0;                                          /*   Geraet — pro offenem Pfad eigener Stand */
+}
+
+static const q9_fm_t test_fm = { "testfm", test_fm_open, 0, 0, 0 };
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_kernel_selftest
@@ -514,6 +536,81 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "/d0: NULL-Puffer -> E$Param, unbek. SS-Code -> E$UnkSvc";
         checks[nchecks++].ok = ok;
     }
+    {   /* 3.2: I$Open auf ein Geraet OHNE File-Manager — Rest-Pfad muss leer sein (Rueckwaerts-  */
+        /*      Kompatibilitaet zu Phase 1/2: /term/xyz -> E$PNNF, /term allein -> normaler Pfad) */
+        q9_regs_t r = {0};
+        r.d[0] = Q9_MODE_UPDATE;
+        r.a[0] = (void *)"/term/xyz";
+        int ok = (q9_syscall(I_OPEN, &r) == E_PNNF);
+
+        q9_regs_t r2 = {0};
+        r2.d[0] = Q9_MODE_UPDATE;
+        r2.a[0] = (void *)"/term";
+        ok = ok && (q9_syscall(I_OPEN, &r2) == 0) && (r2.d[0] == 3);
+        ok = ok && (q9_path_close(3) == 0);
+        checks[nchecks].name = "I$Open: /term/xyz -> E$PNNF, /term -> Pfad 3";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 3.2: I$Open auf ein Geraet MIT File-Manager — Rest-Pfad wird durchgereicht */
+        q9_dev_t *d0 = q9_dev_find("d0");
+        int ok = (d0 != 0);
+        if (ok) {
+            q9_dev_set_fm(d0, &test_fm);
+        }
+        q9_regs_t r = {0};
+        r.d[0] = Q9_MODE_READ;
+        r.a[0] = (void *)"/d0/datei";
+        ok = ok && (q9_syscall(I_OPEN, &r) == 0) && (r.d[0] == 3);
+        ok = ok && (q9_path_get(3) != 0) && (q9_path_get(3)->fmctx[0] == 5);
+        ok = ok && (q9_path_close(3) == 0);
+
+        q9_regs_t bad = {0};
+        bad.d[0] = Q9_MODE_READ;
+        bad.a[0] = (void *)"/d0/unbekannt";
+        ok = ok && (q9_syscall(I_OPEN, &bad) == E_PNNF);
+        if (d0) {
+            q9_dev_set_fm(d0, 0);                      /* Test-File-Manager wieder entfernen      */
+        }
+        checks[nchecks].name = "I$Open: /d0/datei ueber Test-File-Manager, /d0/unbekannt -> E$PNNF";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 3.2: I$ChgDir setzt das globale Arbeitsverzeichnis, relative I$Open loest dagegen auf */
+        q9_dev_t *d0 = q9_dev_find("d0");
+        if (d0) {
+            q9_dev_set_fm(d0, &test_fm);                /* Test-File-Manager fuer den relativen Fall */
+        }
+
+        q9_regs_t c = {0};
+        c.a[0] = (void *)"/d0";
+        int ok = (d0 != 0) && (q9_syscall(I_CHGDIR, &c) == 0);
+        {
+            const char *cwd = q9_vfs_cwd();
+            ok = ok && cwd[0] == '/' && cwd[1] == 'd' && cwd[2] == '0' && cwd[3] == 0;
+        }
+
+        q9_regs_t r = {0};
+        r.d[0] = Q9_MODE_READ;
+        r.a[0] = (void *)"datei";                       /* relativ: kein fuehrender '/'            */
+        ok = ok && (q9_syscall(I_OPEN, &r) == 0) && (r.d[0] == 3);
+        ok = ok && (q9_path_close(3) == 0);
+
+        q9_regs_t back = {0};
+        back.a[0] = (void *)"/";
+        ok = ok && (q9_syscall(I_CHGDIR, &back) == 0);
+        if (d0) {
+            q9_dev_set_fm(d0, 0);                       /* Test-File-Manager wieder entfernen      */
+        }
+        checks[nchecks].name = "I$ChgDir /d0 + relatives I$Open 'datei' -> Pfad 3";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 3.2: I$Create/I$MakDir/I$Delete-Geruest -> E$UnkSvc (echte Semantik erst 3.4) */
+        q9_regs_t r = {0};
+        int ok = (q9_syscall(I_CREATE, &r) == E_UNKSVC);
+        ok = ok && (q9_syscall(I_MAKDIR, &r) == E_UNKSVC);
+        ok = ok && (q9_syscall(I_DELETE, &r) == E_UNKSVC);
+        checks[nchecks].name = "I$Create/I$MakDir/I$Delete-Geruest -> E$UnkSvc";
+        checks[nchecks++].ok = ok;
+    }
 
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
@@ -528,5 +625,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 2.00
+// EOF kernel.c                                                                            Ver. 2.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -32,12 +32,12 @@ Kern des Syscall-Interfaces, größtenteils in Phase 1 fertig geworden.
 | $81 | I$Detach | Gerät abmelden | ✅ | Phase 1.6 |
 | $8D | I$GetStt | Pfad-Status abfragen | ✅ | Phase 1.8 (SS.Ready, SS.EOF) |
 | $8E | I$SetStt | Pfad-Status setzen | ✅ | Phase 1.8 (Grundgerüst, noch keine SS-Codes) |
-| $84 | I$Open | Datei öffnen (Pfadname) | 🟢 Phase 3 | braucht VFS |
-| $83 | I$Create | Datei anlegen | 🟢 Phase 3 | braucht VFS |
-| $85 | I$MakDir | Verzeichnis anlegen | 🟢 Phase 3 | braucht VFS |
-| $86 | I$ChgDir | Arbeitsverzeichnis wechseln | 🟢 Phase 3 | braucht VFS |
-| $87 | I$Delete | Datei löschen | 🟢 Phase 3 | braucht VFS |
-| $88 | I$Seek | Position ändern | 🟢 Phase 3 | braucht VFS, seekbare Devices |
+| $84 | I$Open | Datei öffnen (Pfadname) | ✅ | Phase 3.2 (VFS-Routing; ohne File-Manager hinterm Gerät bleibt Rest-Pfad leer, wie bisher) |
+| $83 | I$Create | Datei anlegen | ✅ Gerüst | Phase 3.2: `E$UnkSvc`, echte Semantik Phase 3.4 |
+| $85 | I$MakDir | Verzeichnis anlegen | ✅ Gerüst | Phase 3.2: `E$UnkSvc`, echte Semantik Phase 3.4 |
+| $86 | I$ChgDir | Arbeitsverzeichnis wechseln | ✅ | Phase 3.2 (EIN globaler String, pro-Prozess erst Phase 4) |
+| $87 | I$Delete | Datei löschen | ✅ Gerüst | Phase 3.2: `E$UnkSvc`, echte Semantik Phase 3.4 |
+| $88 | I$Seek | Position ändern | 🟢 Phase 3.3 | braucht FAT16 (seekbare Dateien) |
 | $92 | I$SGetSt | GetStt über System-Pfadnummer | 🟢 Phase 3/4 | Sonderfall für System-Pfade |
 
 ## 2. Modulsystem
@@ -167,9 +167,10 @@ WASM kennt keine Hardware-IRQs.
 
 ## Zusammenfassung
 
-- **18 / 97** implementiert (Phase 1 komplett: alle I$-Kern-Calls + F$Exit/ID/Time/STime/PrsNam/CmpNam;
-  Phase 2.3d: F$Link/F$UnLink über die Modul-Directory)
-- **~28** für konkrete künftige Phasen eingeplant (🟢, meist Phase 2–4)
+- **23 / 97** implementiert (Phase 1 komplett: alle I$-Kern-Calls + F$Exit/ID/Time/STime/PrsNam/CmpNam;
+  Phase 2.3d: F$Link/F$UnLink über die Modul-Directory; Phase 3.2: I$Open/I$ChgDir + I$Create/
+  I$MakDir/I$Delete-Gerüste über die VFS-Schicht)
+- **~24** für konkrete künftige Phasen eingeplant (🟢, meist Phase 3–4)
 - **~10** optional/ohne feste Phase (💤)
 - **~30** bewusst ignoriert (🚫) — meist OS-9-Interna, die Q9 nicht 1:1 nachbaut, oder WASM-irrelevant
 - **5** mit offenem Design (❓) — Bitmap-Frage (Modul-Directory), Speicherverwaltung Phase 7

@@ -63,10 +63,14 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $8B | I$ReadLn | ✅ implementiert |
 | $8C | I$WritLn | ✅ implementiert |
 | $82 | I$Dup    | ✅ implementiert (Phase 1.4) |
-| $84 | I$Open   | geplant (Phase 3, VFS) |
+| $84 | I$Open   | ✅ implementiert (Phase 3.2: VFS-Pfad-Routing, kein FS dahinter vor 3.3) |
+| $83 | I$Create | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
+| $85 | I$MakDir | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
+| $86 | I$ChgDir | ✅ implementiert (Phase 3.2: globales Arbeitsverzeichnis) |
+| $87 | I$Delete | ✅ Grundgerüst (Phase 3.2: `E$UnkSvc`, echte Semantik erst 3.4) |
 | $8D | I$GetStt | ✅ Grundgerüst (Phase 1.8: SS.Ready, SS.EOF; 3.1: SS.BlkRd auf /d0) |
 | $8E | I$SetStt | ✅ Grundgerüst (Phase 3.1: SS.BlkWr auf /d0) |
-| $8F | I$Close  | ✅ implementiert (Phase 1.4; Pfadnamen-Open kommt in Phase 3) |
+| $8F | I$Close  | ✅ implementiert (Phase 1.4) |
 
 Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 
@@ -87,6 +91,7 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 | $E8  | E$BMCRC   | Modul-CRC stimmt nicht (2.3b) |
 | $EC  | E$BMHP    | Modul-Header strukturell defekt (2.3b; Q9 macht KEINE separate Parity-Vorabprüfung wie OS-9, der Code wird für alle Strukturchecks vor der CRC verwendet) |
 | $F6  | E$NotRdy  | Gerät nicht bereit |
+| $D8  | E$PNNF    | Pfad nicht gefunden (3.2: VFS-Routing — Rest-Pfad auf Gerät ohne File-Manager, unbekannter Pfad im File-Manager, I$ChgDir zu lang/leer) |
 
 ---
 
@@ -188,6 +193,33 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 - SS.BlkRd/SS.BlkWr: kein Puffer (`a0` = 0) → `E$Param`, HAL-Fehler → `E$NotRdy`.
   Details: docs/DEVICES.md.
 
+### I$Open ($84) / I$ChgDir ($86) — seit Phase 3.2 (VFS-Schicht)
+
+| Register | I$Open Input                | I$Open Output    | I$ChgDir Input |
+|----------|------------------------------|-------------------|-----------------|
+| d0.b     | Zugriffsmodus (Q9_MODE_...) | neue Pfadnummer (d0.w) | — |
+| a0       | Pathlist ("/d0/pfad/datei") | —                 | Pathlist        |
+
+- **Pfad-Routing** (docs/DEVICES.md, docs/MODULES.md — OS-9-Vorbild IOMan/RBF-Trennung):
+  `q9_vfs_open` löst relative Pfade (kein führendes `/`) zuerst gegen das globale
+  Arbeitsverzeichnis auf (s.u.), zerlegt dann per F$PrsNam in Gerätename + Rest-Pfad.
+- **Gerät ohne File-Manager** (z.B. `/term`, `/nil`): Rest-Pfad **muss leer** sein — sonst
+  `E$PNNF`. Rückwärtskompatibel zu Phase 1/2 (entspricht dem bisherigen `q9_path_open`).
+- **Gerät mit File-Manager** (`q9_dev_t.fm`, ab 3.3 z.B. FAT16 an `/d0`): Rest-Pfad wird an
+  `fm->open()` weitergereicht, das einen Datei-Kontext im Pfad-Deskriptor ablegt
+  (`q9_path_t.fmctx`, device.h — File-Manager-eigenes Byte-Array, kein malloc). Vor 3.3 hat
+  kein Gerät produktiv einen File-Manager; die Schnittstelle (vfs.h: `q9_fm_t`) existiert
+  bereits, ein Test-File-Manager im Kernel-Selbsttest beweist das Routing.
+- I$ChgDir setzt **ein einziges globales** Arbeitsverzeichnis (kein Pfad pro Prozess — das
+  kommt erst mit echten Prozessen in Phase 4). Direkt nach dem Boot: `/` (nur absolute Pfade
+  funktionieren, bis ein I$ChgDir gesetzt wurde). Zu langer/leerer Pfad → `E$PNNF`.
+
+### I$Create ($83) / I$MakDir ($85) / I$Delete ($87) — Gerüst seit Phase 3.2
+
+Liefern aktuell `E$UnkSvc` — echte Semantik kommt mit FAT16 schreibend (Phase 3.4), wenn ein
+File-Manager auch `create`/`makdir`/`remove` sinnvoll implementieren kann (VFS-seitig sind die
+q9_fm_t-Funktionszeiger dafür schon vorgesehen, siehe docs/DEVICES.md).
+
 ### F$Exit ($06)
 
 | Register | Input       |
@@ -260,8 +292,12 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 3. ~~Pfade 0/1/2 fest verdrahtet~~ — seit Phase 1.3 laufen alle Pfade über das
    Device-Modell (Pfadtabelle → Treiber-Modul, siehe docs/DEVICES.md). Die
    Standardpfade 0/1/2 öffnet der Kernel beim Boot auf /term (Update-Modus).
-   User-seitiges I$Open/I$Close mit Pfadnamen kommt in Phase 3; falscher
-   Zugriffsmodus liefert bereits `E$BMode`.
+   ~~User-seitiges I$Open/I$Close mit Pfadnamen kommt in Phase 3~~ — seit
+   Phase 3.2 implementiert (I$Open über die VFS-Schicht, s.o.).
+4. **Kein Dateisystem hinter I$Open vor Phase 3.3**: die VFS-Schicht (3.2) routet Pfade
+   nur — ohne einen registrierten File-Manager (ab 3.3: FAT16 an /d0) bleibt I$Open auf
+   Geräte mit leerem Rest-Pfad beschränkt (wie bisher). I$Create/I$MakDir/I$Delete sind
+   bis 3.4 (FAT16 schreibend) reine Gerüste (`E$UnkSvc`).
 
 **Erstellt**: 2026-07-03
-**Letzte Aktualisierung**: 2026-07-03 (Phase 2.3d: F$Link/F$UnLink)
+**Letzte Aktualisierung**: 2026-07-04 (Phase 3.2: I$Open/I$ChgDir über die VFS-Schicht)
