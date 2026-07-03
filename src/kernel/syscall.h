@@ -17,6 +17,7 @@
 // 26-07-03│ 1.30 │ 1.8: SS.*-Statuscodes ergänzt                                          │ CF
 // 26-07-03│ 1.40 │ Bugfix: E$Diff($E2) kollidierte mit E$NoChld -> E_DIFFER($A5)         │ CF
 // 26-07-03│ 1.50 │ 2.3b-d: E$BMHP/E$BMCRC/E$DirFul/E$ModBsy ergänzt (MWOS-verifiziert)   │ CF
+// 26-07-03│ 1.60 │ 3.1: SS.BlkRd/SS.BlkWr ergänzt (Roh-Blockzugriff /d0)                 │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -77,6 +78,8 @@ typedef struct q9_regs {
 #define SS_READY  0x01                                 /* SS.Ready: data ready?                  */
 #define SS_SIZE   0x02                                 /* SS.Size:  file size (später, VFS)      */
 #define SS_EOF    0x06                                 /* SS.EOF:   test for end of file         */
+#define SS_BLKRD  0x14                                 /* SS.BlkRd: raw block read (3.1, /d0)    */
+#define SS_BLKWR  0x15                                 /* SS.BlkWr: raw block write (3.1, /d0)   */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ ERROR CODES (= OS-9, MWOS errno.h)                                                           ║

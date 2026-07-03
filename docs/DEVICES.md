@@ -68,11 +68,26 @@ das Device-Modell trägt (2 Treiber, 1 Schnittstelle).
   Parsing via name.c), Link-Count-Verwaltung. Unbekannt → `E$MNF`.
 - `q9_path_open("/nil", mode)` läuft ebenfalls über diese Namenslogik.
 
+## Gerät /d0 (dev_d0.c) — seit Phase 3.1
+
+Roh-Block-Device ohne Dateisystem (Nagelprobe vor der VFS-Schicht, 3.2). I$Read/I$Write/
+I$ReadLn/I$WritLn ergeben ohne Dateisystem keinen Sinn → `E$UnkSvc`. Blockzugriff läuft
+ausschließlich über I$GetStt/I$SetStt:
+
+| Code | Name      | Register                                  | Verhalten |
+|------|-----------|--------------------------------------------|-----------|
+| $14  | SS.BlkRd  | d2.l = LBA, a0 = Puffer (Q9_BLK_SIZE Byte) | liest Block über `q9_hal_blk_read` |
+| $15  | SS.BlkWr  | d2.l = LBA, a0 = Puffer (Q9_BLK_SIZE Byte) | schreibt Block über `q9_hal_blk_write` |
+
+Kein Puffer (`a0` = 0) → `E$Param`, HAL-Fehler (Image fehlt/I/O-Fehler) → `E$NotRdy`,
+andere SS-Codes → `E$UnkSvc`. Zustandslos — die HAL hält das Disk-Image offen (nativ:
+`q9disk.img`, lazy erzeugt beim ersten Zugriff, per `.gitignore` ausgeschlossen).
+
 ## Ausblick
 
-- **Phase 1.x**: I$GetStt/I$SetStt, Geräte per Name über I$Attach/I$Detach
-- **Phase 2**: Treiber als echte Q9-Module (Typ 2) statt einkompiliert
-- **Phase 3**: I$Open/I$Close mit Pfadnamen (`/term`), RBF-artige Block-Devices über
-  die HAL-Block-API
+- **Phase 3.2**: VFS-Schicht (Pfad-Routing `/d0/pfad/datei`) über `/d0` als erstes Gerät
+  mit echtem Dateisystem dahinter (FAT16, 3.3/3.4)
+- **Phase 6+**: Treiber als echte Q9-Module (Typ 2) statt einkompiliert
 
 **Erstellt**: 2026-07-03
+**Zuletzt aktualisiert**: 2026-07-03 (Phase 3.1: /d0 ergänzt)

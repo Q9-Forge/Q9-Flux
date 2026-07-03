@@ -110,7 +110,7 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 3.1 | Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/ | 🟢 | Claudia | kleinster Schritt, testbar ganz ohne FS; HAL-Seite existiert schon (nativ: q9disk.img) |
+| 3.1 | Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/ | ✅ | Claudia | dev_d0.c neu: SS.BlkRd($14)/SS.BlkWr($15) aus MWOS sg_codes.h übernommen (RBF-Vorbild), reine Ops read/write/readln/writln bewusst E$UnkSvc (kein Byte-Strom ohne VFS, kommt in 3.2). q9disk.img bleibt HAL-seitig (lazy erzeugt), jetzt .gitignore't. Test 04 (04_test_blkdev.py) + 2 neue Selbsttest-Checks (Roundtrip LBA 1, E$Param/E$UnkSvc). docs/DEVICES.md + SYSCALLS.md aktualisiert. `make test` PASS, warnungsfrei |
 | 3.2 | VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4) | 🟢 | Claudia | Manager-Schnitt vorm Festlegen mit dem Dibble-Buch abgleichen; Schnittstelle so schneiden, dass später ein 68k-Manager-Adapter andocken kann (siehe Ideenspeicher) |
 | 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | 🟢 | Claudia | nur Superfloppy; Test: am Mac befülltes Image, Dateien aus Q9 heraus lesen |
 | 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | 🟢 | Claudia | nach 3.3; Gegentest: von Q9 geschriebene Datei am Mac mounten und lesen |
@@ -172,6 +172,19 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-03 — Phase 3.1 (Block-Device /d0)** ✅: `src/kernel/dev_d0.c` neu — reiner
+  Blockzugriff über I$GetStt/I$SetStt: SS.BlkRd($14)/SS.BlkWr($15) (Codes aus MWOS
+  `sg_codes.h`, RBF-Vorbild), d2.l = LBA, a0 = Puffer (Q9_BLK_SIZE Byte), delegiert an
+  `q9_hal_blk_read`/`q9_hal_blk_write` (HAL existierte schon aus Phase 0). Normales
+  I$Read/I$Write/I$ReadLn/I$WritLn ergibt ohne Dateisystem keinen Sinn — bewusst
+  `E$UnkSvc`, kommt erst mit der VFS-Schicht (3.2). Fehlerfälle: kein Puffer → `E$Param`,
+  HAL-Fehler (Image fehlt/I/O) → `E$NotRdy`. `/d0` in `q9_dev_init()` registriert (3.
+  Treiber neben /term, /nil). 2 neue Selbsttest-Checks (Roundtrip Schreiben/Lesen auf
+  LBA 1, Fehlerfälle) — 36 insgesamt. Neues `test/04_test_blkdev.py`, Makefile-Target
+  `test` erweitert. `q9disk.img` (HAL-seitig lazy erzeugtes Testimage) neu in
+  `.gitignore`. docs/DEVICES.md (neuer /d0-Abschnitt) + docs/SYSCALLS.md (SS.BlkRd/
+  SS.BlkWr-Zeilen) aktualisiert. `make test` PASS, warnungsfrei. **Nächster Schritt:
+  3.2** (VFS-Schicht: Pfad-Routing `/d0/pfad/datei`).
 - **2026-07-03 — Phase 2.3b+c+d (Validieren, Bekanntmachen, Link/Unlink)** ✅: Boot-Pipeline
   aus docs/MODULES.md komplett (Suchen 2.3a -> Validieren -> Bekanntmachen -> Link/Unlink).
   `q9_mod_validate` prüft HeaderSize/ModuleSize/NameOffset (billig) vor der vollen CRC32 (teuer) —
@@ -238,13 +251,14 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-03 spät, Mac Mini — **Phase 3 freigegeben:
-3.1–3.6 auf 🟢 Ready (Wer=Claudia) gestellt.** Davor: Phase-3-Vorbesprechung
-mit Andreas**: Schritte 3.1–3.6 als 💡 eingetragen (O1 = FAT16 entschieden,
-LFN lesen ja / schreiben Ideenspeicher, Superfloppy zuerst, Dibble-Buch als
-Design-Referenz), drei neue Ideenspeicher-Einträge (LFN-Schreiben,
-MBR-Partitionen, Original-RBF/PCF via Musashi). Davor: **Phase 2.3
-(Modul-Directory) komplett abgeschlossen** — 2.3b (q9_mod_validate), 2.3c
-(q9_mod_register/find, Directory), 2.3d (F$Link/F$UnLink), `make test` PASS,
-warnungsfrei (34 Selbsttest-Checks). Kein Ready-Schritt offen für Claudia —
-2.2/2.4 sind 💤, 3.1–3.6 sind 💡 bis Andreas freigibt.
+**Letzte Aktualisierung**: 2026-07-03 (autonomer Lauf) — **Phase 3.1 (Block-Device
+/d0) abgeschlossen**, `make test` PASS, warnungsfrei (36 Selbsttest-Checks).
+Nächster Ready-Schritt für Claudia: **3.2** (VFS-Schicht). Davor: Phase 3 freigegeben,
+3.1–3.6 auf 🟢 Ready (Wer=Claudia) gestellt; Phase-3-Vorbesprechung mit Andreas:
+Schritte 3.1–3.6 als 💡 eingetragen (O1 = FAT16 entschieden, LFN lesen ja / schreiben
+Ideenspeicher, Superfloppy zuerst, Dibble-Buch als Design-Referenz), drei neue
+Ideenspeicher-Einträge (LFN-Schreiben, MBR-Partitionen, Original-RBF/PCF via Musashi).
+Davor: **Phase 2.3 (Modul-Directory) komplett abgeschlossen** — 2.3b
+(q9_mod_validate), 2.3c (q9_mod_register/find, Directory), 2.3d (F$Link/F$UnLink),
+`make test` PASS, warnungsfrei (34 Selbsttest-Checks). 2.2/2.4 bleiben 💤 bis
+freigegeben.

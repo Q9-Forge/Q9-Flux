@@ -5,6 +5,9 @@ build/
 *.exe
 *.out
 
+# Block-Device-Testimage (3.1, HAL-seitig lazy erzeugt von q9_hal_blk_read/write)
+q9disk.img
+
 # Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
 *.wasm.map
 

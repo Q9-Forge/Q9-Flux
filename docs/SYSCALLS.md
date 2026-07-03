@@ -64,8 +64,8 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $8C | I$WritLn | ✅ implementiert |
 | $82 | I$Dup    | ✅ implementiert (Phase 1.4) |
 | $84 | I$Open   | geplant (Phase 3, VFS) |
-| $8D | I$GetStt | ✅ Grundgerüst (Phase 1.8: SS.Ready, SS.EOF) |
-| $8E | I$SetStt | ✅ Grundgerüst (Phase 1.8: noch keine SS-Codes) |
+| $8D | I$GetStt | ✅ Grundgerüst (Phase 1.8: SS.Ready, SS.EOF; 3.1: SS.BlkRd auf /d0) |
+| $8E | I$SetStt | ✅ Grundgerüst (Phase 3.1: SS.BlkWr auf /d0) |
 | $8F | I$Close  | ✅ implementiert (Phase 1.4; Pfadnamen-Open kommt in Phase 3) |
 
 Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
@@ -179,9 +179,14 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 | $01  | SS.Ready | /term | pollt Eingabe; d1.l = gesammelte Zeichen, sonst `E$NotRdy` — der saubere Weg zu prüfen, ob Eingabe ansteht |
 | $06  | SS.EOF   | /term | nie am Dateiende → 0 |
 | $06  | SS.EOF   | /nil  | immer am Dateiende → `E$EOF` |
+| $14  | SS.BlkRd | /d0   | d2.l = LBA, a0 = Puffer (Q9_BLK_SIZE Byte) → liest Block über die HAL (seit 3.1) |
+| $15  | SS.BlkWr | /d0   | d2.l = LBA, a0 = Puffer (Q9_BLK_SIZE Byte) → schreibt Block über die HAL (seit 3.1) |
 
 - Unbekannte Codes bzw. Treiber ohne getstat/setstat-Op → `E$UnkSvc`.
-- I$SetStt hat noch keine Codes (SS.Opt für Pfadoptionen kommt später).
+- I$SetStt hat außer SS.BlkWr (nur /d0) noch keine weiteren Codes (SS.Opt für
+  Pfadoptionen kommt später).
+- SS.BlkRd/SS.BlkWr: kein Puffer (`a0` = 0) → `E$Param`, HAL-Fehler → `E$NotRdy`.
+  Details: docs/DEVICES.md.
 
 ### F$Exit ($06)
 
