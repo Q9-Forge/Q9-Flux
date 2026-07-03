@@ -54,7 +54,8 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $0C | F$ID     | ✅ implementiert (liefert Proto-Prozess-ID 1) |
 | $10 | F$PrsNam | ✅ implementiert (Phase 1.5) |
 | $11 | F$CmpNam | ✅ implementiert (Phase 1.5, E$Diff-Nummer vorläufig) |
-| $15 | F$Time   | ✅ provisorisch (siehe Abweichungen) |
+| $15 | F$Time   | ✅ implementiert (Phase 1.9: echte Uhrzeit via HAL) |
+| $16 | F$STime  | ✅ implementiert (Phase 1.9) |
 | $80 | I$Attach | ✅ implementiert (Phase 1.6) |
 | $81 | I$Detach | ✅ implementiert (Phase 1.6) |
 | $89 | I$Read   | ✅ implementiert |
@@ -191,12 +192,21 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 | d0.w     | Prozess-ID              |
 | d1.l     | User-ID (Phase 1: 0)    |
 
-### F$Time ($15) — provisorisch
+### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit
 
-| Register | Output                              |
-|----------|-------------------------------------|
-| d0.l     | Sekunden seit Boot (bis RTC kommt)  |
-| d3.l     | Millisekunden-Ticks seit Boot       |
+| Register | F$Time Output                          | F$STime Input     |
+|----------|----------------------------------------|-------------------|
+| d0.l     | Datum: (Jahr<<16) \| (Monat<<8) \| Tag | Datum (gleich)    |
+| d1.l     | Zeit: (Std<<16) \| (Min<<8) \| Sek     | Zeit (gleich)     |
+| d2.w     | Wochentag (0 = Sonntag)                | —                 |
+| d3.l     | Millisekunden-Ticks seit Boot          | —                 |
+
+- Zeitquelle: `q9_hal_time()` (native: localtime, wasm: `Date`), einmalig beim
+  ersten F$Time geholt und über den ms-Ticker fortgeschrieben. Ohne Zeitquelle
+  startet die Uhr bei 2000-01-01. F$STime stellt die Kernel-Uhr (nicht die
+  Host-Uhr); ungültige Werte → `E$Param`. Kalenderbereich: 2000–2136 (uint32).
+- **Packung an OS-9/68k angelehnt — beim MWOS-Abgleich prüfen** (Julian-Format
+  über d0.w=1 fehlt noch).
 
 ---
 
@@ -205,7 +215,7 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 1. **Kein Blockieren**: Bis der Scheduler existiert (Phase 4), liefern I$Read/I$ReadLn
    `E$NotRdy`, wenn keine (vollständige) Eingabe ansteht — der Aufrufer pollt.
    Ab Phase 4 blockiert der aufrufende Prozess, wie es sich gehört.
-2. **F$Time** liefert Uptime statt Uhrzeit, bis eine RTC-Quelle da ist (HAL-Erweiterung).
+2. ~~F$Time liefert Uptime~~ — seit Phase 1.9 echte Uhrzeit über `q9_hal_time()`.
 3. ~~Pfade 0/1/2 fest verdrahtet~~ — seit Phase 1.3 laufen alle Pfade über das
    Device-Modell (Pfadtabelle → Treiber-Modul, siehe docs/DEVICES.md). Die
    Standardpfade 0/1/2 öffnet der Kernel beim Boot auf /term (Update-Modus).

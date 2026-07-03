@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_hal.h                                                                        Ver. 1.00
+// File:   q9_hal.h                                                                        Ver. 1.10
 // Owner:  AF
 // Desc.:  Q9 Hardware Abstraction Layer — schmale Schnittstelle zwischen Kernel und Target.
 //         Jedes Target (wasm, native, m68k) liefert genau eine Implementierung dieser Funktionen.
@@ -11,6 +11,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-02│ 1.00 │ Initiale Version (Konsole, Timer, Block-Device, Target-Info)           │ CF
+// 26-07-03│ 1.10 │ 1.9: q9_hal_time (Echtzeit-Quelle für F$Time)                          │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_HAL_H
 #define Q9_HAL_H
@@ -18,6 +19,15 @@
 #include <stdint.h>
 
 #define Q9_BLK_SIZE 512u
+
+typedef struct q9_datetime {
+    uint16_t year;                                     /* z.B. 2026                              */
+    uint8_t  month;                                    /* 1..12                                  */
+    uint8_t  day;                                      /* 1..31                                  */
+    uint8_t  hour;                                     /* 0..23                                  */
+    uint8_t  min;                                      /* 0..59                                  */
+    uint8_t  sec;                                      /* 0..59                                  */
+} q9_datetime_t;
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_hal_init
@@ -51,6 +61,14 @@ int q9_hal_blk_read(uint32_t lba, void *buf);
 int q9_hal_blk_write(uint32_t lba, const void *buf);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_hal_time
+// Desc.:    Liefert die lokale Uhrzeit des Hosts (native: localtime, wasm: Date, m68k: RTC).
+//           Rückgabe 0 = ok, -1 = keine Zeitquelle vorhanden.
+// Call:     q9_datetime_t dt; if (q9_hal_time(&dt) == 0) ...
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_hal_time(q9_datetime_t *dt);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_hal_target
 // Desc.:    Liefert einen kurzen Target-Namen fürs Boot-Banner, z.B. "native-win64".
 // Call:     name = q9_hal_target()
@@ -60,5 +78,5 @@ const char *q9_hal_target(void);
 #endif // Q9_HAL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_hal.h                                                                            Ver. 1.00
+// EOF q9_hal.h                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

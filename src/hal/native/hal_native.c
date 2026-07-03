@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_native.c                                                                    Ver. 1.00
+// File:   hal_native.c                                                                    Ver. 1.10
 // Owner:  AF
 // Desc.:  HAL-Implementierung für den nativen PC-Build (Windows, w64devkit/gcc).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
@@ -11,10 +11,12 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-02│ 1.00 │ Initiale Version: Konsole (conio), Timer, Disk-Image, Selftest         │ CF
+// 26-07-03│ 1.10 │ 1.9: q9_hal_time via localtime                                         │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <conio.h>
 #include <windows.h>
 
@@ -92,6 +94,23 @@ int q9_hal_blk_write(uint32_t lba, const void *buf)
     return fwrite(buf, Q9_BLK_SIZE, 1, disk) == 1 ? 0 : -1;
 }
 
+int q9_hal_time(q9_datetime_t *dt)
+{
+    time_t     now = time(0);
+    struct tm *tm  = localtime(&now);
+
+    if (!tm) {
+        return -1;
+    }
+    dt->year  = (uint16_t)(tm->tm_year + 1900);
+    dt->month = (uint8_t)(tm->tm_mon + 1);
+    dt->day   = (uint8_t)tm->tm_mday;
+    dt->hour  = (uint8_t)tm->tm_hour;
+    dt->min   = (uint8_t)tm->tm_min;
+    dt->sec   = (uint8_t)tm->tm_sec;
+    return 0;
+}
+
 const char *q9_hal_target(void)
 {
     return "native-win64";
@@ -134,5 +153,5 @@ int main(int argc, char **argv)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF hal_native.c                                                                        Ver. 1.00
+// EOF hal_native.c                                                                        Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

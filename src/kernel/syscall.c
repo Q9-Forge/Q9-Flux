@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.50
+// File:   syscall.c                                                                       Ver. 1.60
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -16,6 +16,7 @@
 // 26-07-03│ 1.30 │ 1.5: F$PrsNam + F$CmpNam                                               │ CF
 // 26-07-03│ 1.40 │ 1.6: I$Attach + I$Detach                                               │ CF
 // 26-07-03│ 1.50 │ 1.8: I$GetStt + I$SetStt                                               │ CF
+// 26-07-03│ 1.60 │ 1.9: F$Time echte Uhrzeit + F$STime, Kalenderlogik                     │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -29,6 +30,8 @@
 
 static int      proc_halted = 0;                       /* set by F$Exit until real processes     */
 static uint32_t boot_ticks;
+static uint32_t time_base_s;                           /* seconds since 2000-01-01 at boot       */
+static int      time_have = 0;                         /* 0 = not yet initialized from HAL/STime */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ INTERNAL HELPERS                                                                             ║
@@ -55,6 +58,92 @@ static int path_check(q9_regs_t *r, uint8_t need_mode, q9_path_t **out)
     }
     *out = p;
     return 0;
+}
+
+//╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+//║ CALENDAR (Epoche 2000-01-01, ein Sonnabend; reicht per uint32 bis ins Jahr 2136)             ║
+//╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+
+static const uint8_t mdays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+static int is_leap(uint32_t y)
+{
+    return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: secs_from_dt / dt_from_secs
+// Desc.:    Kalenderdatum <-> Sekunden seit 2000-01-01 00:00:00 (lokale Zeit, keine Zeitzonen).
+// Call:     s = secs_from_dt(&dt);   dt_from_secs(s, &dt);
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint32_t secs_from_dt(const q9_datetime_t *dt)
+{
+    uint32_t days = 0;
+
+    for (uint32_t y = 2000; y < dt->year; y++) {
+        days += is_leap(y) ? 366u : 365u;
+    }
+    for (uint32_t m = 1; m < dt->month; m++) {
+        days += mdays[m - 1];
+        if (m == 2 && is_leap(dt->year)) {
+            days++;
+        }
+    }
+    days += dt->day - 1u;
+    return ((days * 24u + dt->hour) * 60u + dt->min) * 60u + dt->sec;
+}
+
+static void dt_from_secs(uint32_t s, q9_datetime_t *dt)
+{
+    uint32_t days = s / 86400u;
+    uint32_t rest = s % 86400u;
+    uint32_t y    = 2000;
+    uint32_t m    = 1;
+
+    for (;;) {
+        uint32_t ylen = is_leap(y) ? 366u : 365u;
+        if (days < ylen) {
+            break;
+        }
+        days -= ylen;
+        y++;
+    }
+    for (;;) {
+        uint32_t mlen = mdays[m - 1] + ((m == 2 && is_leap(y)) ? 1u : 0u);
+        if (days < mlen) {
+            break;
+        }
+        days -= mlen;
+        m++;
+    }
+    dt->year  = (uint16_t)y;
+    dt->month = (uint8_t)m;
+    dt->day   = (uint8_t)(days + 1);
+    dt->hour  = (uint8_t)(rest / 3600u);
+    dt->min   = (uint8_t)((rest / 60u) % 60u);
+    dt->sec   = (uint8_t)(rest % 60u);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: time_init_lazy
+// Desc.:    Holt die Uhrzeit einmalig aus der HAL und rechnet sie auf den Boot-Zeitpunkt
+//           zurück. Ohne Zeitquelle startet die Uhr bei 2000-01-01 00:00:00.
+// Call:     time_init_lazy()
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void time_init_lazy(void)
+{
+    q9_datetime_t dt;
+
+    if (time_have) {
+        return;
+    }
+    if (q9_hal_time(&dt) == 0 && dt.year >= 2000) {
+        uint32_t uptime_s = (q9_hal_ticks_ms() - boot_ticks) / 1000u;
+        time_base_s = secs_from_dt(&dt) - uptime_s;
+    } else {
+        time_base_s = 0;
+    }
+    time_have = 1;
 }
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -217,10 +306,35 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         r->d[1] = 0;                                   /* super user                             */
         return 0;
 
-    case F_TIME: {                                     /* provisional: uptime, no RTC yet        */
-        uint32_t ms = q9_hal_ticks_ms() - boot_ticks;
-        r->d[0] = ms / 1000u;
+    case F_TIME: {                                     /* d0 = date, d1 = time (OS-9-Packung),   */
+        q9_datetime_t dt;                              /* d2.w = Wochentag (0=So), d3 = ms-Ticks */
+        uint32_t      ms = q9_hal_ticks_ms() - boot_ticks;
+        uint32_t      now;
+        time_init_lazy();
+        now = time_base_s + ms / 1000u;
+        dt_from_secs(now, &dt);
+        r->d[0] = ((uint32_t)dt.year << 16) | ((uint32_t)dt.month << 8) | dt.day;
+        r->d[1] = ((uint32_t)dt.hour << 16) | ((uint32_t)dt.min << 8) | dt.sec;
+        r->d[2] = (6u + now / 86400u) % 7u;            /* 2000-01-01 war ein Sonnabend           */
         r->d[3] = ms;
+        return 0;
+    }
+
+    case F_STIME: {                                    /* d0 = date, d1 = time (wie F$Time)      */
+        q9_datetime_t dt;
+        dt.year  = (uint16_t)(r->d[0] >> 16);
+        dt.month = (uint8_t)(r->d[0] >> 8);
+        dt.day   = (uint8_t)r->d[0];
+        dt.hour  = (uint8_t)(r->d[1] >> 16);
+        dt.min   = (uint8_t)(r->d[1] >> 8);
+        dt.sec   = (uint8_t)r->d[1];
+        if (dt.year < 2000 || dt.month < 1 || dt.month > 12 || dt.day < 1 ||
+            dt.day > mdays[dt.month - 1] + ((dt.month == 2 && is_leap(dt.year)) ? 1 : 0) ||
+            dt.hour > 23 || dt.min > 59 || dt.sec > 59) {
+            return E_PARAM;
+        }
+        time_base_s = secs_from_dt(&dt) - (q9_hal_ticks_ms() - boot_ticks) / 1000u;
+        time_have   = 1;
         return 0;
     }
 
@@ -241,5 +355,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.50
+// EOF syscall.c                                                                           Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
