@@ -57,8 +57,9 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $8A | I$Write  | ✅ implementiert |
 | $8B | I$ReadLn | ✅ implementiert |
 | $8C | I$WritLn | ✅ implementiert |
+| $82 | I$Dup    | ✅ implementiert (Phase 1.4) |
 | $84 | I$Open   | geplant (Phase 3, VFS) |
-| $8F | I$Close  | geplant (Phase 3) |
+| $8F | I$Close  | ✅ implementiert (Phase 1.4; Pfadnamen-Open kommt in Phase 3) |
 
 Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 
@@ -101,6 +102,17 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 
 - I$WritLn schreibt bis einschließlich CR (oder LF) oder bis d1 erreicht ist;
   CR wird auf der Konsole als CR+LF ausgegeben.
+
+### I$Dup ($82) / I$Close ($8F) — seit Phase 1.4
+
+| Register | Input      | Output (nur I$Dup)     |
+|----------|------------|------------------------|
+| d0.w     | Pfadnummer | neue Pfadnummer        |
+
+- I$Dup dupliziert einen offenen Pfad (gleiches Gerät, gleicher Modus) auf die
+  **niedrigste freie** Pfadnummer — OS-9-Semantik, wichtig für spätere I/O-Umlenkung.
+- I$Close gibt den Pfadeintrag frei; geschlossene/ungültige Pfade → `E$BPNum`,
+  volle Pfadtabelle bei Dup → `E$PthFul`.
 
 ### F$Exit ($06)
 

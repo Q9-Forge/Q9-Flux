@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.h                                                                        Ver. 1.00
+// File:   device.h                                                                        Ver. 1.10
 // Owner:  AF
 // Desc.:  Q9 Device-Modell (OS-9-Vorbild: IOMan). Gerätetabelle + Pfadtabelle im Kernel,
 //         Treiber sind interne Module mit einheitlichen I/O-Operationen (q9_drv_t).
@@ -12,6 +12,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: Geräte-/Pfadtabelle, Treiber-Ops, Modi               │ CF
+// 26-07-03│ 1.10 │ 1.4: q9_path_dup ergänzt                                               │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVICE_H
 #define Q9_DEVICE_H
@@ -90,6 +91,14 @@ q9_dev_t *q9_dev_find(const char *name);
 int q9_path_open(const char *devname, uint8_t mode);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_path_dup
+// Desc.:    Dupliziert einen offenen Pfad (gleiches Gerät, gleicher Modus) auf die niedrigste
+//           freie Pfadnummer (OS-9-Semantik). Rückgabe >= 0: neue Pfadnummer, < 0: -Fehlercode.
+// Call:     newpath = q9_path_dup(path)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_path_dup(uint32_t path);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_path_close
 // Desc.:    Schließt einen Pfad, gibt den Tabelleneintrag frei. 0 = ok, sonst E$BPNum.
 // Call:     err = q9_path_close(path)
@@ -106,5 +115,5 @@ q9_path_t *q9_path_get(uint32_t path);
 #endif // Q9_DEVICE_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.h                                                                            Ver. 1.00
+// EOF device.h                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

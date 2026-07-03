@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 1.20
+// File:   kernel.c                                                                        Ver. 1.30
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -13,6 +13,7 @@
 // 26-07-02│ 1.00 │ Initiale Version: Banner, Echo-Loop                                    │ CF
 // 26-07-03│ 1.10 │ Syscall-Schicht: REPL über I$ReadLn/I$WritLn, F$Exit, Selbsttest       │ CF
 // 26-07-03│ 1.20 │ 1.3: q9_dev_init() beim Boot, Selbsttests für Device-Modell            │ CF
+// 26-07-03│ 1.30 │ 1.4: Selbsttests I$Dup/I$Close                                         │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -131,7 +132,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[10];
+    } checks[24];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -206,6 +207,27 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "q9_path_close -> Pfad 3 wieder E$BPNum";
         checks[nchecks++].ok = (q9_path_close(3) == 0 && q9_syscall(I_WRITE, &r) == E_BPNUM);
     }
+    {   /* I$Dup clones stdout to the lowest free path, I$Close frees it again */
+        q9_regs_t r = {0};
+        static const char msg[] = "selftest: I$Dup ok\r";
+        int ok;
+        r.d[0] = 1;
+        ok = (q9_syscall(I_DUP, &r) == 0 && r.d[0] == 3);
+        r.d[1] = sizeof(msg) - 1;
+        r.a[0] = (void *)msg;
+        ok = ok && (q9_syscall(I_WRITLN, &r) == 0);     /* write via the duplicate               */
+        checks[nchecks].name = "I$Dup Pfad 1 -> 3, schreibbar";
+        checks[nchecks++].ok = ok;
+
+        q9_regs_t c = {0};
+        c.d[0] = 3;
+        ok = (q9_syscall(I_CLOSE, &c) == 0);
+        ok = ok && (q9_syscall(I_WRITLN, &r) == E_BPNUM);
+        c.d[0] = 3;
+        ok = ok && (q9_syscall(I_CLOSE, &c) == E_BPNUM);
+        checks[nchecks].name = "I$Close gibt Duplikat frei";
+        checks[nchecks++].ok = ok;
+    }
 
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
@@ -220,5 +242,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 1.20
+// EOF kernel.c                                                                            Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

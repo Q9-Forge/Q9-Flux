@@ -56,7 +56,7 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 | 1.1 | Syscall-Design entschieden (E7): OS-9-Nummern + Registerkonventionen, ABI-Spez in docs/SYSCALLS.md | ✅ | Claudia | Nummern/Fehlercodes aus Andreas' MWOS-SDK (M:\MWOS) verifiziert |
 | 1.2 | Dispatcher + erste Calls: I$Read/Write/ReadLn/WritLn, F$Exit/ID/Time; Kernel-REPL nutzt eigene Syscalls; Selbsttest + Test 02 | ✅ | Claudia | E$NotRdy statt Blockieren bis Phase 4 (dokumentiert) |
 | 1.3 | Device-Modell + Konsolen-Treiber als internes Modul (löst fest verdrahtete Pfade 0/1/2 ab) | ✅ | Claudia | device.c/dev_term.c, Mode-Check E$BMode, Test 03; Doku: docs/DEVICES.md |
-| 1.4 | I$Dup + I$Close als Syscalls (Pfadtabelle nach außen nutzbar machen, OS-9-Semantik: Dup liefert niedrigste freie Nummer) | 🟢 | Claudia | kleiner Schritt, rundet die Pfadtabelle ab |
+| 1.4 | I$Dup + I$Close als Syscalls (Pfadtabelle nach außen nutzbar machen, OS-9-Semantik: Dup liefert niedrigste freie Nummer) | ✅ | Claudia | q9_path_dup, 2 neue Selbsttest-Checks, SYSCALLS.md |
 | 1.5 | F$PrsNam + F$CmpNam (Pfadnamen-Parsing nach OS-9-Regeln) | 🟢 | Claudia | Grundlage für alles Namensbasierte (1.6, Phase 3); gut isoliert testbar — später ggf. Codex |
 | 1.6 | I$Attach + I$Detach: Geräte per Name ("/term") an-/abmelden, nutzt F$PrsNam | 🟢 | Claudia | danach ist die Gerätetabelle namensbasiert erreichbar |
 | 1.7 | Zweites Gerät /nil (Null-Device) als Mini-Treiber | 🟢 | Claudia | beweist, dass das Device-Modell trägt (2 Treiber, 1 Schnittstelle); winzig — später ggf. Codex |

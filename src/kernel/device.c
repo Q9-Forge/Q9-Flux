@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   device.c                                                                        Ver. 1.00
+// File:   device.c                                                                        Ver. 1.10
 // Owner:  AF
 // Desc.:  Q9 Device-Modell — Geräte- und Pfadtabelle (OS-9-Vorbild: IOMan). Registriert die
 //         internen Treiber-Module und verwaltet offene Pfade. Kein malloc, alles statisch.
@@ -11,6 +11,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: Tabellen, open/close/get, /term auf Pfaden 0/1/2     │ CF
+// 26-07-03│ 1.10 │ 1.4: q9_path_dup (niedrigste freie Nummer, OS-9-Semantik)              │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
@@ -124,6 +125,29 @@ int q9_path_open(const char *devname, uint8_t mode)
 }
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_path_dup
+// Desc.:    Dupliziert einen offenen Pfad auf die niedrigste freie Pfadnummer (OS-9-Semantik).
+//           Rückgabe >= 0: neue Pfadnummer, < 0: negierter Fehlercode.
+// Call:     newpath = q9_path_dup(path)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_path_dup(uint32_t path)
+{
+    q9_path_t *p = q9_path_get(path);
+
+    if (!p) {
+        return -E_BPNUM;
+    }
+    for (int i = 0; i < Q9_NPATHS; i++) {
+        if (!pathtab[i].dev) {
+            pathtab[i] = *p;
+            p->dev->links++;
+            return i;
+        }
+    }
+    return -E_PTHFUL;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_path_close
 // Desc.:    Schließt einen Pfad und gibt den Tabelleneintrag frei. 0 = ok, sonst E$BPNum.
 // Call:     err = q9_path_close(path)
@@ -155,5 +179,5 @@ q9_path_t *q9_path_get(uint32_t path)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF device.c                                                                            Ver. 1.00
+// EOF device.c                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

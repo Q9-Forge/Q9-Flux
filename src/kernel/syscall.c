@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 1.10
+// File:   syscall.c                                                                       Ver. 1.20
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -12,6 +12,7 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: Dispatcher, I$Read/Write/ReadLn/WritLn, F$Exit/ID    │ CF
 // 26-07-03│ 1.10 │ 1.3: I/O über Device-Modell/Pfadtabelle, Mode-Check (E$BMode)          │ CF
+// 26-07-03│ 1.20 │ 1.4: I$Dup + I$Close                                                   │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -136,6 +137,18 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     case I_READ:    return sc_read(r, 0);
     case I_READLN:  return sc_read(r, 1);
 
+    case I_DUP: {                                      /* d0.w path -> d0.w new path             */
+        int np = q9_path_dup(r->d[0] & 0xffffu);
+        if (np < 0) {
+            return -np;
+        }
+        r->d[0] = (uint32_t)np;
+        return 0;
+    }
+
+    case I_CLOSE:                                      /* d0.w path                              */
+        return q9_path_close(r->d[0] & 0xffffu);
+
     case F_EXIT:                                       /* real semantics arrive with phase 4     */
         proc_halted = 1;
         return 0;
@@ -169,5 +182,5 @@ int q9_proc_halted(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 1.10
+// EOF syscall.c                                                                           Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
