@@ -13,6 +13,11 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
    besprechen und solange am nächsten unabhängigen Schritt weiterarbeiten.
 3. Nach jedem abgeschlossenen Schritt: Status hier aktualisieren,
    am Session-Ende zusätzlich context.txt.
+4. **Sofort sichern (Limit-Schutz)**: Nach jedem abgeschlossenen Schritt und
+   nach jeder Änderung an ARBEITSPLAN.md/context.txt sofort `git commit` +
+   `git push` — nicht bis zum Session-Ende warten. Session-Limits kommen
+   ohne Vorwarnung; alles was nur lokal oder nur im Chat existiert, kann
+   verloren gehen. WIP-Commits sind ausdrücklich erlaubt.
 
 ---
 
@@ -42,7 +47,10 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 
 ## ⛔ Geparkt / mit Andreas zu besprechen
 
-*(aktuell nichts)*
+- **Phase-1-Plan unvollständig**: Am 2026-07-02 waren die Schritte bis ca. 1.6/1.7
+  definiert, sind aber durch ein Session-Limit nicht mehr ins Repo gelangt.
+  Weitere Projektunterlagen liegen auf Andreas' Laptop (zu Hause).
+  → Schritte 1.4 ff. gemeinsam rekonstruieren bzw. Unterlagen nachreichen.
 
 ---
 
