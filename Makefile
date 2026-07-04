@@ -21,6 +21,8 @@
 # 26-07-04│ 1.70 │ 3.4: test-Target loescht q9disk.img vor dem Lauf (sonst kann ein         │ CF
 #         │      │ FAT16-Image aus einem frueheren "make test" — mit z.B. NEUDIR aus dem   │
 #         │      │ 06-Selbsttest — die Tests 01-05 verwirren, bevor 06 es neu aufbaut)      │
+# 26-07-04│ 1.80 │ 3.6: wasm-Target kopiert web/worker.js mit (Kernel laeuft jetzt im       │ CF
+#         │      │ Worker, OPFS-Blockgeraet)                                               │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -57,11 +59,11 @@ $(BUILD)/native/q9.exe: $(KSRC) $(NATIVE_HAL_SRC) $(HDRS)
 #───────────────────────────────────────────────────────────────────────────────────────────────
 wasm: $(BUILD)/wasm/q9.js
 
-$(BUILD)/wasm/q9.js: $(KSRC) src/hal/wasm/hal_wasm.c $(HDRS) web/index.html
+$(BUILD)/wasm/q9.js: $(KSRC) src/hal/wasm/hal_wasm.c $(HDRS) web/index.html web/worker.js
 	@mkdir -p $(BUILD)/wasm
 	$(EMCC) $(CFLAGS) $(KSRC) src/hal/wasm/hal_wasm.c -o $@ \
 	    -sEXPORTED_FUNCTIONS=_q9_kernel_init,_q9_kernel_step
-	cp web/index.html $(BUILD)/wasm/
+	cp web/index.html web/worker.js $(BUILD)/wasm/
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
@@ -81,5 +83,5 @@ clean:
 .PHONY: native wasm test clean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 1.70
+# EOF Makefile                                                                            Ver. 1.80
 #─────────────────────────────────────────────────────────────────────────────────────────────────

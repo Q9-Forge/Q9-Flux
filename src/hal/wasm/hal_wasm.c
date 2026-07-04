@@ -1,9 +1,10 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_wasm.c                                                                      Ver. 1.10
+// File:   hal_wasm.c                                                                      Ver. 1.20
 // Owner:  AF
 // Desc.:  HAL-Implementierung für das WASM/Browser-Target (Emscripten).
-//         Konsole läuft über globalThis.q9host (definiert in web/index.html, xterm.js).
-//         Kein main(): der JS-Loader ruft _q9_kernel_init/_q9_kernel_step direkt auf.
+//         Konsole läuft über globalThis.q9host (definiert in web/worker.js), Block-Device über
+//         globalThis.q9blk (OPFS-Sync-Access-Handle, ebenfalls worker.js). Kein main(): der
+//         JS-Loader ruft _q9_kernel_init/_q9_kernel_step direkt auf (jetzt im Worker, seit 3.6).
 //
 // Call:   emcc ... src/hal/wasm/hal_wasm.c (siehe Makefile, Target "wasm")
 //
@@ -13,6 +14,9 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-02│ 1.00 │ Initiale Version: Konsole via q9host, Timer, Disk-Stubs                │ CF
 // 26-07-03│ 1.10 │ 1.9: q9_hal_time via Date (ungetestet, emsdk fehlt auf AF-PC)          │ CF
+// 26-07-04│ 1.20 │ 3.6: q9_hal_blk_read/write via globalThis.q9blk (OPFS-SyncAccessHandle │ CF
+//         │      │ im Worker, web/worker.js); Modul läuft jetzt komplett im Worker         │
+//         │      │ (ungetestet, emsdk fehlt lokal weiterhin)                              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <emscripten.h>
@@ -41,6 +45,18 @@ EM_JS(int, js_time_hms, (), {                          /* (hour<<12) | (min<<6) 
     return (d.getHours() << 12) | (d.getMinutes() << 6) | d.getSeconds();
 });
 
+EM_JS(int, js_blk_read, (uint32_t lba, uint8_t *buf), {
+    var data = globalThis.q9blk.read(lba);             /* Uint8Array(512) oder null bei Fehler   */
+    if (!data) return -1;
+    HEAPU8.set(data, buf);
+    return 0;
+});
+
+EM_JS(int, js_blk_write, (uint32_t lba, const uint8_t *buf), {
+    var data = HEAPU8.slice(buf, buf + 512);
+    return globalThis.q9blk.write(lba, data) ? 0 : -1;
+});
+
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ HAL IMPLEMENTATION                                                                           ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
@@ -67,14 +83,12 @@ uint32_t q9_hal_ticks_ms(void)
 
 int q9_hal_blk_read(uint32_t lba, void *buf)
 {
-    (void)lba; (void)buf;
-    return -1;                                         /* disk arrives with phase 3 (OPFS)       */
+    return js_blk_read(lba, (uint8_t *)buf);
 }
 
 int q9_hal_blk_write(uint32_t lba, const void *buf)
 {
-    (void)lba; (void)buf;
-    return -1;                                         /* disk arrives with phase 3 (OPFS)       */
+    return js_blk_write(lba, (const uint8_t *)buf);
 }
 
 int q9_hal_time(q9_datetime_t *dt)
@@ -97,5 +111,5 @@ const char *q9_hal_target(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF hal_wasm.c                                                                          Ver. 1.10
+// EOF hal_wasm.c                                                                          Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
