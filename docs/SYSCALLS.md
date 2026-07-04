@@ -48,10 +48,11 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 | $00 | F$Link   | ✅ implementiert (Phase 2.3d: sucht Modul-Directory nach Name+Type+Language) |
 | $01 | F$Load   | ✅ implementiert (Phase 3.5: Modul aus Datei, siehe unten) |
 | $02 | F$UnLink | ✅ implementiert (Phase 2.3d; seit 3.5 gibt sie F$Load-Puffer bei Link-Count 0 frei) |
-| $03 | F$Fork   | geplant (Phase 4, Prozesse) |
-| $04 | F$Wait   | geplant (Phase 4) |
-| $06 | F$Exit   | ✅ implementiert (Phase-1-Semantik: hält Proto-Prozess an) |
-| $0C | F$ID     | ✅ implementiert (liefert Proto-Prozess-ID 1) |
+| $03 | F$Fork   | ✅ implementiert (Phase 4.2: startet ein Modul aus dem Modul-Directory als neuen Prozess, s.u.) |
+| $04 | F$Wait   | ✅ implementiert (Phase 4.2: sammelt einen beendeten Kind-Prozess ein, s.u.) |
+| $05 | F$Chain  | ✅ implementiert (Phase 4.2: ersetzt das eigene Modul, PID/Parent/Std-Pfade bleiben, s.u.) |
+| $06 | F$Exit   | ✅ implementiert (Phase 4.2: echte Semantik — Zombie/Reap oder sofortiges Freigeben, s.u.) |
+| $0C | F$ID     | ✅ implementiert (liefert die echte PID aus der Prozesstabelle, s.u.) |
 | $10 | F$PrsNam | ✅ implementiert (Phase 1.5) |
 | $11 | F$CmpNam | ✅ implementiert (Phase 1.5) |
 | $15 | F$Time   | ✅ implementiert (Phase 1.9: echte Uhrzeit via HAL) |
@@ -268,11 +269,61 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
   unbekannter Größe ausgenommen — deren Grenze zeigt sich erst beim nächsten I$Read über die
   Kettenlänge).
 
-### F$Exit ($06)
+### F$Fork ($03) — seit Phase 4.2
+
+| Register | Input                                    | Output                       |
+|----------|-------------------------------------------|-------------------------------|
+| a0       | Modulname (C-String, wie F$Link)          | —                             |
+| d1.b     | Modul-Type (0 = beliebig)                  | —                             |
+| d2.b     | Modul-Language (0 = beliebig)               | —                             |
+| d0.w     | —                                           | PID des neuen Kind-Prozesses  |
+
+Sucht das Modul über das Modul-Directory (`q9_mod_link` — wie F$Link, erhöht dessen Link-Count),
+liest daraus über `q9_proc_native_entry` einen `q9_proc_step_fn`-Funktionszeiger (nur
+**`Q9_MOD_NATIVE`**-Module sind ausführbar — Entscheidung E9, PROJECT.md, solange es keine
+68k/WASM-Runtime gibt) und trägt einen neuen Prozess in die Tabelle ein: Parent = aufrufende PID,
+Std-Pfade vom Parent geerbt, Zustand `ACTIVE`. Fehler: `E$MNF` (Modul nicht gefunden), `E$NEMod`
+(Modul existiert, ist aber nicht `Q9_MOD_NATIVE` — noch nicht ausführbar), `E$PrcFul`
+(Prozesstabelle voll, `Q9_NPROCS` = 8).
+
+### F$Wait ($04) — seit Phase 4.2
+
+| Register | Output                                   |
+|----------|--------------------------------------------|
+| d0.w     | PID des eingesammelten Kind-Prozesses       |
+| d1.w     | dessen Exit-Code                            |
+
+Sucht ein beendetes (Zombie-)Kind der aufrufenden PID und reapt es (Tabellenslot wird frei). Kein
+Zombie, aber mindestens ein noch laufendes Kind: **`E$NotRdy`** (Provisorium wie bei I$Read vor
+4.3 — Aufrufer pollt; echtes Blockieren kommt erst mit 4.3). Nie ein Kind gehabt (auch keins mehr
+übrig): `E$NoChld`.
+
+### F$Chain ($05) — seit Phase 4.2
+
+| Register | Input                             |
+|----------|--------------------------------------|
+| a0       | Modulname (C-String, wie F$Fork)     |
+| d1.b     | Modul-Type (0 = beliebig)             |
+| d2.b     | Modul-Language (0 = beliebig)         |
+
+Ersetzt das Modul des AUFRUFENDEN Prozesses (PID/Parent/Std-Pfade bleiben, Exit-Code wird auf 0
+zurückgesetzt) — wie F$Fork nur für `Q9_MOD_NATIVE`-Module (sonst `E$NEMod`, altes Modul bleibt
+unangetastet). Das alte Modul wird entlinkt (`q9_mod_unlink`), bevor das neue verlinkt wird.
+
+### F$Exit ($06) — echte Semantik seit Phase 4.2
 
 | Register | Input       |
 |----------|-------------|
 | d1.w     | Status-Code |
+
+Beendet den AUFRUFENDEN Prozess: Exit-Code merken, ein evtl. verlinktes Modul entlinken. Hat der
+Prozess einen Parent (`parent != 0`), wird er **Zombie** (wartet auf F$Wait des Parents); hat er
+keinen (Parent 0 — z.B. PID 1, die REPL), wird der Tabellenslot sofort freigegeben, weil niemand
+reapen kann. Der Scheduler ruft einen nicht-`ACTIVE`-Prozess nie wieder als Step-Funktion auf —
+das ersetzt den alten `q9_proc_halted()`-Notbehelf aus Phase 1..4.1 (entfernt).
+
+**Bewusst nicht Teil von 4.2** (Ideenspeicher): Reparenting verwaister Kind-Prozesse auf PID 1,
+falls deren Parent selbst beendet wird, bevor er sie reapen konnte.
 
 ### F$ID ($0C)
 
@@ -283,9 +334,9 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 
 **Seit Phase 4.1**: `d0` kommt aus der echten Prozess-Descriptor-Tabelle (`proc.c`,
 `q9_proc_current()` — der Prozess, dessen Step-Funktion der Scheduler gerade ausführt), nicht
-mehr fest verdrahtet. Solange nur ein Prozess existiert (kein F$Fork vor 4.2), liefert das
-weiterhin PID 1. Außerhalb eines Scheduler-Aufrufs (z.B. ein Selbsttest-Syscall vor dem ersten
-`q9_kernel_step()`-Tick) liefert `q9_proc_current()` NULL — F$ID fällt dann auf PID 1 zurück.
+mehr fest verdrahtet. Außerhalb eines Scheduler-Aufrufs (z.B. ein Selbsttest-Syscall vor dem
+ersten `q9_kernel_step()`-Tick) liefert `q9_proc_current()` NULL — F$ID fällt dann auf PID 1
+zurück (ebenso F$Fork/F$Wait/F$Chain/F$Exit, wenn außerhalb der Schedulers aufgerufen).
 
 ### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 MWOS-korrigiert
 

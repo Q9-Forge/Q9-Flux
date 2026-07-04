@@ -134,7 +134,7 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
 | 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | ✅ | Claudia | `src/kernel/proc.c/.h` neu — Details siehe „Erledigt" unten |
-| 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | 🟢 | Claudia | F$Exit existiert als Stub aus 1.2 — bekommt jetzt echte Semantik |
+| 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | ✅ | Claudia | Entscheidung E9 (Q9_MOD_NATIVE) — Details siehe „Erledigt" unten |
 | 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | 🟢 | Claudia | danach fühlt sich I$ReadLn blockierend an, ohne je einen Stack einzufrieren |
 | 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | 🟢 | Claudia | Scheduler bleibt Round-Robin, Priorität erstmal nur Datenfeld — Aging lohnt erst bei echter Konkurrenz |
 | 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | 🟢 | Claudia | konzeptionell unabhängig vom Kern, bewusst eigener Schritt |
@@ -173,6 +173,45 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.2 (F$Fork + F$Exit + F$Wait + F$Chain)** ✅: echte Mehrprozess-Semantik
+  auf dem 4.1-Fundament. **Design-Entscheidung E9** (PROJECT.md, neu): Q9 hat vor Phase 6 keine
+  68k/WASM-Ausführungs-Engine, die aus einem geladenen Modul heraus echten Byte-Code starten
+  könnte — deshalb neues Language-Byte `Q9_MOD_NATIVE` (module.h, Wert 4): ein solches Modul
+  trägt direkt hinter dem Header (Offset `execoff`) einen rohen `q9_proc_step_fn`-Funktionszeiger
+  statt Byte-Code (gültig nur innerhalb desselben laufenden Host-Prozesses — NICHT Teil eines
+  portablen Moduldateiformats, reine Übergangslösung). `q9_proc_native_entry()` (proc.c) liest
+  diesen Zeiger, `E$NEMod` ($EA, MWOS-verifiziert) bei jeder anderen Sprache.
+  **F$Fork** (proc.c: `q9_proc_fork`): sucht das Modul über `q9_mod_link` (wie F$Link, erhöht den
+  Link-Count), validiert `Q9_MOD_NATIVE`, alloziert einen neuen Tabellenslot (Parent = aufrufende
+  PID, Std-Pfade vom Parent geerbt, Zustand ACTIVE). `E$MNF` (Modul nicht gefunden), `E$NEMod`
+  (nicht nativ), `E$PrcFul` (Tabelle voll, $E5, MWOS-verifiziert).
+  **F$Exit** (proc.c: `q9_proc_exit`) hat jetzt echte Semantik statt des 1.2-Stubs: Exit-Code
+  merken, verlinktes Modul entlinken; hat der Prozess einen Parent, wird er **Zombie**
+  (`Q9_PS_ZOMBIE`, neuer Enum-Wert — bewusst kein E8-Scheduler-Zustand, hält nur Exit-Code/PID
+  bis zum Reap vor); ohne Parent (z.B. PID 1) wird der Slot sofort frei, weil niemand reapen
+  kann. Der alte `q9_proc_halted()`-Notbehelf (samt der globalen `proc_halted`-Variable in
+  syscall.c) ist komplett entfernt — der Scheduler ruft nicht-ACTIVE-Prozesse ohnehin nie mehr
+  als Step-Funktion auf, das reicht als Guard.
+  **F$Wait** (proc.c: `q9_proc_wait`): sucht ein Zombie-Kind der aufrufenden PID und reapt es
+  (Tabellenslot frei, Exit-Code/PID zurückgegeben). Noch laufendes, aber kein beendetes Kind:
+  `E$NotRdy` (Provisorium — Aufrufer pollt, wie bei I$Read vor 4.3; echtes Blockieren kommt mit
+  4.3). Nie ein Kind gehabt: `E$NoChld` ($E2 — bestätigt eine Altnotiz aus syscall.h 1.40, die
+  genau diesen Wert schon 2026-07-03 für spätere Verwendung reserviert hatte).
+  **F$Chain**: ersetzt das Modul des aufrufenden Prozesses (PID/Parent/Std-Pfade bleiben,
+  Exit-Code auf 0 zurückgesetzt); altes Modul wird entlinkt, bevor das neue verlinkt wird
+  (`E$NEMod` lässt das alte Modul unangetastet, falls das neue nicht nativ ist).
+  **Selbsttests** (kernel.c): `build_native_module()` (Analogon zu `build_module()`, baut ein
+  echtes `Q9_MOD_NATIVE`-Modul samt Funktionszeiger) + `child_step` (beendet sich sofort mit
+  Exit-Code 42) beweisen Fork→ein Tick läuft→Exit→Wait reapt; zusätzlich `child_before_chain_step`/
+  `child_after_chain_step` beweisen F$Chain (Kind verkettet sich nach dem ersten Tick auf ein
+  anderes Modul, der ZWEITE Tick führt schon die neue Step-Funktion aus, Exit-Code 77 bestätigt
+  den Wechsel). Je ein Fehlerpfad-Check für F$Fork (unbekanntes Modul, nicht-natives Modul) und
+  F$Wait (nie ein Kind gehabt). docs/SYSCALLS.md ($03/$04/$05/$06-Abschnitte + Registerformate),
+  docs/SYSCALL_ROADMAP.md (Status-Spalten), docs/HANDBUCH.md (Abschnitt 5.6 Prozessmodell,
+  Abschnitt 8 Glossar: `Q9_MOD_NATIVE`/Zombie-Prozess), PROJECT.md (Entscheidung E9) aktualisiert.
+  `make clean && make test` PASS, warnungsfrei. wasm nicht angefasst (reine Kernel-Logik).
+  **Bewusst nicht Teil von 4.2** (Ideenspeicher): Reparenting verwaister Kind-Prozesse auf PID 1.
+  **Nächster Ready-Schritt: 4.3** (echtes Blockieren).
 - **2026-07-04 — Phase 4.1 (Prozess-Descriptor-Tabelle + Round-Robin-Scheduler)** ✅: neue Datei
   `src/kernel/proc.c/.h` — statische Tabelle `q9_pd_t proctab[Q9_NPROCS]` (Q9_NPROCS=8, kein
   malloc, analog zur Gerätetabelle in device.c): `pid`/`parent`/`module` (Zeiger auf

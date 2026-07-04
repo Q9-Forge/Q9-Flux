@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 1.90
+// File:   syscall.h                                                                       Ver. 2.00
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -22,6 +22,8 @@
 // 26-07-04│ 1.80 │ 3.4: I$Write jetzt echt (FAT16-Routing); E$DirFul auch fuer volle     │ CF
 //         │      │ FAT16-Directorys wiederverwendet (kein neuer Code noetig, MWOS-Wert)   │
 // 26-07-04│ 1.90 │ 3.5: E$NoRAM ergaenzt (F$Load: Modul-Puffer-Pool voll/Datei zu gross) │ CF
+// 26-07-04│ 2.00 │ 4.2: E$IPrcID/E$NoChld/E$PrcFul/E$NEMod ergaenzt (F$Fork/F$Wait/       │ CF
+//         │      │ F$Chain, MWOS-verifiziert — E$NoChld($E2) bestaetigt die 1.40-Notiz)   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -102,8 +104,16 @@ typedef struct q9_regs {
 #define E_BPNAM   0xd7                                 /* bad path name                          */
 #define E_PNNF    0xd8                                 /* path name not found (3.2, VFS)         */
 #define E_MNF     0xdd                                 /* module not found (unbekanntes Gerät)   */
+#define E_IPRCID  0xe0                                 /* illegal process ID (4.2: F$Wait/F$Send  */
+                                                        /*   auf unbekannte/fremde PID)             */
 #define E_PARAM   0xe1                                 /* bad parameter                          */
+#define E_NOCHLD  0xe2                                 /* no children (4.2: F$Wait ohne Kinder)   */
+#define E_PRCFUL  0xe5                                 /* too many active processes (4.2: F$Fork, */
+                                                        /*   Prozesstabelle voll)                  */
 #define E_BMCRC   0xe8                                 /* bad module CRC (2.3b)                  */
+#define E_NEMOD   0xea                                 /* non-executable module (4.2: F$Fork/     */
+                                                        /*   F$Chain auf ein Nicht-Q9_MOD_NATIVE-  */
+                                                        /*   Modul — noch keine 68k/WASM-Runtime)  */
 #define E_BMHP    0xec                                 /* bad module header (2.3b, keine echte   */
                                                         /*   Parity-Pruefung — Q9 macht das nicht) */
 #define E_NORAM   0xed                                 /* no RAM available (3.5: Load-Puffer-    */
@@ -121,13 +131,6 @@ typedef struct q9_regs {
 // Call:     err = q9_syscall(I_WRITLN, &regs)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_syscall(uint16_t func, q9_regs_t *regs);
-
-//════════════════════════════════════════════════════════════════════════════════════════════════
-// Function: q9_proc_halted
-// Desc.:    1 = Proto-Prozess wurde per F$Exit beendet (Übergangslösung bis Phase 4).
-// Call:     if (q9_proc_halted()) ...
-//════════════════════════════════════════════════════════════════════════════════════════════════
-int q9_proc_halted(void);
 
 #endif // Q9_SYSCALL_H
 

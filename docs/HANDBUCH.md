@@ -307,7 +307,7 @@ schreibend, inklusive langer Dateinamen beim Lesen) — gewählt wegen
 Interoperabilität: ein Q9-Disk-Image lässt sich am Host-Rechner mounten,
 befüllen und mit Standard-Tools inspizieren.
 
-### 5.6 Prozessmodell (Entscheidung E8, Fundament seit Phase 4.1)
+### 5.6 Prozessmodell (Entscheidung E8/E9, Mehrprozess-Semantik seit Phase 4.2)
 
 WebAssembly erlaubt kein Umschalten von Aufruf-Stacks — ein klassischer,
 Stack-wechselnder Scheduler scheidet daher aus. Q9s Scheduler verwaltet
@@ -325,9 +325,20 @@ Exit-Code, eigene Std-Pfade 0/1/2 — kein `malloc`, analog zur Gerätetabelle)
 und einen Round-Robin-Scheduler (`q9_proc_schedule()`, aufgerufen aus
 `q9_kernel_step()`), der jeden Prozess im Zustand `ACTIVE` einmal pro Tick
 als Step-Funktion aufruft. Die bisherige REPL (Phase 1) ist der erste
-registrierte Prozess (PID 1). Echte Mehrprozess-Semantik (`F$Fork`/`F$Exit`/
-`F$Wait`/`F$Chain`, Blockieren/Aufwecken, Prioritäten, Signale) folgt in den
-Schritten 4.2–4.5.
+registrierte Prozess (PID 1).
+
+**Seit Phase 4.2** gibt es echte Mehrprozess-Semantik: `F$Fork` startet einen
+neuen Prozess aus einem Modul-Directory-Eintrag (Parent = Aufrufer, Std-Pfade
+geerbt), `F$Exit` beendet den aufrufenden Prozess (Zombie, falls ein Parent
+reapen kann — sonst sofortiges Freigeben), `F$Wait` sammelt einen beendeten
+Kind-Prozess beim Parent ein, `F$Chain` ersetzt das eigene Modul (PID/Parent/
+Std-Pfade bleiben). Da Q9 vor Phase 6 keine 68k/WASM-Ausführungs-Engine hat,
+gilt **Entscheidung E9** (PROJECT.md): ein neues Language-Byte
+`Q9_MOD_NATIVE` markiert Module, die statt echtem Byte-Code einen rohen
+`q9_proc_step_fn`-Funktionszeiger direkt hinter dem Header tragen (gültig
+nur innerhalb desselben laufenden Host-Prozesses) — F$Fork/F$Chain lesen
+genau diesen Zeiger. Blockieren/Aufwecken, Prioritäten und Signale folgen in
+den Schritten 4.3–4.5.
 
 ### 5.7 HAL-Schnittstelle
 
@@ -401,7 +412,9 @@ vorausgesetzt werden:
 | Begriff | Bedeutung |
 |---------|-----------|
 | **Modul** | Grundbaustein von OS-9/Q9: Programm, Treiber, Dateisystem-Manager oder Datenblock, jeweils mit einheitlichem Header (Name, Typ, Revision, CRC) |
-| **Language-Byte** | Feld im Modul-Header, das die Ausführungsform festlegt (bei Q9: WASM/68k/perspektivisch 6809) |
+| **Language-Byte** | Feld im Modul-Header, das die Ausführungsform festlegt (bei Q9: WASM/68k/perspektivisch 6809, dazu `Q9_MOD_NATIVE` als Übergangslösung, s.u.) |
+| **`Q9_MOD_NATIVE`** | Q9-eigenes Language-Byte (Entscheidung E9): das Modul trägt statt Byte-Code einen rohen Funktionszeiger direkt hinter dem Header — Übergangslösung, solange es vor Phase 6 keine 68k/WASM-Ausführungs-Engine gibt |
+| **Zombie-Prozess** | Prozess, der sich per F$Exit beendet hat, aber noch in der Prozesstabelle steht, weil sein Parent den Exit-Code per F$Wait noch nicht abgeholt hat |
 | **IOMan** | OS-9s I/O-Manager — Vorbild für Q9s Geräte-/Pfadtabelle |
 | **File-Manager** | Komponente, die die Semantik eines Dateisystemtyps kennt (z.B. RBF für OS-9-Disketten, FAT16 bei Q9) — sitzt zwischen Pfad und Block-Treiber |
 | **RBF** | „Random Block File" — OS-9s natives Dateisystem/File-Manager |
