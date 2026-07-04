@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.10
+# File:   HANDBUCH.md                                                                     Ver. 1.20
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -13,6 +13,8 @@
 # 26-07-04│ 1.00 │ Initiale Version, nach Abschluss Phase 3 (Filesystem)                   │ CF
 # 26-07-04│ 1.10 │ 4.6: wasm3-Runtime (Entscheidung E10) — third_party/wasm3, wasmrt.c/.h, │ CF
 #         │      │ neuer Abschnitt 5.8, Lizenz-/Referenzquellen-Tabelle ergänzt            │
+# 26-07-04│ 1.20 │ 4.7: Syscall-Bridge (native Seite) — wasmproc.c/.h, Abschnitt 5.8        │ CF
+#         │      │ erweitert, Phase-4-Status in Abschnitt 6 aktualisiert                   │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -159,9 +161,12 @@ Q9/
 │   │   ├── vfs.c/.h           Dateisystem-Routing, austauschbarer File-Manager (q9_fm_t)
 │   │   ├── fat16.c/.h         FAT16-File-Manager (lesend + schreibend, LFN-Lesen)
 │   │   ├── proc.c/.h          Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4)
-│   │   └── wasmrt.c/.h        Wrapper um die eingebettete wasm3-Runtime (Phase 4.6,
-│   │                           NUR im nativen Build, s. Abschnitt 5.8) — kapselt wasm3.h nach
-│   │                           aussen, damit kein Aufrufer third_party/wasm3 einbinden muss
+│   │   ├── wasmrt.c/.h        Wrapper um die eingebettete wasm3-Runtime (Phase 4.6,
+│   │   │                       NUR im nativen Build, s. Abschnitt 5.8) — kapselt wasm3.h nach
+│   │   │                       aussen, damit kein Aufrufer third_party/wasm3 einbinden muss
+│   │   └── wasmproc.c/.h      Syscall-Bridge fuer Q9_MOD_WASM-Prozesse (Phase 4.7, NUR im
+│   │                           nativen Build) — Importe q9.f_id/f_time/f_exit + Step-Trampolin
+│   │                           q9_wasm_proc_step, das F$Fork/F$Chain fuer WASM-Module eintragen
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -406,7 +411,7 @@ const char   *q9_hal_target(void);
 Jedes Target implementiert genau diese Funktionen; alles Weitere (Geräte,
 Pfade, Dateisystem, Module) ist reiner Kernel-Code und läuft überall gleich.
 
-### 5.8 WASM-Runtime (native Build, Phase 4.6, Entscheidung E10)
+### 5.8 WASM-Runtime + Syscall-Bridge (native Build, Phase 4.6/4.7, Entscheidung E10)
 
 Damit `Q9_MOD_WASM`-Module (s. Abschnitt 5.4) nicht nur im Browser laufen
 (dort instanziiert JS sie direkt über `WebAssembly.instantiate`), braucht der
@@ -415,29 +420,54 @@ die native Version nur zu Debug-Zwecken benutzbar (löst O5 in PROJECT.md).
 Kandidat und Wahl: **wasm3** (MIT, klein, embeddable, kein WASI/Betriebs-
 systembezug nötig) — vendored, unverändert, unter `third_party/wasm3/`.
 
-`src/kernel/wasmrt.c/.h` ist die schmale Q9-Schnittstelle darüber:
+`src/kernel/wasmrt.c/.h` ist die schmale, generische Q9-Schnittstelle über
+wasm3 (Parsen/Laden/Aufrufen/Freigeben), `src/kernel/wasmproc.c/.h` (4.7)
+baut darauf die eigentliche Prozess-Integration:
 
 ```c
+// wasmrt.h — generischer Wrapper
 int  q9_wasmrt_init(q9_wasmrt_t *rt);
-int  q9_wasmrt_load(q9_wasmrt_t *rt, const uint8_t *bytes, uint32_t len);
+int  q9_wasmrt_parse(q9_wasmrt_t *rt, const uint8_t *bytes, uint32_t len);
+int  q9_wasmrt_load(q9_wasmrt_t *rt);
 int  q9_wasmrt_call_i32(q9_wasmrt_t *rt, const char *funcname,
                          int32_t a, int32_t b, int32_t *out);
+const char *q9_wasmrt_call_raw(q9_wasmrt_t *rt, const char *funcname);
 void q9_wasmrt_free(q9_wasmrt_t *rt);
+
+// wasmproc.h — Q9-Prozessintegration (4.7)
+void q9_wasm_proc_step(void);   // Step-Funktion fuer Q9_MOD_WASM-Prozesse
 ```
 
-Stand 4.6: reiner Grundbaustein — ein `.wasm`-Modul laden und eine
-exportierte Funktion mit zwei `i32`-Parametern aufrufen, **noch ohne**
-Syscall-Bridge (keine Importe Richtung Q9-Kernel). Bewiesen durch einen
-Selbsttest (nur `-DQ9_HAVE_WASM3`, native-only), der ein handgebautes
-`add(a,b)`-Modul lädt und rechnet. Die eigentliche Syscall-Bridge
-(Import-Tabelle, F$Fork/F$Chain erkennen `Q9_MOD_WASM`) folgt mit Schritt
-4.7, Zeiger-/Speicher-Marshaling über die Modulgrenze mit 4.8.
+**4.6** (Grundbaustein): ein `.wasm`-Modul laden und eine exportierte
+Funktion mit zwei `i32`-Parametern aufrufen, noch ohne Syscall-Bridge.
+Bewiesen durch einen Selbsttest, der ein handgebautes `add(a,b)`-Modul lädt
+und rechnet.
 
-`wasmrt.c` selbst bleibt warnungsfrei und ohne eigenes `malloc` — die
-Heap-Nutzung steckt vollständig in wasm3 (s. Abschnitt 3.1, "Kein malloc im
-Kernel"). Nur Teil von `make native`; `make wasm` bindet weder
-`wasmrt.c` noch `third_party/wasm3/` ein (per `#ifdef Q9_HAVE_WASM3` in
-`kernel.c` und separater Makefile-Quellliste).
+**4.7** (Syscall-Bridge): `entry_step_for()` in `syscall.c` lässt `F$Fork`/
+`F$Chain` jetzt auch Module mit Language-Byte `Q9_MOD_WASM` starten (analog
+zu `Q9_MOD_NATIVE`/Entscheidung E9) — Step-Funktion ist immer die feste
+`q9_wasm_proc_step()`, die ihr Modul selbst aus der Prozesstabelle liest.
+Drei Importe im wasm3-Namespace `"q9"` verdrahten echte Q9-Syscalls: `f_id`
+(`i()`), `f_time` (`I()`, packt d0/d1 in ein i64 — WASM-MVP kennt keine
+Mehrfachrückgabe), `f_exit` (`v(i)`, ruft `F$Exit` auf und bricht die
+WASM-Ausführung per Trap ab, kein Rückkehrpfad in den Gastcode). Bewusste
+Vereinfachung: das Gastprogramm läuft beim ersten Scheduler-Tick synchron
+bis zum Ende durch (kein kooperatives Unterbrechen mitten in der
+Ausführung — bräuchte Asyncify o.ä., außerhalb des 4.7-Rahmens). Modul-
+Konvention wie `Q9_MOD_NATIVE`: der WASM-Bytecode steht direkt hinter dem
+Header (`execoff`/`datasize`). Bewiesen durch einen Selbsttest mit echtem
+`F$Fork`/`F$Wait`-Lebenszyklus. Zeiger-/Speicher-Marshaling über die
+Modulgrenze (damit auch I$Read/I$Write/I$Open für WASM-Module nutzbar
+werden) folgt mit Schritt 4.8. **Nicht Teil von 4.7**: die Browser-Seite
+(`WebAssembly.instantiate` im Worker für ein verschachteltes Gastmodul) —
+zurückgestellt, s. ARBEITSPLAN.md „Geparkt".
+
+`wasmrt.c`/`wasmproc.c` selbst bleiben warnungsfrei und ohne eigenes
+`malloc` — die Heap-Nutzung steckt vollständig in wasm3 (s. Abschnitt 3.1,
+"Kein malloc im Kernel"). Nur Teil von `make native`; `make wasm` bindet
+weder diese Dateien noch `third_party/wasm3/` ein (per
+`#ifdef Q9_HAVE_WASM3` in `kernel.c`/`syscall.c` und separater
+Makefile-Quellliste).
 
 ---
 
@@ -452,7 +482,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 1 | Kernel-Basis: Syscall-Dispatcher, Device-/Pfadmodell, Namensauflösung, POSIX-HAL | ✅ fertig |
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
-| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig (4.1-4.5); Anschluss 4.6-4.8 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3) ✅ fertig, 4.7-4.8 offen |
+| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig (4.1-4.5); Anschluss 4.6-4.8 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3) + 4.7 (Syscall-Bridge, native Seite) ✅ fertig, 4.8 (Zeiger-/Speicher-Marshaling) offen; Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
 | 5 | Shell | offen |
 | 6 | 68k-Runtime (Emulator im Browser) | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
@@ -518,8 +548,8 @@ vorausgesetzt werden:
 ---
 
 **Erstellt**: 2026-07-04
-**Letzte Aktualisierung**: 2026-07-04 (Schritt 4.6: wasm3-Runtime, Entscheidung E10)
+**Letzte Aktualisierung**: 2026-07-04 (Schritt 4.7: Syscall-Bridge fuer Q9_MOD_WASM, native Seite)
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF HANDBUCH.md                                                                          Ver. 1.10
+# EOF HANDBUCH.md                                                                          Ver. 1.20
 #─────────────────────────────────────────────────────────────────────────────────────────────────

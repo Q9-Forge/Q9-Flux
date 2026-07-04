@@ -53,8 +53,8 @@ endif
 # WASM, s. third_party/wasm3/README.md). WASMRT_SRC ist Q9-eigener Code (volle CFLAGS, bleibt
 # warnungsfrei); WASM3_SRC ist unveraendert vendorter Fremdcode und wird bewusst mit eigenen,
 # laxeren Flags uebersetzt (58 -Wall/-Wextra-Warnungen im Original, die wir nicht pflegen).
-WASMRT_SRC   = src/kernel/wasmrt.c
-WASMRT_HDR   = src/kernel/wasmrt.h
+WASMRT_SRC   = src/kernel/wasmrt.c src/kernel/wasmproc.c
+WASMRT_HDR   = src/kernel/wasmrt.h src/kernel/wasmproc.h
 WASM3_DIR    = third_party/wasm3
 WASM3_SRC    = $(WASM3_DIR)/m3_bind.c $(WASM3_DIR)/m3_code.c $(WASM3_DIR)/m3_compile.c \
                $(WASM3_DIR)/m3_core.c $(WASM3_DIR)/m3_env.c $(WASM3_DIR)/m3_exec.c \

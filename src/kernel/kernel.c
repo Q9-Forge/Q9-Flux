@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.40
+// File:   kernel.c                                                                        Ver. 3.50
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -57,6 +57,8 @@
 //         │      │ ausserhalb eines Prozesses) -> E$IPrcID                                    │
 // 26-07-04│ 3.40 │ 4.6: Selbsttest wasm3-Grundbaustein (nur -DQ9_HAVE_WASM3, native-only) —    │ CF
 //         │      │ laedt ein handgebautes add(a,b)-Modul, ruft es auf, prueft 2+3=5           │
+// 26-07-04│ 3.50 │ 4.7: build_wasm_module + Selbsttest Syscall-Bridge — echtes F$Fork auf ein │ CF
+//         │      │ Q9_MOD_WASM-Modul (importiert q9.f_id/f_time/f_exit), F$Wait sammelt es ein│
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -248,6 +250,46 @@ static void build_native_module(uint8_t *buf, const char *name, uint8_t rev, q9_
     }
     h->crc32 = q9_crc32(buf, modsize);
 }
+
+#ifdef Q9_HAVE_WASM3
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: build_wasm_module
+// Desc.:    4.7-Selbsttest: baut ein echtes Q9_MOD_WASM-Modul — analog zu build_native_module(),
+//           aber statt eines rohen Funktionszeigers steht direkt hinter dem Header (execoff) der
+//           komplette WASM-Bytecode (Laenge = datasize), danach der Name. q9_wasm_proc_step()
+//           (wasmproc.c) liest genau diese Konvention wieder aus. buf muss mindestens
+//           Q9_MOD_HDRSIZE + codelen + strlen(name) + 1 Bytes gross sein.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void build_wasm_module(uint8_t *buf, const char *name, uint8_t rev,
+                               const uint8_t *code, uint32_t codelen)
+{
+    q9_modhdr_t *h       = (q9_modhdr_t *)buf;
+    uint32_t     codeoff = Q9_MOD_HDRSIZE;
+    uint32_t     nameoff = codeoff + codelen;
+    uint32_t     namelen = str_len(name);
+    uint32_t     modsize = nameoff + namelen + 1;
+
+    h->sync[0]  = Q9_MOD_SYNC0;
+    h->sync[1]  = Q9_MOD_SYNC1;
+    h->hdrsize  = Q9_MOD_HDRSIZE;
+    h->modsize  = modsize;
+    h->nameoff  = nameoff;
+    h->type     = Q9_MOD_PRGRM;
+    h->lang     = Q9_MOD_WASM;
+    h->attr     = 0;
+    h->rev      = rev;
+    h->execoff  = codeoff;
+    h->datasize = codelen;
+    h->crc32    = 0;
+    for (uint32_t i = 0; i < codelen; i++) {
+        buf[codeoff + i] = code[i];
+    }
+    for (uint32_t i = 0; i <= namelen; i++) {
+        buf[nameoff + i] = (uint8_t)name[i];
+    }
+    h->crc32 = q9_crc32(buf, modsize);
+}
+#endif
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: child_step
@@ -1509,13 +1551,79 @@ int q9_kernel_selftest(void)
 
         q9_wasmrt_t rt;
         int ok = (q9_wasmrt_init(&rt) == Q9_WASMRT_OK);
-        ok = ok && (q9_wasmrt_load(&rt, wasm_add, sizeof(wasm_add)) == Q9_WASMRT_OK);
+        ok = ok && (q9_wasmrt_parse(&rt, wasm_add, sizeof(wasm_add)) == Q9_WASMRT_OK);
+        ok = ok && (q9_wasmrt_load(&rt) == Q9_WASMRT_OK);
         int32_t result = 0;
         ok = ok && (q9_wasmrt_call_i32(&rt, "add", 2, 3, &result) == Q9_WASMRT_OK);
         ok = ok && (result == 5);
         q9_wasmrt_free(&rt);
 
         checks[nchecks].name = "4.6: wasm3 laedt add(a,b)-Modul und rechnet 2+3=5";
+        checks[nchecks++].ok = ok;
+    }
+    {
+        /* 4.7: Syscall-Bridge — F$Fork startet ein echtes Q9_MOD_WASM-Modul. Das Gastprogramm
+           (per Hand als WASM-Bytecode gebaut, vgl. test/06_test_fat16.py, das FAT16-Images per
+           Hand statt per externem Tool baut) importiert q9.f_id/q9.f_time/q9.f_exit, ruft f_id
+           und f_time einmal auf (Ergebnis verworfen — beweist nur, dass der Aufruf klappt und
+           echte Syscall-Werte zurueckkommen, ohne sie hier weiterzuverwenden) und beendet sich
+           dann per f_exit(0). Aequivalent zu folgendem WAT:
+             (module
+               (import "q9" "f_id"   (func $f_id   (result i32)))
+               (import "q9" "f_time" (func $f_time (result i64)))
+               (import "q9" "f_exit" (func $f_exit (param i32)))
+               (func (export "q9_main")
+                 call $f_id   drop
+                 call $f_time drop
+                 i32.const 0  call $f_exit))
+           Beweist den kompletten Weg Laden->Instanziieren->Laufen->Syscall->Zurueck end-to-end
+           (das in ARBEITSPLAN.md 4.7 als Ziel genannte Kriterium), inklusive echtem F$Fork/
+           F$Wait-Lebenszyklus (wie der 4.2-Test mit Q9_MOD_NATIVE, nur mit Q9_MOD_WASM). */
+        static const uint8_t wasm_main[] = {
+            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+            0x01, 0x10, 0x04, 0x60, 0x00, 0x01, 0x7f, 0x60, 0x00, 0x01, 0x7e,
+            0x60, 0x01, 0x7f, 0x00, 0x60, 0x00, 0x00,
+            0x02, 0x23, 0x03,
+            0x02, 0x71, 0x39, 0x04, 0x66, 0x5f, 0x69, 0x64, 0x00, 0x00,
+            0x02, 0x71, 0x39, 0x06, 0x66, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x00, 0x01,
+            0x02, 0x71, 0x39, 0x06, 0x66, 0x5f, 0x65, 0x78, 0x69, 0x74, 0x00, 0x02,
+            0x03, 0x02, 0x01, 0x03,
+            0x07, 0x0b, 0x01, 0x07, 0x71, 0x39, 0x5f, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x03,
+            0x0a, 0x0e, 0x01, 0x0c, 0x00, 0x10, 0x00, 0x1a, 0x10, 0x01, 0x1a, 0x41, 0x00, 0x10, 0x02, 0x0b
+        };
+        static uint8_t wasmbuf[192];
+        int            ok;
+        q9_regs_t      fk = {0};
+        uint32_t       childpid;
+
+        build_wasm_module(wasmbuf, "wasmproc", 1, wasm_main, sizeof(wasm_main));
+        ok = (q9_mod_register((const q9_modhdr_t *)wasmbuf) == 0);
+
+        fk.a[0] = (void *)"wasmproc";
+        fk.d[1] = Q9_MOD_PRGRM;
+        fk.d[2] = Q9_MOD_WASM;
+        ok = ok && (q9_syscall(F_FORK, &fk) == 0);
+        childpid = fk.d[0];
+        ok = ok && (childpid != 0 && childpid != 1);
+
+        {   /* Kind ist ACTIVE, hat aber noch keinen Tick bekommen -> noch kein Exit           */
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == E_NOTRDY);
+        }
+
+        q9_kernel_step();   /* ein Scheduler-Tick: repl_step + q9_wasm_proc_step (laeuft komplett
+                                durch bis zum f_exit-Trap, s. wasmproc.c-Kommentar zur 4.7-Vereinfachung) */
+
+        {
+            q9_regs_t wt2 = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt2) == 0 && wt2.d[0] == childpid && wt2.d[1] == 0);
+        }
+        {   /* kein Kind mehr uebrig -> E$NoChld */
+            q9_regs_t wt3 = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt3) == E_NOCHLD);
+        }
+
+        checks[nchecks].name = "4.7: F$Fork startet Q9_MOD_WASM-Modul, Syscall-Bridge, F$Exit(0), F$Wait sammelt ein";
         checks[nchecks++].ok = ok;
     }
 #endif
@@ -1533,5 +1641,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 3.40
+// EOF kernel.c                                                                            Ver. 3.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
