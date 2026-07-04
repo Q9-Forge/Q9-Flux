@@ -116,8 +116,9 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 | 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | ✅ | Claudia | fat16.c/.h: I$Create/I$MakDir/I$Delete/I$Write echt implementiert, FAT-Ketten allozieren/freigeben (beide FAT-Kopien synchron), nur 8.3-Namen (E$BPNam bei LFN-Bedarf/Duplikat). Details siehe „Erledigt" unten |
 | 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | ✅ | Claudia | q9_mod_load (module.c) — statischer Load-Puffer-Pool (4x4096 Byte, kein malloc), Directory-Eintraege merken Puffer-Herkunft, automatische Freigabe bei Link-Count 0. Details siehe „Erledigt" unten |
 | 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | ✅ | Claudia | Kernel läuft jetzt im Worker (Pflicht für Sync-Access-Handle); Details siehe „Erledigt". wasm ungetestet (emsdk fehlt lokal) |
+| 3.7 | FAT16-Directory-Einträge bekommen echtes Datum/Uhrzeit (q9_hal_time) statt Nullfeldern bei I$Create/I$MakDir | 🟢 | Claudia | Live-Demo 2026-07-04: von Q9 geschriebene Datei zeigt am Mac "1.1.1970" — kosmetisch, aber F$Time liefert die echte Uhrzeit ja schon (seit 1.9), nur fat16.c setzt die DOS-Datum/Zeit-Felder beim Anlegen noch nicht |
 
-### Phase 4 — Prozesse (Vorschläge, 2026-07-03 spät mit Andreas besprochen)
+### Phase 4 — Prozesse (freigegeben 2026-07-04, Konzept 2026-07-03 spät mit Andreas besprochen)
 
 Grundsatzentscheidung **E8** (PROJECT.md): **Step-Modell statt Stack-Umschaltung** —
 WASM kennt keinen Stack-Wechsel, also verwaltet der Scheduler Prozess-**Zustände**
@@ -132,11 +133,11 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | 💡 | — | Kern von allem; REPL wird erster echter Prozess |
-| 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | 💡 | — | F$Exit existiert als Stub aus 1.2 — bekommt jetzt echte Semantik |
-| 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | 💡 | — | danach fühlt sich I$ReadLn blockierend an, ohne je einen Stack einzufrieren |
-| 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | 💡 | — | Scheduler bleibt Round-Robin, Priorität erstmal nur Datenfeld — Aging lohnt erst bei echter Konkurrenz |
-| 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | 💡 | — | konzeptionell unabhängig vom Kern, bewusst eigener Schritt |
+| 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | 🟢 | Claudia | Kern von allem; REPL wird erster echter Prozess |
+| 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | 🟢 | Claudia | F$Exit existiert als Stub aus 1.2 — bekommt jetzt echte Semantik |
+| 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | 🟢 | Claudia | danach fühlt sich I$ReadLn blockierend an, ohne je einen Stack einzufrieren |
+| 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | 🟢 | Claudia | Scheduler bleibt Round-Robin, Priorität erstmal nur Datenfeld — Aging lohnt erst bei echter Konkurrenz |
+| 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | 🟢 | Claudia | konzeptionell unabhängig vom Kern, bewusst eigener Schritt |
 
 ---
 
@@ -407,7 +408,15 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 (autonomer Lauf) — **Phase 3.5 (F$Load) abgeschlossen**:
+**Letzte Aktualisierung**: 2026-07-04 mittags — **Phase 3 live verifiziert (Andreas):**
+FAT16-Image mit macOS/`newfs_msdos` formatiert, LFN-Datei + Unterverzeichnis-Datei am Mac
+angelegt, von Q9 über I$Open/I$Read komplett gelesen; Q9 hat per I$Create/I$Write eine neue
+Datei geschrieben, macOS mountet das Image danach anstandslos und liest sie — Interop-Beweis
+mit echtem macOS-Tooling (nicht nur Python-Simulation wie im Selbsttest). Einziger Fund: neue
+Dateien zeigen "1.1.1970" als Datum → **3.7** (FAT16-Zeitstempel) neu als 🟢 eingetragen.
+**Phase 4 (4.1–4.5) auf 🟢 Ready gestellt** — Konzept stand schon, jetzt freigegeben.
+
+Davor: **Phase 3.5 (F$Load) abgeschlossen**:
 `q9_mod_load` (module.c/.h) lädt ein Modul aus einer echten Datei über die VFS-Schicht (statt nur
 ROM-Image) — erste Speicherverwaltung im Kernel (statischer Load-Puffer-Pool, 4×4096 Byte, kein
 malloc), automatische Freigabe bei Link-Count 0 (anders als ROM-Module). Dispatcher (syscall.c)
