@@ -231,8 +231,9 @@ zu klären ab Phase 5/6).
 | U.3 | `q9mkdir` + `q9rm` | ✅ | Codex | Rundet das ursprünglich gewünschte "dir/list/copy"-Set ab; kein rekursives Löschen |
 | U.4 | `q9touch` + `q9stat` + Testumgebung konsolidiert | ✅ | Codex | Sieben Tools insgesamt (cat/copy/dir/mkdir/rm/touch/stat); README vollständig; Test-Redundanzen aufgeräumt |
 | U.5 | Funktions-Kommentare nachtragen (Andreas' Review: Code gut, aber unkommentiert) | ✅ | Codex | 88 Funktionen in 16 Dateien im Q9-Standardstil (Function/Desc/Call-Header) kommentiert; reine Ergänzung, +520/-0 Zeilen, kein Verhalten geändert (per Diff verifiziert) |
-| U.6 (Idee) | Lange Dateinamen (LFN) auch in `q9dir`/`q9stat` anzeigen | 💭 | — | LFN-Parse-Logik steckt privat in `fat16.c` — Duplizieren oder Kernel müsste sie exportieren |
-| U.7 (Idee) | Tools als echte ladbare Q9-Module, sobald Phase 5/6 (Modul-Ausführung) und O6 (Verpackungsformat) stehen | 💭 | — | heute nur Design-Vorgriff |
+| U.6 | argc/argv-`main()`-Einsprungpunkte für alle sieben Tools (Vorbereitung auf spätere 68k-Kompilierung) | ✅ | Codex | Eigener Branch `codex-m68k-entrypoints`, `q9<name>_main(argc, argv)` neben unveränderten `_run()`-Funktionen, `-h`/`--help` überall, `-v`/`--verbose` bei `q9copy`. Weiterhin nur nativ über den Testharness getestet — keine echte 68k-Kompilierung (vbcc nur auf Andreas' Windows-Rechner), kein Q9-Mechanismus, 68k-Module zu laden (O6/E11 weiterhin offen). Per Pull Request #2 in `main` gemerged (Merge-Commit `13da454`), Worktree/Branch aufgeräumt |
+| U.7 (Idee) | Lange Dateinamen (LFN) auch in `q9dir`/`q9stat` anzeigen | 💭 | — | LFN-Parse-Logik steckt privat in `fat16.c` — Duplizieren oder Kernel müsste sie exportieren |
+| U.8 (Idee) | Tools als echte ladbare Q9-Module, sobald Phase 5/6 (Modul-Ausführung) und O6 (Verpackungsformat) stehen | 💭 | — | heute nur Design-Vorgriff |
 
 **Stand 2026-07-04**: U.1–U.5 fertig, jede Runde von Claudia unabhängig
 nachgebaut (`userland/build.sh`, PASS, `-Wall -Wextra` warnungsfrei), Branch
@@ -861,7 +862,14 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **5.2a freigegeben.** Adress-
+**Letzte Aktualisierung**: 2026-07-04 abends — **Phase U.6 (`codex-m68k-
+entrypoints`) per Pull Request #2 in `main` gemerged.** Sieben `main()`-
+Einsprungpunkte (argc/argv, `-h`/`-v`) für die bestehenden Tools, als
+Vorbereitung auf spätere 68k-Kompilierung — noch keine echte Kompilierung,
+kein Lademechanismus für 68k-Module. `make test` + `userland/build.sh`
+weiterhin PASS, Worktree/Branch aufgeräumt.
+
+Davor: 2026-07-04 abends — **5.2a freigegeben.** Adress-
 Dispatch-Architektur für die CB030-Board-Emulation geklärt (Andreas): if/else-
 Kette, RAM-Fall zuerst geprüft (Performance), REMAP-Zustand als separater
 Merker. ROM-Inhalt kommt aus einer lokalen Datei (Microware-Boot-ROM,
