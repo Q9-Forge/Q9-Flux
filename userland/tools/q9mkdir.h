@@ -10,6 +10,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ Initiale Version                                                        │ CX
+// 26-07-04│ 1.01 │ argc/argv-Einsprungpunkt deklariert                                     │ CX
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_USERLAND_Q9MKDIR_H
 #define Q9_USERLAND_Q9MKDIR_H
@@ -21,6 +22,14 @@
 // Call:     err = q9mkdir_run("/d0/NEUDIR")
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9mkdir_run(const char *path);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9mkdir_main
+// Desc.:    Kommandozeilen-Einsprungpunkt fuer spaetere 68k-Module; parst genau einen Pfad
+//           oder -h/--help und ruft q9mkdir_run(). Rueckgabe: Tool- oder Parser-Status.
+// Call:     err = q9mkdir_main(argc, argv)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9mkdir_main(int argc, char **argv);
 
 #endif // Q9_USERLAND_Q9MKDIR_H
 
