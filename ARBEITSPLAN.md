@@ -165,10 +165,9 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## ⛔ Geparkt / mit Andreas zu besprechen
 
-- **emsdk fehlt auf dem Desktop AF-PC UND dem Mac Mini**: wasm-Build/Browser-Test aktuell auf
-  keiner der beiden Claudia-Maschinen möglich (nur nativ + Tests). Betrifft inzwischen mehrere
-  Schritte ungetestet: 1.9 (F$Time via Date), 3.6 (OPFS-Blockgerät + Worker-Umbau). Bei Bedarf
-  installieren (~1 GB) oder wasm-Checks auf dem Laptop machen.
+- **emsdk fehlt auf dem Desktop AF-PC** (noch unverändert): wasm-Build/Browser-Test dort
+  weiterhin nicht möglich. Auf dem Mac Mini seit 2026-07-04 behoben (siehe unten) — betrifft
+  jetzt nur noch den Desktop-Rechner, nicht mehr den Autonomie-Betrieb.
 
 ---
 
@@ -408,7 +407,19 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 mittags — **Phase 3 live verifiziert (Andreas):**
+**Letzte Aktualisierung**: 2026-07-04 nachmittags — **emsdk auf dem Mac Mini installiert**
+(`~/emsdk`, portabel, Version 6.0.2 via `./emsdk install/activate latest`; Aktivierung pro
+Shell: `source ~/emsdk/emsdk_env.sh`, siehe docs/TOOLCHAIN.md). `make wasm` baut jetzt sauber,
+warnungsfrei. Browser-Boot verifiziert (Preview-Tool, Server auf build/wasm): Banner zeigt
+`target: wasm-browser`, alle Geräte (/term, /nil, /d0) da, REPL antwortet und echot über die
+Worker-Konsolen-Pipe (`worker.js`), keine Konsolen-/Netzwerkfehler. `q9disk.img` liegt nach
+dem Boot nachweislich in OPFS (`navigator.storage.getDirectory()` zeigt die Datei) — der seit
+3.6 ungetestete OPFS-Block-Pfad funktioniert also. Der wasm-Blindfleck des Autonomie-Betriebs
+ist damit geschlossen; „⛔ Geparkt"-Punkt entsprechend verengt (betrifft nur noch den
+Desktop-PC). **Kein Kernel-Code geändert** — reine Verifikation des von der Routine
+mitgeschriebenen wasm-Zweigs (1.9, 3.6 rückwirkend bestätigt).
+
+Davor: 2026-07-04 mittags — **Phase 3 live verifiziert (Andreas):**
 FAT16-Image mit macOS/`newfs_msdos` formatiert, LFN-Datei + Unterverzeichnis-Datei am Mac
 angelegt, von Q9 über I$Open/I$Read komplett gelesen; Q9 hat per I$Create/I$Write eine neue
 Datei geschrieben, macOS mountet das Image danach anstandslos und liest sie — Interop-Beweis

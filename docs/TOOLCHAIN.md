@@ -1,6 +1,6 @@
 # TOOLCHAIN — Q9 Build-Umgebung
 
-Es wird auf zwei Rechnern gearbeitet — beide mit portablen Installationen
+Es wird auf mehreren Rechnern gearbeitet — alle mit portablen Installationen
 ohne Admin-Rechte (Deinstallation = Ordner löschen):
 
 ## Laptop (User `foell`, eingerichtet 2026-07-02, Phase 0.1)
@@ -20,6 +20,15 @@ ohne Admin-Rechte (Deinstallation = Ordner löschen):
 | Emscripten SDK | **noch nicht installiert** | — | wasm-Build hier noch nicht möglich |
 | Python | 3.14 | `C:\Users\AF\AppData\Local\Programs\Python\Python314` | Tests |
 
+## Mac Mini (User `afoe`, eingerichtet 2026-07-03/04 — Autonomie-Rechner)
+
+| Werkzeug | Version | Ort | Zweck |
+|----------|---------|-----|-------|
+| Xcode Command Line Tools (clang, make) | vorhanden | System | nativer Build (`hal_posix.c`, seit 1.10) |
+| Python | 3 (Homebrew) | `/opt/homebrew/bin/python3` | Tests |
+| Emscripten SDK (emcc) | 6.0.2 (latest, 2026-07-04) | `~/emsdk` | WASM/Browser-Build |
+| Node.js | 22.16.0 (von emsdk mitinstalliert) | `~/emsdk/node/22.16.0_64bit` | wird von emsdk genutzt |
+
 ## Umgebung einrichten (pro Shell-Session)
 
 **PowerShell** (`foell` durch `AF` ersetzen je nach Rechner):
@@ -33,6 +42,13 @@ C:\Users\foell\emsdk\emsdk_env.ps1                      # emcc (nur für wasm-Bu
 set PATH=C:\Users\foell\w64devkit\bin;%PATH%
 call C:\Users\foell\emsdk\emsdk_env.bat
 ```
+
+**macOS (Mac Mini), bash/zsh:**
+```bash
+source ~/emsdk/emsdk_env.sh   # emcc (nur für wasm-Builds nötig); make/clang sind ohnehin im PATH
+```
+Muss pro Shell-Session neu ausgeführt werden (setzt PATH/Env nur für die aktuelle Shell) —
+`make native`/`make test` brauchen das nicht, nur `make wasm`.
 
 ## Bauen
 
