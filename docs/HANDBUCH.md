@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.60
+# File:   HANDBUCH.md                                                                     Ver. 1.70
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -23,6 +23,9 @@
 #         │      │ m68krt.c/.h, neuer Abschnitt 5.9, Abschnitt 3/6/7 aktualisiert            │
 # 26-07-04│ 1.60 │ 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap) — cb030.c/.h, neuer       │ CF
 #         │      │ Abschnitt 5.10, Abschnitt 3/6 aktualisiert                                │
+# 26-07-04│ 1.70 │ 5.2b-d: DUART/Compact-Flash/Timer-IRQ3 — cb030.c/.h + m68krt.c/.h         │ CF
+#         │      │ (q9_m68krt_set_irq) erweitert, Abschnitt 5.10/6 aktualisiert. Phase 5.2   │
+#         │      │ damit komplett (5.2a-d alle fertig)                                       │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -657,6 +660,39 @@ kommentarlos. Ebenso offen: die eigentliche Verdrahtung an Musashis
 Schritt liefert nur den reinen Adress-Dekoder samt Selbsttest (`-DQ9_HAVE_M68K`,
 native-only, synthetisches 4-Byte-Test-ROM statt des echten Boot-ROMs).
 
+**5.2b** (68681-DUART): Minimalansatz — nur SRA (Status, `UART_BASE+0x02`)
+und THRA/RHRA (Zeichenpuffer, `UART_BASE+0x06`) sind wirklich aktiv, der
+restliche Registersatz wird sauber angenommen (liest 0, verwirft
+Schreibzugriffe). SRA-Bits: TxRDY (`0x04`, immer gesetzt, da `q9_hal_con_put`
+synchron ist) und RxRDY (`0x01`, gesetzt wenn ein Zeichen im 1-Byte-
+Empfangspuffer wartet — der Puffer existiert, weil `q9_hal_con_get()` das
+Zeichen aus der HAL konsumiert und es sonst zwischen Status- und
+Datenabfrage verloren ginge). THRA-Schreibzugriff → `q9_hal_con_put`.
+
+**5.2c** (Compact-Flash): ATA-PIO-Minimalprotokoll — Register `CF_BASE+0`
+(Data, 1 Byte/Zugriff), `+2` (Sectcount), `+3..+5` (LBA0-2), `+7`
+(Kommando/Status). Unterstützte Kommandos: READ SECTOR(S) (`0x20`), WRITE
+SECTOR(S) (`0x30`), Statusbits BSY/DRQ/RDY/ERR wie in `docs/CB030.md`
+festgelegt. Backing Store ist eine lazy geöffnete Host-Datei
+(`q9_cb030_cf_attach(board, path)`, Muster wie `q9disk.img`, Abschnitt 3.1) —
+für den Selbsttest `cb030_cf_test.img` (neu in `.gitignore`, wird vom
+`make test`-Target vorher gelöscht).
+
+**5.2d** (Timer/IRQ3): kooperative Umsetzung statt echtem
+Host-Timerinterrupt (ein Signal-Handler oder separater Thread wäre nicht
+threadsicher gegen Musashis globalen, nicht-reentranten Zustand und würde
+die kooperative Grundausrichtung aus Entscheidung E8 durchbrechen).
+`q9_cb030_poll_timer(board, now_ms)` prüft, ob der Timer per
+`TI_IRQ_ON`/`TI_IRQ_OFF` (reine Adress-Trigger, `0xFFFF_9000`-`0xFFFF_9FFF`)
+aktiv ist und seit dem letzten Auslösen ≥10ms (100 Hz) Host-Zeit
+(`q9_hal_ticks_ms()`) vergangen sind — der Aufrufer muss dann selbst
+`q9_m68krt_set_irq(3)` aufrufen. `cb030.c` kennt Musashi bewusst nicht;
+`q9_m68krt_set_irq()` ist ein neuer schmaler Wrapper in `m68krt.h/.c` um
+`m68k_set_irq()` — Musashi erledigt die eigentliche Interrupt-Mechanik
+(Stack/Vektorsprung) vollständig selbst.
+
+Damit ist Phase 5.2 (CB030-Board-Emulation) komplett: 5.2a–d alle ✅.
+
 ---
 
 ## 6. Stand der Dinge
@@ -671,7 +707,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
 | 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig, inkl. Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite), 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module), 4.9 (Fixed-Heap statt Host-malloc in wasm3, Q9-Systemkonfiguration `config.h`); Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
-| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2a (CB030-Board-Speicherlogik RAM/ROM/Remap, Abschnitt 5.10) |
+| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10) |
 | 6 | Shell | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
 | 8 | Vision: 6809-Runtime, Netzwerk, Self-Hosting | offen |

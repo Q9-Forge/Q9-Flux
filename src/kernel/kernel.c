@@ -1794,6 +1794,112 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "5.2a: CB030 Remap-Zustand — ROM einmalig+read-only, keine Spiegelung";
         checks[nchecks++].ok = ok;
     }
+
+    {
+        /* 5.2b: 68681-DUART — Minimalansatz, s. cb030.c. TxRDY ist immer gesetzt (q9_hal_con_put
+           ist synchron), RxRDY ist im Testlauf immer 0 (q9_hal_con_get liefert -1 ohne Tastatur-
+           eingabe), s. hal_native.c/hal_posix.c. Der Schreibzugriff auf THRA erzeugt bewusst eine
+           sichtbare Testausgabe (geht ueber q9_hal_con_put wie normale Konsolenausgabe). */
+        static uint8_t ram[64];
+        q9_cb030_t     board;
+        int            ok;
+        uint8_t        sr;
+
+        ok = (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+        q9_cb030_reset(&board);
+        (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);   /* Remap: I/O-Bereich erst danach aktiv */
+
+        sr = q9_cb030_read8(&board, Q9_CB030_UART_SRA);
+        ok = ok && ((sr & 0x04) != 0) && ((sr & 0x01) == 0);      /* TxRDY=1, RxRDY=0 (keine Eingabe) */
+
+        q9_cb030_write8(&board, Q9_CB030_UART_THRA, (uint8_t)'\n');
+
+        checks[nchecks].name = "5.2b: CB030 DUART — SRA TxRDY gesetzt/RxRDY leer, THRA-Schreibzugriff ok";
+        checks[nchecks++].ok = ok;
+    }
+
+    {
+        /* 5.2c: Compact-Flash — ATA-PIO-Minimalprotokoll (READ/WRITE SECTOR(S)), Backing Store =
+           lokale Testdatei (wird von 'make test' geloescht, s. Makefile/.gitignore). Schreibt einen
+           Sektor mit einem Testmuster, liest ihn ueber eine frische Board-Instanz wieder zurueck. */
+        static uint8_t ram[64];
+        q9_cb030_t     board;
+        int            ok;
+        uint32_t       cf_base = Q9_CB030_CF_BASE;
+
+        ok = (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+        q9_cb030_reset(&board);
+        (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
+        q9_cb030_cf_attach(&board, "cb030_cf_test.img");
+
+        /* LBA 0, 1 Sektor, WRITE SECTOR(S): 512 Byte Testmuster (0x00..0xFF wiederholt) schreiben. */
+        q9_cb030_write8(&board, cf_base + 3, 0);            /* LBA0 */
+        q9_cb030_write8(&board, cf_base + 4, 0);            /* LBA1 */
+        q9_cb030_write8(&board, cf_base + 5, 0);            /* LBA2 */
+        q9_cb030_write8(&board, cf_base + 2, 1);            /* Sectcount */
+        q9_cb030_write8(&board, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
+        for (int i = 0; i < 512; i++) {
+            q9_cb030_write8(&board, cf_base + 0, (uint8_t)i);
+        }
+        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+
+        /* Frische Instanz (simuliert Neustart) liest denselben Sektor ueber READ SECTOR(S) zurueck. */
+        {
+            q9_cb030_t board2;
+            int        read_ok;
+
+            read_ok = (q9_cb030_init(&board2, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+            q9_cb030_reset(&board2);
+            (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
+            q9_cb030_cf_attach(&board2, "cb030_cf_test.img");
+
+            q9_cb030_write8(&board2, cf_base + 3, 0);
+            q9_cb030_write8(&board2, cf_base + 4, 0);
+            q9_cb030_write8(&board2, cf_base + 5, 0);
+            q9_cb030_write8(&board2, cf_base + 2, 1);
+            q9_cb030_write8(&board2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+
+            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+            for (int i = 0; i < 512 && read_ok; i++) {
+                read_ok = (q9_cb030_read8(&board2, cf_base + 0) == (uint8_t)i);
+            }
+            ok = ok && read_ok;
+        }
+
+        checks[nchecks].name = "5.2c: CB030 Compact-Flash — WRITE SECTOR(S)/READ SECTOR(S) Roundtrip";
+        checks[nchecks++].ok = ok;
+    }
+
+    {
+        /* 5.2d: Timer/IRQ3 — kooperative Host-Zeitpruefung (s. docs/CB030.md), noch OHNE
+           tatsaechlichen m68k_set_irq()-Aufruf (das ist Sache des Aufrufers/der Scheduler-
+           Integration, hier wird nur q9_cb030_poll_timer's Signal geprueft). */
+        static uint8_t ram[64];
+        q9_cb030_t     board;
+        int            ok;
+
+        ok = (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+        q9_cb030_reset(&board);
+        (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
+
+        /* Timer aus: kein Signal, egal wie viel Zeit "vergeht". */
+        ok = ok && (q9_cb030_poll_timer(&board, 1000) == 0);
+
+        /* TI_IRQ_ON: Timer an, erster Poll danach loest sofort aus (last_ms noch 0). */
+        (void)q9_cb030_read8(&board, Q9_CB030_TIRQ_ON_BASE);
+        ok = ok && (q9_cb030_poll_timer(&board, 1000) == 1);
+
+        /* Innerhalb der Periode: kein erneutes Signal. Nach >= 10ms: wieder ausgeloest. */
+        ok = ok && (q9_cb030_poll_timer(&board, 1005) == 0);
+        ok = ok && (q9_cb030_poll_timer(&board, 1010) == 1);
+
+        /* TI_IRQ_OFF: Timer aus, kein weiteres Signal mehr. */
+        (void)q9_cb030_read8(&board, Q9_CB030_TIRQ_OFF_BASE);
+        ok = ok && (q9_cb030_poll_timer(&board, 2000) == 0);
+
+        checks[nchecks].name = "5.2d: CB030 Timer/IRQ3 — kooperatives Polling (TI_IRQ_ON/OFF, 100Hz-Periode)";
+        checks[nchecks++].ok = ok;
+    }
 #endif
 
     for (int i = 0; i < nchecks; i++) {

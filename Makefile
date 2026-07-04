@@ -148,7 +148,7 @@ $(BUILD)/wasm/q9.js: $(KSRC) src/hal/wasm/hal_wasm.c $(HDRS) web/index.html web/
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
 test: native
-	@rm -f q9disk.img
+	@rm -f q9disk.img cb030_cf_test.img
 	$(PYTHON) test/01_test_boot.py
 	$(PYTHON) test/02_test_syscalls.py
 	$(PYTHON) test/03_test_devices.py

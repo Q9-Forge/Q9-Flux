@@ -1,28 +1,37 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 1.00
+// File:   cb030.h                                                                         Ver. 1.30
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
-//         ROM. Schritt 5.2a: NUR die RAM/ROM/Remap-Speicherlogik (Adress-Dispatch als if/else-Kette,
-//         RAM zuerst geprueft, s. docs/CB030.md "Emulations-Architektur") + der REMAP-Zustand als
-//         eigener Merker (unabhaengig von Musashis CPU-Zustand). Peripherie (UART/CF/Timer, 5.2b-d)
-//         ist hier bewusst noch NICHT angebunden (I/O-Bereich liefert 0 bzw. verwirft Schreibzugriffe
-//         kommentarlos) und die Anbindung an Musashis m68k_read/write_memory_*-Hooks (m68krt.c) ist
-//         ebenfalls noch offen — dieser Schritt liefert nur den reinen Adress-Dekoder + Selbsttest.
+//         ROM. 5.2a: RAM/ROM/Remap-Speicherlogik. 5.2b: 68681-DUART (nur SRA+THRA/RHRA wirklich
+//         aktiv, Rest wird sauber angenommen). 5.2c: Compact-Flash (ATA-PIO-Minimalprotokoll,
+//         Backing Store = Host-Datei). 5.2d: Timer/IRQ3 (kooperativ, s. q9_cb030_poll_timer).
+//         Bewusst KEINE Musashi-Abhaengigkeit hier (cb030.c bleibt eigenstaendig testbar) — den
+//         eigentlichen `m68k_set_irq()`-Aufruf macht der Aufrufer (m68krt.c/kernel.c), s.
+//         q9_cb030_poll_timer's Rueckgabewert.
 //
 // Call:   q9_cb030_t b; q9_cb030_init(&b, rom, rom_len, ram, ram_len);
 //         v = q9_cb030_read8(&b, addr); q9_cb030_write8(&b, addr, v); q9_cb030_reset(&b);
+//         q9_cb030_cf_attach(&b, "cb030_cf.img");
+//         if (q9_cb030_poll_timer(&b, q9_hal_ticks_ms())) q9_m68krt_set_irq(3);
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 5.2a: Erster Grundbaustein — RAM/ROM/Remap-Adress-Dispatch              │ CF
+// 26-07-04│ 1.10 │ 5.2b: 68681-DUART — Minimalansatz (nur SRA+THRA/RHRA wirklich aktiv,     │ CF
+//         │      │ alle anderen Register werden nur sauber angenommen)                     │
+// 26-07-04│ 1.20 │ 5.2c: Compact-Flash — ATA-PIO-Minimalprotokoll (READ/WRITE SECTOR(S)),   │ CF
+//         │      │ Backing Store = lazy geoeffnete Host-Datei (Muster wie q9disk.img)       │
+// 26-07-04│ 1.30 │ 5.2d: Timer/IRQ3 — kooperativ, Host-Uhrzeit zaehlen statt echtem          │ CF
+//         │      │ Host-Interrupt (s. docs/CB030.md, Begruendung E8)                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 #define Q9_CB030_OK          0
 #define Q9_CB030_ERR_RAM    -1                       /* RAM fehlt */
@@ -34,18 +43,63 @@
 #define Q9_CB030_REMAP_REG_BASE    0xFFFF8000u        /* REMAP-Register: reiner Adress-Trigger  */
 #define Q9_CB030_REMAP_REG_TOP     0xFFFF8FFFu
 
+/* 5.2d: Timer/IRQ3 — reine Adress-Trigger, kein Datenwert. */
+#define Q9_CB030_TIRQ_OFF_BASE     0xFFFF9000u
+#define Q9_CB030_TIRQ_OFF_TOP      0xFFFF97FFu
+#define Q9_CB030_TIRQ_ON_BASE      0xFFFF9800u
+#define Q9_CB030_TIRQ_ON_TOP       0xFFFF9FFFu
+#define Q9_CB030_TIMER_PERIOD_MS   10u                /* 100 Hz */
+
+/* 5.2c: Compact-Flash-Interface (docs/CB030.md, Abschnitt "Compact-Flash-Interface"). */
+#define Q9_CB030_CF_BASE           0xFFFFE000u
+#define Q9_CB030_CF_TOP            0xFFFFE0FFu
+#define Q9_CB030_CF_CMD_READ       0x20u              /* READ SECTOR(S)  */
+#define Q9_CB030_CF_CMD_WRITE      0x30u              /* WRITE SECTOR(S) */
+#define Q9_CB030_CF_STAT_BSY       0x80u
+#define Q9_CB030_CF_STAT_DRQ       0x08u
+#define Q9_CB030_CF_STAT_RDY       0x40u
+#define Q9_CB030_CF_STAT_ERR       0x01u
+#define Q9_CB030_CF_SECTOR_SIZE    512u
+
+/* 5.2b: 68681-DUART (docs/CB030.md, Abschnitt "68681 DUART"). Nur die Adressen, die Aufrufer/
+   Selbsttest wirklich brauchen, sind hier exponiert — der Rest des Registersatzes bleibt intern
+   in cb030.c (wird nur sauber angenommen, s. Kommentar dort). */
+#define Q9_CB030_UART_BASE   0xFFFFF000u
+#define Q9_CB030_UART_TOP    0xFFFFFFFFu
+#define Q9_CB030_UART_SRA    (Q9_CB030_UART_BASE + 0x02u)  /* Status A (lesen)                 */
+#define Q9_CB030_UART_THRA   (Q9_CB030_UART_BASE + 0x06u)  /* Tx-Holding (schreiben) = RHRA-Adr.*/
+
 typedef struct q9_cb030 {
     const uint8_t *rom;                               /* Boot-ROM-Inhalt, nur lesend            */
     uint32_t       rom_len;
     uint8_t       *ram;                                /* Emuliertes RAM (Groesse = SIM-Bestueckung) */
     uint32_t       ram_len;
     int            remapped;                           /* 0 = Reset-Zustand, 1 = nach REMAP-Trigger */
+
+    /* 5.2b: DUART — nur ein 1-Byte-Empfangspuffer, s. cb030.c. */
+    int            uart_rx_pending;
+    uint8_t        uart_rx_char;
+
+    /* 5.2c: Compact-Flash — Backing Store lazy geoeffnet (Muster wie q9disk.img). */
+    const char    *cf_path;
+    FILE          *cf_file;
+    uint32_t       cf_lba;
+    uint8_t        cf_sectcnt;
+    uint8_t        cf_status;
+    uint8_t        cf_sector[Q9_CB030_CF_SECTOR_SIZE];
+    uint32_t       cf_pos;                              /* Index in cf_sector, 0..SECTOR_SIZE   */
+    int            cf_write_pending;                     /* 1 waehrend WRITE-SECTOR-Datenphase   */
+
+    /* 5.2d: Timer/IRQ3 — kooperativ per Host-Uhrzeit, s. q9_cb030_poll_timer. */
+    int            timer_active;
+    uint32_t       timer_last_ms;
 } q9_cb030_t;
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_init
-// Desc.:    Bindet ROM- und RAM-Puffer an ein Board-Handle, Ausgangszustand = Reset (nicht remapped).
-//           rom darf NULL/0 sein (z.B. fuer reine RAM-Tests ohne Boot-ROM). ram darf nicht NULL sein.
+// Desc.:    Bindet ROM- und RAM-Puffer an ein Board-Handle, Ausgangszustand = Reset (nicht remapped,
+//           Timer aus, keine CF-Datei angehaengt). rom darf NULL/0 sein (reine RAM-Tests ohne
+//           Boot-ROM). ram darf nicht NULL sein.
 // Call:     err = q9_cb030_init(&b, rom, rom_len, ram, ram_len)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *ram, uint32_t ram_len);
@@ -53,9 +107,31 @@ int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_reset
 // Desc.:    Setzt den REMAP-Zustand auf "nicht remapped" zurueck (Reset-Zustand: ROM bei Adresse 0).
+//           Ruehrt CF-Anhaengung/Timer-Zustand NICHT an (die ueberleben einen 68k-Reset).
 // Call:     q9_cb030_reset(&b)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_cb030_reset(q9_cb030_t *b);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_cb030_cf_attach
+// Desc.:    Merkt sich den Dateipfad fuer die Compact-Flash-Karte (5.2c) — die Datei selbst wird
+//           lazy beim ersten Kommando geoeffnet/angelegt (Muster wie die native HAL bei q9disk.img,
+//           s. hal_native.c/hal_posix.c). path muss die gesamte Lebensdauer von b ueberleben
+//           (wird nur als Zeiger gehalten, nicht kopiert).
+// Call:     q9_cb030_cf_attach(&b, "cb030_cf.img")
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_cb030_cf_attach(q9_cb030_t *b, const char *path);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_cb030_poll_timer
+// Desc.:    5.2d: Kooperative Zeitpruefung (KEIN echter Host-Interrupt, s. docs/CB030.md) — muss
+//           regelmaessig vom Aufrufer aufgerufen werden (dort, wo auch m68k_execute() angestossen
+//           wird). Liefert 1 zurueck, wenn seit dem letzten Auslösen >= Q9_CB030_TIMER_PERIOD_MS
+//           vergangen sind UND der Timer per TI_IRQ_ON aktiv ist — der Aufrufer muss dann
+//           q9_m68krt_set_irq(3) aufrufen (cb030.c kennt Musashi bewusst nicht). Liefert sonst 0.
+// Call:     if (q9_cb030_poll_timer(&b, q9_hal_ticks_ms())) q9_m68krt_set_irq(3);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_read8/16/32
@@ -63,9 +139,9 @@ void q9_cb030_reset(q9_cb030_t *b);
 //           Zustand (s. docs/CB030.md): Reset = ROM gespiegelt bis Q9_CB030_ROM_MIRROR_LIMIT;
 //           remapped = RAM ab 0, ROM einmalig bei Q9_CB030_ROM_REMAP_BASE. Ein Zugriff auf den
 //           REMAP-Registerbereich schaltet IMMER (unabhaengig vom bisherigen Zustand) auf remapped
-//           um, bevor der eigentliche Lesewert (0) ermittelt wird. Peripherie-Bereiche (UART/CF/
-//           Timer) liefern hier noch 0 (5.2b-d). 16/32-Bit sind big-endian (68k-Byteorder), wie
-//           m68krt.c.
+//           um. TI_IRQ_ON/OFF-Bereiche sind reine Adress-Trigger (Lesewert 0, s. 5.2d). UART/CF
+//           haben echtes (wenn auch minimales) Verhalten, s. cb030.c. 16/32-Bit sind big-endian
+//           (68k-Byteorder), wie m68krt.c.
 // Call:     v = q9_cb030_read8(&b, addr)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 uint8_t  q9_cb030_read8(q9_cb030_t *b, uint32_t addr);
@@ -75,9 +151,9 @@ uint32_t q9_cb030_read32(q9_cb030_t *b, uint32_t addr);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_write8/16/32
 // Desc.:    Schreibt ein Byte/Word/Long-Word auf die Board-Adresse 'addr'. Schreibzugriffe auf ROM
-//           (in beiden REMAP-Zustaenden) werden verworfen. Ein Zugriff auf den REMAP-Registerbereich
-//           schaltet ebenfalls um (Wert wird verworfen, reiner Adress-Trigger, s. docs/CB030.md).
-//           Peripherie-Bereiche verwerfen den Wert kommentarlos (5.2b-d).
+//           (in beiden REMAP-Zustaenden) werden verworfen. Ein Zugriff auf den REMAP- oder
+//           TI_IRQ_ON/OFF-Registerbereich schaltet um bzw. (de-)aktiviert den Timer (Wert wird
+//           verworfen, reine Adress-Trigger, s. docs/CB030.md). UART/CF haben echtes Verhalten.
 // Call:     q9_cb030_write8(&b, addr, val)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val);
@@ -87,5 +163,5 @@ void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val);
 #endif // Q9_CB030_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.h                                                                             Ver. 1.00
+// EOF cb030.h                                                                             Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
