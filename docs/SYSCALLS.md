@@ -115,6 +115,13 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
   liest aus der über I$Open an `q9_path_t.fmctx` gebundenen Datei, folgt dabei selbstständig
   der Cluster-Kette. `E$EOF`, wenn die Position bereits am Dateiende steht. I$ReadLn bleibt
   auf dem Treiber-Pfad (Zeilenmodus mit Echo/Editierung ergibt für Dateien keinen Sinn).
+- **Seit Phase 4.3**: liefert der Treiber-Pfad (kein File-Manager — dort ist `E$NotRdy` ein
+  echter I/O-Fehler, kein Weckgrund) `E$NotRdy`, versetzt `syscall.c` den aufrufenden Prozess
+  per `q9_proc_wait_device` in den Zustand `Q9_PS_WAITING` (Weckgrund `Q9_WAIT_DEVICE`) — der
+  Rückgabewert an den Aufrufer bleibt `E$NotRdy` (kein eingefrorener Stack, Entscheidung E8),
+  aber der Scheduler steppt den Prozess erst wieder, wenn `SS.Ready` des Geräts anspricht
+  (proc.c: `dev_ready()`). Damit fühlt sich I$Read/I$ReadLn für den aufrufenden Prozess
+  blockierend an, ohne dass der Scheduler ihn bis dahin sinnlos weiter pollt.
 
 ### I$Write ($8A) / I$WritLn ($8C)
 
@@ -294,9 +301,12 @@ Std-Pfade vom Parent geerbt, Zustand `ACTIVE`. Fehler: `E$MNF` (Modul nicht gefu
 | d1.w     | dessen Exit-Code                            |
 
 Sucht ein beendetes (Zombie-)Kind der aufrufenden PID und reapt es (Tabellenslot wird frei). Kein
-Zombie, aber mindestens ein noch laufendes Kind: **`E$NotRdy`** (Provisorium wie bei I$Read vor
-4.3 — Aufrufer pollt; echtes Blockieren kommt erst mit 4.3). Nie ein Kind gehabt (auch keins mehr
-übrig): `E$NoChld`.
+Zombie, aber mindestens ein noch laufendes Kind: **`E$NotRdy`** — seit Phase 4.3 versetzt
+`syscall.c` den Aufrufer dabei zusätzlich per `q9_proc_wait_child` in den Zustand
+`Q9_PS_WAITING` (Weckgrund `Q9_WAIT_CHILD`): der Scheduler steppt ihn erst wieder, sobald
+mindestens ein Kind Zombie geworden ist (proc.c: `zombie_child_exists()`). Der Rückgabewert
+bleibt `E$NotRdy` (kein eingefrorener Stack). Nie ein Kind gehabt (auch keins mehr übrig):
+`E$NoChld`.
 
 ### F$Chain ($05) — seit Phase 4.2
 
@@ -337,6 +347,20 @@ falls deren Parent selbst beendet wird, bevor er sie reapen konnte.
 mehr fest verdrahtet. Außerhalb eines Scheduler-Aufrufs (z.B. ein Selbsttest-Syscall vor dem
 ersten `q9_kernel_step()`-Tick) liefert `q9_proc_current()` NULL — F$ID fällt dann auf PID 1
 zurück (ebenso F$Fork/F$Wait/F$Chain/F$Exit, wenn außerhalb der Schedulers aufgerufen).
+
+### F$Sleep ($0A) — seit Phase 4.3
+
+| Register | Input                                |
+|----------|----------------------------------------|
+| d1.l     | Ticks (0 = einmal yielden)             |
+
+Versetzt den AUFRUFENDEN Prozess in den Zustand `Q9_PS_SLEEPING` (Weckgrund `Q9_WAIT_TIMER`,
+proc.c: `q9_proc_sleep`): `wake_tick` = aktueller Scheduler-Tick-Zähler + `d1.l` (0 Ticks → +1,
+"einmal yielden" — der Prozess pausiert fuer genau einen Scheduler-Durchlauf). Der Syscall selbst
+kehrt sofort mit 0 zurück (kein eingefrorener Stack, Entscheidung E8) — die eigentliche
+Step-Funktion muss danach selbst zurückkehren, der Scheduler ruft sie erst wieder auf, wenn der
+Tick-Zähler den Zielwert erreicht hat. Außerhalb eines Prozesses (kein `q9_proc_current()`):
+`E$IPrcID`, analog zu F$Chain.
 
 ### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 MWOS-korrigiert
 
@@ -429,9 +453,12 @@ zurück (ebenso F$Fork/F$Wait/F$Chain/F$Exit, wenn außerhalb der Schedulers auf
 
 ## Bewusste Abweichungen von OS-9 (Phase-1-Stand)
 
-1. **Kein Blockieren**: Bis der Scheduler existiert (Phase 4), liefern I$Read/I$ReadLn
-   `E$NotRdy`, wenn keine (vollständige) Eingabe ansteht — der Aufrufer pollt.
-   Ab Phase 4 blockiert der aufrufende Prozess, wie es sich gehört.
+1. ~~Kein Blockieren~~ — seit Phase 4.3 versetzt `syscall.c` den aufrufenden Prozess bei
+   `E$NotRdy` (I$Read/I$ReadLn auf dem Treiberpfad, F$Wait ohne Zombie-Kind) in einen echten
+   Scheduler-Zustand (`Q9_PS_WAITING`/`SLEEPING` + Weckgrund, proc.h/.c) — der Rückgabewert
+   bleibt zwar `E$NotRdy` (kein eingefrorener Stack möglich, Entscheidung E8), aber der
+   Scheduler steppt den Prozess erst wieder, wenn der Weckgrund erfüllt ist, statt ihn wie
+   davor bei jedem Tick sinnlos erneut aufzurufen.
 2. ~~F$Time liefert Uptime~~ — seit Phase 1.9 echte Uhrzeit über `q9_hal_time()`.
 3. ~~Pfade 0/1/2 fest verdrahtet~~ — seit Phase 1.3 laufen alle Pfade über das
    Device-Modell (Pfadtabelle → Treiber-Modul, siehe docs/DEVICES.md). Die

@@ -1,9 +1,12 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   dev_term.c                                                                      Ver. 1.10
+// File:   dev_term.c                                                                      Ver. 1.20
 // Owner:  AF
 // Desc.:  Konsolen-Treiber /term als internes Modul (OS-9-Vorbild: SCF + scf-Treiber).
 //         Zeilen-Editierung (Echo, Backspace), CR -> CR+LF beim Schreiben, Roh-Lesen ohne Echo.
 //         Zustand liegt im Static Storage des Geräts — Logik stammt aus syscall.c (Phase 1.2).
+//         Der Treiber selbst bleibt nicht-blockierend (liefert E$NotRdy sofort zurück, wie seit
+//         Phase 1) — das echte Blockieren des aufrufenden Prozesses (4.3, WAITING per SS.Ready)
+//         passiert eine Ebene höher in syscall.c/sc_read.
 //
 // Call:   über die q9_drv_term-Ops, registriert von q9_dev_init() (device.c)
 //
@@ -13,6 +16,9 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-03│ 1.00 │ Initiale Version: read/write/readln/writln, Zeilenpuffer im Storage    │ CF
 // 26-07-03│ 1.10 │ 1.8: getstat (SS.Ready, SS.EOF)                                        │ CF
+// 26-07-04│ 1.20 │ 4.3: Kommentare praezisiert — echtes Blockieren sitzt jetzt in         │ CF
+//         │      │ syscall.c/sc_read (proc.c: WAITING + SS.Ready-Weckgrund), dieser       │ CF
+//         │      │ Treiber selbst bleibt unveraendert nicht-blockierend                    │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -120,7 +126,8 @@ static int term_read(q9_dev_t *dev, uint8_t *buf, uint32_t *n)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: term_readln
 // Desc.:    Zeilenweise mit Echo/Editierung, liefert Zeile inkl. CR.
-//           E$NotRdy solange die Zeile nicht komplett ist (Phase 1: kein Blockieren).
+//           E$NotRdy solange die Zeile nicht komplett ist — syscall.c blockiert den aufrufenden
+//           Prozess dafuer echt (4.3), dieser Treiber pollt weiterhin nur.
 // Call:     Treiber-Op readln
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int term_readln(q9_dev_t *dev, uint8_t *buf, uint32_t *n)
@@ -223,5 +230,5 @@ const q9_drv_t q9_drv_term = {
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF dev_term.c                                                                          Ver. 1.10
+// EOF dev_term.c                                                                          Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
