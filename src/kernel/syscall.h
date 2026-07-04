@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 2.10
+// File:   syscall.h                                                                       Ver. 2.20
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -26,6 +26,8 @@
 //         │      │ F$Chain, MWOS-verifiziert — E$NoChld($E2) bestaetigt die 1.40-Notiz)   │
 // 26-07-04│ 2.10 │ 4.4: F_SSPD ($0B) + F_SPRIOR ($0D) ergaenzt (Prozess suspendieren/     │ CF
 //         │      │ Prioritaetsfeld setzen)                                                │
+// 26-07-04│ 2.20 │ 4.5: F_ICPT ($09) + F_RTE ($1E) ergaenzt (Signal-Intercept setzen/       │ CF
+//         │      │ Rueckkehr aus Intercept — F_SEND ($08) war schon reserviert)             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -53,6 +55,7 @@ typedef struct q9_regs {
 #define F_CHAIN   0x05                                 /* F$Chain:  Chain Process to New Module  */
 #define F_EXIT    0x06                                 /* F$Exit:   Terminate Process            */
 #define F_SEND    0x08                                 /* F$Send:   Send Signal to Process       */
+#define F_ICPT    0x09                                 /* F$Icpt:   Set Signal Intercept         */
 #define F_SLEEP   0x0a                                 /* F$Sleep:  Suspend Process              */
 #define F_SSPD    0x0b                                 /* F$SSpd:   Suspend Process              */
 #define F_ID      0x0c                                 /* F$ID:     Return Process ID            */
@@ -62,6 +65,7 @@ typedef struct q9_regs {
 #define F_TIME    0x15                                 /* F$Time:   Get Current Time             */
 #define F_STIME   0x16                                 /* F$STime:  Set Current Time             */
 #define F_CRC     0x17                                 /* F$CRC:    Generate CRC                 */
+#define F_RTE     0x1e                                 /* F$RTE:    Return from Signal Intercept */
 
 #define I_ATTACH  0x80                                 /* I$Attach: Attach I/O Device            */
 #define I_DETACH  0x81                                 /* I$Detach: Detach I/O Device            */
@@ -139,5 +143,5 @@ int q9_syscall(uint16_t func, q9_regs_t *regs);
 #endif // Q9_SYSCALL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.h                                                                           Ver. 2.10
+// EOF syscall.h                                                                           Ver. 2.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

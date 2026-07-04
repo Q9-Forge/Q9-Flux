@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   proc.h                                                                          Ver. 1.30
+// File:   proc.h                                                                          Ver. 1.40
 // Owner:  AF
 // Desc.:  Q9 Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4). Grundsatzentscheidung
 //         E8 (PROJECT.md): Step-Modell statt Stack-Umschaltung — WASM kennt keinen Stack-Wechsel,
@@ -47,6 +47,10 @@
 // 26-07-04│ 1.30 │ 4.4: Q9_WAIT_SIGNAL + priority-Feld, q9_proc_suspend/set_priority       │ CF
 //         │      │ (F$SSpd/F$SPrior) — Suspendieren ist bewusst ohne eigenen Weckmechanismus│ CF
 //         │      │ (kommt erst mit F$Send in 4.5), Prioritaet ist reines Datenfeld          │ CF
+// 26-07-04│ 1.40 │ 4.5: icpt_handler/pending_signal/in_intercept-Felder, q9_proc_icpt/      │ CF
+//         │      │ send/rte (F$Icpt/F$Send/F$RTE) — Signal bricht WAITING/SLEEPING ab UND   │ CF
+//         │      │ lenkt (bei installiertem Handler) den naechsten Scheduler-Aufruf auf den │ CF
+//         │      │ Intercept-Handler um, bis F$RTE die normale Step-Funktion zurueckholt    │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_PROC_H
 #define Q9_PROC_H
@@ -97,6 +101,12 @@ typedef struct q9_pd {
     uint32_t                 wake_tick;                   /* Q9_WAIT_TIMER: Ziel-Tickwert (4.3)      */
     uint8_t                   priority;                     /* F$SPrior (4.4) — reines Datenfeld,      */
                                                         /*   Scheduler bleibt Round-Robin           */
+    q9_proc_step_fn           icpt_handler;                 /* F$Icpt (4.5): Intercept-Step-Funktion,  */
+                                                        /*   NULL = keine installiert               */
+    uint32_t                 pending_signal;              /* F$Send (4.5): zuletzt zugestelltes      */
+                                                        /*   Signal, lesbar per q9_proc_current()   */
+    int                       in_intercept;                 /* 1 = naechster Scheduler-Aufruf ruft     */
+                                                        /*   icpt_handler statt step (bis F$RTE)    */
 } q9_pd_t;
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
@@ -113,9 +123,10 @@ void q9_proc_init(q9_proc_step_fn step);
 //           Weckgrund erfuellt ist (4.3 — Q9_WAIT_DEVICE: SS.Ready; Q9_WAIT_CHILD: Zombie-Kind;
 //           Q9_WAIT_TIMER: wake_tick erreicht) und weckt ihn dann nach ACTIVE. Ruft danach reihum
 //           (Round-Robin, beginnend hinter dem zuletzt gestepten Prozess) die Step-Funktion JEDES
-//           Prozesses im Zustand ACTIVE genau einmal auf. Waehrend des Aufrufs liefert
-//           q9_proc_current() diesen Prozess. Keine Prozesse aktiv -> no-op (z.B. bevor
-//           q9_proc_init lief, oder wenn alle beendet/blockiert sind).
+//           Prozesses im Zustand ACTIVE genau einmal auf — ausser bei in_intercept (4.5): dann
+//           wird stattdessen icpt_handler() gerufen, bis F$RTE zurueckschaltet. Waehrend des
+//           Aufrufs liefert q9_proc_current() diesen Prozess. Keine Prozesse aktiv -> no-op
+//           (z.B. bevor q9_proc_init lief, oder wenn alle beendet/blockiert sind).
 // Call:     q9_proc_schedule()
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_proc_schedule(void);
@@ -225,8 +236,43 @@ int q9_proc_suspend(uint32_t pid);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_proc_set_priority(uint32_t pid, uint8_t new_prio, uint8_t *out_old);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_icpt
+// Desc.:    F$Icpt-Unterbau (4.5): installiert handler als Intercept-Step-Funktion von pid (NULL
+//           deinstalliert wieder). Wird per F$Send ein Signal zugestellt UND ist ein Handler
+//           installiert, ruft der Scheduler ab dem naechsten Tick handler() statt der normalen
+//           Step-Funktion auf (in_intercept), bis F$RTE zurueckschaltet. 0 = ok, E$IPrcID bei
+//           unbekannter PID.
+// Call:     err = q9_proc_icpt(pid, handler)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_icpt(uint32_t pid, q9_proc_step_fn handler);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_send
+// Desc.:    F$Send-Unterbau (4.5): stellt pid ein Signal zu. Bricht WAITING/SLEEPING sofort ab
+//           (Zustand -> ACTIVE, Weckgrund geloescht) — UNABHAENGIG davon, ob ein Intercept-Handler
+//           installiert ist. Ist einer installiert (icpt_handler != NULL), wird zusaetzlich
+//           pending_signal gesetzt und in_intercept aktiviert, sodass der naechste Scheduler-
+//           Aufruf den Handler statt der normalen Step-Funktion ruft (der Handler liest das
+//           Signal ueber q9_proc_current()->pending_signal). Ohne Handler bleibt der Prozess
+//           einfach geweckt/ACTIVE. 0 = ok, E$IPrcID bei unbekannter PID.
+// Call:     err = q9_proc_send(pid, signal)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_send(uint32_t pid, uint32_t signal);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_rte
+// Desc.:    F$RTE-Unterbau (4.5): beendet den Intercept-Modus von pid (in_intercept/
+//           pending_signal zurueckgesetzt) — der Scheduler ruft ab dem naechsten Tick wieder die
+//           normale Step-Funktion auf. 0 = ok, E$IPrcID bei unbekannter PID oder wenn pid
+//           gerade gar nicht im Intercept-Modus ist (F$RTE ohne vorheriges Signal ergibt keinen
+//           Sinn).
+// Call:     err = q9_proc_rte(pid)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_rte(uint32_t pid);
+
 #endif // Q9_PROC_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF proc.h                                                                              Ver. 1.30
+// EOF proc.h                                                                              Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

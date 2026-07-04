@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.60
+// File:   syscall.c                                                                       Ver. 2.70
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -36,6 +36,7 @@
 //         │      │ kein File-Manager) per q9_proc_wait_device in WAITING; F$Wait ebenso     │
 //         │      │ per q9_proc_wait_child bei E$NotRdy; neu F$Sleep ueber q9_proc_sleep     │
 // 26-07-04│ 2.60 │ 4.4: F$SSpd + F$SPrior neu ueber q9_proc_suspend/set_priority            │ CF
+// 26-07-04│ 2.70 │ 4.5: F$Send/F$Icpt/F$RTE neu ueber q9_proc_send/icpt/rte                  │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -569,6 +570,26 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         return 0;
     }
 
+    case F_SEND: {                                       /* d0.w Ziel-PID, d1.l Signal, 4.5          */
+        return q9_proc_send(r->d[0] & 0xffffu, r->d[1]);
+    }
+
+    case F_ICPT: {                                       /* a0 Handler (q9_proc_step_fn), NULL =    */
+        q9_pd_t *me = q9_proc_current();                  /*   deinstalliert; nur fuer sich selbst,  */
+        if (!me) {                                        /*   4.5                                    */
+            return E_IPRCID;
+        }
+        return q9_proc_icpt(me->pid, (q9_proc_step_fn)r->a[0]);
+    }
+
+    case F_RTE: {                                        /* Rueckkehr aus Intercept, nur fuer sich   */
+        q9_pd_t *me = q9_proc_current();                  /*   selbst, 4.5                            */
+        if (!me) {
+            return E_IPRCID;
+        }
+        return q9_proc_rte(me->pid);
+    }
+
     case F_TIME: {                                     /* d0 = Zeit, d1 = Datum (OS-9-Packung,   */
         q9_datetime_t dt;                              /* MWOS-verifiziert), d2.w = Wochentag    */
         uint32_t      ms = q9_hal_ticks_ms() - boot_ticks; /* (0=So), d3 = ms-Ticks               */
@@ -607,5 +628,5 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 2.60
+// EOF syscall.c                                                                           Ver. 2.70
 //────────────────────────────────────────────────────────────────────────────────────────────────

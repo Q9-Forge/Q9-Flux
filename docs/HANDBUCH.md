@@ -307,7 +307,7 @@ schreibend, inklusive langer Dateinamen beim Lesen) — gewählt wegen
 Interoperabilität: ein Q9-Disk-Image lässt sich am Host-Rechner mounten,
 befüllen und mit Standard-Tools inspizieren.
 
-### 5.6 Prozessmodell (Entscheidung E8/E9, Mehrprozess-Semantik seit Phase 4.2, echtes Blockieren seit 4.3)
+### 5.6 Prozessmodell (Entscheidung E8/E9, vollständig seit Phase 4.5: Fork/Wait/Chain, Blockieren, Suspend/Priorität, Signale)
 
 WebAssembly erlaubt kein Umschalten von Aufruf-Stacks — ein klassischer,
 Stack-wechselnder Scheduler scheidet daher aus. Q9s Scheduler verwaltet
@@ -360,8 +360,21 @@ also dauerhaft stehen, bis `F$Send` (Phase 4.5) `WAITING`/`SLEEPING`
 unabhängig vom Weckgrund gewaltsam abbricht. Daneben **F$SPrior**: setzt ein
 neues `priority`-Feld im Prozess-Deskriptor und liefert den alten Wert zurück
 — reines Datenfeld, der Scheduler bleibt Round-Robin (Priorisierung/Aging
-lohnt sich erst bei echter Konkurrenz um Rechenzeit). Signale folgen in
-Schritt 4.5.
+lohnt sich erst bei echter Konkurrenz um Rechenzeit).
+
+**Seit Phase 4.5** ist das Prozessmodell mit Signalen komplett: **F$Icpt**
+installiert einen Intercept-Handler (`q9_proc_step_fn`, wie eine normale
+Step-Funktion) für den AUFRUFENDEN Prozess — anders als F$SSpd/F$SPrior wirkt
+F$Icpt bewusst nur auf sich selbst. **F$Send** stellt einer beliebigen PID
+ein Signal zu: steht sie in `WAITING`/`SLEEPING`, wird sie unabhängig vom
+Weckgrund sofort `ACTIVE` ("Signal bricht Waiting/Sleeping ab"); ist
+zusätzlich ein Intercept-Handler installiert, ruft der Scheduler ab dem
+nächsten Tick diesen Handler statt der normalen Step-Funktion
+(`q9_pd_t.in_intercept`) — der Handler liest die Signal-Nummer über
+`q9_proc_current()->pending_signal`. **F$RTE** beendet den Intercept-Modus
+wieder, danach steppt der Scheduler erneut die normale Step-Funktion. Damit
+ist Phase 4 (Prozesse) vollständig: Fork/Exit/Wait/Chain (4.2), echtes
+Blockieren (4.3), Suspend/Priorität (4.4), Signale (4.5).
 
 ### 5.7 HAL-Schnittstelle
 
@@ -392,7 +405,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 1 | Kernel-Basis: Syscall-Dispatcher, Device-/Pfadmodell, Namensauflösung, POSIX-HAL | ✅ fertig |
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
-| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Signale | 🟢 freigegeben, in Arbeit |
+| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig |
 | 5 | Shell | offen |
 | 6 | 68k-Runtime (Emulator im Browser) | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |

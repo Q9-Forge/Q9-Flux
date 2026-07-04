@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   proc.c                                                                          Ver. 1.30
+// File:   proc.c                                                                          Ver. 1.40
 // Owner:  AF
 // Desc.:  Q9 Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4). Siehe proc.h fuer die
 //         Architekturentscheidung (E8, Step-Modell; E9, Q9_MOD_NATIVE-Funktionszeiger-Module).
@@ -18,6 +18,8 @@
 //         │      │ Provisorium durch echtes Blockieren (WAITING/SLEEPING)                  │ CF
 // 26-07-04│ 1.30 │ 4.4: q9_proc_suspend (WAITING/Q9_WAIT_SIGNAL, ohne Weckcheck) +          │ CF
 //         │      │ q9_proc_set_priority (priority-Feld, reine Bookkeeping-Info)             │ CF
+// 26-07-04│ 1.40 │ 4.5: q9_proc_icpt/send/rte + in_intercept-Umschaltung in                 │ CF
+//         │      │ q9_proc_schedule (F$Icpt/F$Send/F$RTE)                                   │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
@@ -98,6 +100,9 @@ static q9_pd_t *alloc_slot(void)
             pd->wait_dev    = 0;
             pd->wake_tick   = 0;
             pd->priority    = 0;
+            pd->icpt_handler    = 0;
+            pd->pending_signal  = 0;
+            pd->in_intercept    = 0;
             return pd;
         }
     }
@@ -116,6 +121,9 @@ void q9_proc_init(q9_proc_step_fn step)
         proctab[i].wait_dev    = 0;
         proctab[i].wake_tick   = 0;
         proctab[i].priority    = 0;
+        proctab[i].icpt_handler   = 0;
+        proctab[i].pending_signal = 0;
+        proctab[i].in_intercept   = 0;
     }
     scheduler_pos = -1;
     current        = 0;
@@ -149,9 +157,13 @@ void q9_proc_schedule(void)
             pd->wait_reason = Q9_WAIT_NONE;
         }
 
-        if (pd->state == Q9_PS_ACTIVE && pd->step) {
+        if (pd->state == Q9_PS_ACTIVE) {
             current = pd;
-            pd->step();
+            if (pd->in_intercept && pd->icpt_handler) {     /* 4.5: Signal umgeleitet -> Intercept  */
+                pd->icpt_handler();
+            } else if (pd->step) {
+                pd->step();
+            }
             current = 0;
         }
     }
@@ -346,6 +358,56 @@ int q9_proc_set_priority(uint32_t pid, uint8_t new_prio, uint8_t *out_old)
     return 0;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_icpt
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_icpt(uint32_t pid, q9_proc_step_fn handler)
+{
+    q9_pd_t *pd = q9_proc_find(pid);
+
+    if (!pd) {
+        return E_IPRCID;
+    }
+    pd->icpt_handler = handler;
+    return 0;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_send
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_send(uint32_t pid, uint32_t signal)
+{
+    q9_pd_t *pd = q9_proc_find(pid);
+
+    if (!pd) {
+        return E_IPRCID;
+    }
+    if (pd->state == Q9_PS_WAITING || pd->state == Q9_PS_SLEEPING) {
+        pd->state       = Q9_PS_ACTIVE;                 /* Signal bricht Waiting/Sleeping ab        */
+        pd->wait_reason = Q9_WAIT_NONE;
+    }
+    if (pd->icpt_handler) {
+        pd->pending_signal = signal;
+        pd->in_intercept   = 1;
+    }
+    return 0;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_rte
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_rte(uint32_t pid)
+{
+    q9_pd_t *pd = q9_proc_find(pid);
+
+    if (!pd || !pd->in_intercept) {
+        return E_IPRCID;
+    }
+    pd->in_intercept   = 0;
+    pd->pending_signal = 0;
+    return 0;
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF proc.c                                                                              Ver. 1.30
+// EOF proc.c                                                                              Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
