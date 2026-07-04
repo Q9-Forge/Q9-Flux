@@ -46,8 +46,21 @@ uint pmmu_translate_addr(uint addr_in)
 	switch (root_limit & 3)
 	{
 		case 0:	// invalid, should cause MMU exception
-		case 1:	// page descriptor, should cause direct mapping
-			fatalerror("680x0 PMMU: Unhandled root mode\n");
+			// Q9/CB030: diagnostic detail added (see Q9_VENDOR.md)
+			fatalerror("680x0 PMMU: Unhandled root mode (addr %08x tc %08x srp %08x/%08x crp %08x/%08x sr %04x pc %08x)\n",
+				addr_in, m68ki_cpu.mmu_tc,
+				m68ki_cpu.mmu_srp_limit, m68ki_cpu.mmu_srp_aptr,
+				m68ki_cpu.mmu_crp_limit, m68ki_cpu.mmu_crp_aptr,
+				m68ki_get_sr(), REG_PC);
+			break;
+
+		case 1:	// page descriptor -> direct mapping
+			// Q9/CB030 addition (see Q9_VENDOR.md): DT=1 in the root pointer means
+			// the root pointer itself is the page descriptor — the whole address
+			// space maps flat, offset by the descriptor's address field (OS-9/68K
+			// boots with such a 1:1 supervisor map before the SSM takes over).
+			addr_out = addr_in + (root_aptr & 0xffffff00);
+			resolved = 1;
 			break;
 
 		case 2:	// valid 4 byte descriptors
@@ -66,6 +79,13 @@ uint pmmu_translate_addr(uint addr_in)
 			tamode = tbl_entry2 & 3;
 //			fprintf(stderr,"PMMU: addr %08x entry %08x entry2 %08x mode %x tofs %x\n", addr_in, tbl_entry, tbl_entry2, tamode, tofs);
 			break;
+	}
+
+	// Q9/CB030 addition: root was a page descriptor (direct mapping) — done, don't
+	// walk the (nonexistent) tables (tamode==0 would hit the Table A fatalerror).
+	if (resolved)
+	{
+		return addr_out;
 	}
 
 	// get table B offset and pointer
@@ -147,12 +167,17 @@ uint pmmu_translate_addr(uint addr_in)
 
 	if (!resolved)
 	{
+		// Q9/CB030 change (see Q9_VENDOR.md): table C entries with DT=2/3 point to a
+		// FOURTH table level (TID field of TC) — the 68851/68030 walk has up to four
+		// levels A/B/C/D and OS-9/68K's ssm851 actually uses them all. Was fatalerror
+		// (with a mislabeled "Table B"/tbmode message) before.
+		uint tdmode = 0;
+		uint dbits = m68ki_cpu.mmu_tc & 0xf;
+
 		switch (tcmode)
 		{
 			case 0:	// invalid, should cause MMU exception
-			case 2: // 4-byte ??? descriptor
-			case 3: // 8-byte ??? descriptor
-				fatalerror("680x0 PMMU: Unhandled Table B mode %d (addr_in %08x PC %x)\n", tbmode, addr_in, REG_PC);
+				fatalerror("680x0 PMMU: Unhandled Table C mode %d (entry %08x addr_in %08x PC %x)\n", tcmode, tbl_entry, addr_in, REG_PC);
 				break;
 
 			case 1: // termination descriptor
@@ -161,6 +186,42 @@ uint pmmu_translate_addr(uint addr_in)
 				shift = is+abits+bbits+cbits;
 				addr_out = ((addr_in<<shift)>>shift) + tbl_entry;
 				resolved = 1;
+				break;
+
+			case 2: // 4-byte table D descriptor
+			case 3: // 8-byte table D descriptor
+				// get table D offset and pointer
+				tofs = (addr_in<<(is+abits+bbits+cbits))>>(32-dbits);
+				tptr = tbl_entry & 0xfffffff0;
+
+				if (tcmode == 2)
+				{
+					tofs *= 4;
+					tbl_entry = m68k_read_memory_32(tofs + tptr);
+					tdmode = tbl_entry & 3;
+				}
+				else
+				{
+					tofs *= 8;
+					tbl_entry2 = m68k_read_memory_32(tofs + tptr);
+					tbl_entry = m68k_read_memory_32(tofs + tptr + 4);
+					tdmode = tbl_entry2 & 3;
+				}
+
+				switch (tdmode)
+				{
+					case 1: // termination descriptor (page descriptor — last level)
+						tbl_entry &= 0xffffff00;
+
+						shift = is+abits+bbits+cbits+dbits;
+						addr_out = ((addr_in<<shift)>>shift) + tbl_entry;
+						resolved = 1;
+						break;
+
+					default:
+						fatalerror("680x0 PMMU: Unhandled Table D mode %d (entry %08x addr_in %08x PC %x)\n", tdmode, tbl_entry, addr_in, REG_PC);
+						break;
+				}
 				break;
 		}
 	}

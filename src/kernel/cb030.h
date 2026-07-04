@@ -63,6 +63,7 @@
 #define Q9_CB030_CF_TOP            0xFFFFE0FFu
 #define Q9_CB030_CF_CMD_READ       0x20u              /* READ SECTOR(S)  */
 #define Q9_CB030_CF_CMD_WRITE      0x30u              /* WRITE SECTOR(S) */
+#define Q9_CB030_CF_CMD_SETFEAT    0xEFu              /* SET FEATURES (8-Bit-Mode etc.) */
 #define Q9_CB030_CF_STAT_BSY       0x80u
 #define Q9_CB030_CF_STAT_DRQ       0x08u
 #define Q9_CB030_CF_STAT_RDY       0x40u
@@ -84,9 +85,17 @@ typedef struct q9_cb030 {
     uint32_t       ram_len;
     int            remapped;                           /* 0 = Reset-Zustand, 1 = nach REMAP-Trigger */
 
-    /* 5.2b: DUART — nur ein 1-Byte-Empfangspuffer, s. cb030.c. */
+    /* 5.2b/5.4: DUART — 1-Byte-Empfangspuffer (Kanal A = Konsole) + Register-Latches, die der
+       OS-9-Treiber (sc68681) zurueckliest, um den Chip zu verifizieren: MR1/MR2 (einziges echtes
+       R/W-Register der 68681, mit internem Zeiger) und IVR. S. cb030.c. */
     int            uart_rx_pending;
     uint8_t        uart_rx_char;
+    int            uart_mr_ptr_a;                      /* 0 = naechster Zugriff MR1A, 1 = MR2A   */
+    uint8_t        uart_mr_a[2];
+    int            uart_mr_ptr_b;
+    uint8_t        uart_mr_b[2];
+    uint8_t        uart_ivr;
+    uint8_t        uart_imr;                           /* Interrupt-Mask-Latch (Schreiben 0x0A)  */
 
     /* 5.2c: Compact-Flash — Backing Store lazy geoeffnet (Muster wie q9disk.img). */
     const char    *cf_path;
@@ -150,6 +159,17 @@ void q9_cb030_cf_attach(q9_cb030_t *b, const char *path);
 // Call:     if (q9_cb030_poll_timer(&b, q9_hal_ticks_ms())) q9_m68krt_set_irq(3);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_cb030_uart_irq_pending
+// Desc.:    5.4: Liefert 1, wenn die DUART laut Interrupt-Maske (IMR) einen Interrupt anfordern
+//           wuerde — TxRDYA (Bit 0, bei uns immer sendebereit) oder RxRDYA (Bit 1, Zeichen im
+//           Empfangspuffer; pollt dazu die HAL nach). Der Aufrufer legt dann IRQ3 an (dieselbe
+//           Leitung wie der 100Hz-Timer — OS-9 verteilt geteilte Level ueber seine IRQ-Polling-
+//           Tabelle). Wie beim Timer gilt: kooperativ, der Aufrufer fragt regelmaessig ab.
+// Call:     if (q9_cb030_poll_timer(&b, now) | q9_cb030_uart_irq_pending(&b)) q9_m68krt_set_irq(3);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_cb030_uart_irq_pending(q9_cb030_t *b);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_read8/16/32

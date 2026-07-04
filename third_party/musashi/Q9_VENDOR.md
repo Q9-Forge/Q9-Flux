@@ -33,3 +33,34 @@ Musashi-Typ — MMU bleibt einfach ungenutzt (kein PMOVE im generierten Code). D
 das später nicht die Tür zur echten CPU32-Hardware zuschlägt: Der von uns
 compilierte 68k-Code (vbcc) sollte sich auf einen gemeinsamen, konservativen
 Befehlssatz beschränken, nicht auf 68030-exklusive Features verlassen.
+
+## Q9-eigene Änderungen am Vendor-Code (2026-07-05, Schritt 5.4)
+
+Beim ersten Boot des echten Microware-CB030-ROMs (OS-9/68K mit ssm851) stießen wir
+auf mehrere Lücken in Musashis FPU-/MMU-/Interrupt-Emulation. Alle Änderungen sind
+im Code mit `Q9/CB030` markiert und bewusst minimal-invasiv (MIT-Lizenz erlaubt
+Modifikation; Upstream-tauglich, falls je gewünscht):
+
+1. **`m68kfpu.c` — FRESTORE/FSAVE-Adressierungsarten ergänzt**: FRESTORE `(d16,PC)`
+   (Boot-ROM macht `FRESTORE nullframe(PC)` als FPU-Reset), FRESTORE `(d16,An)` und
+   FSAVE `(d16,An)` (OS-9-Kernel-FPU-Kontextwechsel). Vorher: `fatalerror` → Prozess-
+   Abbruch. Gleiche NULL-Frame-Logik wie die vorhandenen Modi, kein Inc/Dec noetig.
+2. **`m68kmmu.h` — Root-Deskriptor DT=1 (Direct Mapping)**: Der Root-Pointer selbst
+   ist der Page-Deskriptor → flache Abbildung (OS-9 bootet mit so einer 1:1-Super-
+   visor-Map, bevor ssm die Tabellen aufbaut). Vorher `fatalerror` trotz Kommentar
+   "should cause direct mapping".
+3. **`m68kmmu.h` — vierte Tabellenebene (TID)**: Der 68851/68030-Walk hat bis zu vier
+   Ebenen (A/B/C/D, TC-Felder TIA-TID) — Musashi konnte nur drei, OS-9s ssm851 nutzt
+   alle vier. Table-C-Eintraege mit DT=2/3 laufen jetzt in einen D-Level-Walk statt
+   in einen (falsch beschrifteten) `fatalerror`.
+4. **`m68kmmu.h` — Diagnostik**: Die verbliebenen `fatalerror`-Meldungen enthalten
+   jetzt Adresse/TC/SRP/CRP/SR/PC bzw. Deskriptor-Inhalt (und die "Table B"-Meldung
+   im C-Zweig druckte vorher die falsche Variable).
+5. **`m68kconf.h` — `M68K_EMULATE_INT_ACK` ON**: Die 68681-DUART des CB030 liefert
+   ihren Vektor (IVR, z.B. 0x50) im IACK-Zyklus — der OS-9-Treiber registriert
+   seinen Handler auf genau diesem Vektor. Mit OFF (Default) waere alles autovektor-
+   isiert und der DUART-Handler nie angesprungen. Die Vektor-Auswahl (DUART = IVR,
+   Timer = Autovector) macht der Callback in `src/kernel/m68krt.c`.
+
+Ergebnis: Das unveraenderte Microware-ROM-Image bootet OS-9/68K bis zur interaktiven
+mshell (`$`-Prompt, `mdir` funktioniert) — s. ARBEITSPLAN.md 5.4.

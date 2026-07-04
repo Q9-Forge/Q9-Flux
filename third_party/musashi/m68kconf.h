@@ -106,10 +106,14 @@
  * interrupt.
  * If off, all interrupts will be autovectored and all interrupt requests will
  * auto-clear when the interrupt is serviced.
+ *
+ * Q9/CB030 change (see Q9_VENDOR.md): ON — the CB030's 68681 DUART supplies its
+ * vector register (IVR) during the IACK cycle (the OS-9 driver registers its
+ * handler on that vector, e.g. 0x50), while the board timer is autovectored.
+ * The callback (m68krt.c) decides per interrupt which vector to return.
  */
 #ifndef M68K_EMULATE_INT_ACK
-#define M68K_EMULATE_INT_ACK        M68K_OPT_OFF
-#define M68K_INT_ACK_CALLBACK(A)    your_int_ack_handler_function(A)
+#define M68K_EMULATE_INT_ACK        M68K_OPT_ON
 #endif
 
 

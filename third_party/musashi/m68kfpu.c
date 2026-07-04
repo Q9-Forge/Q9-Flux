@@ -1969,6 +1969,22 @@ void m68040_fpu_op1(void)
 					}
 					break;
 
+				case 5: // (d16,An)
+					// Q9/CB030 addition (see Q9_VENDOR.md): counterpart to the
+					// FRESTORE (d16,An) the OS-9/68K kernel uses for FPU context
+					// switches — no pre/post inc/dec bookkeeping needed.
+					addr = EA_AY_DI_32();
+
+					if (m68ki_cpu.fpu_just_reset)
+					{
+						m68ki_write_32(addr, 0);
+					}
+					else
+					{
+						perform_fsave(addr, 1);
+					}
+					break;
+
 				default:
 					fatalerror("M68kFPU: FSAVE unhandled mode %d reg %d at %x\n", mode, reg, REG_PC);
 			}
@@ -2022,6 +2038,50 @@ void m68040_fpu_op1(void)
 					else
 					{
 						do_frestore_null();
+					}
+					break;
+
+				case 5: // (d16,An)
+					// Q9/CB030 addition (see Q9_VENDOR.md): the OS-9/68K kernel restores
+					// FPU state via FRESTORE with a displaced address register — no
+					// pre/post inc/dec to handle, same NULL-frame logic as mode 2.
+					addr = EA_AY_DI_32();
+					temp = m68ki_read_32(addr);
+
+					// check for NULL frame
+					if (temp & 0xff000000)
+					{
+						m68ki_cpu.fpu_just_reset = 0;
+					}
+					else
+					{
+						do_frestore_null();
+					}
+					break;
+
+				case 7: // extended modes
+					// Q9/CB030 addition (see Q9_VENDOR.md): the Microware CB030 boot
+					// ROM resets the FPU via "FRESTORE nullframe(PC)" — (d16,PC), a
+					// constant NULL frame in ROM. No pre/post inc/dec to handle.
+					switch (reg)
+					{
+						case 2: // (d16,PC)
+							addr = EA_PCDI_32();
+							temp = m68ki_read_32(addr);
+
+							// check for NULL frame
+							if (temp & 0xff000000)
+							{
+								m68ki_cpu.fpu_just_reset = 0;
+							}
+							else
+							{
+								do_frestore_null();
+							}
+							break;
+
+						default:
+							fatalerror("M68kFPU: FRESTORE unhandled mode %d reg %d at %x\n", mode, reg, REG_PC);
 					}
 					break;
 

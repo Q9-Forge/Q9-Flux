@@ -102,15 +102,24 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: m68krt_board_int_ack
-// Desc.:    5.3: Interrupt-Acknowledge im Board-Betrieb — die IRQ-Leitung wird beim Annehmen des
-//           Interrupts wieder losgelassen (Puls-Verhalten, sonst wuerde der level-gehaltene IRQ3
-//           die CPU endlos erneut unterbrechen) und Autovector gemeldet (das CB030 legt keinen
-//           Vektor auf den Bus).
+// Desc.:    5.3/5.4: Interrupt-Acknowledge im Board-Betrieb — die IRQ-Leitung wird beim Annehmen
+//           des Interrupts wieder losgelassen (Puls-Verhalten, sonst wuerde der level-gehaltene
+//           IRQ3 die CPU endlos erneut unterbrechen). Vektor-Auswahl wie beim echten Board:
+//           Fordert die DUART gerade einen Interrupt an, legt sie ihren IVR-Inhalt auf den Bus
+//           (vektorisierter 68681-IACK-Zyklus — der OS-9-Treiber sc68681 registriert seinen
+//           Handler auf genau diesem Vektor, z.B. 0x50); sonst Autovector (Timer, Vektor 27 =
+//           Autovektor Level 3).
 //────────────────────────────────────────────────────────────────────────────────────────────────
+static uint32_t g_ack_count;                          /* Diagnose: wie oft wurde IACK durchlaufen */
+
 static int m68krt_board_int_ack(int int_level)
 {
     (void)int_level;
+    g_ack_count++;
     m68k_set_irq(0);
+    if (g_board && q9_cb030_uart_irq_pending(g_board)) {
+        return g_board->uart_ivr;
+    }
     return M68K_INT_ACK_AUTOVECTOR;
 }
 
@@ -169,6 +178,13 @@ void q9_m68krt_free(q9_m68krt_t *rt)
 void q9_m68krt_set_irq(int level)
 {
     m68k_set_irq((unsigned int)level);
+}
+
+void q9_m68krt_debug_state(uint32_t *pc, uint32_t *sr, uint32_t *acks)
+{
+    *pc   = m68k_get_reg(NULL, M68K_REG_PC);
+    *sr   = m68k_get_reg(NULL, M68K_REG_SR);
+    *acks = g_ack_count;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
