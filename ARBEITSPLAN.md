@@ -194,7 +194,16 @@ kennt — der Emulator darf "voller" sein als das, was wir tatsächlich benutzen
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 5.2 | **Vorschlag (Andreas, 2026-07-04 abends):** CB030-Board emulieren als Bootstrap/Validierung statt gleich eigene QUICC-Peripherie. Die CB030 hat ein fertiges Boot-ROM mit Microware-OS-9-Modulen — damit kann Musashi an echtem, produktivem 68k-Code getestet werden statt nur an unseren handassemblierten Testprogrammen aus 5.1. Plan: zuerst mit den originalen Microware-Modulen starten (nur lokal, NICHT ins Repo — proprietär, gleiche Regel wie MWOS-SDK), dann nach und nach durch eigene Q9-Module ersetzen, sobald `Q9_MOD_M68K` + Syscall-Bridge stehen. Ändert nichts an der eigentlichen Zielhardware (MC68EN360/QUICC bleibt Ziel für Phase 7) — reiner Zwischenschritt zur Validierung/zum schnelleren Start. Noch zu klären: welche CB030-Speicherkarte/-Peripherie das Boot-ROM konkret erwartet (Adressraum, Geräte-Register), Lizenzlage der Microware-Module im Detail, wie weit "graduelle Ersetzung" technisch sauber geht (Modul für Modul austauschbar über F$Link, s. Abschnitt 5.4 HANDBUCH.md?) | 💡 | — | Aufgeworfen 2026-07-04 abends; PROJECT.md O4 verweist hierher. **Speicherkarte + Peripherie-Register (68681-DUART, CF-Interface) jetzt dokumentiert: [`docs/CB030.md`](docs/CB030.md)** (Andreas, 2026-07-04 abends). Noch keine feingranularen Schritte — kommt mit der Phase-5-Detailplanung |
+| 5.2 | **Vorschlag (Andreas, 2026-07-04 abends):** CB030-Board emulieren als Bootstrap/Validierung statt gleich eigene QUICC-Peripherie. Die CB030 hat ein fertiges Boot-ROM mit Microware-OS-9-Modulen — damit kann Musashi an echtem, produktivem 68k-Code getestet werden statt nur an unseren handassemblierten Testprogrammen aus 5.1. Plan: zuerst mit den originalen Microware-Modulen starten (nur lokal, NICHT ins Repo — proprietär, gleiche Regel wie MWOS-SDK), dann nach und nach durch eigene Q9-Module ersetzen, sobald `Q9_MOD_M68K` + Syscall-Bridge stehen. Ändert nichts an der eigentlichen Zielhardware (MC68EN360/QUICC bleibt Ziel für Phase 7) — reiner Zwischenschritt zur Validierung/zum schnelleren Start. Lizenzlage der Microware-Module im Detail und wie weit "graduelle Ersetzung" technisch sauber geht (Modul für Modul austauschbar über F$Link, s. Abschnitt 5.4 HANDBUCH.md?) noch offen | 💡 | — | Aufgeworfen 2026-07-04 abends; PROJECT.md O4 verweist hierher. Speicherkarte + Peripherie-Register vollständig dokumentiert: [`docs/CB030.md`](docs/CB030.md). In Einzelgeräte aufgebrochen (5.2a–d, s.u.) — bleiben 💡 bis zur Phase-5-Detailplanung, da die Anbindung an Musashis Speicher-Hooks/Interrupt-Mechanismus noch nicht architektonisch entschieden ist |
+
+**Einzelgeräte für 5.2** (Andreas, 2026-07-04 abends — Aufschlüsselung nach `docs/CB030.md`):
+
+| # | Gerät | Status | Notizen |
+|---|-------|--------|---------|
+| 5.2a | RAM/ROM/Remap-Speicherlogik | 💡 | Reset-Zustand: Flash-ROM gespiegelt ab Adresse 0 bis `0xFEFF_FFFF`. Einmaliger Buszugriff (beliebiger Wert) auf `0xFFFF_8000`-Bereich schaltet dauerhaft um: RAM ab Adresse 0 (Größe je SIM-Bestückung), ROM danach nur noch einmal bei `0xFE00_0000`–`0xFE07_FFFF`. Grundlage für alles Weitere — ohne funktionierende Speicherzugriffe kann kein Boot-Code laufen |
+| 5.2b | 68681-DUART (seriell) | 💡 | Mindestens genug für Boot-ROM-Konsolen-I/O (RHRA/THRA + Statusbits); volles Register-Set siehe `docs/CB030.md` |
+| 5.2c | Compact-Flash-Interface | 💡 | ATA-Subset-Register (`docs/CB030.md`); Anbindung an eine Image-Datei, ähnlich `q9disk.img`-Konzept aus 3.1 |
+| 5.2d | Timer/IRQ3 | 💡 | `TI_IRQ_ON`/`TI_IRQ_OFF` sind reine Adress-Trigger (kein Datenwert), schalten einen Timer ein/aus, der IRQ3 auslöst — Frequenz/Periode noch unbekannt, Anbindung an Musashis Interrupt-Mechanismus (`m68k_set_irq`) noch offen |
 | 5.1 | Musashi als CPU-Kern einbinden — Grundbaustein + Rauchtest, KEINE Scheduler-/Syscall-Bridge-Entscheidungen (die kommen erst mit der Detailplanung). Analog zu 4.6 (wasm3): Makefile-Integration (Musashis Zweistufen-Build — `m68kmake` generiert `m68kops.c/.h` aus `m68k_in.c` zur Bauzeit, siehe `third_party/musashi/Q9_VENDOR.md`), schmaler Wrapper `src/kernel/m68krt.c/.h` (analog `wasmrt.c/.h`), CPU-Typ `M68K_CPU_TYPE_68030`. Rauchtest: ein von Hand geschriebenes/assembliertes 68k-Testprogramm (z.B. zwei Zahlen addieren) in emuliertes RAM legen, `m68k_pulse_reset()` + `m68k_execute()` aufrufen, Ergebnis über die emulierten Register prüfen | ✅ | Claudia | Makefile-Integration steht: `m68kmake` wird als Host-Tool gebaut, generiert `m68kops.c/.h` zur Bauzeit nach `build/native/musashi_gen/` (nicht versioniert); `m68kcpu.c` (bindet `m68kfpu.c` bereits selbst per `#include` ein — deshalb `m68kfpu.c` NICHT separat als eigene TU kompilieren, sonst doppelte Symbole `m68040_fpu_op0/op1` beim Linken) + `softfloat.c` + generiertes `m68kops.c` werden mit eigenen, laxeren Flags gebaut (analog `WASM3_CFLAGS`). Wrapper `src/kernel/m68krt.c/.h` (analog `wasmrt.c/.h`, aber ohne Mehrfachinstanz-Fähigkeit — Musashi haelt seinen Zustand in eigenen Globals, keine Kontext-Zeiger in `m68k_read/write_memory_*`) implementiert genau die sechs von Musashi verlangten Speicherfunktionen (`M68K_SEPARATE_READS` aus in `m68kconf.h`, deshalb genuegen die sechs Basisfunktionen). Rauchtest (`-DQ9_HAVE_M68K`, native-only, wie `Q9_HAVE_WASM3`): `MOVEQ #2,D0`/`ADDI.W #3,D0`/`BRA.S *-2` (Endlosschleife) von Hand assembliert + Reset-Vektoren in 256-Byte-RAM, `q9_m68krt_reset()`+`q9_m68krt_execute(100)`, `D0==5` bestaetigt. `make native`/`make test` (alle 6 Testskripte inkl. FAT16-Nachvalidierung) PASS, warnungsfrei; `make wasm` unveraendert warnungsfrei (Musashi bleibt native-only). PROJECT.md E12 + docs/HANDBUCH.md (Abschnitt 3/5.9/6/7/8) aktualisiert. |
 
 ---
@@ -851,7 +860,16 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **Musashi vendored (E12), Ziel-CPU
+**Letzte Aktualisierung**: 2026-07-04 abends — **CB030-Hardware-Details geklärt,
+5.2 in Einzelgeräte aufgebrochen.** Andreas: REMAP und `TI_IRQ_ON`/`TI_IRQ_OFF`
+sind reine Adress-Trigger (kein Bit-Layout) — REMAP schaltet einmalig auf
+RAM-bei-0 + ROM-einmalig-bei-`0xFE00_0000` um, der Timer löst IRQ3 aus.
+`docs/CB030.md` entsprechend präzisiert. Schritt 5.2 in vier Einzelgeräte
+aufgeteilt (5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d
+Timer/IRQ3) — bleiben 💡, da die Anbindung an Musashis Speicher-/Interrupt-
+Mechanismus noch nicht architektonisch entschieden ist (Phase-5-Detailplanung).
+
+Davor: 2026-07-04 abends — **Musashi vendored (E12), Ziel-CPU
 68030, Schritt 5.1 freigegeben.** Andreas: 68030 statt der realen CPU32+-ZielCPU
 (Musashi kennt CPU32 nicht) — MMU bleibt ungenutzt, unser 68k-Code soll sich
 trotzdem auf einen mit CPU32 kompatiblen Befehlssatz beschränken. Musashi (MIT,
