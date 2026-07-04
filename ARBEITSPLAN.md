@@ -160,12 +160,12 @@ und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
 
 ---
 
-### Phase 5 — 68k-Runtime (Musashi) — **umnummeriert 2026-07-04 abends, siehe Entscheidung E10**
+### Phase 5 — 68k-Runtime (Musashi) — **umnummeriert 2026-07-04 abends, siehe Entscheidung E11**
 
 **Noch nicht feingranular geplant** — bewusst zurückgestellt für eine eigene,
 gründliche Planungsrunde (wie bei Phase 3/4), nicht nebenbei. Diese Phase war
 bis 2026-07-04 abends als "Phase 6" nummeriert; die alte "Phase 5" (Shell)
-ist jetzt **Phase 6** (siehe dort) — Begründung: Entscheidung E10.
+ist jetzt **Phase 6** (siehe dort) — Begründung: Entscheidung E11.
 
 **Grober Umriss aus der heutigen Diskussion** (Ausgangspunkt für die
 Detailplanung, keine fertigen Schritte):
@@ -186,6 +186,15 @@ Detailplanung, keine fertigen Schritte):
 - Das ist die Voraussetzung für Phase 6 (Shell): Eine Shell, die vor dieser
   Phase gebaut würde, wäre zwangsläufig nur ein weiterer `Q9_MOD_NATIVE`- oder
   kurzlebiger-WASM-Behelf (E9-Falle), kein echter langlebiger Prozess.
+
+**Ziel-CPU: 68030** (Entscheidung E12, 2026-07-04) — MMU bleibt ungenutzt statt
+abgeschaltet. Wichtige Nebenbedingung für später: unser 68k-Code (vbcc) sollte
+sich auf einen Befehlssatz beschränken, den auch die reale CPU32-Zielhardware
+kennt — der Emulator darf "voller" sein als das, was wir tatsächlich benutzen.
+
+| # | Schritt | Status | Wer | Notizen |
+|---|---------|--------|-----|---------|
+| 5.1 | Musashi als CPU-Kern einbinden — Grundbaustein + Rauchtest, KEINE Scheduler-/Syscall-Bridge-Entscheidungen (die kommen erst mit der Detailplanung). Analog zu 4.6 (wasm3): Makefile-Integration (Musashis Zweistufen-Build — `m68kmake` generiert `m68kops.c/.h` aus `m68k_in.c` zur Bauzeit, siehe `third_party/musashi/Q9_VENDOR.md`), schmaler Wrapper `src/kernel/m68krt.c/.h` (analog `wasmrt.c/.h`), CPU-Typ `M68K_CPU_TYPE_68030`. Rauchtest: ein von Hand geschriebenes/assembliertes 68k-Testprogramm (z.B. zwei Zahlen addieren) in emuliertes RAM legen, `m68k_pulse_reset()` + `m68k_execute()` aufrufen, Ergebnis über die emulierten Register prüfen | 🟢 | Claudia | Musashi (MIT, Commit `313ebf1`) bereits vendored unter `third_party/musashi/` (Andreas + Claudia, 2026-07-04) — Sanity-Check einzeln bestanden (m68kcpu.c/m68kops.c/softfloat.c kompilieren fehlerfrei), aber NOCH NICHT in den Q9-Makefile-Build integriert, das ist Teil dieses Schritts |
 
 ---
 
@@ -841,7 +850,16 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **Phase 4 (4.1–4.9) komplett.
+**Letzte Aktualisierung**: 2026-07-04 abends — **Musashi vendored (E12), Ziel-CPU
+68030, Schritt 5.1 freigegeben.** Andreas: 68030 statt der realen CPU32+-ZielCPU
+(Musashi kennt CPU32 nicht) — MMU bleibt ungenutzt, unser 68k-Code soll sich
+trotzdem auf einen mit CPU32 kompatiblen Befehlssatz beschränken. Musashi (MIT,
+Commit `313ebf1`) vendored unter `third_party/musashi/` (minimal: Kern +
+Codegenerator + Softfloat, kein Disassembler), Sanity-Check bestanden. Schritt
+5.1 (Makefile-Integration + Wrapper + Rauchtest, ohne Scheduler-Entscheidungen)
+auf 🟢 gestellt. O4 (CPU-Teil) entschieden, Peripherie-Teil weiterhin offen.
+
+Davor: 2026-07-04 abends — **Phase 4 (4.1–4.9) komplett.
 Grundsatzentscheidung E11: Phase 5 (68k-Runtime, Musashi) und Phase 6 (Shell)
 getauscht.** Lange Architektur-Diskussion mit Andreas: 68k (PIC, über Musashi)
 wird das eigentliche Programmformat für echte Q9-Prozesse — nur 68k läuft auf
