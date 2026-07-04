@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 2.90
+// File:   kernel.c                                                                        Ver. 3.00
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -40,6 +40,10 @@
 // 26-07-04│ 2.90 │ 4.1: q9_kernel_step() reicht an q9_proc_schedule() weiter (proc.c);     │ CF
 //         │      │ bisheriger REPL-Koerper wandert in repl_step() (PID 1, ueber            │
 //         │      │ q9_proc_init registriert); Selbsttests fuer die Prozesstabelle          │
+// 26-07-04│ 3.00 │ 4.2: build_native_module (E9) + Selbsttests F$Fork/F$Exit/F$Wait/       │ CF
+//         │      │ F$Chain (echter zweiter Prozess, Verkettung auf neues Modul); alter      │
+//         │      │ q9_proc_halted()-Guard in repl_step entfernt (obsolet: Scheduler ruft    │
+//         │      │ nicht-aktive Prozesse ohnehin nie)                                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -123,17 +127,14 @@ void q9_kernel_step(void)
 // Function: repl_step
 // Desc.:    Step-Funktion von PID 1 (4.1: vorher der Koerper von q9_kernel_step direkt): I$ReadLn
 //           pollen; komplette Zeile -> Antwort + neuer Prompt. "exit" ruft F$Exit (Proto-Prozess
-//           haelt an — echte Exit-Semantik/Aufraeumen des Tabellen-Slots kommt erst mit 4.2).
+//           haelt an — PID 1 verlaesst danach den ACTIVE-Zustand, der Scheduler ruft repl_step()
+//           dann nie wieder auf (4.2: q9_proc_exit()/q9_proc_schedule() reichen als Guard).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static void repl_step(void)
 {
     q9_regs_t r = {0};
     uint8_t   line[80];
     uint32_t  n;
-
-    if (q9_proc_halted()) {
-        return;
-    }
 
     r.d[0] = 0;                                        /* path 0 = stdin                         */
     r.d[1] = sizeof(line) - 1;
@@ -192,6 +193,81 @@ static void build_module(uint8_t *buf, const char *name, uint8_t type, uint8_t l
         buf[Q9_MOD_HDRSIZE + i] = (uint8_t)name[i];
     }
     h->crc32 = q9_crc32(buf, modsize);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: build_native_module
+// Desc.:    4.2-Selbsttest: baut ein echtes Q9_MOD_NATIVE-Modul (Entscheidung E9, PROJECT.md) —
+//           anders als build_module() steht direkt hinter dem Header (execoff) ein roher
+//           q9_proc_step_fn-Funktionszeiger (gueltig nur in diesem laufenden Host-Prozess), danach
+//           der Name. Nur so kann F$Fork/F$Chain einen Prozess starten, der wirklich etwas tut —
+//           Q9 hat vor Phase 6 keine 68k/WASM-Runtime, die echten Byte-Code ausfuehren koennte.
+//           buf muss mindestens Q9_MOD_HDRSIZE + sizeof(step) + strlen(name) + 1 Bytes gross sein.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void build_native_module(uint8_t *buf, const char *name, uint8_t rev, q9_proc_step_fn step)
+{
+    q9_modhdr_t *h       = (q9_modhdr_t *)buf;
+    uint32_t     fnoff    = Q9_MOD_HDRSIZE;
+    uint32_t     nameoff  = fnoff + (uint32_t)sizeof(step);
+    uint32_t     namelen  = str_len(name);
+    uint32_t     modsize  = nameoff + namelen + 1;
+
+    h->sync[0]  = Q9_MOD_SYNC0;
+    h->sync[1]  = Q9_MOD_SYNC1;
+    h->hdrsize  = Q9_MOD_HDRSIZE;
+    h->modsize  = modsize;
+    h->nameoff  = nameoff;
+    h->type     = Q9_MOD_PRGRM;
+    h->lang     = Q9_MOD_NATIVE;
+    h->attr     = 0;
+    h->rev      = rev;
+    h->execoff  = fnoff;
+    h->datasize = (uint32_t)sizeof(step);
+    h->crc32    = 0;
+    for (uint32_t i = 0; i < sizeof(step); i++) {
+        buf[fnoff + i] = ((const uint8_t *)&step)[i];
+    }
+    for (uint32_t i = 0; i <= namelen; i++) {
+        buf[nameoff + i] = (uint8_t)name[i];
+    }
+    h->crc32 = q9_crc32(buf, modsize);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: child_step
+// Desc.:    4.2-Selbsttest: Step-Funktion eines per F$Fork gestarteten Kind-Prozesses. Beendet
+//           sich beim ersten Aufruf sofort selbst mit Exit-Code 42 — beweist, dass der Scheduler
+//           einen zweiten, echten Prozess parallel zur REPL steppt.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void child_step(void)
+{
+    q9_regs_t ex = {0};
+    ex.d[1] = 42;
+    q9_syscall(F_EXIT, &ex);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: child_after_chain_step / child_before_chain_step
+// Desc.:    4.2-Selbsttest fuer F$Chain: "before" verkettet sich beim ersten Tick auf das Modul
+//           "child_after" (eigene PID/Parent/Std-Pfade bleiben, nur Modul+Step wechseln) — der
+//           naechste Scheduler-Tick ruft dann bereits die NEUE Step-Funktion auf, die sich mit
+//           Exit-Code 77 beendet. Beweist, dass F$Chain den Prozess wirklich umbiegt statt nur
+//           einen zweiten zu starten.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void child_after_chain_step(void)
+{
+    q9_regs_t ex = {0};
+    ex.d[1] = 77;
+    q9_syscall(F_EXIT, &ex);
+}
+
+static void child_before_chain_step(void)
+{
+    q9_regs_t ch = {0};
+    ch.a[0] = (void *)"child_after";
+    ch.d[1] = Q9_MOD_PRGRM;
+    ch.d[2] = Q9_MOD_NATIVE;
+    q9_syscall(F_CHAIN, &ch);
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -278,6 +354,98 @@ int q9_kernel_selftest(void)
     {   /* 4.1: unbekannte PID liefert NULL */
         checks[nchecks].name = "Prozesstabelle: unbekannte PID -> NULL";
         checks[nchecks++].ok = (q9_proc_find(99) == 0);
+    }
+    {   /* 4.2: F$Fork startet ein Kind, das per F$Exit endet; F$Wait sammelt es ein */
+        static uint8_t childbuf[64];
+        int            ok;
+        q9_regs_t      fk = {0};
+        uint32_t       childpid;
+        q9_regs_t      wt = {0};
+
+        build_native_module(childbuf, "child", 1, child_step);
+        ok = (q9_mod_register((const q9_modhdr_t *)childbuf) == 0);
+
+        fk.a[0] = (void *)"child";
+        fk.d[1] = Q9_MOD_PRGRM;
+        fk.d[2] = Q9_MOD_NATIVE;
+        ok = ok && (q9_syscall(F_FORK, &fk) == 0);
+        childpid = fk.d[0];
+        ok = ok && (childpid != 0 && childpid != 1);
+
+        /* Kind ist ACTIVE, hat aber noch keinen Tick bekommen -> noch kein Exit -> E$NotRdy */
+        ok = ok && (q9_syscall(F_WAIT, &wt) == E_NOTRDY);
+
+        q9_kernel_step();                               /* ein Scheduler-Tick: repl_step + child_step */
+
+        {
+            q9_regs_t wt2 = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt2) == 0 && wt2.d[0] == childpid && wt2.d[1] == 42);
+        }
+        {   /* kein Kind mehr uebrig -> E$NoChld */
+            q9_regs_t wt3 = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt3) == E_NOCHLD);
+        }
+        checks[nchecks].name = "F$Fork/F$Exit/F$Wait: Kind gestartet, beendet, eingesammelt";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.2: F$Fork auf unbekanntes Modul -> E$MNF */
+        q9_regs_t fk = {0};
+        fk.a[0] = (void *)"nichtdaexistierendesmodul";
+        fk.d[1] = Q9_MOD_PRGRM;
+        fk.d[2] = Q9_MOD_NATIVE;
+        checks[nchecks].name = "F$Fork unbekanntes Modul -> E$MNF";
+        checks[nchecks++].ok = (q9_syscall(F_FORK, &fk) == E_MNF);
+    }
+    {   /* 4.2: F$Fork auf ein NICHT-natives Modul (kein Q9_MOD_NATIVE) -> E$NEMod */
+        static uint8_t regbuf[48];
+        q9_regs_t      fk = {0};
+        int            ok;
+
+        build_module(regbuf, "notnative", Q9_MOD_PRGRM, Q9_MOD_M68K, 1);
+        ok = (q9_mod_register((const q9_modhdr_t *)regbuf) == 0);
+        fk.a[0] = (void *)"notnative";
+        fk.d[1] = Q9_MOD_PRGRM;
+        fk.d[2] = Q9_MOD_M68K;
+        ok = ok && (q9_syscall(F_FORK, &fk) == E_NEMOD);
+        checks[nchecks].name = "F$Fork nicht-natives Modul -> E$NEMod";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.2: F$Wait ohne jemals ein Kind gehabt zu haben -> E$NoChld */
+        q9_regs_t wt = {0};
+        checks[nchecks].name = "F$Wait ohne Kinder -> E$NoChld";
+        checks[nchecks++].ok = (q9_syscall(F_WAIT, &wt) == E_NOCHLD);
+    }
+    {   /* 4.2: F$Chain — Kind verkettet sich auf ein anderes Modul, das dann wirklich laeuft */
+        static uint8_t beforebuf[64];
+        static uint8_t afterbuf[64];
+        int            ok;
+        q9_regs_t      fk = {0};
+        uint32_t       childpid;
+
+        build_native_module(beforebuf, "child_before", 1, child_before_chain_step);
+        build_native_module(afterbuf, "child_after", 1, child_after_chain_step);
+        ok = (q9_mod_register((const q9_modhdr_t *)beforebuf) == 0);
+        ok = ok && (q9_mod_register((const q9_modhdr_t *)afterbuf) == 0);
+
+        fk.a[0] = (void *)"child_before";
+        fk.d[1] = Q9_MOD_PRGRM;
+        fk.d[2] = Q9_MOD_NATIVE;
+        ok = ok && (q9_syscall(F_FORK, &fk) == 0);
+        childpid = fk.d[0];
+
+        q9_kernel_step();                               /* Tick 1: child_before_chain_step -> Chain */
+        {
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == E_NOTRDY); /* laeuft noch (jetzt als "child_after")*/
+        }
+        q9_kernel_step();                               /* Tick 2: child_after_chain_step -> Exit(77)*/
+        {
+            q9_regs_t wt2 = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt2) == 0 &&
+                        wt2.d[0] == childpid && wt2.d[1] == 77);
+        }
+        checks[nchecks].name = "F$Chain: Kind wechselt Modul, laeuft weiter, endet mit neuem Code";
+        checks[nchecks++].ok = ok;
     }
     {   /* F$Time delivers uptime */
         q9_regs_t r = {0};

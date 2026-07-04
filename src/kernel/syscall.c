@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.30
+// File:   syscall.c                                                                       Ver. 2.40
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -29,6 +29,9 @@
 // 26-07-04│ 2.20 │ 3.5: F$Load ueber q9_mod_load (Modul aus Datei statt nur ROM-Image)    │ CF
 // 26-07-04│ 2.30 │ 4.1: F$ID liest PID jetzt aus der Prozesstabelle (proc.c) statt fest    │ CF
 //         │      │ verdrahtet (Fallback PID 1 ausserhalb eines Scheduler-Aufrufs)           │
+// 26-07-04│ 2.40 │ 4.2: F$Fork/F$Wait/F$Chain echt ueber proc.c implementiert; F$Exit hat   │ CF
+//         │      │ jetzt echte Semantik (q9_proc_exit statt proc_halted-Stub, der samt      │
+//         │      │ q9_proc_halted() entfernt wurde)                                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -40,10 +43,9 @@
 #include "vfs.h"
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
-//║ KERNEL STATE (Phase 1: one proto process)                                                    ║
+//║ KERNEL STATE                                                                                 ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
-static int      proc_halted = 0;                       /* set by F$Exit until real processes     */
 static uint32_t boot_ticks;
 static uint32_t time_base_s;                           /* seconds since 2000-01-01 at boot       */
 static int      time_have = 0;                         /* 0 = not yet initialized from HAL/STime */
@@ -418,9 +420,82 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         return 0;
     }
 
-    case F_EXIT:                                       /* real semantics arrive with phase 4     */
-        proc_halted = 1;
+    case F_FORK: {                                      /* a0 name, d1.b type, d2.b lang (wie      */
+        const q9_modhdr_t *hdr;                          /*   F$Link) -> d0.w Kind-PID              */
+        q9_proc_step_fn    step;
+        q9_pd_t           *me = q9_proc_current();
+        uint32_t           newpid;
+        int                err;
+
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        err = q9_mod_link((const char *)r->a[0], (uint8_t)r->d[1], (uint8_t)r->d[2], &hdr);
+        if (err != 0) {
+            return err;
+        }
+        err = q9_proc_native_entry(hdr, &step);          /* E9: nur Q9_MOD_NATIVE ausfuehrbar       */
+        if (err != 0) {
+            q9_mod_unlink(hdr);
+            return err;
+        }
+        err = q9_proc_fork(me ? me->pid : 1, hdr, step, &newpid);
+        if (err != 0) {
+            q9_mod_unlink(hdr);
+            return err;
+        }
+        r->d[0] = newpid;
         return 0;
+    }
+
+    case F_WAIT: {                                      /* -> d0.w Kind-PID, d1.w Exit-Code        */
+        q9_pd_t *me = q9_proc_current();
+        uint32_t pid;
+        int32_t  code;
+        int      err = q9_proc_wait(me ? me->pid : 1, &pid, &code);
+        if (err != 0) {
+            return err;                                  /* E$NotRdy (Kind laeuft noch, poll        */
+        }                                                /*   spaeter) oder E$NoChld                 */
+        r->d[0] = pid;
+        r->d[1] = (uint32_t)code;
+        return 0;
+    }
+
+    case F_CHAIN: {                                      /* a0 name, d1.b type, d2.b lang — ersetzt */
+        const q9_modhdr_t *hdr;                          /*   das eigene Modul (PID/Parent/Std-     */
+        q9_proc_step_fn    step;                          /*   Pfade bleiben)                        */
+        q9_pd_t           *me = q9_proc_current();
+        int                err;
+
+        if (!r->a[0]) {
+            return E_BPADDR;
+        }
+        if (!me) {
+            return E_IPRCID;                              /* F$Chain ausserhalb eines Prozesses      */
+        }
+        err = q9_mod_link((const char *)r->a[0], (uint8_t)r->d[1], (uint8_t)r->d[2], &hdr);
+        if (err != 0) {
+            return err;
+        }
+        err = q9_proc_native_entry(hdr, &step);
+        if (err != 0) {
+            q9_mod_unlink(hdr);
+            return err;
+        }
+        if (me->module) {
+            q9_mod_unlink(me->module);
+        }
+        me->module   = hdr;
+        me->step     = step;
+        me->exitcode = 0;
+        return 0;
+    }
+
+    case F_EXIT: {                                       /* d1.w Status-Code                        */
+        q9_pd_t *me = q9_proc_current();
+        q9_proc_exit(me ? me->pid : 1, (int32_t)(int16_t)r->d[1]);
+        return 0;
+    }
 
     case F_ID: {                                       /* 4.1: aus der Prozesstabelle statt fest  */
         q9_pd_t *pd = q9_proc_current();               /*   verdrahtet — ausserhalb eines         */
@@ -466,17 +541,6 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     }
 }
 
-//════════════════════════════════════════════════════════════════════════════════════════════════
-// Function: q9_proc_halted
-// Desc.:    Liefert 1, wenn der Proto-Prozess per F$Exit beendet wurde (Übergangslösung bis
-//           echte Prozesse in Phase 4 existieren).
-// Call:     if (q9_proc_halted()) ...
-//════════════════════════════════════════════════════════════════════════════════════════════════
-int q9_proc_halted(void)
-{
-    return proc_halted;
-}
-
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 2.20
+// EOF syscall.c                                                                           Ver. 2.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

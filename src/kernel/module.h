@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   module.h                                                                        Ver. 1.40
+// File:   module.h                                                                        Ver. 1.50
 // Owner:  AF
 // Desc.:  Q9-Modul-Header (Phase 2, Entwurf aus PROJECT.md/docs/MODULES.md) + CRC32-Routine +
 //         ROM-Image-Suche/Validierung + Modul-Directory (Bekanntmachen) + F$Link/F$UnLink/F$Load-
@@ -24,6 +24,9 @@
 //         │      │ Image. Erste Speicherverwaltung im Kernel: statischer Load-Puffer-Pool │
 //         │      │ (Q9_MOD_LOADBUF_COUNT Slots, kein malloc, Design-Entscheidung siehe    │
 //         │      │ ARBEITSPLAN.md Schritt 3.5)                                            │
+// 26-07-04│ 1.50 │ 4.2: Q9_MOD_NATIVE (Language-Byte 4) — Entscheidung E9, s. PROJECT.md;  │ CF
+//         │      │ F$Fork/F$Chain-Unterbau (proc.c) liest hier ein Funktionszeiger-        │
+//         │      │ Modul statt echten Byte-Code                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_MODULE_H
 #define Q9_MODULE_H
@@ -54,6 +57,13 @@
 #define Q9_MOD_WASM    1
 #define Q9_MOD_M68K    2
 #define Q9_MOD_MC6809  3                                   /* reserviert                          */
+#define Q9_MOD_NATIVE  4                                   /* Entscheidung E9 (PROJECT.md): kein   */
+                                                           /*   Byte-Code, sondern ein roher        */
+                                                           /*   q9_proc_step_fn-Funktionszeiger     */
+                                                           /*   direkt hinter dem Header (execoff)  */
+                                                           /*   — Uebergangsloesung vor Phase 6      */
+                                                           /*   (echte 68k/WASM-Runtime); siehe      */
+                                                           /*   proc.c (F$Fork/F$Chain)              */
 
 /* Attribute ($0E) */
 #define Q9_MOD_REENT   0x01                                /* reentrant                            */

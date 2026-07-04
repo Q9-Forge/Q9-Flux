@@ -69,9 +69,9 @@ ein einfacheres Prozessmodell, ohne sie 1:1 als Syscalls nachzubilden.
 
 | # | Name | Beschreibung | Status | Notiz |
 |---|------|--------------|--------|-------|
-| $03 | F$Fork | Neuen Prozess starten | 🟢 Phase 4 | |
-| $04 | F$Wait | Auf Kind-Prozess warten | 🟢 Phase 4 | Fehlercode „keine Kinder" prüfen (E$NoChld $E2, s.u.) |
-| $05 | F$Chain | Prozess mit neuem Modul verketten | 🟢 Phase 4 | |
+| $03 | F$Fork | Neuen Prozess starten | ✅ | Phase 4.2: nur `Q9_MOD_NATIVE`-Module (Entscheidung E9), sonst `E$NEMod` |
+| $04 | F$Wait | Auf Kind-Prozess warten | ✅ | Phase 4.2: `E$NoChld` ($E2, bestätigt) ohne Kinder, `E$NotRdy` als Poll-Provisorium vor 4.3 |
+| $05 | F$Chain | Prozess mit neuem Modul verketten | ✅ | Phase 4.2 |
 | $08 | F$Send | Signal senden | 🟢 Phase 4 | |
 | $09 | F$Icpt | Signal-Intercept setzen | 🟢 Phase 4 | |
 | $1E | F$RTE | Rückkehr aus Intercept | 🟢 Phase 4 | Gegenstück zu F$Icpt |
