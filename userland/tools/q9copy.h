@@ -14,6 +14,12 @@
 #ifndef Q9_USERLAND_Q9COPY_H
 #define Q9_USERLAND_Q9COPY_H
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9copy_run
+// Desc.:    Kopiert die Datei src nach dst ueber Q9-Dateioperationen. Rueckgabe: 0 = ok,
+//           sonst Q9-Fehlercode.
+// Call:     err = q9copy_run("/d0/A.TXT", "/d0/B.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9copy_run(const char *src, const char *dst);
 
 #endif // Q9_USERLAND_Q9COPY_H

@@ -20,11 +20,22 @@
 #include "q9dir.h"
 #include "q9stat.h"
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: cstr_len
+// Desc.:    Kleiner uint32_t-Wrapper um strlen(), passend zu q9_name_parse_t.len.
+// Call:     len = cstr_len(name)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static uint32_t cstr_len(const char *s)
 {
     return (uint32_t)strlen(s);
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: entry_matches
+// Desc.:    Vergleicht einen von q9dir_next gelieferten 8.3-Namen mit einem per q9_prsnam
+//           geparsten Namen; q9_cmpnam erledigt die Q9-Namensregeln.
+// Call:     match = entry_matches(&entry, &pn)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static int entry_matches(const q9dir_entry_t *entry, const q9_name_parse_t *pn)
 {
     uint32_t nlen;
@@ -36,6 +47,12 @@ static int entry_matches(const q9dir_entry_t *entry, const q9_name_parse_t *pn)
     return q9_cmpnam(pn->name, entry->name, pn->len) == 0;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9stat_run
+// Desc.:    Siehe q9stat.h. Akzeptiert genau ein Namenselement, iteriert dann q9dir_next() bis
+//           zum Treffer oder E$EOF und mappt "nicht gefunden" auf E$PNNF.
+// Call:     err = q9stat_run("/d0", "DATEI.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9stat_run(const char *dir_path, const char *name)
 {
     q9_name_parse_t pn;

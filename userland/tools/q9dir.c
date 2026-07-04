@@ -26,12 +26,22 @@
 #define Q9ATTR_DIRECTORY   0x10u
 #define Q9ATTR_LONG_NAME   0x0Fu
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: le32
+// Desc.:    Liest ein little-endian uint32_t aus einem FAT16-Directory-Feld.
+// Call:     value = le32(&de[28])
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static uint32_t le32(const uint8_t *p)
 {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: trim_len
+// Desc.:    Bestimmt die Laenge eines rechts mit Leerzeichen gefuellten FAT16-8.3-Felds.
+// Call:     len = trim_len(&de[0], 8)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static uint32_t trim_len(const uint8_t *p, uint32_t max)
 {
     while (max > 0 && p[max - 1u] == ' ') {
@@ -40,6 +50,12 @@ static uint32_t trim_len(const uint8_t *p, uint32_t max)
     return max;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: append_str
+// Desc.:    Haengt den nullterminierten String s an out ab Position pos an und liefert die neue
+//           Position. Der Aufrufer garantiert ausreichend Platz.
+// Call:     pos = append_str(line, pos, "FILE ")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static uint32_t append_str(char *out, uint32_t pos, const char *s)
 {
     while (*s) {
@@ -48,6 +64,12 @@ static uint32_t append_str(char *out, uint32_t pos, const char *s)
     return pos;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: append_uint
+// Desc.:    Haengt v dezimal an out ab Position pos an und liefert die neue Position. Der
+//           Aufrufer garantiert ausreichend Platz.
+// Call:     pos = append_uint(line, pos, entry->size)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static uint32_t append_uint(char *out, uint32_t pos, uint32_t v)
 {
     char     tmp[10];
@@ -67,6 +89,12 @@ static uint32_t append_uint(char *out, uint32_t pos, uint32_t v)
     return pos;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: format_name
+// Desc.:    Formatiert den FAT16-8.3-Namen aus de nach out. Dateien bekommen einen Punkt vor
+//           der Extension, Directories nicht; Leerzeichen-Fuellung wird entfernt.
+// Call:     len = format_name(de, is_dir, name)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static uint32_t format_name(const uint8_t *de, int is_dir, char *out)
 {
     uint32_t nlen = trim_len(&de[0], 8u);
@@ -86,6 +114,12 @@ static uint32_t format_name(const uint8_t *de, int is_dir, char *out)
     return pos;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: fill_entry
+// Desc.:    Uebertraegt einen rohen FAT16-Dirent in q9dir_entry_t: Directory-Bit, Dateigroesse
+//           aus Offset 28 und formatierter 8.3-Name.
+// Call:     fill_entry(de, &entry)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 static void fill_entry(const uint8_t *de, q9dir_entry_t *entry)
 {
     entry->is_dir = (de[11] & Q9ATTR_DIRECTORY) != 0;
@@ -93,6 +127,12 @@ static void fill_entry(const uint8_t *de, q9dir_entry_t *entry)
     format_name(de, entry->is_dir, entry->name);
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9dir_write_entry
+// Desc.:    Siehe q9dir.h. Baut eine kurze Ausgabezeile "DIR/FILE size name" und schreibt sie
+//           vollstaendig nach Pfad 1.
+// Call:     err = q9dir_write_entry(&entry)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9dir_write_entry(const q9dir_entry_t *entry)
 {
     char     line[40];
@@ -117,6 +157,13 @@ int q9dir_write_entry(const q9dir_entry_t *entry)
     return put == pos ? 0 : E_NOTRDY;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9dir_next
+// Desc.:    Siehe q9dir.h. Liest 32-Byte-FAT16-Dirents und ueberspringt geloeschte Slots
+//           (0xE5), Long-File-Name-Slots (Attr. 0x0F) und Volume-Labels, weil Q9-Tools nur
+//           sichtbare 8.3-Dateien/Directories ausgeben. 0x00 und echtes EOF melden E$EOF.
+// Call:     err = q9dir_next(path, &entry)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9dir_next(uint16_t path, q9dir_entry_t *out_entry)
 {
     uint8_t de[Q9DIRENT_SIZE];
@@ -154,6 +201,12 @@ int q9dir_next(uint16_t path, q9dir_entry_t *out_entry)
     }
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9dir_run
+// Desc.:    Siehe q9dir.h. Oeffnet das Directory, schreibt jeden q9dir_next-Treffer und
+//           schliesst den Pfad auch bei Abbruch durch Fehler.
+// Call:     err = q9dir_run("/d0")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9dir_run(const char *path)
 {
     uint16_t      in;

@@ -14,6 +14,12 @@
 #ifndef Q9_USERLAND_Q9CAT_H
 #define Q9_USERLAND_Q9CAT_H
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9cat_run
+// Desc.:    Oeffnet "path", liest die Datei komplett und schreibt den Inhalt nach Pfad 1
+//           (stdout). Rueckgabe: 0 = ok, sonst Q9-Fehlercode.
+// Call:     err = q9cat_run("/d0/DATEI.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9cat_run(const char *path);
 
 #endif // Q9_USERLAND_Q9CAT_H

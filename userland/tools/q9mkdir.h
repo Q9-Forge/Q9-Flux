@@ -14,6 +14,12 @@
 #ifndef Q9_USERLAND_Q9MKDIR_H
 #define Q9_USERLAND_Q9MKDIR_H
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9mkdir_run
+// Desc.:    Legt das Verzeichnis "path" an und schreibt bei Erfolg eine Bestaetigung nach
+//           Pfad 1. Rueckgabe: 0 = ok, sonst Q9-Fehlercode.
+// Call:     err = q9mkdir_run("/d0/NEUDIR")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9mkdir_run(const char *path);
 
 #endif // Q9_USERLAND_Q9MKDIR_H

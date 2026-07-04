@@ -14,6 +14,12 @@
 #ifndef Q9_USERLAND_Q9RM_H
 #define Q9_USERLAND_Q9RM_H
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9rm_run
+// Desc.:    Loescht die Datei "path" und schreibt bei Erfolg eine Bestaetigung nach Pfad 1.
+//           Rueckgabe: 0 = ok, sonst Q9-Fehlercode.
+// Call:     err = q9rm_run("/d0/DATEI.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9rm_run(const char *path);
 
 #endif // Q9_USERLAND_Q9RM_H
