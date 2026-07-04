@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 1.30
+// File:   cb030.h                                                                         Ver. 1.40
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
@@ -26,6 +26,10 @@
 //         │      │ Backing Store = lazy geoeffnete Host-Datei (Muster wie q9disk.img)       │
 // 26-07-04│ 1.30 │ 5.2d: Timer/IRQ3 — kooperativ, Host-Uhrzeit zaehlen statt echtem          │ CF
 //         │      │ Host-Interrupt (s. docs/CB030.md, Begruendung E8)                        │
+// 26-07-05│ 1.40 │ 5.3: ROM-Spiegelgrenze korrigiert (bis 0xFEFF_FFFF statt 0x0800_0000,     │ CF
+//         │      │ s. docs/CB030.md Speicherkarte — noetig, weil das echte Boot-ROM vor      │
+//         │      │ dem REMAP hoch nach 0xFE00_xxxx springt), I/O auch VOR dem Remap          │
+//         │      │ erreichbar, neuer Lade-Helfer q9_cb030_rom_load                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
@@ -35,9 +39,13 @@
 
 #define Q9_CB030_OK          0
 #define Q9_CB030_ERR_RAM    -1                       /* RAM fehlt */
+#define Q9_CB030_ERR_ROM    -2                       /* ROM-Datei fehlt/leer/zu gross */
 
 /* Adress-Konstanten aus docs/CB030.md ("Speicherkarte"/"Emulations-Architektur"). */
-#define Q9_CB030_ROM_MIRROR_LIMIT  0x08000000u        /* Reset-Zustand: ROM gespiegelt bis hier */
+#define Q9_CB030_ROM_MIRROR_TOP    0xFEFFFFFFu        /* Reset-Zustand: ROM gespiegelt bis hier
+                                                         (einschliesslich — "bis zum oberen Byte
+                                                         des Adressraums", die I/O-Region ab
+                                                         0xFFFF_0000 bleibt frei) */
 #define Q9_CB030_ROM_REMAP_BASE    0xFE000000u        /* Remap-Zustand: ROM liegt einmal hier   */
 #define Q9_CB030_ROM_REMAP_TOP     0xFE07FFFFu
 #define Q9_CB030_REMAP_REG_BASE    0xFFFF8000u        /* REMAP-Register: reiner Adress-Trigger  */
@@ -113,6 +121,16 @@ int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *
 void q9_cb030_reset(q9_cb030_t *b);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_cb030_rom_load
+// Desc.:    5.3: Laedt eine Boot-ROM-Datei vom Host in den uebergebenen Puffer (fuer q9_cb030_init).
+//           Das echte Microware-Boot-ROM ist proprietaer und liegt NUR lokal vor (Pfad kommt per
+//           Kommandozeile, s. cb030run.c) — es wird NIE ins Repository eingecheckt. Fehler, wenn
+//           die Datei fehlt, leer ist oder groesser als buf_max (Flash ist 512 KByte).
+// Call:     err = q9_cb030_rom_load("cb030rom.bin", buf, sizeof(buf), &rom_len)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_cb030_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t *out_len);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_cf_attach
 // Desc.:    Merkt sich den Dateipfad fuer die Compact-Flash-Karte (5.2c) — die Datei selbst wird
 //           lazy beim ersten Kommando geoeffnet/angelegt (Muster wie die native HAL bei q9disk.img,
@@ -135,13 +153,15 @@ int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_read8/16/32
-// Desc.:    Liest ein Byte/Word/Long-Word aus der Board-Adresse 'addr'. Dispatch je nach REMAP-
-//           Zustand (s. docs/CB030.md): Reset = ROM gespiegelt bis Q9_CB030_ROM_MIRROR_LIMIT;
-//           remapped = RAM ab 0, ROM einmalig bei Q9_CB030_ROM_REMAP_BASE. Ein Zugriff auf den
-//           REMAP-Registerbereich schaltet IMMER (unabhaengig vom bisherigen Zustand) auf remapped
-//           um. TI_IRQ_ON/OFF-Bereiche sind reine Adress-Trigger (Lesewert 0, s. 5.2d). UART/CF
-//           haben echtes (wenn auch minimales) Verhalten, s. cb030.c. 16/32-Bit sind big-endian
-//           (68k-Byteorder), wie m68krt.c.
+// Desc.:    Liest ein Byte/Word/Long-Word aus der Board-Adresse 'addr'. I/O (REMAP/Timer/CF/UART,
+//           gesamter 0xFFFF_xxxx-Bereich) ist in BEIDEN Zustaenden erreichbar — das Boot-ROM
+//           initialisiert die DUART vor dem Remap. Darunter je nach REMAP-Zustand (docs/CB030.md):
+//           Reset = ROM gespiegelt bis Q9_CB030_ROM_MIRROR_TOP (einschl.); remapped = RAM ab 0,
+//           ROM einmalig bei Q9_CB030_ROM_REMAP_BASE. Ein Zugriff auf den REMAP-Registerbereich
+//           schaltet IMMER (unabhaengig vom bisherigen Zustand) auf remapped um. TI_IRQ_ON/OFF-
+//           Bereiche sind reine Adress-Trigger (Lesewert 0, s. 5.2d). UART/CF haben echtes (wenn
+//           auch minimales) Verhalten, s. cb030.c. 16/32-Bit sind big-endian (68k-Byteorder),
+//           wie m68krt.c.
 // Call:     v = q9_cb030_read8(&b, addr)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 uint8_t  q9_cb030_read8(q9_cb030_t *b, uint32_t addr);
@@ -153,7 +173,8 @@ uint32_t q9_cb030_read32(q9_cb030_t *b, uint32_t addr);
 // Desc.:    Schreibt ein Byte/Word/Long-Word auf die Board-Adresse 'addr'. Schreibzugriffe auf ROM
 //           (in beiden REMAP-Zustaenden) werden verworfen. Ein Zugriff auf den REMAP- oder
 //           TI_IRQ_ON/OFF-Registerbereich schaltet um bzw. (de-)aktiviert den Timer (Wert wird
-//           verworfen, reine Adress-Trigger, s. docs/CB030.md). UART/CF haben echtes Verhalten.
+//           verworfen, reine Adress-Trigger, s. docs/CB030.md). UART/CF haben echtes Verhalten
+//           und sind — wie beim Lesen — auch VOR dem Remap erreichbar.
 // Call:     q9_cb030_write8(&b, addr, val)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val);
@@ -163,5 +184,5 @@ void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val);
 #endif // Q9_CB030_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.h                                                                             Ver. 1.30
+// EOF cb030.h                                                                             Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

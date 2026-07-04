@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.70
+# File:   HANDBUCH.md                                                                     Ver. 1.80
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -26,6 +26,9 @@
 # 26-07-04│ 1.70 │ 5.2b-d: DUART/Compact-Flash/Timer-IRQ3 — cb030.c/.h + m68krt.c/.h         │ CF
 #         │      │ (q9_m68krt_set_irq) erweitert, Abschnitt 5.10/6 aktualisiert. Phase 5.2   │
 #         │      │ damit komplett (5.2a-d alle fertig)                                       │
+# 26-07-05│ 1.80 │ 5.3: Musashi-CB030-Verdrahtung (q9_m68krt_attach_board), ROM-Laden         │ CF
+#         │      │ (q9_cb030_rom_load), Boot-Runner cb030run.c/.h (q9.exe --cb030 <rom>),     │
+#         │      │ Spiegelgrenzen-Korrektur (bis 0xFEFF_FFFF, I/O vor Remap erreichbar)       │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -192,16 +195,22 @@ Q9/
 │   │   ├── config.h           Erster Baustein einer Q9-Systemkonfiguration (Phase 4.9) — bisher
 │   │   │                       nur Q9_SYSTEM_MEM_BYTES (Fixed-Heap-Groesse fuer wasm3, s. Abschnitt
 │   │   │                       5.8), wird NUR ins native-Target eingebunden (-include, Makefile)
-│   │   ├── m68krt.c/.h        Wrapper um die eingebettete Musashi-68k-Emulation (Phase 5.1,
+│   │   ├── m68krt.c/.h        Wrapper um die eingebettete Musashi-68k-Emulation (Phase 5.1/5.3,
 │   │   │                       NUR im nativen Build, s. Abschnitt 5.9) — definiert die von
-│   │   │                       Musashi verlangten m68k_read/write_memory_*-Funktionen gegen
-│   │   │                       einen vom Aufrufer uebergebenen RAM-Block; noch OHNE Scheduler-/
-│   │   │                       Syscall-Bridge (kommt mit der Detailplanung von Phase 5)
-│   │   └── cb030.c/.h         CB030-Board-Speicherlogik (Schritt 5.2a, NUR im nativen Build,
-│   │                           s. Abschnitt 5.10) — reiner RAM/ROM/Remap-Adress-Dekoder als
-│   │                           eigenes Handle (q9_cb030_t), noch OHNE Anbindung an Musashis
-│   │                           m68k_read/write_memory_*-Hooks und OHNE Peripherie (UART/CF/
-│   │                           Timer folgen in 5.2b-d)
+│   │   │                       Musashi verlangten m68k_read/write_memory_*-Funktionen: wahlweise
+│   │   │                       gegen einen nackten RAM-Block (5.1) oder via
+│   │   │                       q9_m68krt_attach_board ueber den CB030-Adress-Dispatch (5.3);
+│   │   │                       noch OHNE Scheduler-/Syscall-Bridge (kommt mit der Detailplanung
+│   │   │                       von Phase 5)
+│   │   ├── cb030.c/.h         CB030-Board-Emulation (Schritte 5.2a-d + 5.3, NUR im nativen
+│   │   │                       Build, s. Abschnitt 5.10) — RAM/ROM/Remap-Adress-Dekoder,
+│   │   │                       68681-DUART, Compact-Flash (ATA-PIO), Timer/IRQ3 (kooperativ)
+│   │   │                       und ROM-Datei-Lader (q9_cb030_rom_load), alles als eigenes
+│   │   │                       Handle (q9_cb030_t) ohne Musashi-Abhaengigkeit
+│   │   └── cb030run.c/.h      CB030-Boot-Runner (Schritt 5.3, NUR im nativen Build) —
+│   │                           Einstiegspunkt fuer `q9.exe --cb030 <rom-datei>`: ROM laden,
+│   │                           Board+Musashi verdrahten, CPU-Endlosschleife mit Timer-Polling
+│   │                           (das echte Microware-ROM bleibt lokal, NIE im Repository)
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -693,6 +702,30 @@ aktiv ist und seit dem letzten Auslösen ≥10ms (100 Hz) Host-Zeit
 
 Damit ist Phase 5.2 (CB030-Board-Emulation) komplett: 5.2a–d alle ✅.
 
+**5.3** (Musashi ↔ CB030 verdrahten + Boot-Runner): `q9_m68krt_attach_board(&board)`
+schaltet die sechs Musashi-Speicher-Hooks vom nackten RAM-Block (5.1) auf den
+CB030-Adress-Dispatch um — ab dann laufen ALLE CPU-Zugriffe (inkl. der
+Reset-Vektoren) über `q9_cb030_read/write8/16/32`. Der Interrupt-Acknowledge
+läuft im Board-Betrieb als Autovector mit Puls-Verhalten (die IRQ-Leitung wird
+beim Annehmen losgelassen, sonst würde der level-gehaltene IRQ3 endlos erneut
+unterbrechen). Zwei Korrekturen am 5.2a-Dekoder, ohne die das echte Boot-ROM
+nicht gebootet hätte: die ROM-Spiegelung im Reset-Zustand reicht bis
+`0xFEFF_FFFF` (nicht `0x0800_0000` — das ROM springt vor dem REMAP-Trigger
+hoch nach `0xFE00_xxxx`), und die I/O-Region ist in beiden Zuständen
+erreichbar (die DUART wird vor dem Remap initialisiert). Der Boot-Runner
+(`cb030run.c`) macht daraus ein Kommando:
+
+```
+./build/native/q9.exe --cb030 <pfad-zum-rom-image>
+```
+
+Lädt das ROM (max. 512 KByte, `q9_cb030_rom_load`), stellt 16 MByte
+emuliertes RAM, hängt die CF-Backing-Datei `cb030_cf.img` an (lazy angelegt)
+und lässt die CPU laufen (Ende: Ctrl-C). Das echte Microware-Boot-ROM ist
+proprietär und bleibt lokal — `.gitignore` deckt `cb030rom*.bin`/`*.rom` ab.
+Der Selbsttest bootet stattdessen ein synthetisches 32-Byte-ROM über exakt
+dasselbe Bootmuster (Vektoren aus dem ROM, Sprung hoch, REMAP, RAM-Schreiben).
+
 ---
 
 ## 6. Stand der Dinge
@@ -707,7 +740,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
 | 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig, inkl. Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite), 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module), 4.9 (Fixed-Heap statt Host-malloc in wasm3, Q9-Systemkonfiguration `config.h`); Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
-| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10) |
+| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10), 5.3 (Musashi↔CB030-Verdrahtung + Boot-Runner `q9.exe --cb030 <rom>`, Abschnitt 5.10) — bereit für den ersten Boot-Versuch mit dem echten Microware-ROM |
 | 6 | Shell | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
 | 8 | Vision: 6809-Runtime, Netzwerk, Self-Hosting | offen |

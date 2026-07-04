@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.h                                                                        Ver. 1.10
+// File:   m68krt.h                                                                        Ver. 1.20
 // Owner:  AF
 // Desc.:  Schmaler Q9-Wrapper um die eingebettete Musashi-68000-Emulation (third_party/musashi,
 //         Entscheidung E12 in PROJECT.md). Native-Build-only — Grundbaustein fuer Phase 5 (Prozesse
@@ -24,11 +24,14 @@
 // 26-07-04│ 1.00 │ 5.1: Erster Grundbaustein — RAM anbinden, Reset+Execute, D0-D7 lesen    │ CF
 // 26-07-04│ 1.10 │ 5.2d: q9_m68krt_set_irq — duenner Wrapper um m68k_set_irq() fuer         │ CF
 //         │      │ cb030.c's Timer/IRQ3-Polling                                            │
+// 26-07-05│ 1.20 │ 5.3: q9_m68krt_attach_board — Speicherzugriffe wahlweise ueber den       │ CF
+//         │      │ CB030-Adress-Dispatch (cb030.h) statt nacktem RAM-Block                 │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_M68KRT_H
 #define Q9_M68KRT_H
 
 #include <stdint.h>
+#include "cb030.h"
 
 #define Q9_M68KRT_OK        0
 #define Q9_M68KRT_ERR_RAM  -1                       /* RAM fehlt oder zu klein fuer Reset-Vektoren */
@@ -95,8 +98,22 @@ void q9_m68krt_free(q9_m68krt_t *rt);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_set_irq(int level);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_attach_board
+// Desc.:    5.3: Schaltet die sechs Musashi-Speicher-Hooks auf den CB030-Adress-Dispatch um —
+//           ALLE CPU-Zugriffe (auch das Holen der Reset-Vektoren durch q9_m68krt_reset) laufen
+//           dann ueber q9_cb030_read/write8/16/32 (RAM/ROM/Remap/UART/CF/Timer) statt ueber den
+//           nackten RAM-Block aus q9_m68krt_init. Setzt ausserdem den Interrupt-Acknowledge-
+//           Callback auf Autovector-Betrieb mit Puls-Verhalten (IRQ-Leitung wird beim Annehmen
+//           losgelassen, s. m68krt.c). board = NULL schaltet zurueck in den RAM-Modus (5.1);
+//           q9_m68krt_init/free setzen ebenfalls auf RAM-Modus zurueck. Aufruf NACH
+//           q9_m68krt_init und VOR q9_m68krt_reset.
+// Call:     q9_m68krt_attach_board(&board);  ...  q9_m68krt_attach_board(0);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_attach_board(q9_cb030_t *board);
+
 #endif // Q9_M68KRT_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.h                                                                            Ver. 1.10
+// EOF m68krt.h                                                                            Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

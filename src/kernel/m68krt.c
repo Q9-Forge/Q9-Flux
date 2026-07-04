@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.10
+// File:   m68krt.c                                                                        Ver. 1.20
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -13,24 +13,36 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 5.1: Erster Grundbaustein                                               │ CF
 // 26-07-04│ 1.10 │ 5.2d: q9_m68krt_set_irq (Wrapper um m68k_set_irq())                     │ CF
+// 26-07-05│ 1.20 │ 5.3: q9_m68krt_attach_board — Speicher-Hooks koennen wahlweise ueber     │ CF
+//         │      │ den CB030-Adress-Dispatch laufen (inkl. Autovector-Int-Ack)             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
+#include "cb030.h"
 #include "m68k.h"
 #include <string.h>
 
 /* Musashi haelt seinen CPU-Zustand in eigenen globalen Variablen und ruft m68k_read/write_memory_*
-   ohne Kontext-Zeiger auf (s. m68krt.h) — deshalb muss der aktive RAM-Block hier ebenfalls global
-   liegen, statt im q9_m68krt_t-Handle. Nur EIN q9_m68krt_init() gleichzeitig aktiv. */
-static uint8_t  *g_ram;
-static uint32_t  g_ram_len;
+   ohne Kontext-Zeiger auf (s. m68krt.h) — deshalb muessen der aktive RAM-Block bzw. das aktive
+   CB030-Board hier ebenfalls global liegen, statt im q9_m68krt_t-Handle. Nur EIN q9_m68krt_init()
+   gleichzeitig aktiv. Ist g_board gesetzt (q9_m68krt_attach_board, 5.3), laufen ALLE Zugriffe
+   ueber den CB030-Adress-Dispatch (RAM/ROM/Remap/UART/CF/Timer); sonst nackter RAM-Block (5.1). */
+static uint8_t     *g_ram;
+static uint32_t     g_ram_len;
+static q9_cb030_t  *g_board;
 
 unsigned int m68k_read_memory_8(unsigned int address)
 {
+    if (g_board) {
+        return q9_cb030_read8(g_board, (uint32_t)address);
+    }
     return (address < g_ram_len) ? g_ram[address] : 0;
 }
 
 unsigned int m68k_read_memory_16(unsigned int address)
 {
+    if (g_board) {
+        return q9_cb030_read16(g_board, (uint32_t)address);
+    }
     if (address + 1 >= g_ram_len) {
         return 0;
     }
@@ -39,6 +51,9 @@ unsigned int m68k_read_memory_16(unsigned int address)
 
 unsigned int m68k_read_memory_32(unsigned int address)
 {
+    if (g_board) {
+        return q9_cb030_read32(g_board, (uint32_t)address);
+    }
     if (address + 3 >= g_ram_len) {
         return 0;
     }
@@ -48,6 +63,10 @@ unsigned int m68k_read_memory_32(unsigned int address)
 
 void m68k_write_memory_8(unsigned int address, unsigned int value)
 {
+    if (g_board) {
+        q9_cb030_write8(g_board, (uint32_t)address, (uint8_t)value);
+        return;
+    }
     if (address < g_ram_len) {
         g_ram[address] = (uint8_t)value;
     }
@@ -55,6 +74,10 @@ void m68k_write_memory_8(unsigned int address, unsigned int value)
 
 void m68k_write_memory_16(unsigned int address, unsigned int value)
 {
+    if (g_board) {
+        q9_cb030_write16(g_board, (uint32_t)address, (uint16_t)value);
+        return;
+    }
     if (address + 1 >= g_ram_len) {
         return;
     }
@@ -64,6 +87,10 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
 
 void m68k_write_memory_32(unsigned int address, unsigned int value)
 {
+    if (g_board) {
+        q9_cb030_write32(g_board, (uint32_t)address, (uint32_t)value);
+        return;
+    }
     if (address + 3 >= g_ram_len) {
         return;
     }
@@ -71,6 +98,20 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
     g_ram[address + 1] = (uint8_t)(value >> 16);
     g_ram[address + 2] = (uint8_t)(value >>  8);
     g_ram[address + 3] = (uint8_t)value;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: m68krt_board_int_ack
+// Desc.:    5.3: Interrupt-Acknowledge im Board-Betrieb — die IRQ-Leitung wird beim Annehmen des
+//           Interrupts wieder losgelassen (Puls-Verhalten, sonst wuerde der level-gehaltene IRQ3
+//           die CPU endlos erneut unterbrechen) und Autovector gemeldet (das CB030 legt keinen
+//           Vektor auf den Bus).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int m68krt_board_int_ack(int int_level)
+{
+    (void)int_level;
+    m68k_set_irq(0);
+    return M68K_INT_ACK_AUTOVECTOR;
 }
 
 int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
@@ -84,10 +125,18 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
     rt->ram_len = ram_len;
     g_ram       = ram;
     g_ram_len   = ram_len;
+    g_board     = 0;                                  /* RAM-Modus, bis attach_board (5.3) folgt */
 
     m68k_set_cpu_type(M68K_CPU_TYPE_68030);
     m68k_init();
+    m68k_set_int_ack_callback(0);
     return Q9_M68KRT_OK;
+}
+
+void q9_m68krt_attach_board(q9_cb030_t *board)
+{
+    g_board = board;
+    m68k_set_int_ack_callback(board ? m68krt_board_int_ack : 0);
 }
 
 void q9_m68krt_reset(q9_m68krt_t *rt)
@@ -112,6 +161,8 @@ void q9_m68krt_free(q9_m68krt_t *rt)
 {
     g_ram     = NULL;
     g_ram_len = 0;
+    g_board   = NULL;
+    m68k_set_int_ack_callback(0);
     memset(rt, 0, sizeof(*rt));
 }
 
@@ -121,5 +172,5 @@ void q9_m68krt_set_irq(int level)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.c                                                                            Ver. 1.10
+// EOF m68krt.c                                                                            Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
