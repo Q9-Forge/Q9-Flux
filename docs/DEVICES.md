@@ -249,6 +249,13 @@ Copyright-Code übernommen. Design-Referenz für den File-Manager-Schnitt: "OS-9
 - **I$MakDir (`fat16_makdir`)**: wie I$Create, alloziert aber sofort einen Datencluster mit
   Standard-`.`/`..`-Einträgen (`.` zeigt auf sich selbst, `..` auf das Elternverzeichnis,
   `0` = Root) — Standard-FAT-Konvention, wichtig für Interop mit macOS/Windows.
+- **Datum/Uhrzeit (3.7)**: `fat_pack_datetime()` liest `q9_hal_time()` und packt sie ins
+  FAT16-Format (Datum: Jahr seit 1980/Monat/Tag; Zeit: Stunde/Minute/Sekunde-durch-2 — FAT16
+  löst nur in 2er-Schritten auf). `fat16_create`/`fat16_makdir` befüllen damit
+  `crtdate`/`crttime`/`wrtdate`/`wrttime`/`lstaccdate` neuer Einträge (auch die `.`/`..`-
+  Einträge eines neuen Verzeichnisses selbst) — vorher standen dort Nullfelder, macOS zeigte
+  entsprechend „1.1.1970" als Anlegedatum. Ohne Zeitquelle (`q9_hal_time` liefert `-1`) oder bei
+  Jahr < 1980 bleiben die Felder weiterhin 0 (Fallback, kein Fehler).
 - **I$Delete (`fat16_remove`)**: sucht den Directory-Eintrag (`dir_find_idx`), gibt seine
   komplette Cluster-Kette frei (`fat_free_chain`, beide FAT-Kopien) und markiert den Eintrag
   als gelöscht (erstes Namensbyte `DIRENT_FREE`, `$E5` — Rest des 11-Byte-Namensfelds bleibt

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   fat16.c                                                                        Ver. 1.10
+// File:   fat16.c                                                                        Ver. 1.20
 // Owner:  AF
 // Desc.:  Q9 FAT16-File-Manager, lesend + schreibend (Phase 3.3/3.4). Boot-Sektor (BPB) parsen,
 //         Root-Directory und Unterverzeichnisse durchsuchen (8.3- und LFN-Namen lesen, NUR 8.3
@@ -29,6 +29,9 @@
 //         │      │ FAT-Kopien synchron gehalten). Directory-Eintrag im Elternverzeichnis   │
 //         │      │ (Root oder Unterverzeichnis) finden/anlegen/loeschen. Nur 8.3-Namen bei │
 //         │      │ neuen Dateien/Verzeichnissen (LFN-Schreiben -> Ideenspeicher)           │
+// 26-07-04│ 1.20 │ 3.7: fat_pack_datetime (q9_hal_time -> FAT16-Datum/Zeit-Format) —       │ CF
+//         │      │ I$Create/I$MakDir setzen crt-/wrt-/lstaccdate/-time jetzt echt statt    │
+//         │      │ Nullfeldern (auch die "."/".."-Eintraege eines neuen Verzeichnisses)    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -377,6 +380,27 @@ static int dir_find_idx(uint32_t dirstart, const char *name, uint32_t len, fat16
 static int dir_find(uint32_t dirstart, const char *name, uint32_t len, fat16_dirent_t *out);
 static void split_first(const char *path, uint32_t len, const char **elem, uint32_t *elemlen,
                          const char **restp, uint32_t *restlen);
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: fat_pack_datetime
+// Desc.:    Liest die Host-Uhrzeit (q9_hal_time) und packt sie ins FAT16-Datum/Zeit-Format
+//           (Datum: Bit15-9 Jahr seit 1980, Bit8-5 Monat, Bit4-0 Tag; Zeit: Bit15-11 Stunde,
+//           Bit10-5 Minute, Bit4-0 Sekunde/2 — FAT16 loest Sekunden nur in 2er-Schritten auf).
+//           Ohne Zeitquelle (q9_hal_time liefert -1) oder bei Jahr < 1980 (FAT16-Epoche) bleiben
+//           beide Felder 0 — Q9 hatte diese Nullfelder ohnehin schon vorher (3.7).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void fat_pack_datetime(uint16_t *date_out, uint16_t *time_out)
+{
+    q9_datetime_t dt;
+
+    if (q9_hal_time(&dt) != 0 || dt.year < 1980u) {
+        *date_out = 0;
+        *time_out = 0;
+        return;
+    }
+    *date_out = (uint16_t)(((dt.year - 1980u) << 9) | ((uint16_t)dt.month << 5) | dt.day);
+    *time_out = (uint16_t)(((uint16_t)dt.hour << 11) | ((uint16_t)dt.min << 5) | (dt.sec / 2u));
+}
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: write_dir_slot
@@ -995,6 +1019,10 @@ static int fat16_create(q9_dev_t *dev, q9_path_t *p, const char *restpath, uint3
         ((uint8_t *)&de)[i] = name11[i];
     }
     de.attr = ATTR_ARCHIVE;
+    fat_pack_datetime(&de.crtdate, &de.crttime);
+    de.lstaccdate = de.crtdate;
+    de.wrtdate    = de.crtdate;
+    de.wrttime    = de.crttime;
     err = write_dir_slot(parent, slot, &de);
     if (err != 0) {
         return err;
@@ -1071,6 +1099,10 @@ static int fat16_makdir(q9_dev_t *dev, const char *restpath, uint32_t len)
     de.ext[0]  = ' '; de.ext[1]  = ' '; de.ext[2]  = ' ';
     de.attr      = ATTR_DIRECTORY;
     de.fstcluslo = (uint16_t)newclus;
+    fat_pack_datetime(&de.crtdate, &de.crttime);
+    de.lstaccdate = de.crtdate;
+    de.wrtdate    = de.crtdate;
+    de.wrttime    = de.crttime;
     if (write_dir_slot(newclus, 0, &de) != 0) {
         fat_free_chain(newclus);
         return E_NOTRDY;
@@ -1096,6 +1128,10 @@ static int fat16_makdir(q9_dev_t *dev, const char *restpath, uint32_t len)
     de.attr      = ATTR_DIRECTORY;
     de.fstcluslo = (uint16_t)newclus;
     de.filesize  = 0;                                     /* Verzeichnisse haben Groesse 0 im Eintrag */
+    fat_pack_datetime(&de.crtdate, &de.crttime);
+    de.lstaccdate = de.crtdate;
+    de.wrtdate    = de.crtdate;
+    de.wrttime    = de.crttime;
     err = write_dir_slot(parent, slot, &de);
     if (err != 0) {
         fat_free_chain(newclus);
