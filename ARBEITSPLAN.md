@@ -141,6 +141,39 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 
 ---
 
+### Phase U — Userland-Werkzeuge (Codex-Baustelle, separater Nebenschauplatz)
+
+**Nicht Teil des normalen Phasenablaufs** — läuft parallel zu Phase 3/4, auf
+einem eigenen Branch `codex-userland` (eigenes Arbeitsverzeichnis
+`../Q9-codex-userland`, Basis war Stand nach 4.1), bearbeitet von **Codex**
+(OpenAI, `codex exec`, Modell GPT-5.5) im Auftrag von Claudia/Andreas.
+**Isolationsprinzip**: Arbeitsbereich strikt auf `userland/` begrenzt, kein
+`git commit`/`push` durch Codex selbst — Claudia baut nach jeder Runde
+unabhängig nach und verifiziert (PASS + warnungsfrei + Diff nur in
+`userland/`), bevor gepusht wird. Kein Einfluss auf `main`/die
+Autonomie-Routine. Ziel: eine kleine C-Bibliothek (`libq9`), die die bereits
+implementierten Syscalls kapselt, plus darauf aufbauende Datei-Werkzeuge —
+als Quellcode-Vorarbeit, NICHT als ladbare Q9-Module (das ist die offene
+Architekturfrage **O6** in PROJECT.md: WASM-Import-ABI vs. 68k-PIC-Code,
+zu klären ab Phase 5/6).
+
+| # | Schritt | Status | Wer | Notizen |
+|---|---------|--------|-----|---------|
+| U.1 | `libq9`: Wrapper um die fertigen Syscalls + `q9cat`/`q9copy` + nativer Testharness | ✅ | Codex | Testharness bootet den echten Kernel nativ (POSIX-HAL) gegen ein selbst gebautes FAT16-Image, statt zu mocken |
+| U.2 | `q9dir`: Verzeichnis auflisten | ✅ | Codex | Liest rohe 32-Byte-FAT16-Directory-Einträge über `I$Read` auf einen Verzeichnispfad (Kernel-Unterstützung existierte schon seit 3.3); Parsing in `userland/` selbst, da die interne `fat16_dirent_t` privat ist |
+| U.3 | `q9mkdir` + `q9rm` | ✅ | Codex | Rundet das ursprünglich gewünschte "dir/list/copy"-Set ab; kein rekursives Löschen |
+| U.4 | `q9touch` + `q9stat` + Testumgebung konsolidiert | ✅ | Codex | Sieben Tools insgesamt (cat/copy/dir/mkdir/rm/touch/stat); README vollständig; Test-Redundanzen aufgeräumt |
+| U.5 (Idee) | Lange Dateinamen (LFN) auch in `q9dir`/`q9stat` anzeigen | 💭 | — | LFN-Parse-Logik steckt privat in `fat16.c` — Duplizieren oder Kernel müsste sie exportieren |
+| U.6 (Idee) | Tools als echte ladbare Q9-Module, sobald Phase 5/6 (Modul-Ausführung) und O6 (Verpackungsformat) stehen | 💭 | — | heute nur Design-Vorgriff |
+
+**Stand 2026-07-04**: U.1–U.4 fertig, alle vier Runden von Claudia unabhängig
+nachgebaut (`userland/build.sh`, PASS, `-Wall -Wextra` warnungsfrei), Branch
+`codex-userland` gepusht (Commit `bf5d494`). **Merge nach `main` steht noch
+aus** — wartet auf Andreas' eigene Durchsicht, dann gemeinsame Entscheidung
+über Merge-Weg und Anbindung an O6.
+
+---
+
 ## 💭 Ideenspeicher (noch nicht eingeplant)
 
 Ideen, die während der Arbeit auftauchen, aber (noch) kein Teil der Planung
@@ -490,7 +523,15 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 nachmittags — **emsdk auf dem Mac Mini installiert**
+**Letzte Aktualisierung**: 2026-07-04 abends — **Phase U (Userland-Werkzeuge,
+Codex-Baustelle) eingetragen und U.1–U.4 fertig.** `libq9` + sieben Datei-
+Werkzeuge (cat/copy/dir/mkdir/rm/touch/stat), separater Branch
+`codex-userland`, isoliert von `main`, alle Runden von Claudia unabhängig
+verifiziert. Merge nach `main` steht noch aus (wartet auf Andreas' Review).
+PROJECT.md O6 neu: offene Frage, wie Userland-Code später zu ladbaren
+Q9-Modulen wird (WASM-Import-ABI vs. 68k-PIC).
+
+Davor: 2026-07-04 nachmittags — **emsdk auf dem Mac Mini installiert**
 (`~/emsdk`, portabel, Version 6.0.2 via `./emsdk install/activate latest`; Aktivierung pro
 Shell: `source ~/emsdk/emsdk_env.sh`, siehe docs/TOOLCHAIN.md). `make wasm` baut jetzt sauber,
 warnungsfrei. Browser-Boot verifiziert (Preview-Tool, Server auf build/wasm): Banner zeigt
