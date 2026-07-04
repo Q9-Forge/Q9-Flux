@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.70
+// File:   kernel.c                                                                        Ver. 3.80
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -64,6 +64,8 @@
 //         │      │ i_read/i_close (Bytecode per wat2wasm/wabt gebaut, s. ARBEITSPLAN.md 4.8)     │
 // 26-07-04│ 3.70 │ 5.1: Selbsttest Musashi-Grundbaustein (nur -DQ9_HAVE_M68K, native-only) —     │ CF
 //         │      │ von Hand assembliertes MOVEQ/ADDI-Programm in emuliertem RAM, D0==5 geprueft  │
+// 26-07-04│ 3.80 │ 5.2a: Selbsttest CB030-Board-Speicherlogik (RAM/ROM/Remap, s. cb030.h) —      │ CF
+//         │      │ synthetisches 4-Byte-"ROM", reiner Adress-Dekoder-Test ohne Musashi-Anbindung │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -78,6 +80,7 @@
 #endif
 #ifdef Q9_HAVE_M68K
 #include "m68krt.h"
+#include "cb030.h"
 #endif
 
 static void repl_step(void);                            /* 4.1: Step-Funktion von PID 1 (s.u.)     */
@@ -1751,6 +1754,46 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "5.1: Musashi laedt MOVEQ #2,D0/ADDI.W #3,D0 und rechnet 2+3=5";
         checks[nchecks++].ok = ok;
     }
+
+    {
+        /* 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap), s. cb030.h/docs/CB030.md — reiner
+           Adress-Dekoder-Test, noch OHNE Musashi-Anbindung (die kommt erst mit 5.2b-d). Kleines
+           synthetisches "ROM" (4 Byte) statt des echten, proprietaeren Microware-Boot-ROMs. */
+        static const uint8_t rom[4] = { 0xAA, 0xBB, 0xCC, 0xDD };
+        static uint8_t       ram[64];
+        q9_cb030_t            board;
+        int                   ok;
+
+        for (uint32_t i = 0; i < sizeof(ram); i++) {
+            ram[i] = 0;
+        }
+
+        ok = (q9_cb030_init(&board, rom, sizeof(rom), ram, sizeof(ram)) == Q9_CB030_OK);
+
+        /* Reset-Zustand: ROM gespiegelt (Adresse 1000 liegt weit ausserhalb der 4 ROM-Bytes). */
+        ok = ok && (q9_cb030_read8(&board, 0) == 0xAA) && (q9_cb030_read8(&board, 1000) == 0xAA);
+
+        checks[nchecks].name = "5.2a: CB030 Reset-Zustand liest ROM gespiegelt";
+        checks[nchecks++].ok = ok;
+
+        /* REMAP-Trigger: ein Lesezugriff auf den Registerbereich schaltet dauerhaft um. */
+        (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
+        q9_cb030_write8(&board, 0, 0x42);
+        ok = (q9_cb030_read8(&board, 0) == 0x42);       /* RAM jetzt bei Adresse 0 statt ROM */
+
+        checks[nchecks].name = "5.2a: CB030 REMAP-Zugriff schaltet RAM an Adresse 0";
+        checks[nchecks++].ok = ok;
+
+        /* Nach Remap: ROM liegt nur noch einmal bei Q9_CB030_ROM_REMAP_BASE, keine Spiegelung
+           mehr, und bleibt read-only. */
+        ok = (q9_cb030_read8(&board, Q9_CB030_ROM_REMAP_BASE) == 0xAA) &&
+             (q9_cb030_read8(&board, Q9_CB030_ROM_REMAP_BASE + sizeof(rom)) == 0);
+        q9_cb030_write8(&board, Q9_CB030_ROM_REMAP_BASE, 0x99);
+        ok = ok && (q9_cb030_read8(&board, Q9_CB030_ROM_REMAP_BASE) == 0xAA);
+
+        checks[nchecks].name = "5.2a: CB030 Remap-Zustand — ROM einmalig+read-only, keine Spiegelung";
+        checks[nchecks++].ok = ok;
+    }
 #endif
 
     for (int i = 0; i < nchecks; i++) {
@@ -1766,5 +1809,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 3.60
+// EOF kernel.c                                                                            Ver. 3.80
 //────────────────────────────────────────────────────────────────────────────────────────────────
