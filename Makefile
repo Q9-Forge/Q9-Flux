@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 2.20
+# File:   Makefile                                                                        Ver. 2.30
 # Owner:  AF
 # Desc.:  Q9 Build-System. Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc),
 #         wasm (Browser, emcc), test, clean. Toolchain-Setup siehe docs/TOOLCHAIN.md.
@@ -31,6 +31,7 @@
 # 26-07-04│ 2.20 │ 5.1: m68krt.c/.h (Musashi-Wrapper) + vendorte third_party/musashi/ nur im  │ CF
 #         │      │ native-Target; m68kmake generiert m68kops.c/.h zur Bauzeit (Zweistufen-    │
 #         │      │ Build); -DQ9_HAVE_M68K aktiviert den Selbsttest-Zweig in kernel.c          │
+# 26-07-04│ 2.30 │ 5.2a: cb030.c/.h (Board-Speicherlogik RAM/ROM/Remap), nur native-Target    │ CF
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -115,16 +116,22 @@ $(BUILD)/native/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 	@mkdir -p $(BUILD)/native
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 
+# 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap, docs/CB030.md), NUR im nativen Build (reine
+# Musashi-Bootstrap-Validierung, s. cb030.h) -- Q9-eigener Code, volle CFLAGS wie M68KRT_SRC.
+CB030_SRC = src/kernel/cb030.c
+CB030_HDR = src/kernel/cb030.h
+
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows w64devkit oder macOS/Linux, HAL wird automatisch gewaehlt)
 #───────────────────────────────────────────────────────────────────────────────────────────────
 native: $(BUILD)/native/q9.exe
 
 $(BUILD)/native/q9.exe: $(KSRC) $(WASMRT_SRC) $(WASMRT_HDR) $(M68KRT_SRC) $(M68KRT_HDR) \
+                        $(CB030_SRC) $(CB030_HDR) \
                         $(NATIVE_HAL_SRC) $(HDRS) $(WASM3_OBJS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/native
 	$(CC) $(CFLAGS) -DQ9_HAVE_WASM3 -DQ9_HAVE_M68K -I$(WASM3_DIR) -I$(MUSASHI_DIR) \
-	    $(KSRC) $(WASMRT_SRC) $(M68KRT_SRC) $(NATIVE_HAL_SRC) $(WASM3_OBJS) $(MUSASHI_OBJS) -o $@
+	    $(KSRC) $(WASMRT_SRC) $(M68KRT_SRC) $(CB030_SRC) $(NATIVE_HAL_SRC) $(WASM3_OBJS) $(MUSASHI_OBJS) -o $@
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # wasm: Browser-Build (Emscripten); kopiert das Frontend mit nach build/wasm/

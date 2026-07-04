@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.50
+# File:   HANDBUCH.md                                                                     Ver. 1.60
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -21,6 +21,8 @@
 #         │      │ erweitert, Phase-4-Status in Abschnitt 6 (Anschluss 4.6-4.9 komplett)     │
 # 26-07-04│ 1.50 │ 5.1: Musashi-68k-Emulation (Entscheidung E12) — third_party/musashi/,    │ CF
 #         │      │ m68krt.c/.h, neuer Abschnitt 5.9, Abschnitt 3/6/7 aktualisiert            │
+# 26-07-04│ 1.60 │ 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap) — cb030.c/.h, neuer       │ CF
+#         │      │ Abschnitt 5.10, Abschnitt 3/6 aktualisiert                                │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -187,11 +189,16 @@ Q9/
 │   │   ├── config.h           Erster Baustein einer Q9-Systemkonfiguration (Phase 4.9) — bisher
 │   │   │                       nur Q9_SYSTEM_MEM_BYTES (Fixed-Heap-Groesse fuer wasm3, s. Abschnitt
 │   │   │                       5.8), wird NUR ins native-Target eingebunden (-include, Makefile)
-│   │   └── m68krt.c/.h        Wrapper um die eingebettete Musashi-68k-Emulation (Phase 5.1,
-│   │                           NUR im nativen Build, s. Abschnitt 5.9) — definiert die von
-│   │                           Musashi verlangten m68k_read/write_memory_*-Funktionen gegen
-│   │                           einen vom Aufrufer uebergebenen RAM-Block; noch OHNE Scheduler-/
-│   │                           Syscall-Bridge (kommt mit der Detailplanung von Phase 5)
+│   │   ├── m68krt.c/.h        Wrapper um die eingebettete Musashi-68k-Emulation (Phase 5.1,
+│   │   │                       NUR im nativen Build, s. Abschnitt 5.9) — definiert die von
+│   │   │                       Musashi verlangten m68k_read/write_memory_*-Funktionen gegen
+│   │   │                       einen vom Aufrufer uebergebenen RAM-Block; noch OHNE Scheduler-/
+│   │   │                       Syscall-Bridge (kommt mit der Detailplanung von Phase 5)
+│   │   └── cb030.c/.h         CB030-Board-Speicherlogik (Schritt 5.2a, NUR im nativen Build,
+│   │                           s. Abschnitt 5.10) — reiner RAM/ROM/Remap-Adress-Dekoder als
+│   │                           eigenes Handle (q9_cb030_t), noch OHNE Anbindung an Musashis
+│   │                           m68k_read/write_memory_*-Hooks und OHNE Peripherie (UART/CF/
+│   │                           Timer folgen in 5.2b-d)
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -613,6 +620,43 @@ den Reset-Vektoren (SP bei Adresse 0, PC bei Adresse 4, big-endian) in einem
 emulierten RAM-Block; nach `q9_m68krt_reset()` + `q9_m68krt_execute()` steht
 `D0 == 5`.
 
+### 5.10 CB030-Board-Emulation (Schritt 5.2, `src/kernel/cb030.c/.h`)
+
+Das **CB030-Board** dient als Bootstrap/Validierungs-Zwischenschritt für die
+Musashi-Integration — mit dem originalen, proprietären Microware-OS-9-Boot-ROM
+statt nur mit handassemblierten Testprogrammen (Andreas' Vorschlag,
+2026-07-04 abends). Ändert nichts an der eigentlichen Q9-Zielhardware
+(MC68EN360/QUICC bleibt Ziel für Phase 7, s. PROJECT.md O4). Speicherkarte +
+Peripherie-Register: [`docs/CB030.md`](CB030.md). Das reale Boot-ROM bleibt
+wie die MWOS-SDK-Kopie proprietär und NICHT im Repository — nur die
+Hardware-Dokumentation selbst und der Emulationscode sind es.
+
+**5.2a** (RAM/ROM/Remap-Speicherlogik, erster Baustein): reiner
+Adress-Dekoder als if/else-Kette (RAM zuerst geprüft), unabhängig von
+Musashis eigenem CPU-Zustand — der REMAP-Merker sitzt in einem eigenen
+`q9_cb030_t`-Handle:
+
+```c
+// cb030.h — Adress-Dispatch (5.2a)
+int      q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len,
+                        uint8_t *ram, uint32_t ram_len);
+void     q9_cb030_reset(q9_cb030_t *b);
+uint8_t  q9_cb030_read8(q9_cb030_t *b, uint32_t addr);   // + read16/read32
+void     q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val);  // + write16/write32
+```
+
+Reset-Zustand: ROM bei Adresse 0, gespiegelt bis `0x0800_0000`. Ein einzelner
+Buszugriff (lesend oder schreibend) auf den REMAP-Registerbereich
+(`0xFFFF_8000`–`0xFFFF_8FFF`) schaltet dauerhaft um — reiner Adress-Trigger,
+kein Datenwert; danach liegt RAM ab Adresse 0 und das ROM nur noch einmal,
+unmirrored, bei `0xFE00_0000`–`0xFE07_FFFF` (read-only). Peripherie (UART/
+CF/Timer, Schritte 5.2b–d) ist hier bewusst noch NICHT angebunden — der
+I/O-Adressbereich liefert vorerst 0 bzw. verwirft Schreibzugriffe
+kommentarlos. Ebenso offen: die eigentliche Verdrahtung an Musashis
+`m68k_read/write_memory_*`-Hooks (`m68krt.c`, Abschnitt 5.9) — dieser
+Schritt liefert nur den reinen Adress-Dekoder samt Selbsttest (`-DQ9_HAVE_M68K`,
+native-only, synthetisches 4-Byte-Test-ROM statt des echten Boot-ROMs).
+
 ---
 
 ## 6. Stand der Dinge
@@ -627,7 +671,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
 | 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig, inkl. Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite), 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module), 4.9 (Fixed-Heap statt Host-malloc in wasm3, Q9-Systemkonfiguration `config.h`); Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
-| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest), s. Abschnitt 5.9 |
+| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2a (CB030-Board-Speicherlogik RAM/ROM/Remap, Abschnitt 5.10) |
 | 6 | Shell | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
 | 8 | Vision: 6809-Runtime, Netzwerk, Self-Hosting | offen |
