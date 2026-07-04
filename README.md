@@ -15,8 +15,12 @@ binary compatibility with original OS-9/6809 software.
 
 ## Status
 
-Early design phase. See `PROJECT.md` (German) for architecture,
-module format and roadmap.
+Kernel boots on native (Windows/macOS/Linux) and WebAssembly targets, with
+a working module system and a FAT16-backed filesystem. See
+[`docs/HANDBUCH.md`](docs/HANDBUCH.md) (German) for the full manual: tools,
+build instructions per target, source layout, architecture, and licensing
+notes for third-party reference material. `PROJECT.md` (German) has the
+vision, architecture decisions and roadmap.
 
 ## License
 
