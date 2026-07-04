@@ -239,9 +239,10 @@ nachgebaut (`userland/build.sh`, PASS, `-Wall -Wextra` warnungsfrei), Branch
 `codex-userland` gepusht (Commits `bf5d494`, `a94ca93`). Nebenbefund bei der
 Kommentar-Durchsicht: auch der Hauptkernel wurde stichprobenartig geprüft
 (fast lückenlos kommentiert, eine echte Lücke `is_leap()` in `syscall.c`
-gefunden und behoben, Commit `1caf2b3`). **Merge nach `main` steht noch aus**
-— wartet auf Andreas' eigene Durchsicht, dann gemeinsame Entscheidung über
-Merge-Weg und Anbindung an O6.
+gefunden und behoben, Commit `1caf2b3`). **Nach Andreas' Durchsicht per Pull
+Request #1 in `main` gemerged (2026-07-04 abends, Merge-Commit `ebdde4b`)** —
+Worktree und Branch aufgeräumt, `userland/` ist damit fester Bestandteil des
+Hauptbaums. Anbindung an O6 (Modul-Verpackung) bleibt offen für später.
 
 ---
 
@@ -860,7 +861,15 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **CB030-Hardware-Details geklärt,
+**Letzte Aktualisierung**: 2026-07-04 abends — **Phase U (`codex-userland`)
+per Pull Request #1 in `main` gemerged.** Andreas hatte den Code bereits
+reviewt und die Kommentar-Nachbesserung (U.5) abgenommen — PR über die
+GitHub-Weboberfläche erstellt und bestätigt (Merge-Commit `ebdde4b`),
+lokales Worktree + Branch aufgeräumt. `userland/` (libq9 + sieben
+Datei-Werkzeuge) ist damit fester Bestandteil des Hauptbaums, `make test`
+weiterhin PASS. Anbindung an O6 (Modul-Verpackung) bleibt offen für später.
+
+Davor: 2026-07-04 abends — **CB030-Hardware-Details geklärt,
 5.2 in Einzelgeräte aufgebrochen.** Andreas: REMAP und `TI_IRQ_ON`/`TI_IRQ_OFF`
 sind reine Adress-Trigger (kein Bit-Layout) — REMAP schaltet einmalig auf
 RAM-bei-0 + ROM-einmalig-bei-`0xFE00_0000` um, der Timer löst IRQ3 aus.
