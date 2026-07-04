@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 2.80
+// File:   kernel.c                                                                        Ver. 2.90
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -37,14 +37,20 @@
 //         │      │ fehlende Datei -> E$PNNF, kaputter Sync -> E$BMHP); Testdateien werden  │
 //         │      │ danach per I$Delete wieder entfernt (haelt den FAT16-Cluster-Zustand    │
 //         │      │ fuer die 3.4-Nachvalidierung in test/06 unveraendert)                  │
+// 26-07-04│ 2.90 │ 4.1: q9_kernel_step() reicht an q9_proc_schedule() weiter (proc.c);     │ CF
+//         │      │ bisheriger REPL-Koerper wandert in repl_step() (PID 1, ueber            │
+//         │      │ q9_proc_init registriert); Selbsttests fuer die Prozesstabelle          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
 #include "module.h"
+#include "proc.h"
 #include "syscall.h"
 #include "vfs.h"
 #include "kernel.h"
+
+static void repl_step(void);                            /* 4.1: Step-Funktion von PID 1 (s.u.)     */
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ INTERNAL HELPERS (thin wrappers over the syscall layer)                                      ║
@@ -86,6 +92,7 @@ static void kputs(const char *s)
 void q9_kernel_init(void)
 {
     q9_dev_init();                                     /* device model first — kputs needs it    */
+    q9_proc_init(repl_step);                           /* 4.1: PID 1 = REPL, siehe proc.h/.c      */
 
     kputs("\n");
     kputs("  ═══════════════════════════════════════\n");
@@ -102,11 +109,23 @@ void q9_kernel_init(void)
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_kernel_step
-// Desc.:    Ein Kernel-Tick: I$ReadLn pollen; komplette Zeile -> Antwort + neuer Prompt.
-//           "exit" ruft F$Exit (Proto-Prozess hält an).
+// Desc.:    Ein Kernel-Tick — reicht an den Scheduler weiter (4.1: q9_proc_schedule()), der
+//           reihum jeden aktiven Prozess einmal steppt. Bis F$Fork (4.2) existiert, ist das
+//           genau ein Prozess (PID 1 = repl_step).
 // Call:     q9_kernel_step()
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_kernel_step(void)
+{
+    q9_proc_schedule();
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: repl_step
+// Desc.:    Step-Funktion von PID 1 (4.1: vorher der Koerper von q9_kernel_step direkt): I$ReadLn
+//           pollen; komplette Zeile -> Antwort + neuer Prompt. "exit" ruft F$Exit (Proto-Prozess
+//           haelt an — echte Exit-Semantik/Aufraeumen des Tabellen-Slots kommt erst mit 4.2).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void repl_step(void)
 {
     q9_regs_t r = {0};
     uint8_t   line[80];
@@ -248,6 +267,17 @@ int q9_kernel_selftest(void)
         q9_regs_t r = {0};
         checks[nchecks].name = "F$ID -> PID 1";
         checks[nchecks++].ok = (q9_syscall(F_ID, &r) == 0 && r.d[0] == 1);
+    }
+    {   /* 4.1: Prozesstabelle — PID 1 (REPL) korrekt angelegt */
+        q9_pd_t *pd = q9_proc_find(1);
+        checks[nchecks].name = "Prozesstabelle: PID 1 (Parent 0, ACTIVE, Std-Pfade 0/1/2)";
+        checks[nchecks++].ok = (pd != 0 && pd->parent == 0 && pd->module == 0 &&
+                                 pd->state == Q9_PS_ACTIVE && pd->stdpath[0] == 0 &&
+                                 pd->stdpath[1] == 1 && pd->stdpath[2] == 2);
+    }
+    {   /* 4.1: unbekannte PID liefert NULL */
+        checks[nchecks].name = "Prozesstabelle: unbekannte PID -> NULL";
+        checks[nchecks++].ok = (q9_proc_find(99) == 0);
     }
     {   /* F$Time delivers uptime */
         q9_regs_t r = {0};

@@ -133,7 +133,7 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | 🟢 | Claudia | Kern von allem; REPL wird erster echter Prozess |
+| 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | ✅ | Claudia | `src/kernel/proc.c/.h` neu — Details siehe „Erledigt" unten |
 | 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | 🟢 | Claudia | F$Exit existiert als Stub aus 1.2 — bekommt jetzt echte Semantik |
 | 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | 🟢 | Claudia | danach fühlt sich I$ReadLn blockierend an, ohne je einen Stack einzufrieren |
 | 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | 🟢 | Claudia | Scheduler bleibt Round-Robin, Priorität erstmal nur Datenfeld — Aging lohnt erst bei echter Konkurrenz |
@@ -173,6 +173,32 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.1 (Prozess-Descriptor-Tabelle + Round-Robin-Scheduler)** ✅: neue Datei
+  `src/kernel/proc.c/.h` — statische Tabelle `q9_pd_t proctab[Q9_NPROCS]` (Q9_NPROCS=8, kein
+  malloc, analog zur Gerätetabelle in device.c): `pid`/`parent`/`module` (Zeiger auf
+  `q9_modhdr_t`, `NULL` = interner/nativer Prozess ohne geladenes Modul)/`state`
+  (`Q9_PS_FREE`/`ACTIVE`/`WAITING`/`SLEEPING` — Waiting/Sleeping als Enum-Werte für 4.3 schon
+  vorgesehen, aber von 4.1 noch nicht erzeugt)/`exitcode`/`stdpath[3]` (eigene Std-Pfade 0/1/2 —
+  Indizes in die weiterhin globale Pfadtabelle, device.h)/`step` (Funktionszeiger `void(*)(void)`
+  — die Step-Funktion, Entscheidung E8). `q9_proc_schedule()`: Round-Robin über die komplette
+  Tabelle, ruft jeden `ACTIVE`-Prozess einmal pro Aufruf; `q9_proc_current()` liefert während des
+  Aufrufs den gerade gestepten Prozess (für Syscalls wie F$ID). `q9_proc_init(step)` legt PID 1
+  an (Parent 0 = Kernel, kein Modul, Std-Pfade 0/1/2, Zustand ACTIVE).
+  **Verdrahtung** (kernel.c): der bisherige Körper von `q9_kernel_step()` (I$ReadLn-Poll, "exit"
+  → F$Exit, Prompt) wandert unverändert in eine neue Funktion `repl_step()`; `q9_kernel_init()`
+  registriert sie über `q9_proc_init(repl_step)` als PID 1; `q9_kernel_step()` selbst wird zu
+  `q9_proc_schedule()`. **F$ID** (syscall.c) liest die PID jetzt über `q9_proc_current()` aus der
+  Tabelle statt sie fest zu verdrahten (Fallback PID 1, wenn außerhalb eines Scheduler-Aufrufs
+  aufgerufen — z.B. der Selbsttest-Syscall direkt nach dem Boot, bevor der erste Tick lief).
+  **Bewusst nicht Teil von 4.1** (kommt mit 4.2): F$Fork/F$Exit/F$Wait/F$Chain — F$Exit bleibt der
+  bisherige Stub (setzt nur `proc_halted`, räumt den Tabellen-Slot noch nicht ab); es gibt bis
+  4.2 ohnehin nur den einen Prozess. 2 neue Selbsttest-Checks (kernel.c: PID 1 hat
+  Parent 0/kein Modul/Zustand ACTIVE/Std-Pfade 0/1/2 aus der echten Tabelle; unbekannte PID
+  liefert NULL). Makefile (`KSRC`/`HDRS`) um proc.c/.h ergänzt. docs/SYSCALLS.md (F$ID-Abschnitt)
+  und docs/HANDBUCH.md (Abschnitt 3 Quellcode-Layout, Abschnitt 5.1 Schichtenmodell, Abschnitt 5.6
+  Prozessmodell) aktualisiert. `make test` PASS, warnungsfrei. wasm nicht angefasst (reine
+  Kernel-Logik, kein HAL-Bezug) — Build/Verifikation folgt spätestens, sobald ein Schritt die
+  wasm-HAL berührt. **Nächster Ready-Schritt: 4.2** (F$Fork/F$Exit/F$Wait/F$Chain).
 - **2026-07-04 — Phase 3.7 (FAT16-Directory-Einträge: echtes Datum/Uhrzeit)** ✅: neue
   Hilfsfunktion `fat_pack_datetime()` (fat16.c) liest `q9_hal_time()` (existiert bereits seit
   1.9) und packt sie ins FAT16-Datum/Zeit-Format (Datum: Bit15-9 Jahr seit 1980, Bit8-5 Monat,

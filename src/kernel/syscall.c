@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.20
+// File:   syscall.c                                                                       Ver. 2.30
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -27,12 +27,15 @@
 //         │      │ I$MakDir/I$Delete jetzt echt ueber q9_vfs_open + fm->create/makdir/    │ CF
 //         │      │ remove (FAT16 schreibend)                                             │ CF
 // 26-07-04│ 2.20 │ 3.5: F$Load ueber q9_mod_load (Modul aus Datei statt nur ROM-Image)    │ CF
+// 26-07-04│ 2.30 │ 4.1: F$ID liest PID jetzt aus der Prozesstabelle (proc.c) statt fest    │ CF
+//         │      │ verdrahtet (Fallback PID 1 ausserhalb eines Scheduler-Aufrufs)           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
 #include "device.h"
 #include "module.h"
 #include "name.h"
+#include "proc.h"
 #include "syscall.h"
 #include "vfs.h"
 
@@ -419,10 +422,12 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         proc_halted = 1;
         return 0;
 
-    case F_ID:
-        r->d[0] = 1;                                   /* proto process                          */
-        r->d[1] = 0;                                   /* super user                             */
+    case F_ID: {                                       /* 4.1: aus der Prozesstabelle statt fest  */
+        q9_pd_t *pd = q9_proc_current();               /*   verdrahtet — ausserhalb eines         */
+        r->d[0] = pd ? pd->pid : 1;                    /*   Scheduler-Aufrufs (z.B. Selbsttest    */
+        r->d[1] = 0;                                   /*   vor dem ersten Tick) Fallback PID 1   */
         return 0;
+    }
 
     case F_TIME: {                                     /* d0 = Zeit, d1 = Datum (OS-9-Packung,   */
         q9_datetime_t dt;                              /* MWOS-verifiziert), d2.w = Wochentag    */

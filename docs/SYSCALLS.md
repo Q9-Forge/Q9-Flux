@@ -281,6 +281,12 @@ Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
 | d0.w     | Prozess-ID              |
 | d1.l     | User-ID (Phase 1: 0)    |
 
+**Seit Phase 4.1**: `d0` kommt aus der echten Prozess-Descriptor-Tabelle (`proc.c`,
+`q9_proc_current()` — der Prozess, dessen Step-Funktion der Scheduler gerade ausführt), nicht
+mehr fest verdrahtet. Solange nur ein Prozess existiert (kein F$Fork vor 4.2), liefert das
+weiterhin PID 1. Außerhalb eines Scheduler-Aufrufs (z.B. ein Selbsttest-Syscall vor dem ersten
+`q9_kernel_step()`-Tick) liefert `q9_proc_current()` NULL — F$ID fällt dann auf PID 1 zurück.
+
 ### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 MWOS-korrigiert
 
 | Register | F$Time Output                          | F$STime Input     |
