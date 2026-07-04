@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.40
+// File:   syscall.c                                                                       Ver. 2.50
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -32,6 +32,9 @@
 // 26-07-04│ 2.40 │ 4.2: F$Fork/F$Wait/F$Chain echt ueber proc.c implementiert; F$Exit hat   │ CF
 //         │      │ jetzt echte Semantik (q9_proc_exit statt proc_halted-Stub, der samt      │
 //         │      │ q9_proc_halted() entfernt wurde)                                        │
+// 26-07-04│ 2.50 │ 4.3: sc_read versetzt den aufrufenden Prozess bei E$NotRdy (Treiberpfad, │ CF
+//         │      │ kein File-Manager) per q9_proc_wait_device in WAITING; F$Wait ebenso     │
+//         │      │ per q9_proc_wait_child bei E$NotRdy; neu F$Sleep ueber q9_proc_sleep     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -83,6 +86,11 @@ static int path_check(q9_regs_t *r, uint8_t need_mode, q9_path_t **out)
 
 static const uint8_t mdays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: is_leap
+// Desc.:    Gregorianisches Schaltjahr? (durch 4 teilbar, außer durch 100, außer durch 400)
+// Call:     leap = is_leap(2000)  // 1
+//────────────────────────────────────────────────────────────────────────────────────────────────
 static int is_leap(uint32_t y)
 {
     return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
@@ -204,7 +212,12 @@ static int sc_write(q9_regs_t *r, int line_mode)
 //           Hat das Geraet hinter dem Pfad einen File-Manager MIT read-Op (ab 3.3, FAT16), geht
 //           I$Read (nicht I$ReadLn — Zeilenmodus mit Echo/Editierung ergibt fuer Dateien keinen
 //           Sinn) an dessen fm->read(); sonst wie bisher an die read/readln-Op des Treibers
-//           (E$NotRdy-Semantik siehe SYSCALLS.md).
+//           (E$NotRdy-Semantik siehe SYSCALLS.md). 4.3: liefert der Treiberpfad E$NotRdy, wird der
+//           AUFRUFENDE Prozess per q9_proc_wait_device blockiert (WAITING, Weckgrund SS.Ready des
+//           Geraets) — der Rueckgabewert an den Aufrufer bleibt E$NotRdy (kein eingefrorener
+//           Stack, s. proc.h), aber der Scheduler steppt ihn nicht mehr sinnlos weiter, bis
+//           Eingabe ansteht. Der File-Manager-Pfad bleibt unveraendert (E$NotRdy dort ist ein
+//           echter I/O-Fehler, kein "bald wieder versuchen").
 // Call:     Dispatcher
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int sc_read(q9_regs_t *r, int line_mode)
@@ -212,6 +225,7 @@ static int sc_read(q9_regs_t *r, int line_mode)
     q9_path_t *p;
     uint32_t   n = r->d[1];
     int        err;
+    int        via_fm;
 
     err = path_check(r, Q9_MODE_READ, &p);
     if (err != 0) {
@@ -220,11 +234,18 @@ static int sc_read(q9_regs_t *r, int line_mode)
     if (line_mode && n == 0) {
         return E_BPADDR;
     }
-    if (!line_mode && p->dev->fm && p->dev->fm->read) {
+    via_fm = !line_mode && p->dev->fm && p->dev->fm->read;
+    if (via_fm) {
         err = p->dev->fm->read(p->dev, p, (uint8_t *)r->a[0], &n);
     } else {
         err = line_mode ? p->dev->drv->readln(p->dev, (uint8_t *)r->a[0], &n)
                         : p->dev->drv->read(p->dev, (uint8_t *)r->a[0], &n);
+    }
+    if (err == E_NOTRDY && !via_fm) {
+        q9_pd_t *me = q9_proc_current();
+        if (me) {
+            q9_proc_wait_device(me->pid, p->dev);
+        }
     }
     if (err != 0) {
         return err;
@@ -454,8 +475,11 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         int32_t  code;
         int      err = q9_proc_wait(me ? me->pid : 1, &pid, &code);
         if (err != 0) {
-            return err;                                  /* E$NotRdy (Kind laeuft noch, poll        */
-        }                                                /*   spaeter) oder E$NoChld                 */
+            if (err == E_NOTRDY && me) {                /* 4.3: echt blockieren (Kind laeuft noch) */
+                q9_proc_wait_child(me->pid);
+            }
+            return err;                                  /* E$NotRdy oder E$NoChld                   */
+        }
         r->d[0] = pid;
         r->d[1] = (uint32_t)code;
         return 0;
@@ -494,6 +518,15 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
     case F_EXIT: {                                       /* d1.w Status-Code                        */
         q9_pd_t *me = q9_proc_current();
         q9_proc_exit(me ? me->pid : 1, (int32_t)(int16_t)r->d[1]);
+        return 0;
+    }
+
+    case F_SLEEP: {                                      /* d1.l Ticks (0 = einmal yielden), 4.3    */
+        q9_pd_t *me = q9_proc_current();
+        if (!me) {
+            return E_IPRCID;                              /* F$Sleep ausserhalb eines Prozesses      */
+        }
+        q9_proc_sleep(me->pid, r->d[1]);
         return 0;
     }
 
@@ -542,5 +575,5 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 2.30
+// EOF syscall.c                                                                           Ver. 2.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
