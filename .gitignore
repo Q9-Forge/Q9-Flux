@@ -4,6 +4,7 @@ build/
 *.obj
 *.exe
 *.out
+__pycache__/
 
 # Block-Device-Testimage (3.1, HAL-seitig lazy erzeugt von q9_hal_blk_read/write)
 q9disk.img

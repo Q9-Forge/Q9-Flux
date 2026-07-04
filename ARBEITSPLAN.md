@@ -153,7 +153,7 @@ und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
 
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
-| 4.6 | Eingebettete WASM-Runtime für den nativen Build (löst O5): eine Bibliothek (Kandidat wasm3 — klein, embeddable, keine harte malloc-Pflicht) einbinden, die ein beliebiges `.wasm`-Modul zur Laufzeit instanziieren und eine exportierte Funktion aufrufen kann. Noch OHNE Syscall-Bridge — reiner Grundbaustein | 🟢 | Claudia | Deliverable: kleiner Test, der ein triviales `.wasm` (z.B. `add(a,b)`) lädt und nativ ausführt; Browser-Seite ist hier trivial (`WebAssembly.instantiate` existiert schon), native Seite ist die eigentliche Arbeit |
+| 4.6 | Eingebettete WASM-Runtime für den nativen Build (löst O5): eine Bibliothek (Kandidat wasm3 — klein, embeddable, keine harte malloc-Pflicht) einbinden, die ein beliebiges `.wasm`-Modul zur Laufzeit instanziieren und eine exportierte Funktion aufrufen kann. Noch OHNE Syscall-Bridge — reiner Grundbaustein | ✅ | Claudia | wasm3 (MIT, Commit `d77cd814`) vendored unter `third_party/wasm3/` (nur Kern-Interpreter, kein WASI/libc); `src/kernel/wasmrt.c/.h` als schmaler Wrapper (init/load/call_i32/free). Details siehe „Erledigt" unten |
 | 4.7 | `Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das Language-Byte `Q9_MOD_WASM`, instanziieren das Modul über die Runtime aus 4.6 (bzw. `WebAssembly.instantiate` im Browser) mit einem Import/Host-Funktion als Syscall-Bridge. Erstmal NUR Syscalls ohne Zeiger-Parameter (F$Time, F$ID, F$Exit) | 🟢 | Claudia | Beweist den kompletten Weg Laden→Instanziieren→Laufen→Syscall→Zurück end-to-end, bevor Zeiger dazukommen |
 | 4.8 | Speicher-/Pointer-Marshaling über die Modulgrenze: a0–a7-Register als Offsets in die modul-eigene lineare Speicherinstanz interpretieren (statt rohe Host-Zeiger), mit Bounds-Check. Damit werden auch I$Read/I$Write/I$Open (Puffer-/Pfadnamen-Zeiger) für WASM-Module nutzbar | 🟢 | Claudia | `Q9_MOD_NATIVE` (E9-Stopgap) bleibt als Sonderfall bestehen (z.B. kernelinterne Prozesse), wird für "normale" Programme aber überflüssig |
 
@@ -228,6 +228,34 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.6 (Grundbaustein wasm3-Runtime, Entscheidung E10)** ✅: erster Schritt
+  des Anschlusses 4.6–4.8, löst Architekturfrage O5. **Vendoring**: `third_party/wasm3/` — nur
+  der Kern-Interpreter von wasm3 (Commit `d77cd814`, MIT-Lizenz), unverändert übernommen; WASI-/
+  libc-/Tracing-Dateien bewusst NICHT vendored (Q9 braucht keine WASI-Umgebung, die Syscall-Bridge
+  in 4.7 verdrahtet eigene Q9-Importe direkt über `m3_LinkRawFunction`). LICENSE + README.md (mit
+  Commit-Referenz, Scope, Build-Hinweis) liegen bei. **Wrapper**: `src/kernel/wasmrt.c/.h` neu —
+  kapselt wasm3 als schmale, Q9-eigene API (`q9_wasmrt_init/load/call_i32/free`), alle wasm3-Typen
+  bleiben als `void*` in `q9_wasmrt_t` verborgen, kein Aufrufer muss `wasm3.h` einbinden.
+  **Design-Entscheidung**: wasm3 nutzt intern `malloc`/`free` (Environment/Runtime/Modul-Allokation)
+  — bewusste, eng begrenzte Ausnahme von Q9s "kein malloc im Kernel"-Regel, NUR für den vendorten
+  Fremdcode selbst (dokumentiert in `third_party/wasm3/README.md` + PROJECT.md Entscheidung E10);
+  `wasmrt.c` und der restliche Kernel bleiben frei von eigenem `malloc`.
+  **Makefile**: `WASM3_SRC`/`WASM3_OBJS` nur im `native`-Ziel (eigene, laxere `WASM3_CFLAGS` ohne
+  `-Wall -Wextra` — 58 Warnungen im unveränderten Original, die wir nicht pflegen), `WASMRT_SRC`
+  mit vollen `CFLAGS` (bleibt warnungsfrei); `-DQ9_HAVE_WASM3` aktiviert den Selbsttest-Zweig in
+  `kernel.c`. `make wasm` bindet weder wasm3 noch wasmrt.c ein — im Browser laeuft Q9 selbst
+  schon als WASM, `WebAssembly.instantiate` uebernimmt dort die Rolle (O6).
+  **Selbsttest** (kernel.c, nur `#ifdef Q9_HAVE_WASM3`): handgebautes `.wasm`-Modul (Byte-Array,
+  Aequivalent zu `(func $add (param i32 i32) (result i32) local.get 0 local.get 1 i32.add)`,
+  exportiert als "add") wird geladen und mit (2,3) aufgerufen, Ergebnis 5 geprueft — beweist den
+  kompletten Weg Laden→Instanziieren→Aufrufen→Ergebnis nativ, noch ohne Syscall-Bridge (kommt mit
+  4.7). PROJECT.md (Entscheidung E10, O5 auf "entschieden" gesetzt), docs/HANDBUCH.md (Abschnitt
+  1 Lizenz, 3 Quellcode-Layout inkl. `third_party/`, neuer Abschnitt 5.8, 6 Phase-4-Status, 7
+  Referenzquellen-Tabelle) aktualisiert. `make clean && make native && make test` PASS,
+  warnungsfrei; zusaetzlich mit AddressSanitizer/UBSan gegenverifiziert (sauber, inkl. wasm3
+  selbst). `make wasm` (emsdk auf diesem Mac Mini) baut weiterhin warnungsfrei, unveraendert.
+  **Nächster Ready-Schritt: 4.7** (`Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das
+  Language-Byte, instanziieren ueber die 4.6-Runtime mit Syscall-Bridge fuer F$Time/F$ID/F$Exit).
 - **2026-07-04 — Phase 4.5 (Signale: F$Send + F$Icpt + F$RTE)** ✅: schließt Phase 4 (Prozesse)
   ab. **syscall.h**: `F_ICPT` ($09) und `F_RTE` ($1E) neu, `F_SEND` ($08) war schon reserviert.
   **proc.h/.c**: vierter Weckgrund `Q9_WAIT_SIGNAL` (bereits seit 4.4 als Enum-Wert vorhanden,
