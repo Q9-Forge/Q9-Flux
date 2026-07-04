@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.10
+// File:   kernel.c                                                                        Ver. 3.20
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -48,6 +48,9 @@
 //         │      │ den Prozess in WAITING/Q9_WAIT_DEVICE (Scheduler skippt ihn), F$Wait      │
 //         │      │ ohne Zombie ebenso in WAITING/Q9_WAIT_CHILD (weckt automatisch bei Exit   │
 //         │      │ des Kindes), F$Sleep legt per Q9_WAIT_TIMER fuer N Ticks schlafen         │
+// 26-07-04│ 3.20 │ 4.4: Selbsttests F$SSpd (WAITING/Q9_WAIT_SIGNAL, dauerhaft ohne           │ CF
+//         │      │ Weckmechanismus vor 4.5) + F$SPrior (Prioritaetsfeld setzen, alten Wert   │
+//         │      │ liefern, E$IPrcID bei unbekannter PID)                                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -323,6 +326,19 @@ static void wait_parent_step(void)
     if (wait_parent_result == 0) {
         wait_parent_reaped_pid = wt.d[0];
     }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: sspd_test_step
+// Desc.:    4.4-Selbsttest fuer F$SSpd: zaehlt nur mit, wie oft der Scheduler ihn steppt — nach
+//           F$SSpd (WAITING/Q9_WAIT_SIGNAL, bewusst ohne Weckcheck vor 4.5) darf der Zaehler nie
+//           wieder steigen.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int sspd_calls = 0;
+
+static void sspd_test_step(void)
+{
+    sspd_calls++;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -620,6 +636,62 @@ int q9_kernel_selftest(void)
             ok = ok && (q9_syscall(F_WAIT, &wt) == 0 && wt.d[0] == childpid && wt.d[1] == 55);
         }
         checks[nchecks].name = "4.3: F$Sleep legt Prozess fuer N Ticks schlafen (Q9_WAIT_TIMER)";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.4: F$SSpd suspendiert einen Prozess dauerhaft (WAITING/Q9_WAIT_SIGNAL) — bewusst OHNE */
+        /* Weckmechanismus vor F$Send (4.5): der Scheduler steppt ihn nie wieder von selbst.       */
+        int            ok;
+        uint32_t       childpid;
+        q9_pd_t       *pd;
+        q9_regs_t      sq = {0};
+
+        sspd_calls = 0;
+        ok = (q9_proc_fork(1, 0, sspd_test_step, &childpid) == 0);
+
+        q9_kernel_step();                               /* Tick 1: laeuft normal                    */
+        ok = ok && (sspd_calls == 1);
+
+        sq.d[0] = childpid;
+        ok = ok && (q9_syscall(F_SSPD, &sq) == 0);
+        pd = q9_proc_find(childpid);
+        ok = ok && (pd != 0 && pd->state == Q9_PS_WAITING && pd->wait_reason == Q9_WAIT_SIGNAL);
+
+        q9_kernel_step();                               /* Tick 2/3: bleibt WAITING, wird nicht     */
+        q9_kernel_step();                               /*   erneut gestept                         */
+        ok = ok && (sspd_calls == 1);
+
+        {
+            q9_regs_t sq2 = {0};
+            sq2.d[0] = 999;                              /* unbekannte PID */
+            ok = ok && (q9_syscall(F_SSPD, &sq2) == E_IPRCID);
+        }
+
+        q9_proc_exit(childpid, 0);                       /* Testprozess aufraeumen                  */
+        {
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == 0 && wt.d[0] == childpid);
+        }
+        checks[nchecks].name = "4.4: F$SSpd -> WAITING/Q9_WAIT_SIGNAL, Scheduler skippt dauerhaft";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.4: F$SPrior setzt die Prioritaet (reines Datenfeld) und liefert den alten Wert zurueck */
+        int       ok;
+        q9_regs_t sp1 = {0};
+        q9_regs_t sp2 = {0};
+        q9_regs_t sp3 = {0};
+
+        sp1.d[0] = 1;                                    /* PID 1 (REPL), Default-Prioritaet 0       */
+        sp1.d[1] = 5;
+        ok = (q9_syscall(F_SPRIOR, &sp1) == 0 && sp1.d[1] == 0);
+
+        sp2.d[0] = 1;
+        sp2.d[1] = 9;
+        ok = ok && (q9_syscall(F_SPRIOR, &sp2) == 0 && sp2.d[1] == 5);
+
+        sp3.d[0] = 999;                                  /* unbekannte PID -> E$IPrcID                */
+        ok = ok && (q9_syscall(F_SPRIOR, &sp3) == E_IPRCID);
+
+        checks[nchecks].name = "4.4: F$SPrior setzt Prioritaet, liefert alten Wert, E$IPrcID sonst";
         checks[nchecks++].ok = ok;
     }
     {   /* F$Time delivers uptime */
@@ -1314,5 +1386,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 3.10
+// EOF kernel.c                                                                            Ver. 3.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

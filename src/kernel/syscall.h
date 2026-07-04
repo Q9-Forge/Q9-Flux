@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.h                                                                       Ver. 2.00
+// File:   syscall.h                                                                       Ver. 2.10
 // Owner:  AF
 // Desc.:  Q9 Syscall-Schnittstelle. Funktionsnummern und Fehlercodes sind identisch zu OS-9
 //         (Quelle: MWOS DEFS/funcs.h + errno.h). Parameter im virtuellen 68k-Registersatz.
@@ -24,6 +24,8 @@
 // 26-07-04│ 1.90 │ 3.5: E$NoRAM ergaenzt (F$Load: Modul-Puffer-Pool voll/Datei zu gross) │ CF
 // 26-07-04│ 2.00 │ 4.2: E$IPrcID/E$NoChld/E$PrcFul/E$NEMod ergaenzt (F$Fork/F$Wait/       │ CF
 //         │      │ F$Chain, MWOS-verifiziert — E$NoChld($E2) bestaetigt die 1.40-Notiz)   │
+// 26-07-04│ 2.10 │ 4.4: F_SSPD ($0B) + F_SPRIOR ($0D) ergaenzt (Prozess suspendieren/     │ CF
+//         │      │ Prioritaetsfeld setzen)                                                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SYSCALL_H
 #define Q9_SYSCALL_H
@@ -52,7 +54,9 @@ typedef struct q9_regs {
 #define F_EXIT    0x06                                 /* F$Exit:   Terminate Process            */
 #define F_SEND    0x08                                 /* F$Send:   Send Signal to Process       */
 #define F_SLEEP   0x0a                                 /* F$Sleep:  Suspend Process              */
+#define F_SSPD    0x0b                                 /* F$SSpd:   Suspend Process              */
 #define F_ID      0x0c                                 /* F$ID:     Return Process ID            */
+#define F_SPRIOR  0x0d                                 /* F$SPrior: Set Process Priority         */
 #define F_PRSNAM  0x10                                 /* F$PrsNam: Parse Pathlist Name          */
 #define F_CMPNAM  0x11                                 /* F$CmpNam: Compare Two Names            */
 #define F_TIME    0x15                                 /* F$Time:   Get Current Time             */
@@ -135,5 +139,5 @@ int q9_syscall(uint16_t func, q9_regs_t *regs);
 #endif // Q9_SYSCALL_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.h                                                                           Ver. 1.90
+// EOF syscall.h                                                                           Ver. 2.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

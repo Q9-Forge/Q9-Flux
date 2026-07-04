@@ -76,8 +76,8 @@ ein einfacheres Prozessmodell, ohne sie 1:1 als Syscalls nachzubilden.
 | $09 | F$Icpt | Signal-Intercept setzen | 🟢 Phase 4 | |
 | $1E | F$RTE | Rückkehr aus Intercept | 🟢 Phase 4 | Gegenstück zu F$Icpt |
 | $0A | F$Sleep | Prozess schlafen legen | ✅ | Phase 4.3: SLEEPING/Q9_WAIT_TIMER, `wake_tick` = Tick-Zaehler + Ticks (0 = einmal yielden) |
-| $0B | F$SSpd | Prozess suspendieren | 🟢 Phase 4 | |
-| $0D | F$SPrior | Priorität setzen | 🟢 Phase 4 | |
+| $0B | F$SSpd | Prozess suspendieren | ✅ | Phase 4.4: WAITING/Q9_WAIT_SIGNAL, bewusst ohne Weckmechanismus vor F$Send (4.5) |
+| $0D | F$SPrior | Priorität setzen | ✅ | Phase 4.4: reines Datenfeld, Scheduler bleibt Round-Robin |
 | $0E | F$STrap | Trap-Intercept setzen | 💤 | eher 6809/68k-Trap-Mechanik, niedrige Prio |
 | $57 | F$SigMask | Signalmaske setzen | 💤 Phase 4/5 | |
 | $63 | F$SigReset | Signal-Intercept-Kontext zurücksetzen | 💤 Phase 4/5 | |

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.50
+// File:   syscall.c                                                                       Ver. 2.60
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -35,6 +35,7 @@
 // 26-07-04│ 2.50 │ 4.3: sc_read versetzt den aufrufenden Prozess bei E$NotRdy (Treiberpfad, │ CF
 //         │      │ kein File-Manager) per q9_proc_wait_device in WAITING; F$Wait ebenso     │
 //         │      │ per q9_proc_wait_child bei E$NotRdy; neu F$Sleep ueber q9_proc_sleep     │
+// 26-07-04│ 2.60 │ 4.4: F$SSpd + F$SPrior neu ueber q9_proc_suspend/set_priority            │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -537,6 +538,37 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         return 0;
     }
 
+    case F_SSPD: {                                      /* d0.w PID (0 = aufrufender Prozess), 4.4 */
+        q9_pd_t *me  = q9_proc_current();
+        uint32_t pid = r->d[0] & 0xffffu;
+        if (pid == 0) {
+            if (!me) {
+                return E_IPRCID;                          /* F$SSpd(0) ausserhalb eines Prozesses    */
+            }
+            pid = me->pid;
+        }
+        return q9_proc_suspend(pid);
+    }
+
+    case F_SPRIOR: {                                     /* d0.w PID (0=Aufrufer), d1.b neue Prio,  */
+        q9_pd_t *me  = q9_proc_current();                /*   -> d1.b alte Prioritaet, 4.4          */
+        uint32_t pid = r->d[0] & 0xffffu;
+        uint8_t  old;
+        int      err;
+        if (pid == 0) {
+            if (!me) {
+                return E_IPRCID;
+            }
+            pid = me->pid;
+        }
+        err = q9_proc_set_priority(pid, (uint8_t)r->d[1], &old);
+        if (err != 0) {
+            return err;
+        }
+        r->d[1] = old;
+        return 0;
+    }
+
     case F_TIME: {                                     /* d0 = Zeit, d1 = Datum (OS-9-Packung,   */
         q9_datetime_t dt;                              /* MWOS-verifiziert), d2.w = Wochentag    */
         uint32_t      ms = q9_hal_ticks_ms() - boot_ticks; /* (0=So), d3 = ms-Ticks               */
@@ -575,5 +607,5 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 2.50
+// EOF syscall.c                                                                           Ver. 2.60
 //────────────────────────────────────────────────────────────────────────────────────────────────

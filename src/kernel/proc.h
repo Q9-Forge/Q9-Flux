@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   proc.h                                                                          Ver. 1.20
+// File:   proc.h                                                                          Ver. 1.30
 // Owner:  AF
 // Desc.:  Q9 Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4). Grundsatzentscheidung
 //         E8 (PROJECT.md): Step-Modell statt Stack-Umschaltung — WASM kennt keinen Stack-Wechsel,
@@ -44,6 +44,9 @@
 //         │      │ q9_proc_wait_child/q9_proc_sleep — echtes Blockieren statt E$NotRdy-    │ CF
 //         │      │ Poll-Provisorium (I$Read/I$ReadLn, F$Wait); F$Sleep neu ueber die       │ CF
 //         │      │ Scheduler-Zustaende WAITING/SLEEPING                                    │ CF
+// 26-07-04│ 1.30 │ 4.4: Q9_WAIT_SIGNAL + priority-Feld, q9_proc_suspend/set_priority       │ CF
+//         │      │ (F$SSpd/F$SPrior) — Suspendieren ist bewusst ohne eigenen Weckmechanismus│ CF
+//         │      │ (kommt erst mit F$Send in 4.5), Prioritaet ist reines Datenfeld          │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_PROC_H
 #define Q9_PROC_H
@@ -68,7 +71,10 @@ typedef enum q9_wait_reason {
     Q9_WAIT_NONE = 0,                                   /* nur ausserhalb WAITING/SLEEPING gueltig */
     Q9_WAIT_DEVICE,                                     /* WAITING: wait_dev muss SS.Ready melden  */
     Q9_WAIT_CHILD,                                      /* WAITING: ein Zombie-Kind muss vorliegen */
-    Q9_WAIT_TIMER                                       /* SLEEPING: wake_tick muss erreicht sein  */
+    Q9_WAIT_TIMER,                                      /* SLEEPING: wake_tick muss erreicht sein  */
+    Q9_WAIT_SIGNAL                                      /* WAITING: F$SSpd (4.4) — bewusst OHNE    */
+                                                        /*   Weckcheck in q9_proc_schedule; erst    */
+                                                        /*   F$Send (4.5) bricht das ab             */
 } q9_wait_reason_t;
 
 typedef void (*q9_proc_step_fn)(void);
@@ -89,6 +95,8 @@ typedef struct q9_pd {
     struct q9_dev           *wait_dev;                    /* Q9_WAIT_DEVICE: Geraet, dessen SS.Ready */
                                                         /*   den Prozess weckt                     */
     uint32_t                 wake_tick;                   /* Q9_WAIT_TIMER: Ziel-Tickwert (4.3)      */
+    uint8_t                   priority;                     /* F$SPrior (4.4) — reines Datenfeld,      */
+                                                        /*   Scheduler bleibt Round-Robin           */
 } q9_pd_t;
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
@@ -197,8 +205,28 @@ void q9_proc_wait_child(uint32_t pid);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_proc_sleep(uint32_t pid, uint32_t ticks);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_suspend
+// Desc.:    F$SSpd-Unterbau (4.4): versetzt pid in den Zustand WAITING mit Weckgrund
+//           Q9_WAIT_SIGNAL — bewusst OHNE Weckcheck in q9_proc_schedule (der Scheduler steppt den
+//           Prozess also nie wieder von selbst). Erst F$Send (4.5) wird WAITING/SLEEPING
+//           unabhaengig vom Weckgrund gewaltsam abbrechen. 0 = ok, E$IPrcID bei unbekannter PID.
+// Call:     err = q9_proc_suspend(pid)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_suspend(uint32_t pid);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_set_priority
+// Desc.:    F$SPrior-Unterbau (4.4): setzt das priority-Feld von pid, liefert den alten Wert in
+//           *out_old. Reines Datenfeld — der Scheduler bleibt Round-Robin (Aging/Priorisierung
+//           lohnt erst bei echter Konkurrenz um Rechenzeit, s. ARBEITSPLAN.md 4.4). 0 = ok,
+//           E$IPrcID bei unbekannter PID.
+// Call:     err = q9_proc_set_priority(pid, new_prio, &old_prio)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_set_priority(uint32_t pid, uint8_t new_prio, uint8_t *out_old);
+
 #endif // Q9_PROC_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF proc.h                                                                              Ver. 1.20
+// EOF proc.h                                                                              Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
