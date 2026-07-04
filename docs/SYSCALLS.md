@@ -387,6 +387,35 @@ zurück. **Reines Datenfeld** — der Scheduler bleibt Round-Robin, Priorisierun
 erst bei echter Konkurrenz um Rechenzeit (ARBEITSPLAN.md, Schritt 4.4). `d0.w == 0` außerhalb
 eines Prozesses: `E$IPrcID`. Unbekannte PID: `E$IPrcID`.
 
+### F$Send ($08) / F$Icpt ($09) / F$RTE ($1E) — seit Phase 4.5
+
+| Register | F$Send Input                    | F$Icpt Input                          |
+|----------|-------------------------------------|--------------------------------------|
+| d0.w     | Ziel-PID                            | —                                      |
+| d1.l     | Signal-Nummer                       | —                                      |
+| a0       | —                                    | Intercept-Handler (`q9_proc_step_fn`, `NULL` = deinstalliert) |
+
+**F$Icpt** installiert `a0` als Intercept-Handler des AUFRUFENDEN Prozesses (proc.c:
+`q9_proc_icpt`) — anders als F$SSpd/F$SPrior wirkt F$Icpt bewusst nur auf sich selbst (wie in
+echtem OS-9), außerhalb eines Prozesses (kein `q9_proc_current()`): `E$IPrcID`.
+
+**F$Send** stellt der Ziel-PID ein Signal zu (proc.c: `q9_proc_send`): steht der Zielprozess in
+`WAITING`/`SLEEPING`, wird er UNABHÄNGIG vom Weckgrund sofort `ACTIVE` ("Signal bricht
+Waiting/Sleeping ab"). Ist zusätzlich ein Intercept-Handler installiert, ruft der Scheduler ab
+dem nächsten Tick diesen Handler statt der normalen Step-Funktion auf (`q9_pd_t.in_intercept`) —
+der Handler liest die zugestellte Signal-Nummer über `q9_proc_current()->pending_signal`. Ohne
+installierten Handler bleibt es beim reinen Aufwecken, kein Umweg über einen Handler. Unbekannte
+Ziel-PID: `E$IPrcID`.
+
+**F$RTE** beendet den Intercept-Modus der AUFRUFENDEN PID (proc.c: `q9_proc_rte`) — ab dem
+nächsten Tick ruft der Scheduler wieder die normale Step-Funktion. Außerhalb eines Prozesses ODER
+wenn gerade gar kein Intercept läuft (kein vorheriges F$Send mit installiertem Handler):
+`E$IPrcID`.
+
+Bewusste Vereinfachung ggü. echtem OS-9: Q9 kennt genau EINEN Intercept-Handler pro Prozess (kein
+Signalmaskenkonzept, `F$SigMask`/`F$SigReset` bleiben 💤, s. docs/SYSCALL_ROADMAP.md) und keine
+vordefinierten Signalnummern — die Bedeutung von `d1.l` liegt beim aufrufenden Code.
+
 ### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 MWOS-korrigiert
 
 | Register | F$Time Output                          | F$STime Input     |

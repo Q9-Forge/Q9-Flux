@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.20
+// File:   kernel.c                                                                        Ver. 3.30
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -51,6 +51,10 @@
 // 26-07-04│ 3.20 │ 4.4: Selbsttests F$SSpd (WAITING/Q9_WAIT_SIGNAL, dauerhaft ohne           │ CF
 //         │      │ Weckmechanismus vor 4.5) + F$SPrior (Prioritaetsfeld setzen, alten Wert   │
 //         │      │ liefern, E$IPrcID bei unbekannter PID)                                    │
+// 26-07-04│ 3.30 │ 4.5: Selbsttests F$Send/F$Icpt/F$RTE — Signal lenkt bei installiertem     │ CF
+//         │      │ Handler den naechsten Scheduler-Aufruf auf ihn um (F$RTE schaltet zurueck),│
+//         │      │ bricht ohne Handler nur WAITING ab; Fehlerpfade (unbekannte PID,           │
+//         │      │ ausserhalb eines Prozesses) -> E$IPrcID                                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -339,6 +343,39 @@ static int sspd_calls = 0;
 static void sspd_test_step(void)
 {
     sspd_calls++;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: icpt_test_step / icpt_handler_step
+// Desc.:    4.5-Selbsttest fuer F$Icpt/F$Send/F$RTE: icpt_test_step ist die normale Step-Funktion
+//           (zaehlt jeden normalen Aufruf), installiert sich beim ersten Aufruf per F$Icpt selbst
+//           als Intercept-Handler icpt_handler_step. Trifft danach per F$Send ein Signal ein,
+//           ruft der Scheduler statt icpt_test_step den Handler — der liest das Signal ueber
+//           q9_proc_current()->pending_signal, zaehlt mit und kehrt per F$RTE zur normalen
+//           Step-Funktion zurueck.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int      icpt_normal_calls    = 0;
+static int      icpt_handler_calls   = 0;
+static uint32_t icpt_received_signal = 0;
+
+static void icpt_handler_step(void)
+{
+    q9_pd_t  *me = q9_proc_current();
+    q9_regs_t rte = {0};
+
+    icpt_handler_calls++;
+    icpt_received_signal = me ? me->pending_signal : 0;
+    q9_syscall(F_RTE, &rte);
+}
+
+static void icpt_test_step(void)
+{
+    icpt_normal_calls++;
+    if (icpt_normal_calls == 1) {
+        q9_regs_t ic = {0};
+        ic.a[0] = (void *)icpt_handler_step;
+        q9_syscall(F_ICPT, &ic);
+    }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -692,6 +729,83 @@ int q9_kernel_selftest(void)
         ok = ok && (q9_syscall(F_SPRIOR, &sp3) == E_IPRCID);
 
         checks[nchecks].name = "4.4: F$SPrior setzt Prioritaet, liefert alten Wert, E$IPrcID sonst";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.5: F$Send lenkt bei installiertem F$Icpt-Handler den naechsten Scheduler-Aufruf auf   */
+        /* diesen um (statt der normalen Step-Funktion); F$RTE schaltet danach zurueck             */
+        int            ok;
+        uint32_t       childpid;
+        q9_pd_t       *pd;
+        q9_regs_t      sd = {0};
+
+        icpt_normal_calls    = 0;
+        icpt_handler_calls   = 0;
+        icpt_received_signal = 0;
+        ok = (q9_proc_fork(1, 0, icpt_test_step, &childpid) == 0);
+
+        q9_kernel_step();                               /* Tick 1: normal, installiert Handler      */
+        ok = ok && (icpt_normal_calls == 1 && icpt_handler_calls == 0);
+
+        sd.d[0] = childpid;
+        sd.d[1] = 42;                                    /* Signal-Nummer                            */
+        ok = ok && (q9_syscall(F_SEND, &sd) == 0);
+        pd = q9_proc_find(childpid);
+        ok = ok && (pd != 0 && pd->in_intercept == 1);
+
+        q9_kernel_step();                               /* Tick 2: Scheduler ruft icpt_handler_step */
+        ok = ok && (icpt_handler_calls == 1 && icpt_received_signal == 42 &&
+                    icpt_normal_calls == 1 && pd->in_intercept == 0); /* F$RTE hat zurueckgeschaltet */
+
+        q9_kernel_step();                               /* Tick 3: wieder normale Step-Funktion      */
+        ok = ok && (icpt_normal_calls == 2 && icpt_handler_calls == 1);
+
+        {
+            q9_regs_t sd2 = {0};
+            sd2.d[0] = 999;                              /* unbekannte PID -> E$IPrcID                */
+            ok = ok && (q9_syscall(F_SEND, &sd2) == E_IPRCID);
+        }
+
+        q9_proc_exit(childpid, 0);                       /* Testprozess aufraeumen                  */
+        {
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == 0 && wt.d[0] == childpid);
+        }
+        checks[nchecks].name = "4.5: F$Send lenkt auf F$Icpt-Handler um, F$RTE schaltet zurueck";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.5: F$Send bricht WAITING (hier Q9_WAIT_DEVICE) ab, auch ohne installierten Intercept- */
+        /* Handler — der Prozess wird dann einfach ACTIVE, kein Umweg ueber einen Handler           */
+        int            ok;
+        uint32_t       childpid;
+        q9_pd_t       *pd;
+        q9_regs_t      sd = {0};
+
+        readln_block_calls = 0;
+        ok = (q9_proc_fork(1, 0, readln_block_step, &childpid) == 0);
+
+        q9_kernel_step();                               /* Tick 1: I$ReadLn -> E$NotRdy -> WAITING  */
+        pd = q9_proc_find(childpid);
+        ok = ok && (pd != 0 && pd->state == Q9_PS_WAITING);
+
+        sd.d[0] = childpid;
+        sd.d[1] = 7;
+        ok = ok && (q9_syscall(F_SEND, &sd) == 0);
+        ok = ok && (pd->state == Q9_PS_ACTIVE && pd->in_intercept == 0);
+
+        q9_proc_exit(childpid, 0);                       /* Testprozess aufraeumen                  */
+        {
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == 0 && wt.d[0] == childpid);
+        }
+        checks[nchecks].name = "4.5: F$Send bricht WAITING ab (ohne Handler bleibt Prozess ACTIVE)";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.5: F$Icpt/F$RTE ausserhalb eines Prozesses (kein q9_proc_current()) -> E$IPrcID */
+        q9_regs_t r1 = {0};
+        q9_regs_t r2 = {0};
+        int       ok = (q9_syscall(F_ICPT, &r1) == E_IPRCID);
+        ok = ok && (q9_syscall(F_RTE, &r2) == E_IPRCID);
+        checks[nchecks].name = "4.5: F$Icpt/F$RTE ausserhalb eines Prozesses -> E$IPrcID";
         checks[nchecks++].ok = ok;
     }
     {   /* F$Time delivers uptime */
@@ -1386,5 +1500,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 3.20
+// EOF kernel.c                                                                            Ver. 3.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

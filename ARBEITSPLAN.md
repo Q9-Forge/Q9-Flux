@@ -137,7 +137,7 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 | 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | ✅ | Claudia | Entscheidung E9 (Q9_MOD_NATIVE) — Details siehe „Erledigt" unten |
 | 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | ✅ | Claudia | Details siehe „Erledigt" unten |
 | 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | ✅ | Claudia | Details siehe „Erledigt" unten |
-| 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | 🟢 | Claudia | konzeptionell unabhängig vom Kern, bewusst eigener Schritt |
+| 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | ✅ | Claudia | Details siehe „Erledigt" unten — damit ist Phase 4 vollständig |
 
 ---
 
@@ -210,6 +210,38 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.5 (Signale: F$Send + F$Icpt + F$RTE)** ✅: schließt Phase 4 (Prozesse)
+  ab. **syscall.h**: `F_ICPT` ($09) und `F_RTE` ($1E) neu, `F_SEND` ($08) war schon reserviert.
+  **proc.h/.c**: vierter Weckgrund `Q9_WAIT_SIGNAL` (bereits seit 4.4 als Enum-Wert vorhanden,
+  jetzt erstmals genutzt) + drei neue `q9_pd_t`-Felder: `icpt_handler` (`q9_proc_step_fn`,
+  `NULL` = kein Handler installiert), `pending_signal` (letztes zugestelltes Signal, lesbar über
+  `q9_proc_current()->pending_signal` — kein neuer Getter nötig, das Feld ist schon öffentlich),
+  `in_intercept` (1 = Scheduler ruft `icpt_handler()` statt der normalen Step-Funktion).
+  `q9_proc_icpt(pid, handler)` installiert/deinstalliert. `q9_proc_send(pid, signal)`: bricht
+  `WAITING`/`SLEEPING` UNABHÄNGIG vom Weckgrund sofort ab (Zustand → `ACTIVE`); ist zusätzlich
+  ein Handler installiert, wird `pending_signal` gesetzt und `in_intercept` aktiviert — ohne
+  Handler bleibt es beim reinen Aufwecken. `q9_proc_rte(pid)` beendet den Intercept-Modus wieder
+  (`E$IPrcID`, falls gerade gar keiner läuft — F$RTE ins Leere ergibt keinen Sinn).
+  **`q9_proc_schedule()`**: pro Tick jetzt `if (in_intercept && icpt_handler) icpt_handler();
+  else if (step) step();` statt immer nur `step()` — minimal-invasive Umschaltung, der Rest des
+  Scheduler-Kerns (Round-Robin, Weckgrund-Checks für WAITING/SLEEPING) bleibt unverändert.
+  **syscall.c**: `F_SEND`/`F_ICPT`/`F_RTE` im Dispatcher — F$Icpt/F$RTE wirken (anders als
+  F$SSpd/F$SPrior) bewusst NUR auf den aufrufenden Prozess selbst (wie in echtem OS-9), `a0` trägt
+  bei F$Icpt den rohen Funktionszeiger (erster Syscall, der das tut — bisher liefen
+  Step-Funktionszeiger nur intern über F$Fork/F$Chain + Q9_MOD_NATIVE, s. Entscheidung E9).
+  **Selbsttests** (kernel.c): `icpt_test_step`/`icpt_handler_step` beweisen die volle Kette —
+  Prozess installiert beim ersten eigenen Tick seinen Handler, F$Send lenkt den nächsten
+  Scheduler-Aufruf auf ihn um (Signal-Nummer korrekt über `pending_signal` lesbar), F$RTE schaltet
+  zurück, der übernächste Tick läuft wieder normal. Zweiter Test: F$Send auf einen WAITING-Prozess
+  OHNE installierten Handler weckt ihn nur (kein Umweg über einen Handler). Fehlerpfad-Checks
+  (unbekannte PID, F$Icpt/F$RTE außerhalb eines Prozesses) → `E$IPrcID`.
+  docs/SYSCALLS.md (neuer $08/$09/$1E-Abschnitt), docs/SYSCALL_ROADMAP.md (Status-Spalten),
+  docs/HANDBUCH.md (Abschnitt 5.6 komplettiert, Abschnitt 6 Phase 4 auf „fertig" gesetzt)
+  aktualisiert. `make clean && make native && make test` PASS, warnungsfrei; zusätzlich mit
+  AddressSanitizer/UBSan gegenverifiziert (sauber). `make wasm` baut warnungsfrei (reine
+  Kernel-Logik, kein HAL-Bezug). **Damit ist Phase 4 (Prozesse) vollständig abgearbeitet** — kein
+  weiterer 🟢-Ready-Schritt mit Wer=Claudia offen; nächste Schritte (Phase 5, Shell) müssen erst
+  mit Andreas besprochen und freigegeben werden.
 - **2026-07-04 — Phase 4.4 (F$SSpd + F$SPrior)** ✅: zwei unabhängige, kleine Ergänzungen zum
   Prozessmodell. **syscall.h**: neue Funktionsnummern `F_SSPD` ($0B) und `F_SPRIOR` ($0D).
   **proc.h/.c**: vierter Weckgrund `Q9_WAIT_SIGNAL` (neuer Enum-Wert in `q9_wait_reason_t`) +
