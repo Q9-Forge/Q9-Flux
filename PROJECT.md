@@ -97,8 +97,14 @@ Sticky-Module, Namensauflösung): **docs/MODULES.md**.
 | $14    | 4     | DataSize     | statischer Datenbedarf                   |
 | $18    | 4     | CRC32        | über das gesamte Modul (Feld = 0 gerechnet) |
 
-- **WASM-Module**: gültige `.wasm`-Datei, Q9-Header als **Custom Section**
-  eingebettet → Datei ist gleichzeitig valides WASM UND valides Q9-Modul.
+- **WASM-Module**: **Entschieden 2026-07-04** (Phase 4.7, `build_wasm_module` in
+  `kernel.c` als Referenzimplementierung) — Q9-Header direkt gefolgt von den
+  rohen `.wasm`-Bytes ab Offset `execoff` (Länge `datasize`), genau wie beim
+  `Q9_MOD_NATIVE`-Stopgap (E9). KEINE Custom-Section-Einbettung (ursprünglicher
+  Entwurf verworfen) — die Datei ist damit NICHT gleichzeitig ein eigenständig
+  gültiges `.wasm`, sondern ein eigenständiges Q9-Format mit WASM-Nutzlast.
+  Bewusst im Sinne von OS-9 (eigenes, in sich geschlossenes Modulformat statt
+  Dual-Kompatibilität zu einem fremden Containerformat).
 - **68k-Module**: Header + positionsunabhängiger 68k-Code (vbcc, PC-relativ).
 - **Modul-Directory** im Kernel: Name → Adresse, Link-Count, Revision-Update,
   CRC-Prüfung beim Laden.

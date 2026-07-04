@@ -156,6 +156,7 @@ und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
 | 4.6 | Eingebettete WASM-Runtime für den nativen Build (löst O5): eine Bibliothek (Kandidat wasm3 — klein, embeddable, keine harte malloc-Pflicht) einbinden, die ein beliebiges `.wasm`-Modul zur Laufzeit instanziieren und eine exportierte Funktion aufrufen kann. Noch OHNE Syscall-Bridge — reiner Grundbaustein | ✅ | Claudia | wasm3 (MIT, Commit `d77cd814`) vendored unter `third_party/wasm3/` (nur Kern-Interpreter, kein WASI/libc); `src/kernel/wasmrt.c/.h` als schmaler Wrapper (init/load/call_i32/free). Details siehe „Erledigt" unten |
 | 4.7 | `Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das Language-Byte `Q9_MOD_WASM`, instanziieren das Modul über die Runtime aus 4.6 (bzw. `WebAssembly.instantiate` im Browser) mit einem Import/Host-Funktion als Syscall-Bridge. Erstmal NUR Syscalls ohne Zeiger-Parameter (F$Time, F$ID, F$Exit) | ✅ | Claudia | Native Seite fertig: `src/kernel/wasmproc.c/.h` neu (Import-Bridge `q9.f_id`/`q9.f_time`/`q9.f_exit`), `entry_step_for()` in syscall.c erkennt `Q9_MOD_WASM` zusaetzlich zu `Q9_MOD_NATIVE`. Browser-Seite (WebAssembly.instantiate im Worker) bewusst NICHT Teil dieses Schritts — geparkt, s. unten. Details siehe „Erledigt" |
 | 4.8 | Speicher-/Pointer-Marshaling über die Modulgrenze: a0–a7-Register als Offsets in die modul-eigene lineare Speicherinstanz interpretieren (statt rohe Host-Zeiger), mit Bounds-Check. Damit werden auch I$Read/I$Write/I$Open (Puffer-/Pfadnamen-Zeiger) für WASM-Module nutzbar | 🟢 | Claudia | `Q9_MOD_NATIVE` (E9-Stopgap) bleibt als Sonderfall bestehen (z.B. kernelinterne Prozesse), wird für "normale" Programme aber überflüssig |
+| 4.9 | `wasm3` auf Fixed-Heap umstellen (kein Host-`malloc`/`calloc`/`realloc` mehr im WASM-Pfad) + erster Baustein einer Q9-Systemkonfiguration | 🟢 | Claudia | Andreas' Einwand (2026-07-04 abends): Q9 soll sich einen Speicherblock holen und darin komplett selbst verwalten, nicht den Host-Allocator durchreichen. `wasm3` unterstützt genau das schon eingebaut über `d_m3FixedHeap` (Compile-Define, schaltet auf ein statisches Array + Bump-Allocator um, s. `third_party/wasm3/m3_core.c`/`m3_config.h`) — nur bisher nicht aktiviert. Neue Konfigurationsstelle einführen (z.B. `src/kernel/config.h`), darin als ERSTEN Wert die Gesamtspeichergröße des simulierten/emulierten Zielsystems (Namensvorschlag `Q9_SYSTEM_MEM_BYTES`, Grundstein für spätere Werte wie CPU-Takt — die kommen NICHT jetzt schon dazu). `d_m3FixedHeap` beim Bau von `third_party/wasm3/*.c` per Compiler-Define aus diesem einen Wert ableiten (nicht zwei separate Zahlen pflegen). Sinnvolle Startgröße wählen und kurz begründen (z.B. 64–256 KB, reicht für die kurzlebigen 4.6-4.8-Testmodule bei weitem). Verifizieren: `grep` nach `calloc`/`realloc`/`malloc` im kompletten WASM-Pfad zeigt nichts mehr Aktives (der Code bleibt im `third_party`-Vendor-Zweig unverändert, nur der `#else`-Zweig wird durch das Define nie mehr erreicht); bestehende 4.6/4.7-Selbsttests bleiben PASS |
 
 ---
 
@@ -734,7 +735,18 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **Phase 4 komplett (4.1–4.5),
+**Letzte Aktualisierung**: 2026-07-04 abends — **4.9 neu: `wasm3` auf Fixed-
+Heap umstellen + erster Systemkonfigurationswert.** Andreas' Einwand: Q9 soll
+sich einen Speicherblock holen und komplett selbst verwalten, nicht den
+Host-Allocator durchreichen — `wasm3` unterstützt das schon eingebaut
+(`d_m3FixedHeap`), nur bisher nicht aktiviert. Neue Konfigurationsstelle
+(`Q9_SYSTEM_MEM_BYTES` o.ä.) wird der erste einstellbare Wert für das
+simulierte/emulierte Zielsystem. PROJECT.md korrigiert: Modul-Header für
+`Q9_MOD_WASM` ist Prefix-Format (Header + rohe `.wasm`-Bytes), NICHT Custom
+Section wie ursprünglich entworfen — 4.6/4.7 haben das schon so gebaut,
+bevor die Doku es festhielt.
+
+Davor: 2026-07-04 abends — **Phase 4 komplett (4.1–4.5),
 Anschluss 4.6–4.8 freigegeben.** Andreas' Einwand: `F$Fork` führt bislang
 keinen echten geladenen Code aus (E9-Stopgap, nur Funktionszeiger im selben
 Host-Prozess). 4.6–4.8 lösen das für WASM (Primärformat, kein
