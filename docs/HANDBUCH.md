@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.00
+# File:   HANDBUCH.md                                                                     Ver. 1.10
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -11,6 +11,8 @@
 # Date    │ Ver. │ Description                                                             │ By
 #─────────┼──────┼─────────────────────────────────────────────────────────────────────────┼──────
 # 26-07-04│ 1.00 │ Initiale Version, nach Abschluss Phase 3 (Filesystem)                   │ CF
+# 26-07-04│ 1.10 │ 4.6: wasm3-Runtime (Entscheidung E10) — third_party/wasm3, wasmrt.c/.h, │ CF
+#         │      │ neuer Abschnitt 5.8, Lizenz-/Referenzquellen-Tabelle ergänzt            │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -27,7 +29,7 @@ aufschlägt: Werkzeuge, Quellcode-Aufbau, Build-Prozess, Architektur, Lizenzlage
 Für Details verweist es auf die Fachdokumente in `docs/` statt sie zu wiederholen.
 
 **Verwandte Dokumente:**
-- [`../PROJECT.md`](../PROJECT.md) — Vision, Entscheidungshistorie (E1–E8), offene Fragen (O1–O5)
+- [`../PROJECT.md`](../PROJECT.md) — Vision, Entscheidungshistorie (E1–E10), offene Fragen (O1–O6)
 - [`../ARBEITSPLAN.md`](../ARBEITSPLAN.md) — laufender Arbeitsstand, Schritt für Schritt (internes Arbeitsdokument, siehe unten)
 - [`SYSCALLS.md`](SYSCALLS.md) — vollständige Syscall-ABI (Register, Fehlercodes)
 - [`SYSCALL_ROADMAP.md`](SYSCALL_ROADMAP.md) — alle 97 OS-9-Syscalls mit Q9-Status
@@ -63,10 +65,12 @@ urheberrechtlich geschütztes Buch).
 (MWOS) und kein abgetippter Code aus urheberrechtlich geschütztem Material (Bücher)
 landet im Q9-Quellbaum. Diese Quellen dienen ausschließlich als *Referenz zum
 Verstehen* — implementiert wird eigenständig. Bei GPL-Quellen (NitrOS-9, OS9exec)
-ist Übernehmen rechtlich zulässig, wird aber aktuell ebenfalls nicht praktiziert
-(Q9 ist komplett eigenständig geschrieben); sollte sich das ändern, zieht die
-GPL automatisch nach (Copyleft) — das muss bei der Lizenzentscheidung für Q9
-mitgedacht werden.
+ist Übernehmen rechtlich zulässig, wird aber aktuell ebenfalls nicht praktiziert;
+sollte sich das ändern, zieht die GPL automatisch nach (Copyleft) — das muss bei
+der Lizenzentscheidung für Q9 mitgedacht werden. Einzige tatsächlich vendorte
+Fremdquelle ist bislang **wasm3** (`third_party/wasm3/`, MIT-lizenziert, seit
+Phase 4.6) — MIT ist unproblematisch mit praktisch jeder Zielrezenz kombinierbar,
+eigene LICENSE-Datei liegt bei.
 
 Details und Kontext zu den einzelnen Quellen: Abschnitt 7.
 
@@ -136,7 +140,7 @@ abgeschlossenen Schritt aufsetzt.
 
 ```
 Q9/
-├── PROJECT.md            Vision, Architektur-Entscheidungen (E1-E8), offene Fragen (O1-O5)
+├── PROJECT.md            Vision, Architektur-Entscheidungen (E1-E10), offene Fragen (O1-O6)
 ├── ARBEITSPLAN.md         laufender Arbeitsstand (internes Arbeitsdokument, siehe Hinweis unten)
 ├── context.txt            Kurz-Zusammenfassung für den Sessionwechsel (ebenfalls intern)
 ├── README.md              englische Kurzbeschreibung
@@ -154,13 +158,20 @@ Q9/
 │   │   ├── module.c/.h        Modul-Header, CRC32, Modul-Directory, F$Link/F$UnLink/F$Load
 │   │   ├── vfs.c/.h           Dateisystem-Routing, austauschbarer File-Manager (q9_fm_t)
 │   │   ├── fat16.c/.h         FAT16-File-Manager (lesend + schreibend, LFN-Lesen)
-│   │   └── proc.c/.h          Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4)
+│   │   ├── proc.c/.h          Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4)
+│   │   └── wasmrt.c/.h        Wrapper um die eingebettete wasm3-Runtime (Phase 4.6,
+│   │                           NUR im nativen Build, s. Abschnitt 5.8) — kapselt wasm3.h nach
+│   │                           aussen, damit kein Aufrufer third_party/wasm3 einbinden muss
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
 │       ├── posix/             macOS/Linux-HAL (termios) — Host-Loop liegt hier
 │       └── wasm/              Browser-HAL (Emscripten) — kein main(), stattdessen
 │                               q9_kernel_init/q9_kernel_step als exportierte Funktionen
+├── third_party/
+│   └── wasm3/             vendorte WASM-Interpreter-Bibliothek (MIT, unverändert), nur im
+│                           nativen Build gelinkt — siehe third_party/wasm3/README.md und
+│                           Abschnitt 7
 ├── tools/                 PC-seitige Werkzeuge (z.B. künftig `q9mod`, Modul-Packer)
 ├── web/                   Browser-Frontend: index.html (xterm.js), worker.js (Kernel im Worker)
 ├── test/                  01_test_boot.py, 02_..., je Testskript PASS/FAIL, aus dem Projekt-Root
@@ -179,7 +190,10 @@ Diese Regeln sind keine Stilfrage, sondern tragen die Portabilität des Projekts
 - **Kein `malloc` im Kernel.** Alle Tabellen (Geräte, Pfade, Modul-Directory,
   Load-Puffer) sind statische Arrays fester Größe — analog zu OS-9s
   ROM-orientiertem Design, und weil ein WASM-Modul ohne Heap-Fragmentierung
-  auskommen soll.
+  auskommen soll. Einzige, bewusst eng begrenzte Ausnahme: die vendorte
+  wasm3-Bibliothek (`third_party/wasm3/`, Entscheidung E10 in PROJECT.md)
+  nutzt intern `malloc`/`free` — das betrifft nur diesen Fremdcode selbst,
+  nicht `wasmrt.c` oder den restlichen Kernel.
 - **Jede Datei trägt einen Box-Header** (Datei/Owner/Beschreibung/Aufruf) und
   eine **Edition History** (Datum, Version, Beschreibung, Kürzel) — siehe jede
   bestehende `.c`/`.h`-Datei als Vorlage. So bleibt die Entstehungsgeschichte
@@ -392,6 +406,39 @@ const char   *q9_hal_target(void);
 Jedes Target implementiert genau diese Funktionen; alles Weitere (Geräte,
 Pfade, Dateisystem, Module) ist reiner Kernel-Code und läuft überall gleich.
 
+### 5.8 WASM-Runtime (native Build, Phase 4.6, Entscheidung E10)
+
+Damit `Q9_MOD_WASM`-Module (s. Abschnitt 5.4) nicht nur im Browser laufen
+(dort instanziiert JS sie direkt über `WebAssembly.instantiate`), braucht der
+native PC-Build einen eigenen, eingebetteten WASM-Interpreter — sonst wäre
+die native Version nur zu Debug-Zwecken benutzbar (löst O5 in PROJECT.md).
+Kandidat und Wahl: **wasm3** (MIT, klein, embeddable, kein WASI/Betriebs-
+systembezug nötig) — vendored, unverändert, unter `third_party/wasm3/`.
+
+`src/kernel/wasmrt.c/.h` ist die schmale Q9-Schnittstelle darüber:
+
+```c
+int  q9_wasmrt_init(q9_wasmrt_t *rt);
+int  q9_wasmrt_load(q9_wasmrt_t *rt, const uint8_t *bytes, uint32_t len);
+int  q9_wasmrt_call_i32(q9_wasmrt_t *rt, const char *funcname,
+                         int32_t a, int32_t b, int32_t *out);
+void q9_wasmrt_free(q9_wasmrt_t *rt);
+```
+
+Stand 4.6: reiner Grundbaustein — ein `.wasm`-Modul laden und eine
+exportierte Funktion mit zwei `i32`-Parametern aufrufen, **noch ohne**
+Syscall-Bridge (keine Importe Richtung Q9-Kernel). Bewiesen durch einen
+Selbsttest (nur `-DQ9_HAVE_WASM3`, native-only), der ein handgebautes
+`add(a,b)`-Modul lädt und rechnet. Die eigentliche Syscall-Bridge
+(Import-Tabelle, F$Fork/F$Chain erkennen `Q9_MOD_WASM`) folgt mit Schritt
+4.7, Zeiger-/Speicher-Marshaling über die Modulgrenze mit 4.8.
+
+`wasmrt.c` selbst bleibt warnungsfrei und ohne eigenes `malloc` — die
+Heap-Nutzung steckt vollständig in wasm3 (s. Abschnitt 3.1, "Kein malloc im
+Kernel"). Nur Teil von `make native`; `make wasm` bindet weder
+`wasmrt.c` noch `third_party/wasm3/` ein (per `#ifdef Q9_HAVE_WASM3` in
+`kernel.c` und separater Makefile-Quellliste).
+
 ---
 
 ## 6. Stand der Dinge
@@ -405,7 +452,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 1 | Kernel-Basis: Syscall-Dispatcher, Device-/Pfadmodell, Namensauflösung, POSIX-HAL | ✅ fertig |
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
-| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig |
+| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig (4.1-4.5); Anschluss 4.6-4.8 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3) ✅ fertig, 4.7-4.8 offen |
 | 5 | Shell | offen |
 | 6 | 68k-Runtime (Emulator im Browser) | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
@@ -429,14 +476,18 @@ Quellen dienen als fachliche Referenz — mit unterschiedlicher Rechtslage:
 | **NitrOS-9** ([github.com/nitros9project/nitros9](https://github.com/nitros9project/nitros9)) | Community-OS-9/6809, RBF in 6809-Assembler | **GPL** | bislang nur als Idee vorgemerkt (Ideenspeicher, ARBEITSPLAN.md) — mögliche spätere Quelle für einen RBF-Manager auf einer 6809-Runtime (Phase 8) | Ja (GPL, Copyleft beachten) |
 | **ToolShed** (Teil des NitrOS-9-Projekts) | PC-Tools zum Lesen/Schreiben von RBF-Images, in C | vermutlich GPL (im Kontext von NitrOS-9 zu prüfen) | bislang nur als Idee vorgemerkt: RBF-Strukturwissen für einen künftigen nativen Q9-RBF-Manager | zu prüfen |
 | **OS9exec** (Lukas Zeller/Beat Forster) | 68k-Emulator + OS-9-Kernel-Nachbau in C, Syscall-Ebene | **GPL** | bislang nur als Idee vorgemerkt: Referenz für die TRAP→Syscall-Bridge (Phase 6) | Ja (GPL, Copyleft beachten) |
+| **wasm3** ([github.com/wasm3/wasm3](https://github.com/wasm3/wasm3), Commit `d77cd814`) | WASM-Interpreter, C | **MIT** | Unverändert als `third_party/wasm3/` vendored und in `make native` mitgebaut (Entscheidung E10, Phase 4.6) — löst O5 (WASM-Runtime für den nativen Build) | Ja (MIT, LICENSE-Datei liegt bei) |
 
-**Konsequenz für eine künftige Veröffentlichung:** Der Q9-Quellbaum selbst
-enthält aktuell keine Zeilen aus einer der obigen Quellen — alles ist eigene
-Implementierung nach eigenem Verständnis der Konzepte. Sollte künftig doch
-GPL-Code aus NitrOS-9/OS9exec übernommen werden, muss die Lizenz von Q9
-(oder zumindest der betroffenen Module) GPL-kompatibel sein. Die MWOS- und
-Buch-Referenzen dürfen so oder so nie als Code auftauchen, nur als
-Verständnisgrundlage dienen.
+**Konsequenz für eine künftige Veröffentlichung:** Der Q9-eigene Quellbaum
+(`src/`, `tools/`, `test/`) enthält keine Zeilen aus einer der obigen
+GPL/proprietären Quellen — alles ist eigene Implementierung nach eigenem
+Verständnis der Konzepte. Einzige tatsächlich übernommene Fremdquelle ist
+**wasm3** unter `third_party/wasm3/` (MIT-lizenziert, unverändert, mit
+eigener LICENSE-Datei) — MIT ist mit jeder künftigen Q9-Lizenzwahl
+kompatibel. Sollte künftig doch GPL-Code aus NitrOS-9/OS9exec übernommen
+werden, muss die Lizenz von Q9 (oder zumindest der betroffenen Module)
+GPL-kompatibel sein. Die MWOS- und Buch-Referenzen dürfen so oder so nie als
+Code auftauchen, nur als Verständnisgrundlage dienen.
 
 ---
 
@@ -467,8 +518,8 @@ vorausgesetzt werden:
 ---
 
 **Erstellt**: 2026-07-04
-**Letzte Aktualisierung**: 2026-07-04 (Initiale Version, nach Abschluss Phase 3)
+**Letzte Aktualisierung**: 2026-07-04 (Schritt 4.6: wasm3-Runtime, Entscheidung E10)
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF HANDBUCH.md                                                                          Ver. 1.00
+# EOF HANDBUCH.md                                                                          Ver. 1.10
 #─────────────────────────────────────────────────────────────────────────────────────────────────

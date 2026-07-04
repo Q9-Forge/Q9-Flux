@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.30
+// File:   kernel.c                                                                        Ver. 3.40
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -55,6 +55,8 @@
 //         │      │ Handler den naechsten Scheduler-Aufruf auf ihn um (F$RTE schaltet zurueck),│
 //         │      │ bricht ohne Handler nur WAITING ab; Fehlerpfade (unbekannte PID,           │
 //         │      │ ausserhalb eines Prozesses) -> E$IPrcID                                    │
+// 26-07-04│ 3.40 │ 4.6: Selbsttest wasm3-Grundbaustein (nur -DQ9_HAVE_WASM3, native-only) —    │ CF
+//         │      │ laedt ein handgebautes add(a,b)-Modul, ruft es auf, prueft 2+3=5           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -64,6 +66,9 @@
 #include "syscall.h"
 #include "vfs.h"
 #include "kernel.h"
+#ifdef Q9_HAVE_WASM3
+#include "wasmrt.h"
+#endif
 
 static void repl_step(void);                            /* 4.1: Step-Funktion von PID 1 (s.u.)     */
 
@@ -1487,6 +1492,34 @@ int q9_kernel_selftest(void)
         }
     }
 
+#ifdef Q9_HAVE_WASM3
+    {
+        /* 4.6: Grundbaustein wasm3-Runtime (noch OHNE Syscall-Bridge, kommt mit 4.7) — laedt ein
+           von Hand gebautes .wasm-Modul (aequivalent zu `(func $add (param i32 i32) (result i32)
+           local.get 0 local.get 1 i32.add)`, exportiert als "add") und ruft es mit (2, 3) auf.
+           Nur im nativen Build vorhanden (s. Makefile/wasmrt.h) — im wasm-Build ist dieser
+           komplette Block auskompiliert. */
+        static const uint8_t wasm_add[] = {
+            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+            0x01, 0x07, 0x01, 0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f,
+            0x03, 0x02, 0x01, 0x00,
+            0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00,
+            0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01, 0x6a, 0x0b
+        };
+
+        q9_wasmrt_t rt;
+        int ok = (q9_wasmrt_init(&rt) == Q9_WASMRT_OK);
+        ok = ok && (q9_wasmrt_load(&rt, wasm_add, sizeof(wasm_add)) == Q9_WASMRT_OK);
+        int32_t result = 0;
+        ok = ok && (q9_wasmrt_call_i32(&rt, "add", 2, 3, &result) == Q9_WASMRT_OK);
+        ok = ok && (result == 5);
+        q9_wasmrt_free(&rt);
+
+        checks[nchecks].name = "4.6: wasm3 laedt add(a,b)-Modul und rechnet 2+3=5";
+        checks[nchecks++].ok = ok;
+    }
+#endif
+
     for (int i = 0; i < nchecks; i++) {
         kputs(checks[i].ok ? "  [ok] " : "  [FEHLER] ");
         kputs(checks[i].name);
@@ -1500,5 +1533,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 3.30
+// EOF kernel.c                                                                            Ver. 3.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
