@@ -269,7 +269,16 @@ void m68881_mmu_ops(void)
 				}
 				else if ((modes & 0xe200) == 0x2000)	// PFLUSH
 				{
-					fprintf(stderr,"680x0: unhandled PFLUSH PC=%x\n", REG_PC);
+					// Q9/CB030 (see Q9_VENDOR.md): warn once, then stay silent — OS-9
+					// flushes on every context switch and the repeated message wrecks
+					// the console. Ignoring PFLUSH is harmless here: this emulation
+					// has no TLB, every access re-walks the tables.
+					static int warned_pflush = 0;
+					if (!warned_pflush)
+					{
+						warned_pflush = 1;
+						fprintf(stderr,"680x0: unhandled PFLUSH PC=%x (ok/ignoriert - kein TLB; weitere Meldungen unterdrueckt)\n", REG_PC);
+					}
 					return;
 				}
 				else if (modes == 0xa000)	// PFLUSHR
@@ -289,7 +298,16 @@ void m68881_mmu_ops(void)
 				}
 				else if ((modes & 0xe000) == 0x8000)	// PTEST
 				{
-					fprintf(stderr,"680x0: unhandled PTEST\n");
+					// Q9/CB030 (see Q9_VENDOR.md): warn once, then stay silent (s. PFLUSH).
+					// TODO: PTEST sollte eigentlich das MMU-SR setzen — bisher scheint
+					// OS-9 das Ergebnis nicht auszuwerten (Boot + Shell laufen), bei
+					// Bedarf nachruesten.
+					static int warned_ptest = 0;
+					if (!warned_ptest)
+					{
+						warned_ptest = 1;
+						fprintf(stderr,"680x0: unhandled PTEST (weitere Meldungen unterdrueckt)\n");
+					}
 					return;
 				}
 				else
