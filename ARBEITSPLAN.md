@@ -116,7 +116,7 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 | 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | ✅ | Claudia | fat16.c/.h: I$Create/I$MakDir/I$Delete/I$Write echt implementiert, FAT-Ketten allozieren/freigeben (beide FAT-Kopien synchron), nur 8.3-Namen (E$BPNam bei LFN-Bedarf/Duplikat). Details siehe „Erledigt" unten |
 | 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | ✅ | Claudia | q9_mod_load (module.c) — statischer Load-Puffer-Pool (4x4096 Byte, kein malloc), Directory-Eintraege merken Puffer-Herkunft, automatische Freigabe bei Link-Count 0. Details siehe „Erledigt" unten |
 | 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | ✅ | Claudia | Kernel läuft jetzt im Worker (Pflicht für Sync-Access-Handle); Details siehe „Erledigt". wasm ungetestet (emsdk fehlt lokal) |
-| 3.7 | FAT16-Directory-Einträge bekommen echtes Datum/Uhrzeit (q9_hal_time) statt Nullfeldern bei I$Create/I$MakDir | 🟢 | Claudia | Live-Demo 2026-07-04: von Q9 geschriebene Datei zeigt am Mac "1.1.1970" — kosmetisch, aber F$Time liefert die echte Uhrzeit ja schon (seit 1.9), nur fat16.c setzt die DOS-Datum/Zeit-Felder beim Anlegen noch nicht |
+| 3.7 | FAT16-Directory-Einträge bekommen echtes Datum/Uhrzeit (q9_hal_time) statt Nullfeldern bei I$Create/I$MakDir | ✅ | Claudia | `fat_pack_datetime()` (fat16.c) — Details siehe „Erledigt" unten |
 
 ### Phase 4 — Prozesse (freigegeben 2026-07-04, Konzept 2026-07-03 spät mit Andreas besprochen)
 
@@ -173,6 +173,24 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 3.7 (FAT16-Directory-Einträge: echtes Datum/Uhrzeit)** ✅: neue
+  Hilfsfunktion `fat_pack_datetime()` (fat16.c) liest `q9_hal_time()` (existiert bereits seit
+  1.9) und packt sie ins FAT16-Datum/Zeit-Format (Datum: Bit15-9 Jahr seit 1980, Bit8-5 Monat,
+  Bit4-0 Tag; Zeit: Bit15-11 Stunde, Bit10-5 Minute, Bit4-0 Sekunde/2 — FAT16 löst Sekunden nur
+  in 2er-Schritten auf). Ohne Zeitquelle (`q9_hal_time` liefert `-1`) oder bei Jahr < 1980
+  (vor der FAT16-Epoche) bleiben beide Felder wie bisher 0 — reiner Fallback, kein Fehlerfall.
+  `fat16_create` und `fat16_makdir` befüllen damit `crtdate`/`crttime`/`wrtdate`/`wrttime`/
+  `lstaccdate` neu angelegter Directory-Einträge — bei `fat16_makdir` zusätzlich die `.`/`..`-
+  Einträge im neuen Verzeichnis-Cluster selbst (vorher: Nullfelder überall, macOS zeigte
+  entsprechend „1.1.1970" als Anlegedatum, wie in der Live-Demo 2026-07-04 aufgefallen).
+  `test/06_test_fat16.py` (`post_validate()`) um zwei neue, komplett unabhängige
+  Python-Nachvalidierungs-Checks erweitert: `crtdate`/`wrtdate` von `NEU.TXT` (I$Create, bleibt
+  nach I$Delete im Rest-Dirent stehen — nur `name[0]` wird auf `DIRENT_FREE` gesetzt) und von
+  `NEUDIR` samt seinem eigenen `.`-Eintrag (I$MakDir) sind ungleich 0. docs/DEVICES.md
+  (FAT16-Abschnitt) um den Datum/Uhrzeit-Absatz ergänzt. `make test` PASS, warnungsfrei
+  (6 Testskripte, jetzt mit 2 zusätzlichen Checks). wasm nicht betroffen (reine Kernel-Logik,
+  keine HAL-Änderung). **Damit ist Phase 3 wieder vollständig abgearbeitet** — offene
+  🟢-Ready-Schritte mit Wer=Claudia sind jetzt nur noch 4.1–4.5 (Phase 4, Prozesse).
 - **2026-07-04 — Phase 3.6 (wasm-HAL: OPFS-Blockgerät + Upload/Download)** ✅: `q9_hal_blk_read`/
   `q9_hal_blk_write` (`src/hal/wasm/hal_wasm.c`) sind jetzt über `globalThis.q9blk` an einen
   echten Blockspeicher gebunden statt an den bisherigen `-1`-Stub. **Design-Entscheidung**:

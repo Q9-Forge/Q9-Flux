@@ -310,9 +310,14 @@ def post_validate(img_path: str):
         name = raw[0:8]
         ext = raw[8:11]
         attr = raw[0x0B]
+        crttime = struct.unpack_from("<H", raw, 0x0E)[0]
+        crtdate = struct.unpack_from("<H", raw, 0x10)[0]
+        wrttime = struct.unpack_from("<H", raw, 0x16)[0]
+        wrtdate = struct.unpack_from("<H", raw, 0x18)[0]
         fstcluslo = struct.unpack_from("<H", raw, 0x1A)[0]
         filesize = struct.unpack_from("<I", raw, 0x1C)[0]
-        return {"name": name, "ext": ext, "attr": attr, "clus": fstcluslo, "size": filesize}
+        return {"name": name, "ext": ext, "attr": attr, "clus": fstcluslo, "size": filesize,
+                "crttime": crttime, "crtdate": crtdate, "wrttime": wrttime, "wrtdate": wrtdate}
 
     root_entries = [parse_dirent(root[i:i + 32]) for i in range(0, len(root), 32)]
 
@@ -328,6 +333,14 @@ def post_validate(img_path: str):
 
     if neu_txt is not None:
         msgs.append("[ok] Python-Nachvalidierung: NEU.TXT im Root als geloescht (DIRENT_FREE) markiert")
+        # 3.7: I$Create setzt jetzt echtes Anlegedatum — I$Delete raeumt nur name[0]=DIRENT_FREE
+        # ab (fat16_remove), der Rest des Dirents (inkl. crtdate/wrtdate) bleibt unveraendert stehen,
+        # daher hier noch pruefbar.
+        if neu_txt["crtdate"] != 0 and neu_txt["wrtdate"] != 0:
+            msgs.append("[ok] Python-Nachvalidierung: NEU.TXT hatte echtes Anlegedatum (I$Create)")
+        else:
+            msgs.append("[FEHLER] Python-Nachvalidierung: NEU.TXT-Datum/Zeit-Felder sind noch 0")
+            ok = False
     else:
         msgs.append("[FEHLER] Python-Nachvalidierung: kein geloeschter NEU.TXT-Eintrag im Root gefunden")
         ok = False
@@ -358,6 +371,13 @@ def post_validate(img_path: str):
             msgs.append("[ok] Python-Nachvalidierung: NEUDIR-Cluster enthaelt korrekte '.'/'..' -Eintraege")
         else:
             msgs.append("[FEHLER] Python-Nachvalidierung: '.'/'..' im NEUDIR-Cluster fehlerhaft")
+            ok = False
+        # 3.7: I$MakDir setzt jetzt echtes Datum/Uhrzeit (statt Nullfeldern) — geprueft am
+        # NEUDIR-Eintrag im Root UND an seinem eigenen "."-Eintrag (beide von fat16_makdir befuellt).
+        if neudir["crtdate"] != 0 and neudir["wrtdate"] != 0 and dot["crtdate"] != 0:
+            msgs.append("[ok] Python-Nachvalidierung: NEUDIR hat echtes Anlegedatum (kein 1.1.1970/Nullfeld)")
+        else:
+            msgs.append("[FEHLER] Python-Nachvalidierung: NEUDIR-Datum/Zeit-Felder sind noch 0")
             ok = False
     else:
         msgs.append("[FEHLER] Python-Nachvalidierung: kein NEUDIR-Verzeichniseintrag im Root gefunden")
