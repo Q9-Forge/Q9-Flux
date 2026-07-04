@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   syscall.c                                                                       Ver. 2.70
+// File:   syscall.c                                                                       Ver. 2.80
 // Owner:  AF
 // Desc.:  Q9 Syscall-Dispatcher + Phase-1-Implementierungen. I/O läuft über das Device-Modell
 //         (device.c, Pfadtabelle) statt fest verdrahteter Pfade. Semantik: docs/SYSCALLS.md
@@ -37,6 +37,8 @@
 //         │      │ per q9_proc_wait_child bei E$NotRdy; neu F$Sleep ueber q9_proc_sleep     │
 // 26-07-04│ 2.60 │ 4.4: F$SSpd + F$SPrior neu ueber q9_proc_suspend/set_priority            │ CF
 // 26-07-04│ 2.70 │ 4.5: F$Send/F$Icpt/F$RTE neu ueber q9_proc_send/icpt/rte                  │ CF
+// 26-07-04│ 2.80 │ 4.7: F$Fork/F$Chain erkennen (nur -DQ9_HAVE_WASM3) Q9_MOD_WASM zusaetzlich │ CF
+//         │      │ zu Q9_MOD_NATIVE und tragen q9_wasm_proc_step als Step-Funktion ein        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -46,6 +48,9 @@
 #include "proc.h"
 #include "syscall.h"
 #include "vfs.h"
+#ifdef Q9_HAVE_WASM3
+#include "wasmproc.h"
+#endif
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ KERNEL STATE                                                                                 ║
@@ -256,6 +261,30 @@ static int sc_read(q9_regs_t *r, int line_mode)
     return 0;
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: entry_step_for
+// Desc.:    F$Fork/F$Chain-Unterbau: liefert die Step-Funktion fuer ein verlinktes Modul, je nach
+//           Language-Byte. Q9_MOD_NATIVE (Entscheidung E9) ueber q9_proc_native_entry wie bisher;
+//           Q9_MOD_WASM (4.7, nur im nativen Build mit eingebetteter wasm3-Runtime) bekommt immer
+//           dieselbe feste Trampolin-Funktion q9_wasm_proc_step (wasmproc.c) — die liest das
+//           tatsaechlich auszufuehrende Modul selbst wieder aus der Prozesstabelle
+//           (q9_proc_current()->module), braucht also keinen modul-spezifischen Funktionszeiger.
+//           E$NEMod fuer jede andere/nicht unterstuetzte Sprache (z.B. Q9_MOD_WASM im wasm-Build
+//           ohne -DQ9_HAVE_WASM3, oder Q9_MOD_M68K vor Phase 6).
+// Call:     err = entry_step_for(hdr, &step)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+static int entry_step_for(const q9_modhdr_t *hdr, q9_proc_step_fn *out)
+{
+    int err = q9_proc_native_entry(hdr, out);
+#ifdef Q9_HAVE_WASM3
+    if (err != 0 && hdr && hdr->lang == Q9_MOD_WASM) {
+        *out = q9_wasm_proc_step;
+        err = 0;
+    }
+#endif
+    return err;
+}
+
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ DISPATCHER                                                                                   ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
@@ -457,7 +486,7 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         if (err != 0) {
             return err;
         }
-        err = q9_proc_native_entry(hdr, &step);          /* E9: nur Q9_MOD_NATIVE ausfuehrbar       */
+        err = entry_step_for(hdr, &step);                 /* E9 (nativ) bzw. 4.7 (wasm3), s.o.       */
         if (err != 0) {
             q9_mod_unlink(hdr);
             return err;
@@ -503,7 +532,7 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
         if (err != 0) {
             return err;
         }
-        err = q9_proc_native_entry(hdr, &step);
+        err = entry_step_for(hdr, &step);
         if (err != 0) {
             q9_mod_unlink(hdr);
             return err;
@@ -628,5 +657,5 @@ int q9_syscall(uint16_t func, q9_regs_t *r)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF syscall.c                                                                           Ver. 2.70
+// EOF syscall.c                                                                           Ver. 2.80
 //────────────────────────────────────────────────────────────────────────────────────────────────

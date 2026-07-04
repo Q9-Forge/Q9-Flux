@@ -154,7 +154,7 @@ und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
 | # | Schritt | Status | Wer | Notizen |
 |---|---------|--------|-----|---------|
 | 4.6 | Eingebettete WASM-Runtime für den nativen Build (löst O5): eine Bibliothek (Kandidat wasm3 — klein, embeddable, keine harte malloc-Pflicht) einbinden, die ein beliebiges `.wasm`-Modul zur Laufzeit instanziieren und eine exportierte Funktion aufrufen kann. Noch OHNE Syscall-Bridge — reiner Grundbaustein | ✅ | Claudia | wasm3 (MIT, Commit `d77cd814`) vendored unter `third_party/wasm3/` (nur Kern-Interpreter, kein WASI/libc); `src/kernel/wasmrt.c/.h` als schmaler Wrapper (init/load/call_i32/free). Details siehe „Erledigt" unten |
-| 4.7 | `Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das Language-Byte `Q9_MOD_WASM`, instanziieren das Modul über die Runtime aus 4.6 (bzw. `WebAssembly.instantiate` im Browser) mit einem Import/Host-Funktion als Syscall-Bridge. Erstmal NUR Syscalls ohne Zeiger-Parameter (F$Time, F$ID, F$Exit) | 🟢 | Claudia | Beweist den kompletten Weg Laden→Instanziieren→Laufen→Syscall→Zurück end-to-end, bevor Zeiger dazukommen |
+| 4.7 | `Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das Language-Byte `Q9_MOD_WASM`, instanziieren das Modul über die Runtime aus 4.6 (bzw. `WebAssembly.instantiate` im Browser) mit einem Import/Host-Funktion als Syscall-Bridge. Erstmal NUR Syscalls ohne Zeiger-Parameter (F$Time, F$ID, F$Exit) | ✅ | Claudia | Native Seite fertig: `src/kernel/wasmproc.c/.h` neu (Import-Bridge `q9.f_id`/`q9.f_time`/`q9.f_exit`), `entry_step_for()` in syscall.c erkennt `Q9_MOD_WASM` zusaetzlich zu `Q9_MOD_NATIVE`. Browser-Seite (WebAssembly.instantiate im Worker) bewusst NICHT Teil dieses Schritts — geparkt, s. unten. Details siehe „Erledigt" |
 | 4.8 | Speicher-/Pointer-Marshaling über die Modulgrenze: a0–a7-Register als Offsets in die modul-eigene lineare Speicherinstanz interpretieren (statt rohe Host-Zeiger), mit Bounds-Check. Damit werden auch I$Read/I$Write/I$Open (Puffer-/Pfadnamen-Zeiger) für WASM-Module nutzbar | 🟢 | Claudia | `Q9_MOD_NATIVE` (E9-Stopgap) bleibt als Sonderfall bestehen (z.B. kernelinterne Prozesse), wird für "normale" Programme aber überflüssig |
 
 ---
@@ -223,11 +223,70 @@ Zukunftsideen ohne Handlungsdruck.
 - **emsdk fehlt auf dem Desktop AF-PC** (noch unverändert): wasm-Build/Browser-Test dort
   weiterhin nicht möglich. Auf dem Mac Mini seit 2026-07-04 behoben (siehe unten) — betrifft
   jetzt nur noch den Desktop-Rechner, nicht mehr den Autonomie-Betrieb.
+- **4.7 Browser-Seite (WebAssembly.instantiate im Worker) bewusst nicht umgesetzt** (2026-07-04):
+  ARBEITSPLAN nennt "bzw. WebAssembly.instantiate im Browser" als Alternative zur nativen
+  wasm3-Runtime. Umgesetzt wurde nur die native Seite (wasmproc.c) — ein Q9_MOD_WASM-Gastprogramm
+  aus dem Worker heraus zu instanziieren (verschachteltes WASM: der Q9-Kernel selbst laeuft im
+  Worker schon als WASM, ein Gastmodul muesste per JS `WebAssembly.instantiate` zur Laufzeit
+  dazugeladen und dessen Importe per `Module.ccall`-Bruecke zurueck in den Kernel verdrahtet
+  werden) ist eine eigene, nicht triviale Design-/Implementierungsaufgabe (worker.js-Aenderungen,
+  JS<->WASM-Grenze). Mit Andreas zu besprechen, ob/wann das eigenstaendig eingeplant wird — bis
+  dahin liefert `F$Fork`/`F$Chain` auf `Q9_MOD_WASM` im wasm-Build (ohne `-DQ9_HAVE_WASM3`)
+  weiterhin `E$NEMod`, exakt wie vor 4.7.
 
 ---
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.7 (Syscall-Bridge fuer Q9_MOD_WASM, native Seite)** ✅: baut direkt auf
+  4.6 auf. **wasmrt.h/.c erweitert (Ver. 1.10)**: `q9_wasmrt_load(bytes,len)` in
+  `q9_wasmrt_parse(bytes,len)` + `q9_wasmrt_load(void)` aufgeteilt — `m3_LinkRawFunction` verlangt
+  laut wasm3-Quelle (`m3_bind.c`, `FindAndLinkFunction`: `_throwif(m3Err_moduleNotLinked,
+  !io_module->runtime)`) ein bereits geladenes Modul, die Reihenfolge muss also Parse -> Load ->
+  Link -> Call sein, nicht Parse -> Link -> Load. Neu: `q9_wasmrt_call_raw()` (rohes M3Result statt
+  auf einen Q9_WASMRT_ERR_*-Code abgebildet — wasmproc.c braucht die Zeiger-Identitaet, um den
+  gewollten F$Exit-Trap von einem echten Fehler zu unterscheiden). Bugfix nebenbei: ein Modul, das
+  erfolgreich geparst, aber nie geladen wird (Load-Fehlschlag), war zuvor ein Speicherleck (wasm3s
+  `Runtime_Release` entsorgt nur Module, die tatsaechlich in `runtime->modules` haengen) — neues
+  `q9_wasmrt_t.loaded`-Flag steuert ein explizites `m3_FreeModule()` in `q9_wasmrt_free()` fuer
+  genau diesen Fall.
+  **`src/kernel/wasmproc.c/.h` neu**: die eigentliche Syscall-Bridge. Drei wasm3-Importe im
+  Namespace `"q9"` — `f_id` (`i()`, ruft echten `q9_syscall(F_ID)` im Kontext des aktuell
+  gestepten Prozesses auf, ueber `q9_proc_current()`), `f_time` (`I()`, packt d0/d1 aus dem echten
+  `F$Time`-Syscall in ein i64 — WASM-MVP kennt keine Mehrfachrueckgabe, d2/d3 bleiben fuer 4.7
+  aussen vor), `f_exit` (`v(i)`, ruft echten `q9_syscall(F_EXIT)` auf — der Prozess ist damit
+  bereits vollstaendig beendet — und bricht die WASM-Ausfuehrung per Trap ab, weil F$Exit bei
+  echtem OS-9 ebenfalls nie zum Aufrufer zurueckkehrt). `q9_wasm_proc_step()` ist die feste
+  Step-Funktion fuer alle Q9_MOD_WASM-Prozesse: liest das auszufuehrende Modul aus
+  `q9_proc_current()->module` (kein modul-spezifischer Funktionszeiger noetig, anders als bei
+  Q9_MOD_NATIVE/E9), parst+laedt+linkt+ruft `"q9_main"` (`() -> ()`) auf. **Bewusste Vereinfachung
+  fuer 4.7** (dokumentiert in wasmproc.h): das komplette Gastprogramm laeuft beim ERSTEN
+  Scheduler-Tick synchron bis zum Ende durch — kein kooperatives Unterbrechen mitten in der
+  WASM-Ausfuehrung (braeuchte Asyncify o.ae., weit ausserhalb des Rahmens). Kehrt `q9_main` normal
+  zurueck, gilt das als F$Exit(0); bricht wasm3 mit einem echten Fehler ab (nicht der F$Exit-Trap),
+  gilt das als F$Exit(-1).
+  **syscall.c**: neuer Helper `entry_step_for()` vor dem Dispatcher — probiert zuerst
+  `q9_proc_native_entry` (E9, Q9_MOD_NATIVE), bei Fehlschlag UND `hdr->lang == Q9_MOD_WASM` (nur
+  `#ifdef Q9_HAVE_WASM3`) `q9_wasm_proc_step`; F$Fork/F$Chain rufen jetzt `entry_step_for()` statt
+  direkt `q9_proc_native_entry()`. Minimal-invasiv: kein Byte Aenderung an F$Fork/F$Chain sonst.
+  **Modul-Konvention Q9_MOD_WASM**: analog zu Q9_MOD_NATIVE (Entscheidung E9) steht der komplette
+  WASM-Bytecode direkt hinter dem Header (`execoff` = Q9_MOD_HDRSIZE, `datasize` = Code-Laenge),
+  danach der Name — `build_wasm_module()` (kernel.c-Selbsttest) baut ein Beispielmodul nach dieser
+  Konvention.
+  **Selbsttest** (kernel.c, nur `-DQ9_HAVE_WASM3`): ein per Hand gebautes WASM-Gastprogramm
+  (importiert `q9.f_id`/`q9.f_time`/`q9.f_exit`, ruft f_id/f_time auf und beendet sich mit
+  `f_exit(0)`) wird per `F$Fork` als echtes Q9_MOD_WASM-Modul gestartet — vor dem ersten Tick
+  liefert `F$Wait` `E$NotRdy` (Kind laeuft noch), nach `q9_kernel_step()` liefert `F$Wait`
+  Exit-Code 0 fuer die richtige Kind-PID, ein zweites `F$Wait` liefert `E$NoChld`. Beweist den
+  kompletten Weg Laden→Instanziieren→Laufen→Syscall→Zurueck end-to-end inklusive echtem
+  F$Fork/F$Wait-Lebenszyklus (wie der 4.2-Selbsttest, nur mit Q9_MOD_WASM statt Q9_MOD_NATIVE).
+  **Bewusst NICHT Teil von 4.7** (geparkt, s.o.): die Browser-Seite (WebAssembly.instantiate im
+  Worker fuer verschachtelte Gastmodule) — mit Andreas zu klaeren, ob/wann eigenstaendig eingeplant.
+  `make clean && make native && make test` PASS, warnungsfrei; zusaetzlich mit
+  AddressSanitizer/UBSan gegenverifiziert (sauber, inkl. dem neuen Load-Fehlschlag-Fix). `make wasm`
+  (emsdk) baut weiterhin warnungsfrei, unveraendert (wasmproc.c ist nicht Teil der KSRC-Liste).
+  **Naechster Ready-Schritt: 4.8** (Speicher-/Pointer-Marshaling, damit auch I$Read/I$Write/I$Open
+  fuer WASM-Module nutzbar werden).
 - **2026-07-04 — Phase 4.6 (Grundbaustein wasm3-Runtime, Entscheidung E10)** ✅: erster Schritt
   des Anschlusses 4.6–4.8, löst Architekturfrage O5. **Vendoring**: `third_party/wasm3/` — nur
   der Kern-Interpreter von wasm3 (Commit `d77cd814`, MIT-Lizenz), unverändert übernommen; WASI-/
