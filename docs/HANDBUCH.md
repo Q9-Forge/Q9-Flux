@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.40
+# File:   HANDBUCH.md                                                                     Ver. 1.50
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -19,6 +19,8 @@
 #         │      │ installiert), Abschnitt 5.8 erweitert, Phase-4-Status in Abschnitt 6     │
 # 26-07-04│ 1.40 │ 4.9: Fixed-Heap fuer wasm3 (config.h) — Abschnitt 3 (config.h), 5.8      │ CF
 #         │      │ erweitert, Phase-4-Status in Abschnitt 6 (Anschluss 4.6-4.9 komplett)     │
+# 26-07-04│ 1.50 │ 5.1: Musashi-68k-Emulation (Entscheidung E12) — third_party/musashi/,    │ CF
+#         │      │ m68krt.c/.h, neuer Abschnitt 5.9, Abschnitt 3/6/7 aktualisiert            │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -181,9 +183,14 @@ Q9/
 │   │   │                       q9.i_open/i_close/i_read/i_write (4.8, Zeiger-/Speicher-Marshaling
 │   │   │                       ueber Gast-Offsets) + Step-Trampolin q9_wasm_proc_step, das
 │   │   │                       F$Fork/F$Chain fuer WASM-Module eintragen
-│   │   └── config.h           Erster Baustein einer Q9-Systemkonfiguration (Phase 4.9) — bisher
-│   │                           nur Q9_SYSTEM_MEM_BYTES (Fixed-Heap-Groesse fuer wasm3, s. Abschnitt
-│   │                           5.8), wird NUR ins native-Target eingebunden (-include, Makefile)
+│   │   ├── config.h           Erster Baustein einer Q9-Systemkonfiguration (Phase 4.9) — bisher
+│   │   │                       nur Q9_SYSTEM_MEM_BYTES (Fixed-Heap-Groesse fuer wasm3, s. Abschnitt
+│   │   │                       5.8), wird NUR ins native-Target eingebunden (-include, Makefile)
+│   │   └── m68krt.c/.h        Wrapper um die eingebettete Musashi-68k-Emulation (Phase 5.1,
+│   │                           NUR im nativen Build, s. Abschnitt 5.9) — definiert die von
+│   │                           Musashi verlangten m68k_read/write_memory_*-Funktionen gegen
+│   │                           einen vom Aufrufer uebergebenen RAM-Block; noch OHNE Scheduler-/
+│   │                           Syscall-Bridge (kommt mit der Detailplanung von Phase 5)
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -191,9 +198,13 @@ Q9/
 │       └── wasm/              Browser-HAL (Emscripten) — kein main(), stattdessen
 │                               q9_kernel_init/q9_kernel_step als exportierte Funktionen
 ├── third_party/
-│   └── wasm3/             vendorte WASM-Interpreter-Bibliothek (MIT, unverändert), nur im
-│                           nativen Build gelinkt — siehe third_party/wasm3/README.md und
-│                           Abschnitt 7
+│   ├── wasm3/              vendorte WASM-Interpreter-Bibliothek (MIT, unverändert), nur im
+│   │                        nativen Build gelinkt — siehe third_party/wasm3/README.md und
+│   │                        Abschnitt 7
+│   └── musashi/            vendorte 68k-CPU-Emulation (MIT, unverändert, Entscheidung E12),
+│                            nur im nativen Build gelinkt — Zweistufen-Build (m68kmake generiert
+│                            m68kops.c/.h aus m68k_in.c zur Bauzeit) — siehe
+│                            third_party/musashi/Q9_VENDOR.md und Abschnitt 7
 ├── tools/                 PC-seitige Werkzeuge (z.B. künftig `q9mod`, Modul-Packer)
 ├── web/                   Browser-Frontend: index.html (xterm.js), worker.js (Kernel im Worker)
 ├── test/                  01_test_boot.py, 02_..., je Testskript PASS/FAIL, aus dem Projekt-Root
@@ -544,6 +555,63 @@ GESAMTEN Prozesses. `Q9_SYSTEM_MEM_BYTES` = 256 KiB berücksichtigt das
 kompilierten `wasm3_*.o`: keine undefinierten Symbole
 `malloc`/`calloc`/`realloc`/`free` mehr.
 
+### 5.9 Musashi-68k-Emulation (native Build, Phase 5.1, Entscheidung E12)
+
+Phase 5 bringt echten 68k-Maschinencode nach Q9 (Ziel: per **vbcc** compilierte
+Programme laufen als eigener Prozesstyp, analog zu `Q9_MOD_NATIVE`/
+`Q9_MOD_WASM`). Damit das auch im nativen PC-Build funktioniert (nicht nur auf
+echter 68k-Hardware), braucht Q9 einen eingebetteten 68k-Interpreter — Wahl:
+**Musashi** (MIT, Karl Stenerud), vendored unter `third_party/musashi/` (E12).
+Ziel-CPU-Typ ist **68030** (nächstliegender, gut unterstützter Musashi-Typ zur
+realen Zielhardware MC68EN360/QUICC mit CPU32+-Kern, den Musashi nicht kennt) —
+MMU bleibt ungenutzt, damit der emulierte 68k-Code nicht versehentlich von
+68030-Exklusivfeatures abhängt, die auf CPU32-Hardware fehlen würden.
+
+Musashi hat einen **Zweistufen-Build**, anders als wasm3: das Host-Tool
+`m68kmake` liest `third_party/musashi/m68k_in.c` (518 handgeschriebene
+Opcode-Primitive) und generiert daraus `m68kops.c/.h` (1967 Opcode-Handler) —
+reine Build-Artefakte, landen zur Bauzeit unter `build/native/musashi_gen/`
+und werden nicht versioniert (analog zu den `wasm3_*.o` aus Abschnitt 5.8).
+Musashis eigener Kern-Interpreter (`m68kcpu.c`, das intern bereits
+`m68kfpu.c` per `#include` einbindet — `m68kfpu.c` darf deshalb NICHT
+zusätzlich separat übersetzt werden, sonst doppelte Symbole beim Linken) +
+der Softfloat-Unterbau (`softfloat/softfloat.c`) werden mit eigenen, laxeren
+Flags übersetzt (unveränderter Fremdcode, analog `WASM3_CFLAGS`).
+
+`src/kernel/m68krt.c/.h` ist der schmale Q9-Wrapper. Anders als wasm3 (das
+über `IM3Environment`/`IM3Runtime`-Handles mehrere unabhängige Instanzen
+erlaubt) hält Musashi seinen kompletten CPU-Zustand in eigenen globalen
+Variablen — die von Musashi verlangten Speicherzugriffsfunktionen
+(`m68k_read/write_memory_8/16/32`) bekommen keinen Kontext-Zeiger übergeben.
+`q9_m68krt_t` ist deshalb bewusst kein mehrfach instanzierbares Handle wie
+`q9_wasmrt_t`, sondern nur eine dünne Buchhaltungs-Struktur neben einem
+globalen RAM-Zeiger in `m68krt.c` — es kann je Prozesslauf immer nur EINE
+Musashi-Instanz aktiv sein.
+
+```c
+// m68krt.h — Grundbaustein (5.1)
+int      q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len);
+void     q9_m68krt_reset(q9_m68krt_t *rt);
+int      q9_m68krt_execute(q9_m68krt_t *rt, int cycles);
+uint32_t q9_m68krt_get_d(q9_m68krt_t *rt, int n);   // Dn, n=0..7
+void     q9_m68krt_free(q9_m68krt_t *rt);
+```
+
+Mit `M68K_SEPARATE_READS` aus (third_party/musashi/m68kconf.h) genügen genau
+diese sechs Speicherfunktionen — Musashis interne
+`m68k_read_immediate_*`/`m68k_read_pcrelative_*` fallen ohnehin auf dieselben
+sechs zurück (s. `m68kcpu.h`).
+
+**5.1** (Grundbaustein, noch OHNE Scheduler-/Syscall-Bridge — die kommt erst
+mit der Detailplanung von Phase 5): Makefile-Integration des Zweistufen-Builds
++ Wrapper. Bewiesen durch einen Selbsttest (`-DQ9_HAVE_M68K`, native-only, wie
+`Q9_HAVE_WASM3` in Abschnitt 5.8): ein von Hand assembliertes Programm
+(`MOVEQ #2,D0`; `ADDI.W #3,D0`; `BRA.S *-2` als Endlosschleife, damit
+`m68k_execute()` nicht in unbeschriebenen Speicher läuft) liegt zusammen mit
+den Reset-Vektoren (SP bei Adresse 0, PC bei Adresse 4, big-endian) in einem
+emulierten RAM-Block; nach `q9_m68krt_reset()` + `q9_m68krt_execute()` steht
+`D0 == 5`.
+
 ---
 
 ## 6. Stand der Dinge
@@ -558,8 +626,8 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
 | 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig, inkl. Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite), 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module), 4.9 (Fixed-Heap statt Host-malloc in wasm3, Q9-Systemkonfiguration `config.h`); Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
-| 5 | Shell | offen |
-| 6 | 68k-Runtime (Emulator im Browser) | offen |
+| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest), s. Abschnitt 5.9 |
+| 6 | Shell | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
 | 8 | Vision: 6809-Runtime, Netzwerk, Self-Hosting | offen |
 
@@ -582,17 +650,19 @@ Quellen dienen als fachliche Referenz — mit unterschiedlicher Rechtslage:
 | **ToolShed** (Teil des NitrOS-9-Projekts) | PC-Tools zum Lesen/Schreiben von RBF-Images, in C | vermutlich GPL (im Kontext von NitrOS-9 zu prüfen) | bislang nur als Idee vorgemerkt: RBF-Strukturwissen für einen künftigen nativen Q9-RBF-Manager | zu prüfen |
 | **OS9exec** (Lukas Zeller/Beat Forster) | 68k-Emulator + OS-9-Kernel-Nachbau in C, Syscall-Ebene | **GPL** | bislang nur als Idee vorgemerkt: Referenz für die TRAP→Syscall-Bridge (Phase 6) | Ja (GPL, Copyleft beachten) |
 | **wasm3** ([github.com/wasm3/wasm3](https://github.com/wasm3/wasm3), Commit `d77cd814`) | WASM-Interpreter, C | **MIT** | Unverändert als `third_party/wasm3/` vendored und in `make native` mitgebaut (Entscheidung E10, Phase 4.6) — löst O5 (WASM-Runtime für den nativen Build) | Ja (MIT, LICENSE-Datei liegt bei) |
+| **Musashi** ([github.com/kstenerud/Musashi](https://github.com/kstenerud/Musashi), Commit `313ebf1`) | 68000/68030-Emulator, C | **MIT** | Nur Kern-Interpreter + Codegenerator + Softfloat vendored als `third_party/musashi/` (kein Disassembler, keine Testtreiber), in `make native` mitgebaut (Entscheidung E12, Phase 5.1) — löst den CPU-Teil von O4 (68k-Board-Emulation) | Ja (MIT, Lizenztext in `m68k.h` u.a.) |
 
 **Konsequenz für eine künftige Veröffentlichung:** Der Q9-eigene Quellbaum
 (`src/`, `tools/`, `test/`) enthält keine Zeilen aus einer der obigen
 GPL/proprietären Quellen — alles ist eigene Implementierung nach eigenem
-Verständnis der Konzepte. Einzige tatsächlich übernommene Fremdquelle ist
-**wasm3** unter `third_party/wasm3/` (MIT-lizenziert, unverändert, mit
-eigener LICENSE-Datei) — MIT ist mit jeder künftigen Q9-Lizenzwahl
-kompatibel. Sollte künftig doch GPL-Code aus NitrOS-9/OS9exec übernommen
-werden, muss die Lizenz von Q9 (oder zumindest der betroffenen Module)
-GPL-kompatibel sein. Die MWOS- und Buch-Referenzen dürfen so oder so nie als
-Code auftauchen, nur als Verständnisgrundlage dienen.
+Verständnis der Konzepte. Tatsächlich übernommene Fremdquellen sind
+**wasm3** unter `third_party/wasm3/` und **Musashi** unter
+`third_party/musashi/` (beide MIT-lizenziert, unverändert) — MIT ist mit
+jeder künftigen Q9-Lizenzwahl kompatibel. Sollte künftig doch GPL-Code aus
+NitrOS-9/OS9exec übernommen werden, muss die Lizenz von Q9 (oder zumindest
+der betroffenen Module) GPL-kompatibel sein. Die MWOS- und Buch-Referenzen
+dürfen so oder so nie als Code auftauchen, nur als Verständnisgrundlage
+dienen.
 
 ---
 
@@ -619,12 +689,14 @@ vorausgesetzt werden:
 | **Sticky-Modul** | Modul, das auch bei Link-Count 0 im Speicher bleibt (OS-9-Optimierung) |
 | **Superfloppy** | Datenträger-Image ohne Partitionstabelle — Boot-Sektor direkt bei Block 0 |
 | **OPFS** | Origin Private File System — der private, persistente Dateispeicher eines Browser-Origins, genutzt als Block-Device-Backend im WASM-Target |
+| **Musashi** | Vendorter 68000/68030-CPU-Emulator (MIT, `third_party/musashi/`), löst den CPU-Teil der Board-Emulation im nativen Build (Entscheidung E12) |
+| **Reset-Vektor** | Die ersten 8 Byte des 68k-Adressraums: initialer Stackpointer (Adresse 0) + initialer Programmzähler (Adresse 4), je 4 Byte big-endian |
 
 ---
 
 **Erstellt**: 2026-07-04
-**Letzte Aktualisierung**: 2026-07-04 (Schritt 4.9: Fixed-Heap fuer wasm3, Anschluss 4.6-4.9 komplett)
+**Letzte Aktualisierung**: 2026-07-04 (Schritt 5.1: Musashi-Grundbaustein + Makefile-Integration + Rauchtest)
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF HANDBUCH.md                                                                          Ver. 1.20
+# EOF HANDBUCH.md                                                                          Ver. 1.50
 #─────────────────────────────────────────────────────────────────────────────────────────────────
