@@ -23,6 +23,7 @@
 #         │      │ 06-Selbsttest — die Tests 01-05 verwirren, bevor 06 es neu aufbaut)      │
 # 26-07-04│ 1.80 │ 3.6: wasm-Target kopiert web/worker.js mit (Kernel laeuft jetzt im       │ CF
 #         │      │ Worker, OPFS-Blockgeraet)                                               │
+# 26-07-04│ 1.90 │ 4.1: proc.c/.h (Prozess-Descriptor-Tabelle + Round-Robin-Scheduler)      │ CF
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -33,9 +34,10 @@ PYTHON  = $(shell command -v python3 2>/dev/null || command -v python)
 BUILD   = build
 KSRC    = src/kernel/kernel.c src/kernel/syscall.c src/kernel/device.c src/kernel/dev_term.c \
           src/kernel/dev_nil.c src/kernel/dev_d0.c src/kernel/name.c src/kernel/module.c \
-          src/kernel/vfs.c src/kernel/fat16.c
+          src/kernel/vfs.c src/kernel/fat16.c src/kernel/proc.c
 HDRS    = src/hal/q9_hal.h src/kernel/kernel.h src/kernel/syscall.h src/kernel/device.h \
-          src/kernel/name.h src/kernel/module.h src/kernel/vfs.h src/kernel/fat16.h
+          src/kernel/name.h src/kernel/module.h src/kernel/vfs.h src/kernel/fat16.h \
+          src/kernel/proc.h
 
 # native-HAL nach Betriebssystem waehlen: Windows (w64devkit setzt $OS=Windows_NT) = conio,
 # alles andere (macOS/Linux) = POSIX/termios.

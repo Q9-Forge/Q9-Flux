@@ -153,7 +153,8 @@ Q9/
 │   │   ├── name.c/.h          F$PrsNam/F$CmpNam (Pfadnamen-Parsing nach OS-9-Regeln)
 │   │   ├── module.c/.h        Modul-Header, CRC32, Modul-Directory, F$Link/F$UnLink/F$Load
 │   │   ├── vfs.c/.h           Dateisystem-Routing, austauschbarer File-Manager (q9_fm_t)
-│   │   └── fat16.c/.h         FAT16-File-Manager (lesend + schreibend, LFN-Lesen)
+│   │   ├── fat16.c/.h         FAT16-File-Manager (lesend + schreibend, LFN-Lesen)
+│   │   └── proc.c/.h          Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4)
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -259,7 +260,7 @@ Ab Phase 7 vorgesehen: `src/hal/m68k/` (analog zu `native/`/`posix/`/`wasm/`),
 ├─────────────────────────────────────────────────────┤
 │  Q9-Kernel (portables C99):                          │
 │  Syscall-Dispatcher · Geräte-/Pfadtabelle · Modul-   │
-│  Directory · VFS/File-Manager · (geplant: Scheduler) │
+│  Directory · VFS/File-Manager · Prozess-Scheduler    │
 ├─────────────────────────────────────────────────────┤
 │  HAL (pro Target implementiert)                      │
 ├──────────────┬──────────────┬────────────────────────┤
@@ -306,7 +307,7 @@ schreibend, inklusive langer Dateinamen beim Lesen) — gewählt wegen
 Interoperabilität: ein Q9-Disk-Image lässt sich am Host-Rechner mounten,
 befüllen und mit Standard-Tools inspizieren.
 
-### 5.6 Prozessmodell (Entscheidung E8, Umsetzung in Arbeit)
+### 5.6 Prozessmodell (Entscheidung E8, Fundament seit Phase 4.1)
 
 WebAssembly erlaubt kein Umschalten von Aufruf-Stacks — ein klassischer,
 Stack-wechselnder Scheduler scheidet daher aus. Q9s Scheduler verwaltet
@@ -317,6 +318,16 @@ dafür kooperativ „in Häppchen" geschrieben sein; ein späterer 68k-Prozess
 bringt seinen Kontext (CPU-Register + emulierten Stack) ohnehin selbst mit und
 lässt sich trivial umschalten. Details und Begründung: PROJECT.md, Entscheidung
 E8.
+
+**Seit Phase 4.1** existiert das Fundament: `src/kernel/proc.c/.h` verwaltet
+eine statische Prozess-Descriptor-Tabelle (PID, Parent, Modul, Zustand,
+Exit-Code, eigene Std-Pfade 0/1/2 — kein `malloc`, analog zur Gerätetabelle)
+und einen Round-Robin-Scheduler (`q9_proc_schedule()`, aufgerufen aus
+`q9_kernel_step()`), der jeden Prozess im Zustand `ACTIVE` einmal pro Tick
+als Step-Funktion aufruft. Die bisherige REPL (Phase 1) ist der erste
+registrierte Prozess (PID 1). Echte Mehrprozess-Semantik (`F$Fork`/`F$Exit`/
+`F$Wait`/`F$Chain`, Blockieren/Aufwecken, Prioritäten, Signale) folgt in den
+Schritten 4.2–4.5.
 
 ### 5.7 HAL-Schnittstelle
 
