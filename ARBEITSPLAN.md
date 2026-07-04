@@ -160,6 +160,35 @@ und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
 
 ---
 
+### Phase 5 — 68k-Runtime (Musashi) — **umnummeriert 2026-07-04 abends, siehe Entscheidung E10**
+
+**Noch nicht feingranular geplant** — bewusst zurückgestellt für eine eigene,
+gründliche Planungsrunde (wie bei Phase 3/4), nicht nebenbei. Diese Phase war
+bis 2026-07-04 abends als "Phase 6" nummeriert; die alte "Phase 5" (Shell)
+ist jetzt **Phase 6** (siehe dort) — Begründung: Entscheidung E10.
+
+**Grober Umriss aus der heutigen Diskussion** (Ausgangspunkt für die
+Detailplanung, keine fertigen Schritte):
+- Musashi als 68k-CPU-Kern einbinden — nativ als gewöhnliche C-Bibliothek
+  (keine WASM-Ebene nötig), im Browser zu WASM kompiliert (läuft dort effizient
+  über die browsereigene WASM-Engine, nicht "doppelt emuliert" im
+  Performance-Sinn).
+- `Q9_MOD_M68K`: echte PIC-68k-Programme laden und ausführen (vbcc-Toolchain
+  noch zu beschaffen, siehe docs/TOOLCHAIN.md „Noch nicht installiert").
+- TRAP→Syscall-Bridge (Musashi-Trap ruft `q9_syscall`), analog zur
+  `wasmproc.c`-Bridge aus 4.7, aber auf Ebene der CPU-Emulation statt WASM-Import.
+  **PIC-Pflicht für 68k-Module** (wie echtes OS-9) — keine Relozierungstabelle
+  nötig, wenn vbcc konsequent PC-relativen Code erzeugt.
+- Echter Scheduler auf Musashi-Ebene: CPU-Zustand (Register + Stackpointer im
+  emulierten RAM) ist reine Datenstruktur, an jeder Instruktion sicherbar/
+  wiederherstellbar — das eigentliche Gegenstück zum Step-Modell aus E8, nur
+  eine Ebene tiefer, mit echtem Anhalten/Fortsetzen statt Kooperations-Zwang.
+- Das ist die Voraussetzung für Phase 6 (Shell): Eine Shell, die vor dieser
+  Phase gebaut würde, wäre zwangsläufig nur ein weiterer `Q9_MOD_NATIVE`- oder
+  kurzlebiger-WASM-Behelf (E9-Falle), kein echter langlebiger Prozess.
+
+---
+
 ### Phase U — Userland-Werkzeuge (Codex-Baustelle, separater Nebenschauplatz)
 
 **Nicht Teil des normalen Phasenablaufs** — läuft parallel zu Phase 3/4, auf
@@ -812,7 +841,20 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **4.9 neu: `wasm3` auf Fixed-
+**Letzte Aktualisierung**: 2026-07-04 abends — **Phase 4 (4.1–4.9) komplett.
+Grundsatzentscheidung E11: Phase 5 (68k-Runtime, Musashi) und Phase 6 (Shell)
+getauscht.** Lange Architektur-Diskussion mit Andreas: 68k (PIC, über Musashi)
+wird das eigentliche Programmformat für echte Q9-Prozesse — nur 68k läuft auf
+allen drei Zielen inklusive der echten Vinculum-Hardware ohne jede Emulation;
+WASM bleibt Kernel-Implementierungssprache + Nische für kurzlebige Werkzeuge,
+aber nicht "primäres Format". Die Shell (jetzt Phase 6) braucht eine echte
+langlebige Prozess-Ausführung, die es ohne die 68k-Runtime nicht geben kann —
+deshalb muss die Runtime zuerst kommen. Neue Phase 5 als Vision-Umriss
+eingetragen, bewusst NOCH NICHT feingranular geplant (eigene Planungsrunde
+folgt, wie bei Phase 3/4). PROJECT.md: Vision-Text korrigiert, Phasenplan-
+Tabelle getauscht, E10 (wasm3-Malloc-Ausnahme) durch 4.9 als behoben markiert.
+
+Davor: 2026-07-04 abends — **4.9 neu: `wasm3` auf Fixed-
 Heap umstellen + erster Systemkonfigurationswert.** Andreas' Einwand: Q9 soll
 sich einen Speicherblock holen und komplett selbst verwalten, nicht den
 Host-Allocator durchreichen — `wasm3` unterstützt das schon eingebaut
