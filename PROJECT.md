@@ -154,6 +154,7 @@ Tests in `test/` (01_test_..., PASS/FAIL, standalone).
 | O2 | Grafik-Device: Framebuffer-Layout, Auflösung, Register — im Emulator entwerfen, später in Hardware (CPLD/FPGA)? | Design steht aus, Phase ≥5 |
 | O4 | 68k-Board-Emulation: nur CPU (Musashi) oder auch QUICC-Peripherie für Phase 7 | zu klären in Phase 6/7 |
 | O5 | WASM-Runtime für den nativen PC-Build: WAMR vs. wasm3 vs. wasmtime (eingebettet als LANG_WASM-Runtime, damit die native Version voll benutzbar ist, nicht nur Debug) | zu klären ab Phase 2 |
+| O6 | Wie werden Userland-Programme (z.B. die in `userland/` vorbereiteten Tools) zu echten ladbaren Q9-Modulen? Zwei getrennte Probleme je Language-Byte: **WASM** — kein klassisches Relozierbarkeits-Problem (adressiert nur linearen Speicher), sondern ein Instanziierungs-/Import-Problem: ein geladenes `.wasm`-Modul braucht eine Import-Tabelle, die den Rücksprung zu Q9-Syscalls bereitstellt; im Browser kann JS beliebige `.wasm`-Blobs instanziieren, nativ bräuchte es die eingebettete Runtime aus O5. **68k** (Phase 6/7) — klassisches PIC-Problem, vbcc mit PC-relativer Codeerzeugung, dazu ein definierter Rücksprung-Mechanismus für Syscalls (bei echtem OS-9 ein TRAP) | aufgeworfen 2026-07-04 (Andreas, während der `userland/`-Vorarbeiten mit Codex); zu klären ab Phase 5/6, hängt eng mit O5 zusammen und mit `tools/q9mod` (Phase 2.2) |
 
 ---
 
