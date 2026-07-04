@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 2.00
+# File:   Makefile                                                                        Ver. 2.10
 # Owner:  AF
 # Desc.:  Q9 Build-System. Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc),
 #         wasm (Browser, emcc), test, clean. Toolchain-Setup siehe docs/TOOLCHAIN.md.
@@ -26,6 +26,8 @@
 # 26-07-04│ 1.90 │ 4.1: proc.c/.h (Prozess-Descriptor-Tabelle + Round-Robin-Scheduler)      │ CF
 # 26-07-04│ 2.00 │ 4.6: wasmrt.c/.h (wasm3-Wrapper) + vendorte third_party/wasm3/ nur im     │ CF
 #         │      │ native-Target; -DQ9_HAVE_WASM3 aktiviert den Selbsttest-Zweig in kernel.c │
+# 26-07-04│ 2.10 │ 4.9: WASM3_CFLAGS bindet src/kernel/config.h ein und setzt               │ CF
+#         │      │ d_m3FixedHeap=Q9_SYSTEM_MEM_BYTES (Fixed-Heap statt Host-malloc in wasm3)  │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -53,14 +55,18 @@ endif
 # WASM, s. third_party/wasm3/README.md). WASMRT_SRC ist Q9-eigener Code (volle CFLAGS, bleibt
 # warnungsfrei); WASM3_SRC ist unveraendert vendorter Fremdcode und wird bewusst mit eigenen,
 # laxeren Flags uebersetzt (58 -Wall/-Wextra-Warnungen im Original, die wir nicht pflegen).
+# 4.9: -include src/kernel/config.h + -Dd_m3FixedHeap=Q9_SYSTEM_MEM_BYTES schalten wasm3 auf einen
+# statischen Fixed-Heap um (third_party/wasm3/m3_config.h: d_m3FixedHeap ist #ifndef-geschuetzt,
+# das Command-Line-Define gewinnt) -- kein einziges Byte am vendorten Fremdcode selbst geaendert.
 WASMRT_SRC   = src/kernel/wasmrt.c src/kernel/wasmproc.c
 WASMRT_HDR   = src/kernel/wasmrt.h src/kernel/wasmproc.h
+Q9_CONFIG_HDR = src/kernel/config.h
 WASM3_DIR    = third_party/wasm3
 WASM3_SRC    = $(WASM3_DIR)/m3_bind.c $(WASM3_DIR)/m3_code.c $(WASM3_DIR)/m3_compile.c \
                $(WASM3_DIR)/m3_core.c $(WASM3_DIR)/m3_env.c $(WASM3_DIR)/m3_exec.c \
                $(WASM3_DIR)/m3_function.c $(WASM3_DIR)/m3_info.c $(WASM3_DIR)/m3_module.c \
                $(WASM3_DIR)/m3_parse.c
-WASM3_CFLAGS = -std=c99 -O2 -I$(WASM3_DIR)
+WASM3_CFLAGS = -std=c99 -O2 -I$(WASM3_DIR) -include $(Q9_CONFIG_HDR) -Dd_m3FixedHeap=Q9_SYSTEM_MEM_BYTES
 WASM3_OBJS   = $(patsubst $(WASM3_DIR)/%.c,$(BUILD)/native/wasm3_%.o,$(WASM3_SRC))
 
 $(BUILD)/native/wasm3_%.o: $(WASM3_DIR)/%.c
@@ -106,5 +112,5 @@ clean:
 .PHONY: native wasm test clean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 2.00
+# EOF Makefile                                                                            Ver. 2.10
 #─────────────────────────────────────────────────────────────────────────────────────────────────
