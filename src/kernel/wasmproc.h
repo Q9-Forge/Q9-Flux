@@ -1,10 +1,19 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   wasmproc.h                                                                      Ver. 1.00
+// File:   wasmproc.h                                                                      Ver. 1.10
 // Owner:  AF
 // Desc.:  Q9_MOD_WASM-Prozessausfuehrung (Schritt 4.7, ARBEITSPLAN.md): Syscall-Bridge (Import-
 //         Tabelle Richtung Q9-Kernel) + Step-Trampolin, das F$Fork/F$Chain (syscall.c) fuer
 //         Module mit Language-Byte Q9_MOD_WASM als Step-Funktion eintragen. Native-Build-only,
 //         baut auf der wasm3-Runtime aus wasmrt.h/4.6 auf.
+//
+//         4.8: Pointer-Marshaling — q9.i_open/i_close/i_read/i_write nehmen KEINE Host-Zeiger
+//         entgegen, sondern Offsets in die lineare Speicherinstanz des Gastmoduls (m3ApiGetArgMem
+//         uebersetzt via _mem-Basiszeiger, wasm_range_ok bounds-checkt gegen die tatsaechliche
+//         Speichergroesse). Rueckgabekonvention aller vier: >= 0 Erfolgswert, < 0 negierter Q9-
+//         Fehlercode (kein Carry-Bit wie im realen 68k-ABI). Ein aus dem Bounds-Check fallender
+//         Zugriff (Puffer/Pfadname reicht ueber die eigene Speicherinstanz hinaus) ist ein Trap
+//         (bricht die WASM-Ausfuehrung ab), keine Fehlerantwort — das ist ein Programmierfehler
+//         im Gast, kein regulaerer I/O-Fehlerfall.
 //
 //         Bewusste Vereinfachung fuer 4.7 ("Erstmal NUR Syscalls ohne Zeiger-Parameter"): das
 //         komplette Gastprogramm laeuft beim ERSTEN Scheduler-Tick synchron bis zum Ende durch
@@ -25,6 +34,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 4.7: Erste Syscall-Bridge (F$ID, F$Time, F$Exit)                        │ CF
+// 26-07-04│ 1.10 │ 4.8: Pointer-Marshaling — q9.i_open/i_close/i_read/i_write             │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_WASMPROC_H
 #define Q9_WASMPROC_H
@@ -43,5 +53,5 @@ void q9_wasm_proc_step(void);
 #endif // Q9_WASMPROC_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF wasmproc.h                                                                          Ver. 1.00
+// EOF wasmproc.h                                                                          Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

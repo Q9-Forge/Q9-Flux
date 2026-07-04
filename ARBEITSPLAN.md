@@ -155,7 +155,7 @@ und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
 |---|---------|--------|-----|---------|
 | 4.6 | Eingebettete WASM-Runtime für den nativen Build (löst O5): eine Bibliothek (Kandidat wasm3 — klein, embeddable, keine harte malloc-Pflicht) einbinden, die ein beliebiges `.wasm`-Modul zur Laufzeit instanziieren und eine exportierte Funktion aufrufen kann. Noch OHNE Syscall-Bridge — reiner Grundbaustein | ✅ | Claudia | wasm3 (MIT, Commit `d77cd814`) vendored unter `third_party/wasm3/` (nur Kern-Interpreter, kein WASI/libc); `src/kernel/wasmrt.c/.h` als schmaler Wrapper (init/load/call_i32/free). Details siehe „Erledigt" unten |
 | 4.7 | `Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das Language-Byte `Q9_MOD_WASM`, instanziieren das Modul über die Runtime aus 4.6 (bzw. `WebAssembly.instantiate` im Browser) mit einem Import/Host-Funktion als Syscall-Bridge. Erstmal NUR Syscalls ohne Zeiger-Parameter (F$Time, F$ID, F$Exit) | ✅ | Claudia | Native Seite fertig: `src/kernel/wasmproc.c/.h` neu (Import-Bridge `q9.f_id`/`q9.f_time`/`q9.f_exit`), `entry_step_for()` in syscall.c erkennt `Q9_MOD_WASM` zusaetzlich zu `Q9_MOD_NATIVE`. Browser-Seite (WebAssembly.instantiate im Worker) bewusst NICHT Teil dieses Schritts — geparkt, s. unten. Details siehe „Erledigt" |
-| 4.8 | Speicher-/Pointer-Marshaling über die Modulgrenze: a0–a7-Register als Offsets in die modul-eigene lineare Speicherinstanz interpretieren (statt rohe Host-Zeiger), mit Bounds-Check. Damit werden auch I$Read/I$Write/I$Open (Puffer-/Pfadnamen-Zeiger) für WASM-Module nutzbar | 🔄 | Claudia | in Arbeit — wat2wasm (wabt 1.0.41, via Homebrew) frisch installiert fuer den Selbsttest |
+| 4.8 | Speicher-/Pointer-Marshaling über die Modulgrenze: a0–a7-Register als Offsets in die modul-eigene lineare Speicherinstanz interpretieren (statt rohe Host-Zeiger), mit Bounds-Check. Damit werden auch I$Read/I$Write/I$Open (Puffer-/Pfadnamen-Zeiger) für WASM-Module nutzbar | ✅ | Claudia | Vier neue Importe q9.i_open/i_close/i_read/i_write in wasmproc.c. Details siehe „Erledigt" unten |
 | 4.9 | `wasm3` auf Fixed-Heap umstellen (kein Host-`malloc`/`calloc`/`realloc` mehr im WASM-Pfad) + erster Baustein einer Q9-Systemkonfiguration | 🟢 | Claudia | Andreas' Einwand (2026-07-04 abends): Q9 soll sich einen Speicherblock holen und darin komplett selbst verwalten, nicht den Host-Allocator durchreichen. `wasm3` unterstützt genau das schon eingebaut über `d_m3FixedHeap` (Compile-Define, schaltet auf ein statisches Array + Bump-Allocator um, s. `third_party/wasm3/m3_core.c`/`m3_config.h`) — nur bisher nicht aktiviert. Neue Konfigurationsstelle einführen (z.B. `src/kernel/config.h`), darin als ERSTEN Wert die Gesamtspeichergröße des simulierten/emulierten Zielsystems (Namensvorschlag `Q9_SYSTEM_MEM_BYTES`, Grundstein für spätere Werte wie CPU-Takt — die kommen NICHT jetzt schon dazu). `d_m3FixedHeap` beim Bau von `third_party/wasm3/*.c` per Compiler-Define aus diesem einen Wert ableiten (nicht zwei separate Zahlen pflegen). Sinnvolle Startgröße wählen und kurz begründen (z.B. 64–256 KB, reicht für die kurzlebigen 4.6-4.8-Testmodule bei weitem). Verifizieren: `grep` nach `calloc`/`realloc`/`malloc` im kompletten WASM-Pfad zeigt nichts mehr Aktives (der Code bleibt im `third_party`-Vendor-Zweig unverändert, nur der `#else`-Zweig wird durch das Define nie mehr erreicht); bestehende 4.6/4.7-Selbsttests bleiben PASS |
 
 ---
@@ -239,6 +239,53 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.8 (Zeiger-/Speicher-Marshaling fuer Q9_MOD_WASM)** ✅: baut auf 4.7 auf,
+  schliesst den Anschluss 4.6-4.8 fuer echte I/O aus WASM-Gastprogrammen. **wasmproc.c/.h erweitert
+  (Ver. 1.10)**: vier neue wasm3-Importe im Namespace `"q9"` — `i_open` (`i(ii)`), `i_close`
+  (`i(i)`), `i_read`/`i_write` (`i(iii)`). Kernidee: ein WASM-Gast kennt keine Host-Adressen,
+  sondern nur Offsets in seine EIGENE lineare Speicherinstanz — jeder Import uebersetzt so einen
+  Offset per wasm3s `m3ApiGetArgMem`/`m3ApiOffsetToPtr` in einen echten Host-Zeiger (relativ zur
+  `_mem`-Basis), bevor der eigentliche `q9_syscall()` gerufen wird. **Bounds-Check**: eigene
+  Funktion `wasm_range_ok()` (dieselbe Grenzformel wie wasm3s `m3ApiCheckMem`-Makro, aber ohne
+  dessen eingebauten `return` — das Makro traegt ein `return` direkt in seiner Definition, laesst
+  sich also nicht in einem gemeinsamen Helfer fuer mehrere Importfunktionen wiederverwenden, nur
+  direkt im Rumpf einer `m3ApiRawFunction`). Puffer (`i_read`/`i_write`) muessen komplett (Anzahl
+  Bytes) in der Speicherinstanz liegen, sonst Trap (`m3Err_trapOutOfBoundsMemoryAccess`) — ein zu
+  kleiner/falscher Puffer ist ein Programmierfehler im Gast, kein regulaerer I/O-Fehler. Pfadnamen
+  (`i_open`) werden zusaetzlich Byte fuer Byte auf ein abschliessendes NUL abgesucht
+  (`wasm_str_len()`, neue Konstante `Q9_WASM_PATH_MAX` = 128 Byte als Obergrenze fuer die Suche,
+  KEIN Q9-weiter Wert), damit die Suche nicht unbegrenzt ueber fremden Speicher laeuft — kein NUL
+  gefunden liefert `E$BPNam`, echtes Out-of-Bounds waehrend der Suche einen Trap.
+  **Rueckgabekonvention** aller vier neuen Importe (neu, dokumentiert in wasmproc.h): `>= 0` ist der
+  Erfolgswert (Pfadnummer bzw. uebertragene Bytes), `< 0` ein negierter Q9-Fehlercode — WASM kennt
+  kein Carry-Bit wie das reale 68k-ABI (docs/SYSCALLS.md), diese eine Bridge-Konvention ersetzt es
+  fuer Gastcode; `q9.i_read` gibt `E$NotRdy` unveraendert durch (der aufrufende Prozess wurde von
+  `sc_read` bereits per `q9_proc_wait_device` in WAITING versetzt, kein WASM-spezifischer
+  Sonderfall noetig).
+  **Nebenbefund beim Bau des Testmoduls**: WASM-Offset `0` gilt in wasm3 als Nullzeiger
+  (`m3ApiIsNullPtr` prueft `addr <= _mem`, also Basisadresse selbst schon als "null") — analog zur
+  Konvention realer Linker/Toolchains, die die Nullseite reservieren. Ein erster Testmodul-Entwurf,
+  der seinen Pfadnamen an Offset 0 platzierte, scheiterte deshalb scheinbar an `I$Open` (`i_open`
+  interpretierte den gueltigen Offset 0 faelschlich als "kein Pfadname uebergeben"). Kein Bugfix im
+  Kernel noetig — das Testmodul platziert seine Daten seither bewusst ab Offset 8, wie es reale
+  WASM-Toolchains ebenfalls tun.
+  **Werkzeug neu**: **wat2wasm** (Teil von **wabt**, Google, Apache-2.0) per Homebrew installiert
+  (`brew install wabt`, Version 1.0.41) — uebersetzt lesbaren WAT-Quelltext in `.wasm`-Bytecode,
+  statt ihn wie bei 4.6/4.7 komplett von Hand als Byte-Array zusammenzusetzen (der WAT-Quelltext
+  fuer das 4.8-Testmodul steht als Kommentar direkt bei `wasm_ptr[]` in kernel.c). Nur fuer die
+  Testmodul-Erstellung noetig, nicht Teil des Kernel-Builds selbst.
+  **Selbsttest** (kernel.c, nur `-DQ9_HAVE_WASM3`): ein per wat2wasm gebautes WASM-Gastprogramm mit
+  eigenem linearen Speicher oeffnet `/nil` (Pfadname im Gastspeicher), schreibt 2 Bytes hinein
+  (/nil verwirft, meldet aber die volle Anzahl zurueck), liest danach (nil liefert immer `E$EOF` =
+  $D3, negiert also -211) und schliesst den Pfad wieder — bricht bei jedem unerwarteten Ergebnis
+  selbst mit einem eigenen Exit-Code (1..4) ab, `F$Fork`/`F$Wait` bestaetigen von aussen
+  Exit-Code 0. Beweist den kompletten Weg Gast-Offset -> Bounds-Check -> Host-Zeiger -> echter
+  Syscall -> Ergebnis zurueck fuer `I$Open`/`I$Write`/`I$Read`/`I$Close`.
+  docs/HANDBUCH.md (Abschnitt 2.1 wabt/wat2wasm, Abschnitt 3 Quellcode-Layout, Abschnitt 5.8
+  erweitert, Abschnitt 6 Phase-4-Status) aktualisiert. `make clean && make native && make test`
+  PASS, warnungsfrei; zusaetzlich mit AddressSanitizer/UBSan gegenverifiziert (sauber). `make wasm`
+  (emsdk) baut weiterhin warnungsfrei, unveraendert (wasmproc.c ist nicht Teil der KSRC-Liste).
+  **Naechster Ready-Schritt: 4.9** (wasm3 auf Fixed-Heap umstellen, Q9-Systemkonfiguration).
 - **2026-07-04 — Phase 4.7 (Syscall-Bridge fuer Q9_MOD_WASM, native Seite)** ✅: baut direkt auf
   4.6 auf. **wasmrt.h/.c erweitert (Ver. 1.10)**: `q9_wasmrt_load(bytes,len)` in
   `q9_wasmrt_parse(bytes,len)` + `q9_wasmrt_load(void)` aufgeteilt — `m3_LinkRawFunction` verlangt
