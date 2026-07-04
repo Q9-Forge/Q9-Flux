@@ -15,6 +15,7 @@
 // 26-07-04│ 1.01 │ q9dir-Test mit stdout-Capture fuer Pfad 1 ergaenzt                      │ CX
 // 26-07-04│ 1.02 │ q9mkdir/q9rm-Tests ergaenzt                                             │ CX
 // 26-07-04│ 1.03 │ q9touch/q9stat-Tests ergaenzt und Capture-Helfer konsolidiert           │ CX
+// 26-07-04│ 1.04 │ Tests fuer synthetische argc/argv-Einsprungpunkte ergaenzt              │ CX
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <stdio.h>
@@ -238,11 +239,26 @@ typedef struct stat_ctx {
     const char *name;
 } stat_ctx_t;
 
+typedef int (*tool_main_fn_t)(int argc, char **argv);
+
+typedef struct tool_main_ctx {
+    tool_main_fn_t fn;
+    int            argc;
+    char         **argv;
+} tool_main_ctx_t;
+
 static int run_q9stat_ctx(void *ctx)
 {
     const stat_ctx_t *st = (const stat_ctx_t *)ctx;
 
     return q9stat_run(st->dir_path, st->name);
+}
+
+static int run_tool_main_ctx(void *ctx)
+{
+    tool_main_ctx_t *tm = (tool_main_ctx_t *)ctx;
+
+    return tm->fn(tm->argc, tm->argv);
 }
 
 static int capture_q9dir(const char *path, const char *out_file)
@@ -257,6 +273,16 @@ static int capture_q9stat(const char *dir_path, const char *name, const char *ou
     st.dir_path = dir_path;
     st.name = name;
     return capture_output(run_q9stat_ctx, &st, out_file);
+}
+
+static int capture_tool_main(tool_main_fn_t fn, int argc, char **argv, const char *out_file)
+{
+    tool_main_ctx_t tm;
+
+    tm.fn = fn;
+    tm.argc = argc;
+    tm.argv = argv;
+    return capture_output(run_tool_main_ctx, &tm, out_file);
 }
 
 static int file_contains(const char *file, const char *needle)
@@ -355,6 +381,9 @@ int main(void)
     q9_name_parse_t pn;
     int       ok = 1;
     int       err;
+    int       q9cat_direct_err;
+    int       q9copy_direct_err;
+    int       q9mkdir_direct_err;
 
     remove(IMG_NAME);
     if (!make_image()) {
@@ -382,10 +411,34 @@ int main(void)
     /* q9cat schreibt direkt auf stdout; hier ist die sichtbare Ausgabe Teil des Smoke-Tests. */
     printf("  [info] q9cat-Ausgabe beginnt:\n");
     err = q9cat_run("/d0/SRC.TXT");
+    q9cat_direct_err = err;
     printf("\n  [info] q9cat-Ausgabe endet\n");
     ok = expect_ok("q9cat_run: Datei nach Pfad 1 schreiben", err) && ok;
+    {
+        char *argv[] = {"q9cat", "/d0/SRC.TXT", 0};
+
+        err = capture_tool_main(q9cat_main, 2, argv, "q9cat-main.out");
+        ok = expect_ok("q9cat_main: argc/argv ruft q9cat_run", err) && ok;
+        if (err == q9cat_direct_err) {
+            printf("  [ok] q9cat_main: Status deckt sich mit q9cat_run\n");
+        } else {
+            printf("  [FEHLER] q9cat_main: Status %d statt %d\n", err, q9cat_direct_err);
+            ok = 0;
+        }
+        ok = expect_contains("q9cat_main: Ausgabe enthaelt Dateitext",
+                             "q9cat-main.out", "libq9 schreibt diese Datei.") && ok;
+    }
+    {
+        char *argv[] = {"q9cat", 0};
+
+        err = capture_tool_main(q9cat_main, 1, argv, "q9cat-usage.out");
+        ok = expect_error("q9cat_main: fehlendes Argument liefert Parser-Fehler", err) && ok;
+        ok = expect_contains("q9cat_main: Usage bei fehlendem Argument",
+                             "q9cat-usage.out", "usage: q9cat <path>") && ok;
+    }
 
     err = q9copy_run("/d0/SRC.TXT", "/d0/DST.TXT");
+    q9copy_direct_err = err;
     ok = expect_ok("q9copy_run: /d0/SRC.TXT -> /d0/DST.TXT", err) && ok;
 
     err = read_file("/d0/DST.TXT", buf, sizeof(buf), &got);
@@ -396,6 +449,44 @@ int main(void)
     } else {
         printf("  [FEHLER] q9copy: Inhalt abweichend (got=%u)\n", got);
         ok = 0;
+    }
+    {
+        char *argv[] = {"q9copy", "/d0/SRC.TXT", "/d0/MAINCPY.TXT", 0};
+
+        err = capture_tool_main(q9copy_main, 3, argv, "q9copy-main.out");
+        ok = expect_ok("q9copy_main: argc/argv ruft q9copy_run", err) && ok;
+        if (err == q9copy_direct_err) {
+            printf("  [ok] q9copy_main: Status deckt sich mit q9copy_run\n");
+        } else {
+            printf("  [FEHLER] q9copy_main: Status %d statt %d\n", err, q9copy_direct_err);
+            ok = 0;
+        }
+        err = read_file("/d0/MAINCPY.TXT", buf, sizeof(buf), &got);
+        ok = expect_ok("q9copy_main: Kopie zuruecklesen", err) && ok;
+        if (err == 0 && got == sizeof(src_data) - 1u &&
+            memcmp(buf, src_data, sizeof(src_data) - 1u) == 0) {
+            printf("  [ok] q9copy_main: Inhalt identisch\n");
+        } else {
+            printf("  [FEHLER] q9copy_main: Inhalt abweichend (got=%u)\n", got);
+            ok = 0;
+        }
+    }
+    {
+        char *argv[] = {"q9copy", "--help", 0};
+
+        err = capture_tool_main(q9copy_main, 2, argv, "q9copy-help.out");
+        ok = expect_ok("q9copy_main: --help liefert Erfolg", err) && ok;
+        ok = expect_contains("q9copy_main: Help enthaelt Usage",
+                             "q9copy-help.out", "usage: q9copy [-v] <src> <dst>") && ok;
+    }
+    {
+        char *argv[] = {"q9copy", "-v", "/d0/SRC.TXT", "/d0/VERBOSE.TXT", 0};
+
+        err = capture_tool_main(q9copy_main, 4, argv, "q9copy-verbose.out");
+        ok = expect_ok("q9copy_main: -v kopiert Datei", err) && ok;
+        ok = expect_contains("q9copy_main: -v schreibt Kopierzeile",
+                             "q9copy-verbose.out",
+                             "copy: /d0/SRC.TXT -> /d0/VERBOSE.TXT") && ok;
     }
 
     err = q9_makdir("/d0/TESTDIR");
@@ -409,7 +500,22 @@ int main(void)
 
     /* Reihenfolge: erst erzeugen, dann Directory-Capture, damit q9dir den neuen Eintrag beweist. */
     err = q9mkdir_run("/d0/MKDIR");
+    q9mkdir_direct_err = err;
     ok = expect_ok("q9mkdir_run: /d0/MKDIR anlegen", err) && ok;
+    {
+        char *argv[] = {"q9mkdir", "/d0/MKMAIN", 0};
+
+        err = capture_tool_main(q9mkdir_main, 2, argv, "q9mkdir-main.out");
+        ok = expect_ok("q9mkdir_main: argc/argv ruft q9mkdir_run", err) && ok;
+        if (err == q9mkdir_direct_err) {
+            printf("  [ok] q9mkdir_main: Status deckt sich mit q9mkdir_run\n");
+        } else {
+            printf("  [FEHLER] q9mkdir_main: Status %d statt %d\n", err, q9mkdir_direct_err);
+            ok = 0;
+        }
+        ok = expect_contains("q9mkdir_main: Ausgabe bestaetigt Pfad",
+                             "q9mkdir-main.out", "mkdir: /d0/MKMAIN") && ok;
+    }
     err = capture_q9dir("/d0", "q9dir-after-mkdir.out");
     ok = expect_ok("q9dir_run: Root nach q9mkdir_run schreiben", err) && ok;
     ok = expect_contains("q9mkdir: Root zeigt MKDIR als DIR", "q9dir-after-mkdir.out",
