@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.20
+# File:   HANDBUCH.md                                                                     Ver. 1.30
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -15,6 +15,8 @@
 #         │      │ neuer Abschnitt 5.8, Lizenz-/Referenzquellen-Tabelle ergänzt            │
 # 26-07-04│ 1.20 │ 4.7: Syscall-Bridge (native Seite) — wasmproc.c/.h, Abschnitt 5.8        │ CF
 #         │      │ erweitert, Phase-4-Status in Abschnitt 6 aktualisiert                   │
+# 26-07-04│ 1.30 │ 4.8: Zeiger-/Speicher-Marshaling — Abschnitt 2.1 (wabt/wat2wasm neu     │ CF
+#         │      │ installiert), Abschnitt 5.8 erweitert, Phase-4-Status in Abschnitt 6     │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -95,6 +97,14 @@ Stand (genaue Pfade und Versionen je Entwicklungsrechner) steht in
 Kein Emscripten, kein sonstiges Spezialwerkzeug nötig — der native Build ist die
 niedrigste Einstiegshürde und der Ort, an dem der Selbsttest läuft.
 
+Optional, nur für die Arbeit an `Q9_MOD_WASM`-Gastprogrammen (Selbsttests ab
+Schritt 4.8, `src/kernel/kernel.c`): **wabt** (Google, Apache-2.0, enthält
+`wat2wasm`) übersetzt lesbaren WAT-Quelltext in `.wasm`-Bytecode, statt ihn
+von Hand als Byte-Array zusammenzusetzen. Installation z.B. per Homebrew
+(`brew install wabt`) oder als Release-ZIP von der
+[wabt-Releaseseite](https://github.com/WebAssembly/wabt); wird nicht vom
+Kernel-Build selbst gebraucht, nur beim Erzeugen neuer Testmodule.
+
 ### 2.2 Nativer Build (Windows)
 
 | Werkzeug | Zweck | Installation |
@@ -164,9 +174,11 @@ Q9/
 │   │   ├── wasmrt.c/.h        Wrapper um die eingebettete wasm3-Runtime (Phase 4.6,
 │   │   │                       NUR im nativen Build, s. Abschnitt 5.8) — kapselt wasm3.h nach
 │   │   │                       aussen, damit kein Aufrufer third_party/wasm3 einbinden muss
-│   │   └── wasmproc.c/.h      Syscall-Bridge fuer Q9_MOD_WASM-Prozesse (Phase 4.7, NUR im
-│   │                           nativen Build) — Importe q9.f_id/f_time/f_exit + Step-Trampolin
-│   │                           q9_wasm_proc_step, das F$Fork/F$Chain fuer WASM-Module eintragen
+│   │   └── wasmproc.c/.h      Syscall-Bridge fuer Q9_MOD_WASM-Prozesse (Phase 4.7/4.8, NUR im
+│   │                           nativen Build) — Importe q9.f_id/f_time/f_exit (4.7) sowie
+│   │                           q9.i_open/i_close/i_read/i_write (4.8, Zeiger-/Speicher-Marshaling
+│   │                           ueber Gast-Offsets) + Step-Trampolin q9_wasm_proc_step, das
+│   │                           F$Fork/F$Chain fuer WASM-Module eintragen
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -411,7 +423,7 @@ const char   *q9_hal_target(void);
 Jedes Target implementiert genau diese Funktionen; alles Weitere (Geräte,
 Pfade, Dateisystem, Module) ist reiner Kernel-Code und läuft überall gleich.
 
-### 5.8 WASM-Runtime + Syscall-Bridge (native Build, Phase 4.6/4.7, Entscheidung E10)
+### 5.8 WASM-Runtime + Syscall-Bridge (native Build, Phase 4.6/4.7/4.8, Entscheidung E10)
 
 Damit `Q9_MOD_WASM`-Module (s. Abschnitt 5.4) nicht nur im Browser laufen
 (dort instanziiert JS sie direkt über `WebAssembly.instantiate`), braucht der
@@ -456,11 +468,43 @@ bis zum Ende durch (kein kooperatives Unterbrechen mitten in der
 Ausführung — bräuchte Asyncify o.ä., außerhalb des 4.7-Rahmens). Modul-
 Konvention wie `Q9_MOD_NATIVE`: der WASM-Bytecode steht direkt hinter dem
 Header (`execoff`/`datasize`). Bewiesen durch einen Selbsttest mit echtem
-`F$Fork`/`F$Wait`-Lebenszyklus. Zeiger-/Speicher-Marshaling über die
-Modulgrenze (damit auch I$Read/I$Write/I$Open für WASM-Module nutzbar
-werden) folgt mit Schritt 4.8. **Nicht Teil von 4.7**: die Browser-Seite
+`F$Fork`/`F$Wait`-Lebenszyklus. **Nicht Teil von 4.7**: die Browser-Seite
 (`WebAssembly.instantiate` im Worker für ein verschachteltes Gastmodul) —
 zurückgestellt, s. ARBEITSPLAN.md „Geparkt".
+
+**4.8** (Zeiger-/Speicher-Marshaling): vier weitere Importe im Namespace
+`"q9"` — `i_open` (`i(ii)`), `i_close` (`i(i)`), `i_read`/`i_write`
+(`i(iii)`) —, die jetzt auch Zeiger-Parameter über die Modulgrenze
+transportieren. Ein Gastprogramm kennt keine Host-Adressen, sondern nur
+Offsets in seine **eigene** lineare Speicherinstanz; wasm3 stellt dafür die
+Makros `m3ApiGetArgMem`/`m3ApiOffsetToPtr` bereit, die einen Gast-Offset in
+einen echten Host-Zeiger relativ zur Speicherbasis (`_mem`) übersetzen.
+Jeder Import bounds-checkt den übersetzten Bereich selbst (eigene Funktion
+`wasm_range_ok()` in `wasmproc.c`, dieselbe Grenzformel wie wasm3s
+`m3ApiCheckMem`-Makro, aber ohne dessen impliziten `return` — ein Makro mit
+eingebautem `return` lässt sich nicht in einem gemeinsamen Helfer für
+mehrere Importe wiederverwenden). Liegt der Bereich außerhalb der
+Speicherinstanz, bricht der Import per Trap ab (`m3Err_trapOutOfBoundsMemoryAccess`)
+— ein Programmierfehler im Gast, kein regulärer I/O-Fehler. Pfadnamen werden
+zusätzlich Byte für Byte auf ein abschließendes NUL abgesucht (`wasm_str_len()`,
+Obergrenze `Q9_WASM_PATH_MAX` = 128 Byte), damit die Suche nicht unbegrenzt
+über fremden Speicher läuft. Rückgabekonvention aller vier neuen Importe:
+`>= 0` ist der Erfolgswert (Pfadnummer bzw. übertragene Bytes), `< 0` ein
+negierter Q9-Fehlercode — WASM kennt kein Carry-Bit wie das reale 68k-ABI
+(docs/SYSCALLS.md), diese Bridge-Konvention ersetzt es für Gastcode. Bewiesen
+durch einen Selbsttest, dessen Gastprogramm `/nil` öffnet, hineinschreibt,
+daraus liest (immer `E$EOF`) und wieder schließt — vollständig über
+Gast-Offsets, kein Host-Zeiger wird dem Gastcode je direkt sichtbar gemacht.
+Nebenbefund beim Bau des Testmoduls: WASM-Adresse `0` gilt in wasm3 als
+Nullzeiger (`m3ApiIsNullPtr`), analog zur Konvention realer Linker, die die
+Nullseite reservieren — das Testmodul platziert seine Daten deshalb bewusst
+ab Offset 8, nicht ab 0.
+
+Das `.wasm`-Testmodul für 4.8 ist wie schon bei 4.6/4.7 von Hand als
+Bytecode eingebettet (`kernel.c`), diesmal aber aus echtem WAT-Quelltext
+gebaut statt komplett per Hand assembliert — **wat2wasm** (Teil von
+**wabt**, Google, Apache-2.0) ist seit 4.8 auf diesem Mac Mini per Homebrew
+installiert (s. Abschnitt 2).
 
 `wasmrt.c`/`wasmproc.c` selbst bleiben warnungsfrei und ohne eigenes
 `malloc` — die Heap-Nutzung steckt vollständig in wasm3 (s. Abschnitt 3.1,
@@ -482,7 +526,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 1 | Kernel-Basis: Syscall-Dispatcher, Device-/Pfadmodell, Namensauflösung, POSIX-HAL | ✅ fertig |
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
-| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig (4.1-4.5); Anschluss 4.6-4.8 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3) + 4.7 (Syscall-Bridge, native Seite) ✅ fertig, 4.8 (Zeiger-/Speicher-Marshaling) offen; Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
+| 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig (4.1-4.5); Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite) + 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module) ✅ fertig, 4.9 (Fixed-Heap fuer wasm3) offen; Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
 | 5 | Shell | offen |
 | 6 | 68k-Runtime (Emulator im Browser) | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
@@ -548,7 +592,7 @@ vorausgesetzt werden:
 ---
 
 **Erstellt**: 2026-07-04
-**Letzte Aktualisierung**: 2026-07-04 (Schritt 4.7: Syscall-Bridge fuer Q9_MOD_WASM, native Seite)
+**Letzte Aktualisierung**: 2026-07-04 (Schritt 4.8: Zeiger-/Speicher-Marshaling fuer Q9_MOD_WASM)
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF HANDBUCH.md                                                                          Ver. 1.20

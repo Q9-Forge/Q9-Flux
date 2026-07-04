@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.50
+// File:   kernel.c                                                                        Ver. 3.60
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -59,6 +59,9 @@
 //         │      │ laedt ein handgebautes add(a,b)-Modul, ruft es auf, prueft 2+3=5           │
 // 26-07-04│ 3.50 │ 4.7: build_wasm_module + Selbsttest Syscall-Bridge — echtes F$Fork auf ein │ CF
 //         │      │ Q9_MOD_WASM-Modul (importiert q9.f_id/f_time/f_exit), F$Wait sammelt es ein│
+// 26-07-04│ 3.60 │ 4.8: Selbsttest Pointer-Marshaling — Gastprogramm mit eigenem linearem       │ CF
+//         │      │ Speicher oeffnet/schreibt/liest/schliesst /nil ueber q9.i_open/i_write/       │
+//         │      │ i_read/i_close (Bytecode per wat2wasm/wabt gebaut, s. ARBEITSPLAN.md 4.8)     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -1626,6 +1629,88 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "4.7: F$Fork startet Q9_MOD_WASM-Modul, Syscall-Bridge, F$Exit(0), F$Wait sammelt ein";
         checks[nchecks++].ok = ok;
     }
+    {
+        /* 4.8: Pointer-Marshaling — ein WASM-Gastprogramm mit eigenem linearen Speicher (1 Page)
+           oeffnet "/nil" (Pfadname liegt im Gastspeicher, wird per Offset->Host-Zeiger uebersetzt),
+           schreibt 2 Bytes hinein (/nil verwirft, meldet aber die volle Anzahl zurueck), liest
+           danach (nil liefert immer E$EOF = $D3, negiert also -211) und schliesst den Pfad wieder.
+           Bricht bei jedem unerwarteten Ergebnis selbst mit einem eigenen Exit-Code (1..4) ab.
+           Aequivalent zu folgendem WAT (mit wat2wasm aus wabt gebaut — Werkzeug seit 4.8 auf
+           diesem Mac Mini per Homebrew installiert, s. docs/HANDBUCH.md Abschnitt 2):
+             (module
+               (import "q9" "i_open"  (func $i_open  (param i32 i32) (result i32)))
+               (import "q9" "i_write" (func $i_write (param i32 i32 i32) (result i32)))
+               (import "q9" "i_read"  (func $i_read  (param i32 i32 i32) (result i32)))
+               (import "q9" "i_close" (func $i_close (param i32) (result i32)))
+               (import "q9" "f_exit"  (func $f_exit  (param i32)))
+               (memory (export "memory") 1)
+               (data (i32.const 8)  "/nil\00")           ;; Offset 0..7 bewusst frei: wasm3s
+               (data (i32.const 32) "AB")                ;;   m3ApiIsNullPtr() behandelt Offset 0
+               (func (export "q9_main")                  ;;   als Nullzeiger (Konvention wie bei
+                 (local $path i32) (local $n i32) (local $code i32)      ;; realen Linkern)
+                 (local.set $path (call $i_open (i32.const 8) (i32.const 3)))
+                 (if (i32.lt_s (local.get $path) (i32.const 0))
+                   (then (call $f_exit (i32.const 1)) unreachable))
+                 (local.set $n (call $i_write (local.get $path) (i32.const 32) (i32.const 2)))
+                 (if (i32.ne (local.get $n) (i32.const 2))
+                   (then (call $f_exit (i32.const 2)) unreachable))
+                 (local.set $code (call $i_read (local.get $path) (i32.const 64) (i32.const 4)))
+                 (if (i32.ne (local.get $code) (i32.const -211))
+                   (then (call $f_exit (i32.const 3)) unreachable))
+                 (local.set $code (call $i_close (local.get $path)))
+                 (if (i32.ne (local.get $code) (i32.const 0))
+                   (then (call $f_exit (i32.const 4)) unreachable))
+                 (call $f_exit (i32.const 0))))
+           Beweist den kompletten Weg Gast-Offset -> Bounds-Check -> Host-Zeiger -> echter Syscall
+           -> Ergebnis zurueck fuer I$Open/I$Write/I$Read/I$Close. */
+        static const uint8_t wasm_ptr[] = {
+            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x1a, 0x05, 0x60,
+            0x02, 0x7f, 0x7f, 0x01, 0x7f, 0x60, 0x03, 0x7f, 0x7f, 0x7f, 0x01, 0x7f,
+            0x60, 0x01, 0x7f, 0x01, 0x7f, 0x60, 0x01, 0x7f, 0x00, 0x60, 0x00, 0x00,
+            0x02, 0x3f, 0x05, 0x02, 0x71, 0x39, 0x06, 0x69, 0x5f, 0x6f, 0x70, 0x65,
+            0x6e, 0x00, 0x00, 0x02, 0x71, 0x39, 0x07, 0x69, 0x5f, 0x77, 0x72, 0x69,
+            0x74, 0x65, 0x00, 0x01, 0x02, 0x71, 0x39, 0x06, 0x69, 0x5f, 0x72, 0x65,
+            0x61, 0x64, 0x00, 0x01, 0x02, 0x71, 0x39, 0x07, 0x69, 0x5f, 0x63, 0x6c,
+            0x6f, 0x73, 0x65, 0x00, 0x02, 0x02, 0x71, 0x39, 0x06, 0x66, 0x5f, 0x65,
+            0x78, 0x69, 0x74, 0x00, 0x03, 0x03, 0x02, 0x01, 0x04, 0x05, 0x03, 0x01,
+            0x00, 0x01, 0x07, 0x14, 0x02, 0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79,
+            0x02, 0x00, 0x07, 0x71, 0x39, 0x5f, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x05,
+            0x0a, 0x62, 0x01, 0x60, 0x01, 0x03, 0x7f, 0x41, 0x08, 0x41, 0x03, 0x10,
+            0x00, 0x21, 0x00, 0x20, 0x00, 0x41, 0x00, 0x48, 0x04, 0x40, 0x41, 0x01,
+            0x10, 0x04, 0x00, 0x0b, 0x20, 0x00, 0x41, 0x20, 0x41, 0x02, 0x10, 0x01,
+            0x21, 0x01, 0x20, 0x01, 0x41, 0x02, 0x47, 0x04, 0x40, 0x41, 0x02, 0x10,
+            0x04, 0x00, 0x0b, 0x20, 0x00, 0x41, 0xc0, 0x00, 0x41, 0x04, 0x10, 0x02,
+            0x21, 0x02, 0x20, 0x02, 0x41, 0xad, 0x7e, 0x47, 0x04, 0x40, 0x41, 0x03,
+            0x10, 0x04, 0x00, 0x0b, 0x20, 0x00, 0x10, 0x03, 0x21, 0x02, 0x20, 0x02,
+            0x41, 0x00, 0x47, 0x04, 0x40, 0x41, 0x04, 0x10, 0x04, 0x00, 0x0b, 0x41,
+            0x00, 0x10, 0x04, 0x0b, 0x0b, 0x12, 0x02, 0x00, 0x41, 0x08, 0x0b, 0x05,
+            0x2f, 0x6e, 0x69, 0x6c, 0x00, 0x00, 0x41, 0x20, 0x0b, 0x02, 0x41, 0x42
+        };
+        static uint8_t wasmbuf2[384];
+        int            ok;
+        q9_regs_t      fk = {0};
+        uint32_t       childpid;
+
+        build_wasm_module(wasmbuf2, "wasmptr", 1, wasm_ptr, sizeof(wasm_ptr));
+        ok = (q9_mod_register((const q9_modhdr_t *)wasmbuf2) == 0);
+
+        fk.a[0] = (void *)"wasmptr";
+        fk.d[1] = Q9_MOD_PRGRM;
+        fk.d[2] = Q9_MOD_WASM;
+        ok = ok && (q9_syscall(F_FORK, &fk) == 0);
+        childpid = fk.d[0];
+        ok = ok && (childpid != 0 && childpid != 1);
+
+        q9_kernel_step();
+
+        {
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == 0 && wt.d[0] == childpid && wt.d[1] == 0);
+        }
+
+        checks[nchecks].name = "4.8: Pointer-Marshaling — Q9_MOD_WASM oeffnet/schreibt/liest/schliesst /nil ueber Gast-Offsets";
+        checks[nchecks++].ok = ok;
+    }
 #endif
 
     for (int i = 0; i < nchecks; i++) {
@@ -1641,5 +1726,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 3.50
+// EOF kernel.c                                                                            Ver. 3.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
