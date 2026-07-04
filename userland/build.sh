@@ -15,6 +15,7 @@
 # 26-07-04│ 1.01 │ q9dir in Build und Test aufgenommen                                     │ CX
 # 26-07-04│ 1.02 │ q9mkdir/q9rm in Build und Test aufgenommen                              │ CX
 # 26-07-04│ 1.03 │ q9touch/q9stat in Build und Test aufgenommen                            │ CX
+# 26-07-04│ 1.04 │ argc/argv-Einsprungpunkte der Tools mitgebaut                           │ CX
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 set -eu
@@ -29,7 +30,7 @@ cd "$ROOT"
 mkdir -p "$BUILD/obj"
 
 KSRC="src/kernel/kernel.c src/kernel/syscall.c src/kernel/device.c src/kernel/dev_term.c src/kernel/dev_nil.c src/kernel/dev_d0.c src/kernel/name.c src/kernel/module.c src/kernel/vfs.c src/kernel/fat16.c src/kernel/proc.c"
-USRC="userland/lib/libq9.c userland/tools/q9cat.c userland/tools/q9copy.c userland/tools/q9dir.c userland/tools/q9mkdir.c userland/tools/q9rm.c userland/tools/q9touch.c userland/tools/q9stat.c userland/test/harness.c"
+USRC="userland/lib/libq9.c userland/tools/q9cat.c userland/tools/q9cat_main.c userland/tools/q9copy.c userland/tools/q9copy_main.c userland/tools/q9dir.c userland/tools/q9dir_main.c userland/tools/q9mkdir.c userland/tools/q9mkdir_main.c userland/tools/q9rm.c userland/tools/q9rm_main.c userland/tools/q9touch.c userland/tools/q9touch_main.c userland/tools/q9stat.c userland/tools/q9stat_main.c userland/test/harness.c"
 
 for src in $KSRC $USRC; do
     obj="$BUILD/obj/$(printf '%s' "$src" | tr '/.' '__').o"
