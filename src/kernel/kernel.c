@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.60
+// File:   kernel.c                                                                        Ver. 3.70
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -62,6 +62,8 @@
 // 26-07-04│ 3.60 │ 4.8: Selbsttest Pointer-Marshaling — Gastprogramm mit eigenem linearem       │ CF
 //         │      │ Speicher oeffnet/schreibt/liest/schliesst /nil ueber q9.i_open/i_write/       │
 //         │      │ i_read/i_close (Bytecode per wat2wasm/wabt gebaut, s. ARBEITSPLAN.md 4.8)     │
+// 26-07-04│ 3.70 │ 5.1: Selbsttest Musashi-Grundbaustein (nur -DQ9_HAVE_M68K, native-only) —     │ CF
+//         │      │ von Hand assembliertes MOVEQ/ADDI-Programm in emuliertem RAM, D0==5 geprueft  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -73,6 +75,9 @@
 #include "kernel.h"
 #ifdef Q9_HAVE_WASM3
 #include "wasmrt.h"
+#endif
+#ifdef Q9_HAVE_M68K
+#include "m68krt.h"
 #endif
 
 static void repl_step(void);                            /* 4.1: Step-Funktion von PID 1 (s.u.)     */
@@ -1709,6 +1714,41 @@ int q9_kernel_selftest(void)
         }
 
         checks[nchecks].name = "4.8: Pointer-Marshaling — Q9_MOD_WASM oeffnet/schreibt/liest/schliesst /nil ueber Gast-Offsets";
+        checks[nchecks++].ok = ok;
+    }
+#endif
+
+#ifdef Q9_HAVE_M68K
+    {
+        /* 5.1: Grundbaustein Musashi-68k-Emulation (noch OHNE Scheduler-/Syscall-Bridge, s.
+           m68krt.h) — legt ein von Hand assembliertes 68k-Programm (MOVEQ #2,D0; ADDI.W #3,D0;
+           BRA.S *-2 als Endlosschleife, damit m68k_execute() nicht in unbeschriebenen Speicher
+           laeuft) plus Reset-Vektoren (SP@0, PC@4) in emuliertes RAM, fuehrt es aus und prueft
+           D0==5 ueber die emulierten Register. */
+        static uint8_t ram[256];
+        q9_m68krt_t    rt;
+        int            ok;
+
+        for (uint32_t i = 0; i < sizeof(ram); i++) {
+            ram[i] = 0;
+        }
+        ram[0] = 0x00; ram[1] = 0x00; ram[2] = 0x01; ram[3] = 0x00;   /* Initial-SP = 0x00000100 */
+        ram[4] = 0x00; ram[5] = 0x00; ram[6] = 0x00; ram[7] = 0x40;   /* Initial-PC = 0x00000040 */
+
+        ram[0x40] = 0x70; ram[0x41] = 0x02;                            /* MOVEQ #2,D0             */
+        ram[0x42] = 0x06; ram[0x43] = 0x40;                            /* ADDI.W #3,D0 ...        */
+        ram[0x44] = 0x00; ram[0x45] = 0x03;                            /* ... #3                  */
+        ram[0x46] = 0x60; ram[0x47] = 0xfe;                            /* BRA.S *-2 (Endlosschleife) */
+
+        ok = (q9_m68krt_init(&rt, ram, sizeof(ram)) == Q9_M68KRT_OK);
+        if (ok) {
+            q9_m68krt_reset(&rt);
+            q9_m68krt_execute(&rt, 100);                               /* MOVEQ+ADDI + mehrere BRA-Runden */
+            ok = (q9_m68krt_get_d(&rt, 0) == 5);
+            q9_m68krt_free(&rt);
+        }
+
+        checks[nchecks].name = "5.1: Musashi laedt MOVEQ #2,D0/ADDI.W #3,D0 und rechnet 2+3=5";
         checks[nchecks++].ok = ok;
     }
 #endif

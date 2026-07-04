@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 2.10
+# File:   Makefile                                                                        Ver. 2.20
 # Owner:  AF
 # Desc.:  Q9 Build-System. Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc),
 #         wasm (Browser, emcc), test, clean. Toolchain-Setup siehe docs/TOOLCHAIN.md.
@@ -28,6 +28,9 @@
 #         │      │ native-Target; -DQ9_HAVE_WASM3 aktiviert den Selbsttest-Zweig in kernel.c │
 # 26-07-04│ 2.10 │ 4.9: WASM3_CFLAGS bindet src/kernel/config.h ein und setzt               │ CF
 #         │      │ d_m3FixedHeap=Q9_SYSTEM_MEM_BYTES (Fixed-Heap statt Host-malloc in wasm3)  │
+# 26-07-04│ 2.20 │ 5.1: m68krt.c/.h (Musashi-Wrapper) + vendorte third_party/musashi/ nur im  │ CF
+#         │      │ native-Target; m68kmake generiert m68kops.c/.h zur Bauzeit (Zweistufen-    │
+#         │      │ Build); -DQ9_HAVE_M68K aktiviert den Selbsttest-Zweig in kernel.c          │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -73,15 +76,55 @@ $(BUILD)/native/wasm3_%.o: $(WASM3_DIR)/%.c
 	@mkdir -p $(BUILD)/native
 	$(CC) $(WASM3_CFLAGS) -c $< -o $@
 
+# 5.1: eingebettete Musashi-68000-Emulation (third_party/musashi, Entscheidung E12), NUR im
+# nativen Build (analog zu wasm3 in 4.6). Musashi hat einen Zweistufen-Build: m68kmake (selbst ein
+# kleines Host-Tool) liest m68k_in.c (518 handgeschriebene Opcode-Primitive) und generiert daraus
+# m68kops.c/.h (1967 Opcode-Handler) -- reine Build-Artefakte (wie WASM3_OBJS), landen unter
+# $(MUSASHI_GEN) und werden nicht versioniert. M68KRT_SRC ist Q9-eigener Code (volle CFLAGS);
+# MUSASHI_SRC ist unveraendert vendorter Fremdcode + generierter Code, uebersetzt mit eigenen,
+# laxeren Flags (wie WASM3_CFLAGS).
+M68KRT_SRC   = src/kernel/m68krt.c
+M68KRT_HDR   = src/kernel/m68krt.h
+MUSASHI_DIR  = third_party/musashi
+MUSASHI_GEN  = $(BUILD)/native/musashi_gen
+MUSASHI_MAKE = $(BUILD)/native/m68kmake
+MUSASHI_CFLAGS = -std=c99 -O2 -I$(MUSASHI_DIR) -I$(MUSASHI_GEN)
+# m68kcpu.c bindet m68kfpu.c bereits selbst per #include ein (Musashi-eigenes Muster, s.
+# third_party/musashi/m68kcpu.c Zeile 51) -- m68kfpu.c darf deshalb NICHT separat uebersetzt
+# werden, sonst doppelte Symbole (m68040_fpu_op0/op1) beim Linken.
+MUSASHI_OBJS = $(BUILD)/native/musashi_m68kcpu.o $(BUILD)/native/musashi_softfloat.o \
+               $(BUILD)/native/musashi_m68kops.o
+
+$(MUSASHI_MAKE): $(MUSASHI_DIR)/m68kmake.c
+	@mkdir -p $(BUILD)/native
+	$(CC) -std=c99 -O2 -o $@ $<
+
+$(MUSASHI_GEN)/m68kops.c $(MUSASHI_GEN)/m68kops.h: $(MUSASHI_MAKE) $(MUSASHI_DIR)/m68k_in.c
+	@mkdir -p $(MUSASHI_GEN)
+	$(MUSASHI_MAKE) $(MUSASHI_GEN)/ $(MUSASHI_DIR)/m68k_in.c
+
+$(BUILD)/native/musashi_m68kcpu.o: $(MUSASHI_DIR)/m68kcpu.c $(MUSASHI_DIR)/m68kfpu.c $(MUSASHI_GEN)/m68kops.h
+	@mkdir -p $(BUILD)/native
+	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
+
+$(BUILD)/native/musashi_softfloat.o: $(MUSASHI_DIR)/softfloat/softfloat.c
+	@mkdir -p $(BUILD)/native
+	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
+
+$(BUILD)/native/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
+	@mkdir -p $(BUILD)/native
+	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
+
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows w64devkit oder macOS/Linux, HAL wird automatisch gewaehlt)
 #───────────────────────────────────────────────────────────────────────────────────────────────
 native: $(BUILD)/native/q9.exe
 
-$(BUILD)/native/q9.exe: $(KSRC) $(WASMRT_SRC) $(WASMRT_HDR) $(NATIVE_HAL_SRC) $(HDRS) $(WASM3_OBJS)
+$(BUILD)/native/q9.exe: $(KSRC) $(WASMRT_SRC) $(WASMRT_HDR) $(M68KRT_SRC) $(M68KRT_HDR) \
+                        $(NATIVE_HAL_SRC) $(HDRS) $(WASM3_OBJS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/native
-	$(CC) $(CFLAGS) -DQ9_HAVE_WASM3 -I$(WASM3_DIR) \
-	    $(KSRC) $(WASMRT_SRC) $(NATIVE_HAL_SRC) $(WASM3_OBJS) -o $@
+	$(CC) $(CFLAGS) -DQ9_HAVE_WASM3 -DQ9_HAVE_M68K -I$(WASM3_DIR) -I$(MUSASHI_DIR) \
+	    $(KSRC) $(WASMRT_SRC) $(M68KRT_SRC) $(NATIVE_HAL_SRC) $(WASM3_OBJS) $(MUSASHI_OBJS) -o $@
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # wasm: Browser-Build (Emscripten); kopiert das Frontend mit nach build/wasm/
@@ -112,5 +155,5 @@ clean:
 .PHONY: native wasm test clean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 2.10
+# EOF Makefile                                                                            Ver. 2.20
 #─────────────────────────────────────────────────────────────────────────────────────────────────

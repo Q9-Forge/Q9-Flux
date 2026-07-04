@@ -1,0 +1,89 @@
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// File:   m68krt.h                                                                        Ver. 1.00
+// Owner:  AF
+// Desc.:  Schmaler Q9-Wrapper um die eingebettete Musashi-68000-Emulation (third_party/musashi,
+//         Entscheidung E12 in PROJECT.md). Native-Build-only — Grundbaustein fuer Phase 5 (Prozesse
+//         mit echtem 68k-Maschinencode, vgl. den wasm3-Zweig aus Phase 4/wasmrt.h). Schritt 5.1:
+//         nur Laden + Ausfuehren in emuliertem RAM + Register lesen, KEINE Scheduler-/
+//         Syscall-Bridge-Entscheidungen (die kommen erst mit der Detailplanung von Phase 5).
+//
+//         Musashi haelt seinen kompletten CPU-Zustand in eigenen globalen Variablen (kein Kontext-
+//         Zeiger in m68k_read/write_memory_*, anders als wasm3s IM3Runtime-Handles) — es kann daher
+//         je Prozess immer nur EINE Musashi-Instanz aktiv sein. q9_m68krt_t ist deshalb bewusst kein
+//         eigenstaendiges, mehrfach instanzierbares Handle wie q9_wasmrt_t, sondern nur eine duenne
+//         Buchhaltungs-Struktur (RAM-Zeiger+Groesse) neben den Musashi-eigenen Globals.
+//
+// Call:   q9_m68krt_t rt; q9_m68krt_init(&rt, ram, sizeof(ram));
+//         q9_m68krt_reset(&rt); q9_m68krt_execute(&rt, 100);
+//         d0 = q9_m68krt_get_d(&rt, 0); q9_m68krt_free(&rt);
+//
+// Edition History
+//─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
+// Date    │ Ver. │ Description                                                            │ By
+//─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
+// 26-07-04│ 1.00 │ 5.1: Erster Grundbaustein — RAM anbinden, Reset+Execute, D0-D7 lesen    │ CF
+//═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
+#ifndef Q9_M68KRT_H
+#define Q9_M68KRT_H
+
+#include <stdint.h>
+
+#define Q9_M68KRT_OK        0
+#define Q9_M68KRT_ERR_RAM  -1                       /* RAM fehlt oder zu klein fuer Reset-Vektoren */
+
+/* Buchhaltung neben Musashis eigenen Globals (s.o.) — kein Handle im Sinne von q9_wasmrt_t. */
+typedef struct q9_m68krt {
+    uint8_t  *ram;                                   /* Emuliertes RAM, big-endian (68k-Byteorder) */
+    uint32_t  ram_len;
+} q9_m68krt_t;
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_init
+// Desc.:    Bindet einen RAM-Block als Speicher der Musashi-Instanz an (m68k_read/write_memory_*
+//           in m68krt.c greifen darauf zu) und legt den CPU-Typ fest (68030, Entscheidung E12).
+//           ram_len muss mindestens 8 Byte sein (Reset-Vektoren: SP bei Adresse 0, PC bei Adresse
+//           4, je 4 Byte big-endian) — der Aufrufer traegt die Vektoren + das Programm selbst ein,
+//           BEVOR q9_m68krt_reset() aufgerufen wird.
+// Call:     err = q9_m68krt_init(&rt, ram, sizeof(ram))
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_reset
+// Desc.:    Liest die Reset-Vektoren aus dem RAM (Adresse 0 = initialer SP, Adresse 4 = initialer
+//           PC) und setzt die CPU auf diesen Zustand zurueck (m68k_pulse_reset()).
+// Call:     q9_m68krt_reset(&rt)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_reset(q9_m68krt_t *rt);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_execute
+// Desc.:    Fuehrt bis zu 'cycles' CPU-Takte aus (m68k_execute()). Liefert die tatsaechlich
+//           verbrauchten Takte zurueck (kann wegen unvollstaendiger letzter Instruktion leicht
+//           abweichen).
+// Call:     spent = q9_m68krt_execute(&rt, 100)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_m68krt_execute(q9_m68krt_t *rt, int cycles);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_get_d
+// Desc.:    Liefert den Inhalt von Datenregister Dn (n = 0..7) — fuer den Rauchtest (5.1) reicht
+//           das; PC/SR/Ax folgen erst, wenn die Syscall-Bridge sie tatsaechlich braucht.
+// Call:     v = q9_m68krt_get_d(&rt, 0)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+uint32_t q9_m68krt_get_d(q9_m68krt_t *rt, int n);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_free
+// Desc.:    Loest die RAM-Bindung wieder (Musashis eigene Globals bleiben bestehen, s.o. — ein
+//           erneutes q9_m68krt_init() mit neuem RAM ist trotzdem sauber moeglich, weil jeder
+//           Aufruf m68k_init()+m68k_set_cpu_type() neu ausfuehrt).
+// Call:     q9_m68krt_free(&rt)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_free(q9_m68krt_t *rt);
+
+#endif // Q9_M68KRT_H
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF m68krt.h                                                                            Ver. 1.00
+//────────────────────────────────────────────────────────────────────────────────────────────────
