@@ -14,6 +14,12 @@
 #ifndef Q9_USERLAND_Q9STAT_H
 #define Q9_USERLAND_Q9STAT_H
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9stat_run
+// Desc.:    Sucht den 8.3-Namen "name" im Directory dir_path und schreibt den Treffer nach
+//           Pfad 1. Rueckgabe: 0 = gefunden, E$PNNF = nicht gefunden, sonst Q9-Fehlercode.
+// Call:     err = q9stat_run("/d0", "DATEI.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9stat_run(const char *dir_path, const char *name);
 
 #endif // Q9_USERLAND_Q9STAT_H

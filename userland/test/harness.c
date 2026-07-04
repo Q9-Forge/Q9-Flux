@@ -92,6 +92,7 @@ static int make_image(void)
         return 0;
     }
 
+    /* Minimal-FAT16: genau gross genug fuer Root-Tests, aber mit gueltigem Bootsektor. */
     make_boot(sec);
     if (fwrite(sec, SECTOR, 1, f) != 1) {
         fclose(f);
@@ -107,6 +108,7 @@ static int make_image(void)
     }
 
     memset(sec, 0, sizeof(sec));
+    /* Root-Directory und Datenbereich bleiben leer; die Tests erzeugen alle Nutzdaten via Q9. */
     for (i = 0; i < ROOT_SECTORS; i++) {
         if (fwrite(sec, SECTOR, 1, f) != 1) {
             fclose(f);
@@ -201,6 +203,7 @@ static int capture_output(capture_fn_t fn, void *ctx, const char *out_file)
     if (saved_stdout < 0) {
         return E_NOTRDY;
     }
+    /* Die Tools schreiben absichtlich auf Pfad 1; fuer Tests wird stdout temporaer umgebogen. */
     f = fopen(out_file, "wb");
     if (!f) {
         close(saved_stdout);
@@ -363,6 +366,7 @@ int main(void)
     q9_hal_init();
     q9_kernel_init();
 
+    /* Zuerst die nackten libq9-F$-Wrapper pruefen, bevor Tools auf deren Verhalten aufbauen. */
     err = q9_time(&tm);
     ok = expect_ok("libq9: F$Time", err) && ok;
     err = q9_id(&pid, &uid);
@@ -375,6 +379,7 @@ int main(void)
     err = write_file("/d0/SRC.TXT", src_data, (uint32_t)(sizeof(src_data) - 1u));
     ok = expect_ok("libq9: I$Create/I$Write /d0/SRC.TXT", err) && ok;
 
+    /* q9cat schreibt direkt auf stdout; hier ist die sichtbare Ausgabe Teil des Smoke-Tests. */
     printf("  [info] q9cat-Ausgabe beginnt:\n");
     err = q9cat_run("/d0/SRC.TXT");
     printf("\n  [info] q9cat-Ausgabe endet\n");
@@ -402,6 +407,7 @@ int main(void)
     err = write_file("/d0/TESTDIR/RAW.BIN", bin_data, (uint32_t)sizeof(bin_data));
     ok = expect_ok("libq9: Datei /d0/TESTDIR/RAW.BIN anlegen", err) && ok;
 
+    /* Reihenfolge: erst erzeugen, dann Directory-Capture, damit q9dir den neuen Eintrag beweist. */
     err = q9mkdir_run("/d0/MKDIR");
     ok = expect_ok("q9mkdir_run: /d0/MKDIR anlegen", err) && ok;
     err = capture_q9dir("/d0", "q9dir-after-mkdir.out");
@@ -411,6 +417,7 @@ int main(void)
 
     err = write_file("/d0/REMOVE.TXT", two_data, (uint32_t)(sizeof(two_data) - 1u));
     ok = expect_ok("libq9: Datei /d0/REMOVE.TXT anlegen", err) && ok;
+    /* Vorher/Nachher-Capture prueft, dass q9rm wirklich den Directory-Eintrag entfernt. */
     err = capture_q9dir("/d0", "q9dir-before-rm.out");
     ok = expect_ok("q9dir_run: Root vor q9rm_run schreiben", err) && ok;
     ok = expect_contains("q9rm: Root zeigt REMOVE.TXT vor Delete", "q9dir-before-rm.out",
@@ -426,6 +433,7 @@ int main(void)
 
     err = q9touch_run("/d0/EMPTY.TXT");
     ok = expect_ok("q9touch_run: /d0/EMPTY.TXT anlegen", err) && ok;
+    /* q9touch soll eine Null-Byte-Datei erzeugen und spaeter existierende Inhalte nicht kuerzen. */
     err = read_file("/d0/EMPTY.TXT", buf, sizeof(buf), &got);
     ok = expect_ok("libq9: /d0/EMPTY.TXT zuruecklesen", err) && ok;
     if (err == 0 && got == 0) {
@@ -441,6 +449,7 @@ int main(void)
     ok = expect_contains("q9touch: Root zeigt EMPTY.TXT mit Groesse 0",
                          "q9dir-after-touch.out", "FILE 0 EMPTY.TXT") && ok;
 
+    /* q9stat nutzt q9dir_next intern; Treffer- und Fehlfall pruefen Suche und leere Ausgabe. */
     err = capture_q9stat("/d0", "EMPTY.TXT", "q9stat-empty.out");
     ok = expect_ok("q9stat_run: EMPTY.TXT finden", err) && ok;
     ok = expect_contains("q9stat: Treffer zeigt gleiche Zeile wie q9dir",
@@ -449,6 +458,7 @@ int main(void)
     ok = expect_errno("q9stat_run: fehlender Name liefert E$PNNF", err, E_PNNF) && ok;
     ok = expect_empty_output("q9stat: Fehlfall schreibt nichts", "q9stat-missing.out") && ok;
 
+    /* Zum Schluss das gemeinsame Directory-Parsing auf Root und Unterverzeichnis absichern. */
     err = capture_q9dir("/d0", "q9dir-root.out");
     ok = expect_ok("q9dir_run: Root-Directory nach Pfad 1 schreiben", err) && ok;
     err = capture_q9dir("/d0/TESTDIR", "q9dir-testdir.out");

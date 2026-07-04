@@ -16,6 +16,12 @@
 #include "../lib/libq9.h"
 #include "q9copy.h"
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9copy_run
+// Desc.:    Siehe q9copy.h. Oeffnet src lesend, erzeugt dst schreibend und kopiert in
+//           128-Byte-Bloecken; beide Pfade werden bei Erfolg und Fehler geschlossen.
+// Call:     err = q9copy_run("/d0/A.TXT", "/d0/B.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9copy_run(const char *src, const char *dst)
 {
     uint8_t  buf[128];

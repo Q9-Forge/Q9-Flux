@@ -23,8 +23,28 @@ typedef struct q9dir_entry {
     char     name[13];
 } q9dir_entry_t;
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9dir_next
+// Desc.:    Liest den naechsten sichtbaren FAT16-Directory-Eintrag vom offenen Directory-Pfad
+//           "path" nach *out_entry. Rueckgabe: 0 = Eintrag, E$EOF = Ende, sonst Q9-Fehlercode.
+// Call:     err = q9dir_next(path, &entry)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9dir_next(uint16_t path, q9dir_entry_t *out_entry);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9dir_write_entry
+// Desc.:    Schreibt einen formatierten Directory-Eintrag nach Pfad 1. entry enthaelt Typ,
+//           Groesse und 8.3-Name. Rueckgabe: 0 = ok, sonst Q9-Fehlercode.
+// Call:     err = q9dir_write_entry(&entry)
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9dir_write_entry(const q9dir_entry_t *entry);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9dir_run
+// Desc.:    Oeffnet "path" als Directory und schreibt alle sichtbaren Eintraege nach Pfad 1.
+//           Rueckgabe: 0 = ok, sonst Q9-Fehlercode.
+// Call:     err = q9dir_run("/d0")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9dir_run(const char *path);
 
 #endif // Q9_USERLAND_Q9DIR_H

@@ -16,6 +16,12 @@
 #include "../lib/libq9.h"
 #include "q9cat.h"
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9cat_run
+// Desc.:    Siehe q9cat.h. Liest in 128-Byte-Bloecken und prueft, dass Pfad 1 jeden Block
+//           vollstaendig angenommen hat.
+// Call:     err = q9cat_run("/d0/DATEI.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9cat_run(const char *path)
 {
     uint8_t  buf[128];

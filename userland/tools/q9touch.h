@@ -14,6 +14,12 @@
 #ifndef Q9_USERLAND_Q9TOUCH_H
 #define Q9_USERLAND_Q9TOUCH_H
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9touch_run
+// Desc.:    Legt "path" als leere Datei an oder oeffnet/schliesst eine vorhandene Datei ohne
+//           Truncate. Rueckgabe: 0 = ok, sonst Q9-Fehlercode.
+// Call:     err = q9touch_run("/d0/DATEI.TXT")
+//════════════════════════════════════════════════════════════════════════════════════════════════
 int q9touch_run(const char *path);
 
 #endif // Q9_USERLAND_Q9TOUCH_H
