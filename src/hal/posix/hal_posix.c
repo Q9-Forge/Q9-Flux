@@ -58,6 +58,12 @@ void q9_hal_init(void)
 
         raw = orig_termios;
         raw.c_lflag &= (tcflag_t)~(ICANON | ECHO);        /* kein Zeilenpuffer, kein lokales Echo   */
+        raw.c_iflag &= (tcflag_t)~(ICRNL | INLCR | IGNCR | IXON);
+                                                           /* 5.2e: transparente Leitung — Enter muss
+                                                              als CR (0x0D) durchkommen (OS-9s SCF
+                                                              erwartet CR als Zeilenende; ICRNL wuerde
+                                                              es zu LF verbiegen), keine LF/CR-Um-
+                                                              schreibung, kein Ctrl-S/Q-Abfangen     */
         raw.c_cc[VMIN]  = 0;                               /* read() liefert sofort zurueck          */
         raw.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSANOW, &raw);
