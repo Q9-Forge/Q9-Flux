@@ -115,7 +115,7 @@ C99-Implementierung. Test-Images erzeugen die test/-Skripte selbst per Python
 | 3.3 | FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen | ✅ | Claudia | `src/kernel/fat16.c/.h` neu — Boot-Sektor (BPB) plausibilisieren, Root-Dir + Unterverzeichnisse durchsuchen (8.3 UND LFN, Namensteile rückwärts zusammengesetzt), FAT16-Cluster-Ketten folgen ($FFF8-$FFFF = Ende), Datei-Kontext `fat16_ctx_t` (16 Byte, passt exakt in `Q9_FMCTX_SIZE`: start_cluster/cur_cluster/pos/size). **Design-Entscheidung**: `q9_fm_t` (vfs.h) um `read`/`seek`-Funktionszeiger erweitert (zusätzlich zu open/create/makdir/remove aus 3.2) — I$Read/I$Seek brauchen den Datei-Kontext im Pfad, das kann nur der File-Manager interpretieren, nicht der Block-Treiber. Dispatcher (syscall.c): I$Read routet auf `fm->read()`, wenn ein File-Manager mit read-Op hinter dem Pfad steht (sonst wie bisher an den Treiber); I$Seek ist komplett neu und liefert ohne passenden File-Manager `E$UnkSvc`. Verdrahtung: `q9_dev_init()` (device.c) versucht `q9_fat16_mount()` direkt nach der `/d0`-Registrierung und setzt `q9_dev_set_fm(d0, &q9_fat16_fm)` NUR bei erkanntem FAT16-Superfloppy (Boot-Sektor-Plausibilisierung: BytesPerSector/SectorsPerCluster/FATSize16/RootEntryCount/Boot-Signatur $55AA) — sonst bleibt `/d0` wie bisher ohne Dateisystem. **Nebenbei gefundener und behobener Bug**: der ältere 3.1-Selbsttest (SS.BlkWr/SS.BlkRd-Roundtrip auf LBA 1) überschrieb dauerhaft Testdaten auf LBA 1 — bei einem echten FAT16-Image liegt dort typischerweise die erste FAT-Kopie, der Roundtrip hätte ein gemountetes Dateisystem im Selbsttest zerstört. Jetzt sichert/stellt der Test LBA 1 wieder her. Ebenso mussten die 3.2-VFS-Selbsttests (Test-File-Manager) den *vorherigen* File-Manager von `/d0` merken und zurücksetzen statt hart auf NULL zu setzen (sonst hätte der VFS-Test den produktiven FAT16-Manager aus dem Selbsttest herausgerissen). 5 neue Selbsttest-Checks (nur aktiv, wenn `/d0` beim Boot als FAT16 erkannt wurde — sonst kein FEHLER, sondern stiller Skip) + neues `test/06_test_fat16.py` (baut ein FAT16-Superfloppy-Image komplett per Python-Stdlib von Hand: Boot-Sektor/BPB, 2 FAT-Kopien, Root-Directory mit einer 8.3-Datei, einer LFN-Datei mit langem Namen und einem Unterverzeichnis samt verschachtelter Datei; kein externes Tool wie hdiutil/newfs_msdos nötig). docs/SYSCALLS.md (I$Read-Routing, neuer I$Seek-Abschnitt, Funktionsnummern-Tabelle), docs/SYSCALL_ROADMAP.md, docs/DEVICES.md (q9_fm_t-Erweiterung, fmctx-FAT16-Layout-Tabelle, neuer FAT16-File-Manager-Abschnitt) aktualisiert. `make test` PASS, warnungsfrei (jetzt 6 Testskripte). wasm ungetestet (emsdk fehlt weiterhin lokal, siehe Geparkt). **Nächster Schritt: 3.4** (FAT16 schreibend) — diese Session macht damit NICHT weiter. |
 | 3.4 | FAT16 schreibend: I$Create, I$Delete, I$MakDir, FAT-Ketten allozieren/freigeben; neue Namen nur 8.3 (LFN-Schreiben → Ideenspeicher) | ✅ | Claudia | fat16.c/.h: I$Create/I$MakDir/I$Delete/I$Write echt implementiert, FAT-Ketten allozieren/freigeben (beide FAT-Kopien synchron), nur 8.3-Namen (E$BPNam bei LFN-Bedarf/Duplikat). Details siehe „Erledigt" unten |
 | 3.5 | F$Load komplettieren: Modul aus Datei laden (statt nur ROM-Image), validieren, registrieren | ✅ | Claudia | q9_mod_load (module.c) — statischer Load-Puffer-Pool (4x4096 Byte, kein malloc), Directory-Eintraege merken Puffer-Herkunft, automatische Freigabe bei Link-Count 0. Details siehe „Erledigt" unten |
-| 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | 🟢 | Claudia | kann nach hinten rutschen, nativ reicht zum Entwickeln von 3.1–3.5 |
+| 3.6 | wasm-HAL: Block-Backend via OPFS (FileSystemSyncAccessHandle im Worker) + Image-Upload/-Download im Frontend | ✅ | Claudia | Kernel läuft jetzt im Worker (Pflicht für Sync-Access-Handle); Details siehe „Erledigt". wasm ungetestet (emsdk fehlt lokal) |
 
 ### Phase 4 — Prozesse (Vorschläge, 2026-07-03 spät mit Andreas besprochen)
 
@@ -164,14 +164,43 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## ⛔ Geparkt / mit Andreas zu besprechen
 
-- **emsdk fehlt auf dem Desktop AF-PC**: wasm-Build/Browser-Test dort aktuell nicht
-  möglich (nur nativ + Tests). Bei Bedarf installieren (~1 GB) oder wasm-Checks auf
-  dem Laptop machen.
+- **emsdk fehlt auf dem Desktop AF-PC UND dem Mac Mini**: wasm-Build/Browser-Test aktuell auf
+  keiner der beiden Claudia-Maschinen möglich (nur nativ + Tests). Betrifft inzwischen mehrere
+  Schritte ungetestet: 1.9 (F$Time via Date), 3.6 (OPFS-Blockgerät + Worker-Umbau). Bei Bedarf
+  installieren (~1 GB) oder wasm-Checks auf dem Laptop machen.
 
 ---
 
 ## Erledigt
 
+- **2026-07-04 — Phase 3.6 (wasm-HAL: OPFS-Blockgerät + Upload/Download)** ✅: `q9_hal_blk_read`/
+  `q9_hal_blk_write` (`src/hal/wasm/hal_wasm.c`) sind jetzt über `globalThis.q9blk` an einen
+  echten Blockspeicher gebunden statt an den bisherigen `-1`-Stub. **Design-Entscheidung**:
+  Browser-API `FileSystemSyncAccessHandle` (synchroner OPFS-Zugriff, zwingend für einen
+  synchronen C-Syscall wie `q9_hal_blk_read`) existiert nur innerhalb eines Dedicated Workers —
+  deshalb wandert der komplette Kernel (WASM-Instanz + `q9_kernel_step()`-Loop) in einen neuen
+  `web/worker.js`; `web/index.html` bedient nur noch xterm.js und tauscht mit dem Worker per
+  `postMessage` aus (Tastendrücke rein, UTF-8-Konsolen-Fragmente raus — Nachrichtenformat siehe
+  docs/DEVICES.md, Abschnitt „wasm-HAL-Backend für /d0 (OPFS)"). Kein rAF im Worker (Worker haben
+  keinen `requestAnimationFrame`) — `setInterval(pump, 16)` plus Input-getriebenes Pumpen reicht.
+  `q9blk.read`/`q9blk.write` kopieren zwischen `HEAPU8` und einem `Uint8Array(512)` (analog zum
+  bestehenden `q9host.putc/getc`-Muster); Lesen über das Image-Ende hinaus liefert Nullblöcke
+  statt Fehler. Ein frisches `q9disk.img` (OPFS, `navigator.storage.getDirectory()`) wird beim
+  ersten Worker-Start auf 2880 Blöcke (1,44 MB) gebracht (letzten Block einmal schreiben).
+  **Image-Upload/-Download** im Frontend: Toolbar mit zwei Buttons — Upload liest die gewählte
+  Datei per `File.arrayBuffer()` und schickt sie als transferable `ArrayBuffer` (`load-image`) an
+  den Worker, der `q9disk.img` per `truncate`+`write` komplett ersetzt; Download fragt das ganze
+  Image beim Worker an (`get-image`) und löst über `Blob`+`<a download>` einen Browser-Download
+  aus. Makefile (`wasm`-Target) kopiert `web/worker.js` jetzt mit nach `build/wasm/` (wie bisher
+  schon `index.html`). docs/DEVICES.md um Abschnitt „wasm-HAL-Backend für /d0 (OPFS)" ergänzt.
+  **wasm-Build und Browser-Test dieses Schritts sind ungetestet** — emsdk fehlt sowohl auf dem
+  Desktop-PC als auch auf diesem Mac Mini (siehe „Geparkt"); `make test` (nativ, unverändert von
+  diesem Schritt betroffen) bleibt PASS, warnungsfrei. JS-Syntax von `worker.js` und dem
+  Inline-Script in `index.html` wurde per `node --check` verifiziert, ersetzt aber keinen echten
+  Browser-Test (OPFS-API-Verhalten, Worker-Timing, `importScripts`-Reihenfolge relativ zu
+  `Module`-Hooks). **Damit ist Phase 3 vollständig abgearbeitet** — kein weiterer 🟢-Ready-Schritt
+  mit Wer=Claudia offen (Phase 4 steht komplett auf 💡 Vorschlag, wartet auf Freigabe durch
+  Andreas).
 - **2026-07-04 — Phase 3.5 (F$Load)** ✅: `q9_mod_load` (module.c/.h) — Modul aus einer echten
   Datei laden (statt nur ROM-Image), ueber die VFS-Schicht (`q9_vfs_open`, braucht einen File-
   Manager hinter dem Geraet, z.B. FAT16 an `/d0`). Erste Speicherverwaltung im Kernel: statischer

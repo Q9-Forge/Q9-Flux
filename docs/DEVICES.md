@@ -89,6 +89,35 @@ wenn `q9_fat16_mount()` das Image als FAT16-Superfloppy erkennt — dann laufen 
 I$Seek über den File-Manager, SS.BlkRd/SS.BlkWr bleiben unverändert als Rohzugriff daneben
 verfügbar (der Treiber selbst kennt kein Dateisystem, das sitzt eine Schicht höher).
 
+### wasm-HAL-Backend für /d0 (OPFS) — seit Phase 3.6
+
+`q9_hal_blk_read`/`q9_hal_blk_write` (HAL-Ebene, nicht Kernel) sind im Browser-Target über
+`globalThis.q9blk` an einen **OPFS-`FileSystemSyncAccessHandle`** auf eine Datei `q9disk.img`
+im Origin Private File System gebunden (`web/worker.js`). `FileSystemSyncAccessHandle` ist eine
+Browser-API, die synchronen Blockzugriff erlaubt, aber **nur innerhalb eines Dedicated Workers**
+existiert — deshalb läuft der komplette Q9-Kernel (WASM-Instanz + `q9_kernel_step()`-Loop) seit
+diesem Schritt im Worker, nicht mehr im Haupt-Thread. Der Haupt-Thread (`web/index.html`) bedient
+nur noch xterm.js und tauscht mit dem Worker per `postMessage` aus:
+
+| Nachricht (Haupt-Thread → Worker) | Bedeutung |
+|---|---|
+| `{type:'input', code}` | Tastendruck, landet in der Worker-internen Input-Queue (`q9host.getc`) |
+| `{type:'load-image', data}` | Upload: ArrayBuffer ersetzt `q9disk.img` komplett (Truncate + Write) |
+| `{type:'get-image'}` | Download-Anfrage: Worker liest das ganze Image und schickt es zurück |
+
+| Nachricht (Worker → Haupt-Thread) | Bedeutung |
+|---|---|
+| `{type:'out', text}` | UTF-8-dekodiertes Konsolen-Fragment (`q9host.putc`), wird in xterm geschrieben |
+| `{type:'image-loaded', size}` | Bestätigung nach Upload |
+| `{type:'image-data', data}` | Antwort auf Download-Anfrage (ArrayBuffer, transferable), löst Browser-Download aus |
+
+`q9_hal_blk_read` über das Ende des Images hinaus liefert Nullblöcke statt eines Fehlers (analog
+einem frisch erzeugten, größtenteils leeren Image); ein neu angelegtes `q9disk.img` wird beim
+ersten Worker-Start auf eine feste Default-Größe (2880 Blöcke = 1,44 MB) gebracht, indem der
+letzte Block einmal geschrieben wird. **wasm-Build und Browser-Test dieses Schritts sind
+ungetestet** — emsdk fehlt sowohl auf dem Desktop-PC als auch auf dem Mac Mini (siehe
+ARBEITSPLAN.md, „Geparkt").
+
 ## VFS-Schicht (vfs.c/.h) — seit Phase 3.2
 
 Pfad-Routing für Pfade der Form `/d0/pfad/datei`: `q9_vfs_open` (I$Open-Unterbau) trennt per
