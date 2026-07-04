@@ -72,14 +72,30 @@ Regeln: 💡/💤 niemals anfassen. Bei Blockade eines Schritts: ⛔ setzen, unt
 Ready-Schritt weitermachen, sofern sinnvoll, sonst beenden. Commit-Stil:
 "Release X.YZ: <Titel> (<Nr>)", Deutsch, ASCII im Body. Code-Stil exakt wie
 im Bestand (Box-Header, Edition History mit CF, portables C99, kein malloc im
-Kernel); Versionsnummern pflegen. Doku (docs/SYSCALLS.md, docs/DEVICES.md)
+Kernel); Versionsnummern pflegen. Doku (docs/SYSCALLS.md, docs/DEVICES.md,
+docs/MODULES.md, docs/SYSCALL_ROADMAP.md je nachdem was betroffen ist)
 mitziehen, Selbsttest + test/-Skripte erweitern.
+
+**docs/HANDBUCH.md mitpflegen**: das öffentlichkeitstaugliche Gesamt-Handbuch
+(Werkzeuge, Quellcode-Layout, Build je Target, Architektur, Lizenzlage,
+Glossar) — im Gegensatz zu ARBEITSPLAN.md/diesem Dokument, die intern bleiben.
+Nach jedem abgeschlossenen Ready-Schritt prüfen, ob HANDBUCH.md betroffen ist
+(neue Architekturentscheidung, neue Kernel-Komponente, neues Werkzeug, neue
+externe Referenz samt Lizenz, neuer Fachbegriff, Phase komplett abgeschlossen)
+und im selben Commit aktualisieren. Bei rein interner Statuspflege ohne
+Architekturrelevanz: keine Handbuch-Änderung, nicht künstlich aufblähen.
+Bleibt Markdown — PDF-Export ist ein gezielter, separater Schritt am Ende,
+nicht Teil der Routine.
 
 Build & Test: make test muss PASS sein, Build warnungsfrei.
 - Windows: vorher $env:PATH = "C:\Users\AF\w64devkit\bin;$env:PATH"
 - macOS: clang/make aus den Xcode CLT; erst möglich ab POSIX-HAL (1.10)
-- make wasm nur, wo emsdk installiert ist — sonst Code schreiben und
-  "wasm ungetestet" in den Notizen vermerken.
+- make wasm: pro Rechner prüfen, ob emsdk installiert ist (docs/TOOLCHAIN.md)
+  — auf dem Mac Mini seit 2026-07-04 vorhanden (`~/emsdk`), Aktivierung pro
+  Shell-Aufruf: `source ~/emsdk/emsdk_env.sh && make wasm`. Sonst Code
+  schreiben und "wasm ungetestet" in den Notizen vermerken. Wenn die wasm-HAL
+  betroffen ist und emsdk verfügbar: nach Möglichkeit auch im Browser
+  verifizieren (Server auf build/wasm, siehe docs/HANDBUCH.md Abschnitt 4.2).
 
 Fasse am Ende in 2–3 Sätzen zusammen, was getan wurde (oder warum nichts).
 ```
