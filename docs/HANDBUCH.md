@@ -37,7 +37,7 @@ aufschlägt: Werkzeuge, Quellcode-Aufbau, Build-Prozess, Architektur, Lizenzlage
 Für Details verweist es auf die Fachdokumente in `docs/` statt sie zu wiederholen.
 
 **Verwandte Dokumente:**
-- [`../PROJECT.md`](../PROJECT.md) — Vision, Entscheidungshistorie (E1–E10), offene Fragen (O1–O6)
+- [`../PROJECT.md`](../PROJECT.md) — Vision, Entscheidungshistorie (E1–E12), offene Fragen (O1–O6)
 - [`../ARBEITSPLAN.md`](../ARBEITSPLAN.md) — laufender Arbeitsstand, Schritt für Schritt (internes Arbeitsdokument, siehe unten)
 - [`SYSCALLS.md`](SYSCALLS.md) — vollständige Syscall-ABI (Register, Fehlercodes)
 - [`SYSCALL_ROADMAP.md`](SYSCALL_ROADMAP.md) — alle 97 OS-9-Syscalls mit Q9-Status
@@ -156,7 +156,7 @@ abgeschlossenen Schritt aufsetzt.
 
 ```
 Q9/
-├── PROJECT.md            Vision, Architektur-Entscheidungen (E1-E10), offene Fragen (O1-O6)
+├── PROJECT.md            Vision, Architektur-Entscheidungen (E1-E12), offene Fragen (O1-O6)
 ├── ARBEITSPLAN.md         laufender Arbeitsstand (internes Arbeitsdokument, siehe Hinweis unten)
 ├── context.txt            Kurz-Zusammenfassung für den Sessionwechsel (ebenfalls intern)
 ├── README.md              englische Kurzbeschreibung
