@@ -156,7 +156,7 @@ und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
 | 4.6 | Eingebettete WASM-Runtime für den nativen Build (löst O5): eine Bibliothek (Kandidat wasm3 — klein, embeddable, keine harte malloc-Pflicht) einbinden, die ein beliebiges `.wasm`-Modul zur Laufzeit instanziieren und eine exportierte Funktion aufrufen kann. Noch OHNE Syscall-Bridge — reiner Grundbaustein | ✅ | Claudia | wasm3 (MIT, Commit `d77cd814`) vendored unter `third_party/wasm3/` (nur Kern-Interpreter, kein WASI/libc); `src/kernel/wasmrt.c/.h` als schmaler Wrapper (init/load/call_i32/free). Details siehe „Erledigt" unten |
 | 4.7 | `Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das Language-Byte `Q9_MOD_WASM`, instanziieren das Modul über die Runtime aus 4.6 (bzw. `WebAssembly.instantiate` im Browser) mit einem Import/Host-Funktion als Syscall-Bridge. Erstmal NUR Syscalls ohne Zeiger-Parameter (F$Time, F$ID, F$Exit) | ✅ | Claudia | Native Seite fertig: `src/kernel/wasmproc.c/.h` neu (Import-Bridge `q9.f_id`/`q9.f_time`/`q9.f_exit`), `entry_step_for()` in syscall.c erkennt `Q9_MOD_WASM` zusaetzlich zu `Q9_MOD_NATIVE`. Browser-Seite (WebAssembly.instantiate im Worker) bewusst NICHT Teil dieses Schritts — geparkt, s. unten. Details siehe „Erledigt" |
 | 4.8 | Speicher-/Pointer-Marshaling über die Modulgrenze: a0–a7-Register als Offsets in die modul-eigene lineare Speicherinstanz interpretieren (statt rohe Host-Zeiger), mit Bounds-Check. Damit werden auch I$Read/I$Write/I$Open (Puffer-/Pfadnamen-Zeiger) für WASM-Module nutzbar | ✅ | Claudia | Vier neue Importe q9.i_open/i_close/i_read/i_write in wasmproc.c. Details siehe „Erledigt" unten |
-| 4.9 | `wasm3` auf Fixed-Heap umstellen (kein Host-`malloc`/`calloc`/`realloc` mehr im WASM-Pfad) + erster Baustein einer Q9-Systemkonfiguration | 🟢 | Claudia | Andreas' Einwand (2026-07-04 abends): Q9 soll sich einen Speicherblock holen und darin komplett selbst verwalten, nicht den Host-Allocator durchreichen. `wasm3` unterstützt genau das schon eingebaut über `d_m3FixedHeap` (Compile-Define, schaltet auf ein statisches Array + Bump-Allocator um, s. `third_party/wasm3/m3_core.c`/`m3_config.h`) — nur bisher nicht aktiviert. Neue Konfigurationsstelle einführen (z.B. `src/kernel/config.h`), darin als ERSTEN Wert die Gesamtspeichergröße des simulierten/emulierten Zielsystems (Namensvorschlag `Q9_SYSTEM_MEM_BYTES`, Grundstein für spätere Werte wie CPU-Takt — die kommen NICHT jetzt schon dazu). `d_m3FixedHeap` beim Bau von `third_party/wasm3/*.c` per Compiler-Define aus diesem einen Wert ableiten (nicht zwei separate Zahlen pflegen). Sinnvolle Startgröße wählen und kurz begründen (z.B. 64–256 KB, reicht für die kurzlebigen 4.6-4.8-Testmodule bei weitem). Verifizieren: `grep` nach `calloc`/`realloc`/`malloc` im kompletten WASM-Pfad zeigt nichts mehr Aktives (der Code bleibt im `third_party`-Vendor-Zweig unverändert, nur der `#else`-Zweig wird durch das Define nie mehr erreicht); bestehende 4.6/4.7-Selbsttests bleiben PASS |
+| 4.9 | `wasm3` auf Fixed-Heap umstellen (kein Host-`malloc`/`calloc`/`realloc` mehr im WASM-Pfad) + erster Baustein einer Q9-Systemkonfiguration | ✅ | Claudia | `src/kernel/config.h` neu (`Q9_SYSTEM_MEM_BYTES` = 256 KiB), Makefile leitet `d_m3FixedHeap` per Compiler-Define daraus ab. Details siehe „Erledigt" unten |
 
 ---
 
@@ -239,6 +239,36 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.9 (wasm3 Fixed-Heap + Q9-Systemkonfiguration)** ✅: schliesst den
+  gesamten Anschluss 4.6-4.9 (echte WASM-Ausfuehrungs-Engine) ab. **`src/kernel/config.h` neu**:
+  erster Baustein einer Q9-Systemkonfiguration — bewusst nur EIN Wert (`Q9_SYSTEM_MEM_BYTES`,
+  Kommentar dokumentiert explizit, dass hier NICHT auf Vorrat gebaut wird, z.B. kein CPU-Takt-Wert
+  ohne konkreten Bedarf). **Makefile (Ver. 2.10)**: `WASM3_CFLAGS` bekommt `-include
+  src/kernel/config.h -Dd_m3FixedHeap=Q9_SYSTEM_MEM_BYTES` — `d_m3FixedHeap` ist in
+  `third_party/wasm3/m3_config.h` per `#ifndef` geschuetzt, das Kommandozeilen-Define gewinnt also,
+  OHNE ein einziges Byte am vendorten Fremdcode selbst zu aendern (wie in ARBEITSPLAN gefordert).
+  Betrifft NUR `WASM3_CFLAGS` (den `native`-Build-Zweig für third_party/wasm3), nicht `wasmrt.c`/
+  `wasmproc.c` selbst (die waren nie Teil der `malloc`-Ausnahme, s. Entscheidung E10) und nicht
+  `make wasm` (third_party/wasm3 ist dort ohnehin nicht Teil des Builds).
+  **Groessenwahl**: 128 KiB (ARBEITSPLAN-Vorschlag) reichten fuer einen isolierten Testlauf, liefen
+  aber im Selbsttest ueber, sobald mehrere unabhaengige `q9_wasmrt_t`-Instanzen im selben
+  Prozesslauf hintereinander entstehen (4.6/4.7/4.8-Checks) — wasm3s Fixed-Heap ist ein reiner
+  Bump-Allocator, der nur den jeweils ZULETZT allozierten Block wirklich freigeben kann
+  (`m3_Free_Impl` in `m3_core.c`), er waechst also effektiv ueber die Lebensdauer des GESAMTEN
+  Prozesses statt pro Runtime zurueckgesetzt zu werden. 256 KiB genuegen mit Reserve, ohne schon
+  eine echte Kapazitaetsplanung fuer reale Programme (ab Phase 5) vorwegzunehmen — Begruendung
+  steht als Kommentar direkt bei `Q9_SYSTEM_MEM_BYTES`.
+  **Verifikation**: `nm` auf alle zehn `build/native/wasm3_*.o` zeigt keine undefinierten Symbole
+  `malloc`/`calloc`/`realloc`/`free` mehr (vorher: praesent) — der `#else`-Zweig in `m3_core.c`
+  (echtes Host-`malloc`) wird durch das Define nie mehr erreicht, exakt wie gefordert.
+  `make clean && make native && make test` PASS, warnungsfrei (bestehende 4.6/4.7/4.8-Selbsttests
+  bleiben PASS, keiner musste geaendert werden); zusaetzlich mit AddressSanitizer/UBSan
+  gegenverifiziert (sauber). `make wasm` (emsdk) baut weiterhin warnungsfrei, unveraendert.
+  docs/HANDBUCH.md (Abschnitt 3 Quellcode-Layout: config.h, Abschnitt 5.8 erweitert, Abschnitt 6
+  Phase-4-Status auf komplett fertig gesetzt) aktualisiert.
+  **Damit ist der gesamte Anschluss 4.6-4.9 (Phase 4) abgeschlossen** — kein weiterer 🟢-Ready-
+  Schritt mit Wer=Claudia offen; Phase 5 (Shell) muss erst mit Andreas besprochen und freigegeben
+  werden.
 - **2026-07-04 — Phase 4.8 (Zeiger-/Speicher-Marshaling fuer Q9_MOD_WASM)** ✅: baut auf 4.7 auf,
   schliesst den Anschluss 4.6-4.8 fuer echte I/O aus WASM-Gastprogrammen. **wasmproc.c/.h erweitert
   (Ver. 1.10)**: vier neue wasm3-Importe im Namespace `"q9"` — `i_open` (`i(ii)`), `i_close`
