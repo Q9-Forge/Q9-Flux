@@ -11,6 +11,7 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ Initiale Version                                                        │ CX
 // 26-07-04│ 1.01 │ Gemeinsame Directory-Helfer fuer q9stat freigegeben                     │ CX
+// 26-07-04│ 1.02 │ argc/argv-Einsprungpunkt deklariert                                     │ CX
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_USERLAND_Q9DIR_H
 #define Q9_USERLAND_Q9DIR_H
@@ -46,6 +47,14 @@ int q9dir_write_entry(const q9dir_entry_t *entry);
 // Call:     err = q9dir_run("/d0")
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9dir_run(const char *path);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9dir_main
+// Desc.:    Kommandozeilen-Einsprungpunkt fuer spaetere 68k-Module; parst genau einen Pfad
+//           oder -h/--help und ruft q9dir_run(). Rueckgabe: Tool- oder Parser-Status.
+// Call:     err = q9dir_main(argc, argv)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9dir_main(int argc, char **argv);
 
 #endif // Q9_USERLAND_Q9DIR_H
 
