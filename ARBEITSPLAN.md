@@ -139,6 +139,24 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 | 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | ✅ | Claudia | Details siehe „Erledigt" unten |
 | 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | ✅ | Claudia | Details siehe „Erledigt" unten — damit ist Phase 4 vollständig |
 
+**Anschluss 4.6–4.8 (freigegeben 2026-07-04 abends, Andreas' Einwand):**
+Andreas' berechtigter Punkt: `F$Fork` "führt" bislang keinen echten geladenen
+Code aus — Entscheidung **E9** trägt nur einen rohen C-Funktionszeiger direkt im
+`Q9_MOD_NATIVE`-Modul ein (gültig nur im selben Host-Prozess, kein portables
+Moduldateiformat). Bevor Phase 5 (Shell) sinnvoll ist, braucht es eine echte
+Ausführungs-Engine — sonst wäre die Shell nur derselbe Etikettenschwindel wie
+der jetzige Kernel-REPL. Anders als beim 68k-Ziel (klassisches PIC-Problem,
+erst Phase 6/7) ist das für **WASM** (unser Primärformat) kein
+Relozierungsproblem — WASM-Code referenziert nie absolute Host-Adressen.
+Es fehlen stattdessen: eine Instanziierungs-Engine, eine Syscall-Rückverbindung
+und die Übersetzung von Zeigern über die Modulgrenze (siehe PROJECT.md O5/O6).
+
+| # | Schritt | Status | Wer | Notizen |
+|---|---------|--------|-----|---------|
+| 4.6 | Eingebettete WASM-Runtime für den nativen Build (löst O5): eine Bibliothek (Kandidat wasm3 — klein, embeddable, keine harte malloc-Pflicht) einbinden, die ein beliebiges `.wasm`-Modul zur Laufzeit instanziieren und eine exportierte Funktion aufrufen kann. Noch OHNE Syscall-Bridge — reiner Grundbaustein | 🟢 | Claudia | Deliverable: kleiner Test, der ein triviales `.wasm` (z.B. `add(a,b)`) lädt und nativ ausführt; Browser-Seite ist hier trivial (`WebAssembly.instantiate` existiert schon), native Seite ist die eigentliche Arbeit |
+| 4.7 | `Q9_MOD_WASM`-Ausführung: F$Fork/F$Chain erkennen das Language-Byte `Q9_MOD_WASM`, instanziieren das Modul über die Runtime aus 4.6 (bzw. `WebAssembly.instantiate` im Browser) mit einem Import/Host-Funktion als Syscall-Bridge. Erstmal NUR Syscalls ohne Zeiger-Parameter (F$Time, F$ID, F$Exit) | 🟢 | Claudia | Beweist den kompletten Weg Laden→Instanziieren→Laufen→Syscall→Zurück end-to-end, bevor Zeiger dazukommen |
+| 4.8 | Speicher-/Pointer-Marshaling über die Modulgrenze: a0–a7-Register als Offsets in die modul-eigene lineare Speicherinstanz interpretieren (statt rohe Host-Zeiger), mit Bounds-Check. Damit werden auch I$Read/I$Write/I$Open (Puffer-/Pfadnamen-Zeiger) für WASM-Module nutzbar | 🟢 | Claudia | `Q9_MOD_NATIVE` (E9-Stopgap) bleibt als Sonderfall bestehen (z.B. kernelinterne Prozesse), wird für "normale" Programme aber überflüssig |
+
 ---
 
 ### Phase U — Userland-Werkzeuge (Codex-Baustelle, separater Nebenschauplatz)
@@ -629,7 +647,16 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **Phase U (Userland-Werkzeuge,
+**Letzte Aktualisierung**: 2026-07-04 abends — **Phase 4 komplett (4.1–4.5),
+Anschluss 4.6–4.8 freigegeben.** Andreas' Einwand: `F$Fork` führt bislang
+keinen echten geladenen Code aus (E9-Stopgap, nur Funktionszeiger im selben
+Host-Prozess). 4.6–4.8 lösen das für WASM (Primärformat, kein
+Relozierungsproblem, aber Instanziierung + Syscall-Bridge + Pointer-Marshaling
+über die Modulgrenze fehlen — siehe PROJECT.md O5/O6). Bevor Phase 5 (Shell)
+sinnvoll ist, muss das stehen, sonst wäre die Shell nur derselbe
+Etikettenschwindel wie der jetzige Kernel-REPL.
+
+Davor: 2026-07-04 abends — **Phase U (Userland-Werkzeuge,
 Codex-Baustelle) eingetragen und U.1–U.4 fertig.** `libq9` + sieben Datei-
 Werkzeuge (cat/copy/dir/mkdir/rm/touch/stat), separater Branch
 `codex-userland`, isoliert von `main`, alle Runden von Claudia unabhängig
