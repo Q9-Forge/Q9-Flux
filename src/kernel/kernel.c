@@ -1900,6 +1900,43 @@ int q9_kernel_selftest(void)
         checks[nchecks].name = "5.2d: CB030 Timer/IRQ3 — kooperatives Polling (TI_IRQ_ON/OFF, 100Hz-Periode)";
         checks[nchecks++].ok = ok;
     }
+
+    {
+        /* 5.3: Musashi <-> CB030 verdrahtet (q9_m68krt_attach_board) — ein synthetisches Boot-ROM
+           durchlaeuft exakt das Bootmuster des echten Microware-ROMs: Reset-Vektoren aus dem ROM
+           (Reset-Zustand, ROM bei Adresse 0), Sprung HOCH in den gespiegelten Bereich 0xFE00_xxxx
+           (dort liegt das ROM nach dem Remap weiterhin), REMAP-Trigger per Buszugriff auf
+           0xFFFF_8000 (abs.W $8000 sign-extendiert dorthin), danach Schreiben ins frisch
+           eingeblendete RAM. Prueft die volle Kette CPU -> m68krt-Hooks -> cb030-Dispatch. */
+        static const uint8_t bootrom[32] = {
+            0x00, 0x00, 0x10, 0x00,                            /* 0x00: Initial-SSP = 0x00001000  */
+            0x00, 0x00, 0x00, 0x08,                            /* 0x04: Initial-PC  = 0x00000008  */
+            0x4E, 0xF9, 0xFE, 0x00, 0x00, 0x10,                /* 0x08: JMP $FE000010.L (hoch!)   */
+            0x00, 0x00,                                        /* 0x0E: (pad)                     */
+            0x4A, 0x38, 0x80, 0x00,                            /* 0x10: TST.B ($8000).W -> REMAP  */
+            0x11, 0xFC, 0x00, 0x51, 0x04, 0x00,                /* 0x14: MOVE.B #$51,($0400).W     */
+            0x60, 0xFE,                                        /* 0x1A: BRA.S * (Endlosschleife)  */
+            0x00, 0x00, 0x00, 0x00                             /* 0x1C: (pad)                     */
+        };
+        static uint8_t ram[0x2000];
+        q9_cb030_t     board;
+        q9_m68krt_t    rt;
+        int            ok;
+
+        ok = (q9_cb030_init(&board, bootrom, sizeof(bootrom), ram, sizeof(ram)) == Q9_CB030_OK);
+        ok = ok && (q9_m68krt_init(&rt, ram, sizeof(ram)) == Q9_M68KRT_OK);
+        q9_m68krt_attach_board(&board);
+        q9_m68krt_reset(&rt);                                  /* Vektoren via Board aus dem ROM  */
+        q9_m68krt_execute(&rt, 400);
+
+        ok = ok && board.remapped && (q9_cb030_read8(&board, 0x0400) == 0x51);
+
+        q9_m68krt_attach_board(0);
+        q9_m68krt_free(&rt);
+
+        checks[nchecks].name = "5.3: Musashi bootet aus CB030-ROM (Vektoren, Sprung hoch, REMAP, RAM-Schreiben)";
+        checks[nchecks++].ok = ok;
+    }
 #endif
 
     for (int i = 0; i < nchecks; i++) {

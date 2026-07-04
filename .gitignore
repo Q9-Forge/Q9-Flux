@@ -12,6 +12,12 @@ q9disk.img
 # CB030-Compact-Flash-Testimage (5.2c, lazy erzeugt von q9_cb030_cf_attach)
 cb030_cf_test.img
 
+# CB030-Boot-Betrieb (5.3): CF-Image des Runners + lokale Boot-ROM-Images
+# (das Microware-ROM ist proprietaer und darf NIE ins Repository, s. docs/CB030.md)
+cb030_cf.img
+cb030rom*.bin
+*.rom
+
 # Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
 *.wasm.map
 

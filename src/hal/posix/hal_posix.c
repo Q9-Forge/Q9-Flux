@@ -23,6 +23,9 @@
 
 #include "../q9_hal.h"
 #include "../../kernel/kernel.h"
+#ifdef Q9_HAVE_M68K
+#include "../../kernel/cb030run.h"
+#endif
 
 #define DISK_IMAGE "q9disk.img"
 
@@ -157,11 +160,20 @@ const char *q9_hal_target(void)
 // Function: main
 // Desc.:    Host-Loop: initialisiert HAL + Kernel und ruft q9_kernel_step() zyklisch auf.
 //           Mit --selftest: 100 Ticks laufen lassen, "SELFTEST PASS" ausgeben, Exit 0.
-// Call:     q9.exe [--selftest]
+//           Mit --cb030 <rom>: statt des Q9-Kernels das emulierte CB030-Board mit dem
+//           angegebenen Boot-ROM starten (5.3, s. cb030run.h) — Ende per Ctrl-C.
+// Call:     q9.exe [--selftest | --cb030 <rom-datei>]
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
     int selftest = (argc > 1 && strcmp(argv[1], "--selftest") == 0);
+
+#ifdef Q9_HAVE_M68K
+    if (argc > 2 && strcmp(argv[1], "--cb030") == 0) {
+        q9_hal_init();                                 /* termios raw — die UART braucht das     */
+        return q9_cb030_boot(argv[2]);
+    }
+#endif
 
     q9_hal_init();
     q9_kernel_init();

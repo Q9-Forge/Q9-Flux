@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 1.30
+// File:   cb030.c                                                                         Ver. 1.40
 // Owner:  AF
 // Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
 //
@@ -11,6 +11,8 @@
 // 26-07-04│ 1.10 │ 5.2b: 68681-DUART (SRA/THRA/RHRA, Rest wird sauber angenommen)           │ CF
 // 26-07-04│ 1.20 │ 5.2c: Compact-Flash (ATA-PIO-Minimalprotokoll, Backing-Datei)            │ CF
 // 26-07-04│ 1.30 │ 5.2d: Timer/IRQ3 (kooperative Host-Zeitpruefung)                         │ CF
+// 26-07-05│ 1.40 │ 5.3: Spiegelgrenze bis 0xFEFF_FFFF (statt 0x0800_0000), I/O vor dem       │ CF
+//         │      │ Remap erreichbar (Dispatch umgestellt), q9_cb030_rom_load neu             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -176,10 +178,12 @@ static void cb030_cf_write(q9_cb030_t *b, uint32_t off, uint8_t val)
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: cb030_read_byte
-// Desc.:    Adress-Dispatch fuer einen einzelnen Lesezugriff (Kern der if/else-Kette aus
-//           docs/CB030.md, RAM zuerst geprueft). Ein Treffer im REMAP-Registerbereich schaltet
-//           immer um, unabhaengig vom bisherigen Zustand oder vom gelesenen Wert (0). TI_IRQ_ON/OFF
-//           sind reine Adress-Trigger (5.2d) — auch beim Lesen wirksam.
+// Desc.:    Adress-Dispatch fuer einen einzelnen Lesezugriff (if/else-Kette aus docs/CB030.md).
+//           I/O (REMAP/Timer/CF/UART) wird VOR der Zustandsweiche geprueft — die I/O-Region ist
+//           in beiden REMAP-Zustaenden erreichbar (das Boot-ROM initialisiert die DUART vor dem
+//           Remap). Ein Treffer im REMAP-Registerbereich schaltet immer um, unabhaengig vom
+//           bisherigen Zustand oder vom gelesenen Wert (0). TI_IRQ_ON/OFF sind reine Adress-
+//           Trigger (5.2d) — auch beim Lesen wirksam.
 // Call:     v = cb030_read_byte(b, addr)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
@@ -188,24 +192,6 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
         b->remapped = 1;
         return 0;
     }
-
-    if (!b->remapped) {
-        /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zur Mirror-Grenze. */
-        if (addr < Q9_CB030_ROM_MIRROR_LIMIT && b->rom_len > 0) {
-            return b->rom[addr % b->rom_len];
-        }
-        return 0;
-    }
-
-    /* Remap-Zustand: RAM zuerst (haeufigster Fall, s. docs/CB030.md), danach ROM (einmalig). */
-    if (addr < b->ram_len) {
-        return b->ram[addr];
-    }
-    if (addr >= Q9_CB030_ROM_REMAP_BASE && addr <= Q9_CB030_ROM_REMAP_TOP && b->rom_len > 0) {
-        uint32_t off = addr - Q9_CB030_ROM_REMAP_BASE;
-        return (off < b->rom_len) ? b->rom[off] : 0;
-    }
-
     if (addr >= Q9_CB030_TIRQ_OFF_BASE && addr <= Q9_CB030_TIRQ_OFF_TOP) {
         b->timer_active = 0;
         return 0;
@@ -221,14 +207,34 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
         return cb030_uart_read(b, addr);
     }
 
+    if (!b->remapped) {
+        /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
+           Adressraums (0xFEFF_FFFF einschl., docs/CB030.md Speicherkarte) — das Boot-ROM
+           springt darum vor dem REMAP-Trigger hoch nach 0xFE00_xxxx. */
+        if (addr <= Q9_CB030_ROM_MIRROR_TOP && b->rom_len > 0) {
+            return b->rom[addr % b->rom_len];
+        }
+        return 0;
+    }
+
+    /* Remap-Zustand: RAM zuerst (haeufigster Fall, s. docs/CB030.md), danach ROM (einmalig). */
+    if (addr < b->ram_len) {
+        return b->ram[addr];
+    }
+    if (addr >= Q9_CB030_ROM_REMAP_BASE && addr <= Q9_CB030_ROM_REMAP_TOP && b->rom_len > 0) {
+        uint32_t off = addr - Q9_CB030_ROM_REMAP_BASE;
+        return (off < b->rom_len) ? b->rom[off] : 0;
+    }
+
     return 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: cb030_write_byte
-// Desc.:    Adress-Dispatch fuer einen einzelnen Schreibzugriff. ROM ist nie beschreibbar; ein
-//           Treffer im REMAP-Registerbereich schaltet um, der Wert selbst wird verworfen. Ebenso
-//           TI_IRQ_ON/OFF (5.2d, reine Adress-Trigger).
+// Desc.:    Adress-Dispatch fuer einen einzelnen Schreibzugriff. I/O wird — wie beim Lesen — VOR
+//           der Zustandsweiche geprueft (in beiden REMAP-Zustaenden erreichbar). ROM ist nie
+//           beschreibbar; ein Treffer im REMAP-Registerbereich schaltet um, der Wert selbst wird
+//           verworfen. Ebenso TI_IRQ_ON/OFF (5.2d, reine Adress-Trigger).
 // Call:     cb030_write_byte(b, addr, val)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
@@ -237,19 +243,6 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
         b->remapped = 1;
         return;
     }
-
-    if (!b->remapped) {
-        return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
-    }
-
-    if (addr < b->ram_len) {
-        b->ram[addr] = val;
-        return;
-    }
-    if (addr >= Q9_CB030_ROM_REMAP_BASE && addr <= Q9_CB030_ROM_REMAP_TOP) {
-        return;                                        /* ROM: read-only */
-    }
-
     if (addr >= Q9_CB030_TIRQ_OFF_BASE && addr <= Q9_CB030_TIRQ_OFF_TOP) {
         b->timer_active = 0;
         return;
@@ -266,6 +259,17 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
         cb030_uart_write(b, addr, val);
         return;
     }
+
+    if (!b->remapped) {
+        return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
+    }
+
+    if (addr < b->ram_len) {
+        b->ram[addr] = val;
+        return;
+    }
+
+    /* ROM-Bereich (read-only) und undefinierte Adressen: kommentarlos verwerfen. */
 }
 
 int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *ram, uint32_t ram_len)
@@ -292,6 +296,24 @@ void q9_cb030_reset(q9_cb030_t *b)
 void q9_cb030_cf_attach(q9_cb030_t *b, const char *path)
 {
     b->cf_path = path;
+}
+
+int q9_cb030_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t *out_len)
+{
+    FILE  *f = fopen(path, "rb");
+    size_t n;
+
+    if (!f) {
+        return Q9_CB030_ERR_ROM;
+    }
+    n = fread(buf, 1, buf_max, f);
+    if (n == 0 || fgetc(f) != EOF) {                  /* leer oder groesser als der Puffer */
+        fclose(f);
+        return Q9_CB030_ERR_ROM;
+    }
+    fclose(f);
+    *out_len = (uint32_t)n;
+    return Q9_CB030_OK;
 }
 
 int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms)
@@ -347,5 +369,5 @@ void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.c                                                                             Ver. 1.30
+// EOF cb030.c                                                                             Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
