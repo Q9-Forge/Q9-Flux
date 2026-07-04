@@ -1,5 +1,9 @@
 # PROJECT.md — Q9
 
+> Praktisches Handbuch (Werkzeuge, Build je Target, Quellcode-Layout, Architektur,
+> Lizenzlage der Referenzquellen): [`docs/HANDBUCH.md`](docs/HANDBUCH.md).
+> Dieses Dokument hier ist die Vision samt Entscheidungshistorie.
+
 **Q9** ist ein modulares Mini-Betriebssystem in der Tradition von OS-9.
 Der Kern ist portables C mit einer schmalen HAL. Primäres Executable-Format ist
 WebAssembly; native 68k-Module laufen über eine eingebaute Emulator-Runtime.
