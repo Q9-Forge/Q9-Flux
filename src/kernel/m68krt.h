@@ -112,6 +112,15 @@ void q9_m68krt_set_irq(int level);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_attach_board(q9_cb030_t *board);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_debug_state
+// Desc.:    Diagnose (5.4): aktueller PC + SR der emulierten CPU und Anzahl der bisher
+//           durchlaufenen Interrupt-Acknowledge-Zyklen — fuer die Boot-Fehlersuche im Runner
+//           (wo haengt die CPU, kommt der Interrupt ueberhaupt an, wie steht die IRQ-Maske).
+// Call:     q9_m68krt_debug_state(&pc, &sr, &acks)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_debug_state(uint32_t *pc, uint32_t *sr, uint32_t *acks);
+
 #endif // Q9_M68KRT_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────

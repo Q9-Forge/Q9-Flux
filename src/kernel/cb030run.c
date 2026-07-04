@@ -14,6 +14,7 @@
 #include "m68krt.h"
 #include "../hal/q9_hal.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 #define CB030_RAM_BYTES   (16u * 1024u * 1024u)       /* 16 MByte SIM-Bestueckung (docs/CB030.md) */
 #define CB030_ROM_MAX     (512u * 1024u)              /* 29F040-Flash: 512 KByte                  */
@@ -48,10 +49,35 @@ int q9_cb030_boot(const char *rom_path)
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     q9_m68krt_reset(&rt);                              /* Reset-Vektoren kommen aus dem ROM      */
 
-    for (;;) {
-        q9_m68krt_execute(&rt, CB030_SLICE_CYCLES);
-        if (q9_cb030_poll_timer(&board, q9_hal_ticks_ms())) {
-            q9_m68krt_set_irq(3);                      /* 100Hz-Tick, kooperativ (5.2d)          */
+    {
+        /* Q9_CB030_DEBUG=1 in der Umgebung: alle ~3s CPU-Zustand auf stderr (PC/SR/IACK-Zaehler
+           + Board-Zustand) — das Werkzeug, mit dem der erste OS-9-Boot durchdebuggt wurde. */
+        int      dbg         = getenv("Q9_CB030_DEBUG") != 0;
+        uint32_t last_dbg_ms = q9_hal_ticks_ms();
+
+        for (;;) {
+            int      irq;
+            uint32_t now_ms;
+
+            q9_m68krt_execute(&rt, CB030_SLICE_CYCLES);
+            now_ms = q9_hal_ticks_ms();
+
+            /* Timer (100Hz, Autovektor 27) und DUART (vektorisiert, IVR) teilen sich IRQ3 —
+               die Vektor-Auswahl macht der IACK-Callback (m68krt.c). Timer-Poll immer
+               ausfuehren (haelt last_ms aktuell). */
+            irq  = q9_cb030_poll_timer(&board, now_ms);
+            irq |= q9_cb030_uart_irq_pending(&board);
+            if (irq) {
+                q9_m68krt_set_irq(3);
+            }
+
+            if (dbg && now_ms - last_dbg_ms >= 3000u) {
+                uint32_t pc, sr, acks;
+                q9_m68krt_debug_state(&pc, &sr, &acks);
+                fprintf(stderr, "\n[dbg pc=%08x sr=%04x acks=%u imr=%02x rxpend=%d timer=%d]\n",
+                        pc, sr, acks, board.uart_imr, board.uart_rx_pending, board.timer_active);
+                last_dbg_ms = now_ms;
+            }
         }
     }
 }

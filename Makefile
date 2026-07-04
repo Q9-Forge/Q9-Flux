@@ -104,7 +104,8 @@ $(MUSASHI_GEN)/m68kops.c $(MUSASHI_GEN)/m68kops.h: $(MUSASHI_MAKE) $(MUSASHI_DIR
 	@mkdir -p $(MUSASHI_GEN)
 	$(MUSASHI_MAKE) $(MUSASHI_GEN)/ $(MUSASHI_DIR)/m68k_in.c
 
-$(BUILD)/native/musashi_m68kcpu.o: $(MUSASHI_DIR)/m68kcpu.c $(MUSASHI_DIR)/m68kfpu.c $(MUSASHI_GEN)/m68kops.h
+$(BUILD)/native/musashi_m68kcpu.o: $(MUSASHI_DIR)/m68kcpu.c $(MUSASHI_DIR)/m68kfpu.c \
+                                   $(MUSASHI_DIR)/m68kmmu.h $(MUSASHI_DIR)/m68kcpu.h $(MUSASHI_GEN)/m68kops.h
 	@mkdir -p $(BUILD)/native
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 

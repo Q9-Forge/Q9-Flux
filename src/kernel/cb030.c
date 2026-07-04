@@ -38,45 +38,133 @@ static int cb030_is_remap_reg(uint32_t addr)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_uart_read / cb030_uart_write
-// Desc.:    5.2b: Minimaler 68681-DUART-Ansatz — nur SRA (Status) und THRA/RHRA (Tx/Rx-Holding,
-//           gleiche Adresse) sind wirklich aktiv. Alle anderen Register im UART-Adressbereich
-//           werden nur sauber angenommen (Lesewert 0, Schreibzugriff verworfen), s. cb030.h.
-//           SRA-Bits: TxRDY (0x04, hier immer gesetzt — q9_hal_con_put ist synchron/blockierend)
-//           und RxRDY (0x01, gesetzt wenn ein Zeichen im 1-Byte-Puffer wartet). Der Lesezugriff
-//           auf SRA fuellt bei Bedarf den Puffer nach (q9_hal_con_get konsumiert das Zeichen aus
-//           der HAL, darum der Zwischenpuffer — sonst ginge ein Byte zwischen Status- und
-//           Datenabfrage verloren).
+// Function: cb030_uart_poll_rx
+// Desc.:    Fuellt den 1-Byte-Empfangspuffer nach, falls leer (q9_hal_con_get KONSUMIERT das
+//           Zeichen aus der HAL, darum der Zwischenpuffer — sonst ginge ein Byte zwischen
+//           Status- und Datenabfrage verloren).
 //────────────────────────────────────────────────────────────────────────────────────────────────
+static void cb030_uart_poll_rx(q9_cb030_t *b)
+{
+    if (!b->uart_rx_pending) {
+        int c = q9_hal_con_get();
+        if (c >= 0) {
+            b->uart_rx_pending = 1;
+            b->uart_rx_char = (uint8_t)c;
+        }
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: cb030_uart_read / cb030_uart_write
+// Desc.:    5.2b/5.4: 68681-DUART, Registerkarte s. docs/CB030.md. Kanal A ist die Konsole
+//           (THRA -> q9_hal_con_put, RHRA <- q9_hal_con_get via 1-Byte-Puffer); Kanal B ist
+//           unverbunden (sendet ins Leere, empfaengt nie). Die Mode-Register MR1/MR2 (einziges
+//           echtes R/W-Register der 68681, interner Zeiger: nach jedem Zugriff auf MR2, Reset
+//           auf MR1 per CR-Kommando 0x1x) und das IVR werden als Latches gefuehrt — der
+//           OS-9-Treiber sc68681 verifiziert den Chip per Readback (sonst E$BMode beim
+//           Konsolen-Open). SRA/SRB: TxRDY (0x04) UND TxEMT (0x08) immer gesetzt — der Sender
+//           ist synchron sofort fertig; manche Sende-Schleifen warten auf TxEMT statt TxRDY.
+//           ISR liefert die entsprechenden Polling-Bits (TxRDYA 0x01, RxRDYA 0x02, TxRDYB 0x10).
+//           Der Rest des Registersatzes wird sauber angenommen (liest 0, Schreiben verworfen).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+/* Debug-Werkzeug (5.4): mit -DQ9_CB030_UART_TRACE uebersetzt, protokolliert jeder UART-Zugriff
+   Offset+Wert auf stderr — damit wurde der sc68681-Treiber-Init beim ersten OS-9-Boot
+   durchleuchtet (IVR-Readback, IMR-Sequenz). Im normalen Build komplett wegkompiliert. */
+#ifdef Q9_CB030_UART_TRACE
+#include <stdio.h>
+#define UART_TRACE(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define UART_TRACE(...)
+#endif
+
 static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
 {
-    if (addr == Q9_CB030_UART_SRA) {
-        if (!b->uart_rx_pending) {
-            int c = q9_hal_con_get();
-            if (c >= 0) {
-                b->uart_rx_pending = 1;
-                b->uart_rx_char = (uint8_t)c;
-            }
-        }
-        return (uint8_t)(0x04u | (b->uart_rx_pending ? 0x01u : 0u));
+    UART_TRACE("[uart rd %02x]", (unsigned)(addr - Q9_CB030_UART_BASE));
+    switch (addr - Q9_CB030_UART_BASE) {
+    case 0x00:                                         /* MRA (MR1A/MR2A, interner Zeiger)       */
+    {
+        uint8_t v = b->uart_mr_a[b->uart_mr_ptr_a];
+        b->uart_mr_ptr_a = 1;
+        return v;
     }
-    if (addr == Q9_CB030_UART_THRA) {                 /* = RHRA-Adresse beim Lesen */
+    case 0x02:                                         /* SRA */
+        cb030_uart_poll_rx(b);
+        return (uint8_t)(0x0Cu | (b->uart_rx_pending ? 0x01u : 0u));
+    case 0x06:                                         /* RHRA */
+        cb030_uart_poll_rx(b);
         if (b->uart_rx_pending) {
             b->uart_rx_pending = 0;
             return b->uart_rx_char;
         }
         return 0;
+    case 0x0A:                                         /* ISR (Polling-Bits, s.o.)               */
+        cb030_uart_poll_rx(b);
+        return (uint8_t)(0x11u | (b->uart_rx_pending ? 0x02u : 0u));
+    case 0x10:                                         /* MRB (MR1B/MR2B, interner Zeiger)       */
+    {
+        uint8_t v = b->uart_mr_b[b->uart_mr_ptr_b];
+        b->uart_mr_ptr_b = 1;
+        return v;
     }
-    return 0;                                          /* uebriger Registersatz: sauber angenommen */
+    case 0x12:                                         /* SRB: sendet sofort, empfaengt nie      */
+        return 0x0Cu;
+    case 0x18:                                         /* IVR */
+        return b->uart_ivr;
+    default:
+        return 0;                                      /* uebriger Registersatz: sauber angenommen */
+    }
 }
 
 static void cb030_uart_write(q9_cb030_t *b, uint32_t addr, uint8_t val)
 {
-    if (addr == Q9_CB030_UART_THRA) {
+    UART_TRACE("[uart wr %02x=%02x]", (unsigned)(addr - Q9_CB030_UART_BASE), val);
+    switch (addr - Q9_CB030_UART_BASE) {
+    case 0x00:                                         /* MRA */
+        b->uart_mr_a[b->uart_mr_ptr_a] = val;
+        b->uart_mr_ptr_a = 1;
+        return;
+    case 0x04:                                         /* CRA: nur "Reset MR Pointer" (0x1x)     */
+        if (((val >> 4) & 0x07u) == 1u) {
+            b->uart_mr_ptr_a = 0;
+        }
+        return;
+    case 0x06:                                         /* THRA -> Konsole                        */
         q9_hal_con_put((char)val);
         return;
+    case 0x10:                                         /* MRB */
+        b->uart_mr_b[b->uart_mr_ptr_b] = val;
+        b->uart_mr_ptr_b = 1;
+        return;
+    case 0x14:                                         /* CRB: nur "Reset MR Pointer" (0x1x)     */
+        if (((val >> 4) & 0x07u) == 1u) {
+            b->uart_mr_ptr_b = 0;
+        }
+        return;
+    case 0x0A:                                         /* IMR (Interrupt-Maske, write-only)      */
+        b->uart_imr = val;
+        return;
+    case 0x16:                                         /* THRB: Kanal B unverbunden, verwerfen   */
+        return;
+    case 0x18:                                         /* IVR */
+        b->uart_ivr = val;
+        return;
+    default:
+        return;                                        /* uebriger Registersatz: sauber angenommen */
     }
-    (void)b;                                            /* uebriger Registersatz: sauber angenommen */
+}
+
+int q9_cb030_uart_irq_pending(q9_cb030_t *b)
+{
+    if (b->uart_imr & 0x01u) {                         /* TxRDYA-Interrupt: bei uns immer bereit */
+        return 1;
+    }
+    if (b->uart_imr & 0x02u) {                         /* RxRDYA-Interrupt: Zeichen da?          */
+        cb030_uart_poll_rx(b);
+        if (b->uart_rx_pending) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -167,6 +255,10 @@ static void cb030_cf_write(q9_cb030_t *b, uint32_t off, uint8_t val)
             b->cf_pos = 0;
             b->cf_write_pending = 1;
             b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
+        } else if (val == Q9_CB030_CF_CMD_SETFEAT) {
+            /* SET FEATURES (z.B. 8-Bit-Mode, den der CB030-Boot-Treiber setzt): kommentarlos
+               annehmen — unser Datenregister ist ohnehin byteweise (s. cb030_cf_read). */
+            b->cf_status = Q9_CB030_CF_STAT_RDY;
         } else {
             b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_ERR);
         }
@@ -285,6 +377,9 @@ int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *
     b->ram_len = ram_len;
     b->remapped = 0;
     b->cf_status = Q9_CB030_CF_STAT_RDY;
+    b->uart_ivr  = 0x0F;                              /* 68681-Reset-Wert "uninitialisierter
+                                                         Vektor" — der OS-9-Treiber sc68681
+                                                         prueft GENAU darauf (sonst E$BMode) */
     return Q9_CB030_OK;
 }
 
