@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.00
+// File:   m68krt.c                                                                        Ver. 1.10
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -12,6 +12,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 5.1: Erster Grundbaustein                                               │ CF
+// 26-07-04│ 1.10 │ 5.2d: q9_m68krt_set_irq (Wrapper um m68k_set_irq())                     │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "m68k.h"
@@ -114,6 +115,11 @@ void q9_m68krt_free(q9_m68krt_t *rt)
     memset(rt, 0, sizeof(*rt));
 }
 
+void q9_m68krt_set_irq(int level)
+{
+    m68k_set_irq((unsigned int)level);
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.c                                                                            Ver. 1.00
+// EOF m68krt.c                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

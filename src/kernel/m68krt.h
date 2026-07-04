@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.h                                                                        Ver. 1.00
+// File:   m68krt.h                                                                        Ver. 1.10
 // Owner:  AF
 // Desc.:  Schmaler Q9-Wrapper um die eingebettete Musashi-68000-Emulation (third_party/musashi,
 //         Entscheidung E12 in PROJECT.md). Native-Build-only — Grundbaustein fuer Phase 5 (Prozesse
@@ -22,6 +22,8 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 5.1: Erster Grundbaustein — RAM anbinden, Reset+Execute, D0-D7 lesen    │ CF
+// 26-07-04│ 1.10 │ 5.2d: q9_m68krt_set_irq — duenner Wrapper um m68k_set_irq() fuer         │ CF
+//         │      │ cb030.c's Timer/IRQ3-Polling                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_M68KRT_H
 #define Q9_M68KRT_H
@@ -82,8 +84,19 @@ uint32_t q9_m68krt_get_d(q9_m68krt_t *rt, int n);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_free(q9_m68krt_t *rt);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_set_irq
+// Desc.:    5.2d: Duenner Wrapper um Musashis m68k_set_irq(level) — die eigentliche Interrupt-
+//           Mechanik (PC+SR auf den Supervisor-Stack, Vektor holen, springen) macht Musashi
+//           vollstaendig selbst; dieser Wrapper existiert nur, damit cb030.c (das Musashi bewusst
+//           nicht kennt, s. cb030.h) nicht direkt gegen third_party/musashi linken muss. level = 0
+//           loescht die Interrupt-Anforderung wieder (Musashi-Konvention).
+// Call:     q9_m68krt_set_irq(3)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_set_irq(int level);
+
 #endif // Q9_M68KRT_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.h                                                                            Ver. 1.00
+// EOF m68krt.h                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

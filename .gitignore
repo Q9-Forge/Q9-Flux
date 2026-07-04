@@ -9,6 +9,9 @@ __pycache__/
 # Block-Device-Testimage (3.1, HAL-seitig lazy erzeugt von q9_hal_blk_read/write)
 q9disk.img
 
+# CB030-Compact-Flash-Testimage (5.2c, lazy erzeugt von q9_cb030_cf_attach)
+cb030_cf_test.img
+
 # Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
 *.wasm.map
 
