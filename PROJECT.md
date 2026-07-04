@@ -5,8 +5,14 @@
 > Dieses Dokument hier ist die Vision samt Entscheidungshistorie.
 
 **Q9** ist ein modulares Mini-Betriebssystem in der Tradition von OS-9.
-Der Kern ist portables C mit einer schmalen HAL. Primäres Executable-Format ist
-WebAssembly; native 68k-Module laufen über eine eingebaute Emulator-Runtime.
+Der Kern ist portables C mit einer schmalen HAL. **Das eigentliche Programmformat
+für echte, langlebige Q9-Prozesse ist 68k (PIC-Code, über Musashi bzw. später
+native Hardware)** — WebAssembly ist die Implementierungssprache des Kernels
+selbst (läuft dadurch sofort im Browser) sowie eine Nische für kurzlebige,
+sandboxed Werkzeuge, aber NICHT das primäre Ausführungsformat (siehe
+Entscheidung E10, 2026-07-04: nur 68k läuft auf allen drei Zielen — nativ via
+Musashi, Browser via Musashi→WASM, UND später echte Vinculum-Hardware
+ganz ohne Emulation; WASM hat auf der echten Zielhardware keinen guten Weg).
 
 **Name**: Anlehnung an OS-9. Wofür das Q steht, ist bewusst offen. 🙂
 
@@ -17,10 +23,13 @@ WebAssembly; native 68k-Module laufen über eine eingebaute Emulator-Runtime.
 Ein OS, das die Kernideen von OS-9 (Modulsystem, einheitliches I/O, alles ist
 ein Modul) in die Gegenwart holt:
 
-- **Läuft im Browser** (WASM-Host) — sofort testbar, überall verfügbar
-- **Läuft später nativ auf 68k** (Vinculum / MC68EN360) — gleicher Quellcode
-- **Mischbetrieb**: WASM-Module und 68k-Module gleichberechtigt nebeneinander,
-  unterschieden nur durch das Language-Byte im Modul-Header
+- **Kernel läuft im Browser** (als WASM kompiliert) — sofort testbar, überall
+  verfügbar, keine Installation nötig
+- **Echte Q9-Programme laufen als 68k-Code** (PIC, vbcc) — über Musashi (nativ
+  und im Browser) und später nativ auf echter 68k-Hardware (Vinculum/MC68EN360),
+  ohne jede Emulation
+- **WASM-Module bleiben eine Nische** für kurzlebige, sandboxed Werkzeuge
+  (siehe `userland/`) — kein Ersatz für echte, langlebige Prozesse
 - **Fernziele**: OS-9/6809-Binärkompatibilität per 6809-Runtime, Netzwerk,
   Self-Hosting-Toolchain
 
@@ -128,8 +137,8 @@ Portables C, läuft auf dem PC (und eines Tages unter Q9 selbst).
 | 2 | **Modulsystem**: Header-Format final, `q9mod`-Tool, Modul-Directory, Loader (Module zunächst aus eingebautem "ROM-Image") | offen |
 | 3 | **Filesystem**: VFS-Layer (RBF-artige Pfad-Semantik), erster FS-Typ | offen |
 | 4 | **Prozesse**: kooperativer Scheduler, `Q$Fork`/`Q$Exit`/`Q$Wait`, Prozess-Directory | offen |
-| 5 | **Shell**: erstes echtes User-Modul, Kommandos, Modul-Tools (`mdir`, `procs`...) | offen |
-| 6 | **68k-Runtime**: Musashi (als WASM kompiliert) als Runtime-Modul, TRAP→Syscall-Bridge, erste LANG_68K-Module | offen |
+| 5 | **68k-Runtime**: Musashi (als WASM kompiliert) als Runtime-Modul, TRAP→Syscall-Bridge, erste LANG_68K-Module — **umnummeriert 2026-07-04, war vorher Phase 6, s. Entscheidung E10** | offen |
+| 6 | **Shell**: erstes echtes User-Modul, Kommandos, Modul-Tools (`mdir`, `procs`...) — baut auf Phase 5 auf, **war vorher Phase 5** | offen |
 | 7 | **68k-Target nativ**: vbcc-Build der HAL für Vinculum, Boot auf echter Hardware bzw. Board-Emulator | offen |
 | 8 | **Vision**: 6809-Runtime (original OS-9/6809-Binaries!), Netzwerk (CH9121 real / WebSocket-Proxy im Browser), wasm2c-Pfad, Self-Hosting | offen |
 
@@ -151,7 +160,8 @@ Tests in `test/` (01_test_..., PASS/FAIL, standalone).
 | E7 | Syscall-Nummern, Fehlercodes und Registerkonventionen = OS-9 (Quelle: MWOS funcs.h/errno.h); virtueller Registersatz im 68k-Layout (d0-d7/a0-a7), Spez. in docs/SYSCALLS.md | OS-9-Software (68k+6809) mechanisch abbildbar, Runtimes werden dünne Register-Mapper |
 | E8 | Prozessmodell = Step-Modell ohne Stack-Umschaltung (2026-07-03): Scheduler verwaltet Zustände (Active/Waiting/Sleeping) und ruft pro Tick den nächsten aktiven Prozess als Step-Funktion; Blockieren = Zustandswechsel, kein eingefrorener Stack. Prozess-Ausführung pro Language-Byte austauschbar: intern/C = Step-Funktion auf dem Kernel-Stack (kein eigener Stack nötig), 68k später = Musashi-CPU-Kontext, WASM = Instanz | WASM erlaubt keine Stack-Umschaltung (Asyncify zu teuer/komplex); konsequente Fortsetzung des nicht-blockierenden q9_kernel_step()-Designs aus 0.2; interne C-Prozesse müssen dafür kooperativ in Häppchen geschrieben werden (kein blockierendes while(1)) |
 | E9 | "Native" Prozessmodule (neues Language-Byte `Q9_MOD_NATIVE`, 2026-07-04, Phase 4.2): Q9 hat vor Phase 6 keine 68k/WASM-Ausführungs-Engine, die aus einem geladenen Modul heraus echten Byte-Code starten könnte. Bis dahin trägt ein `Q9_MOD_NATIVE`-Modul direkt hinter dem Header (Offset `execoff`) einen rohen `q9_proc_step_fn`-Funktionszeiger (gültig nur innerhalb desselben laufenden Host-Prozesses — NICHT Teil eines portablen Moduldateiformats). F$Fork/F$Chain lesen genau diesen Zeiger und tragen ihn als Step-Funktion in die Prozesstabelle ein | Erlaubt, F$Fork/F$Chain/F$Wait (4.2) über das echte Modul-Directory (Phase 2) end-to-end und mit echten (wenn auch nur intern lauffähigen) Prozessen zu testen, ohne auf die 68k-Runtime (Phase 6) warten zu müssen; sobald `Q9_MOD_M68K`/`Q9_MOD_WASM` einen echten Interpreter bekommen, wird `Q9_MOD_NATIVE` zum reinen Kernel-internen Sonderfall (z.B. für die Shell selbst) |
-| E10 | WASM-Runtime für den nativen Build = **wasm3** (MIT-lizenziert, vendored als `third_party/wasm3/`, Commit `d77cd814`, 2026-07-04, Phase 4.6): löst O5. Nur der Kern-Interpreter ist vendored (kein WASI/libc-Layer — die künftige Syscall-Bridge in 4.7 verdrahtet eigene Q9-Importe direkt). `src/kernel/wasmrt.c/.h` kapselt wasm3 als schmale Q9-API (`q9_wasmrt_init/load/call_i32/free`), sodass Aufrufer nie `wasm3.h` einbinden müssen. Nur Teil des **nativen** Builds (`make native`) — `make wasm` bindet wasm3 bewusst nicht ein, weil Q9 im Browser selbst schon als WASM läuft (dort übernimmt `WebAssembly.instantiate` die Rolle, s. O6) | wasm3 nutzt intern `malloc`/`realloc`/`free` (Environment/Runtime/Modul-Allokation) — bewusste, eng begrenzte Ausnahme von Q9s "kein malloc im Kernel"-Regel: sie betrifft NUR den vendorten wasm3-Code selbst (third_party/wasm3/README.md dokumentiert das), nicht `wasmrt.c` oder den restlichen Kernel, dessen eigene Tabellen weiter statisch bleiben. Vendorter Code wird bewusst NICHT mit `-Wall -Wextra` übersetzt (58 Warnungen im unveränderten Original) — nur Q9-eigener Code muss warnungsfrei bleiben |
+| E10 | WASM-Runtime für den nativen Build = **wasm3** (MIT-lizenziert, vendored als `third_party/wasm3/`, Commit `d77cd814`, 2026-07-04, Phase 4.6): löst O5. Nur der Kern-Interpreter ist vendored (kein WASI/libc-Layer — die künftige Syscall-Bridge in 4.7 verdrahtet eigene Q9-Importe direkt). `src/kernel/wasmrt.c/.h` kapselt wasm3 als schmale Q9-API (`q9_wasmrt_init/load/call_i32/free`), sodass Aufrufer nie `wasm3.h` einbinden müssen. Nur Teil des **nativen** Builds (`make native`) — `make wasm` bindet wasm3 bewusst nicht ein, weil Q9 im Browser selbst schon als WASM läuft (dort übernimmt `WebAssembly.instantiate` die Rolle, s. O6) | wasm3 nutzte anfangs intern `malloc`/`realloc`/`free` — **seit Schritt 4.9 (2026-07-04) behoben**, nicht mehr nur eine Ausnahme: `d_m3FixedHeap` (Compiler-Define aus `Q9_SYSTEM_MEM_BYTES`, `src/kernel/config.h`) schaltet wasm3 auf einen statischen Speicherblock um, kein Host-`malloc` mehr im gesamten WASM-Pfad. Vendorter Code wird bewusst NICHT mit `-Wall -Wextra` übersetzt (58 Warnungen im unveränderten Original) — nur Q9-eigener Code muss warnungsfrei bleiben |
+| E11 | Phase 5 und 6 getauscht + WASM-Rolle klargestellt (2026-07-04 abends, Andreas): 68k (PIC, über Musashi) wird zum eigentlichen Programmformat für echte, langlebige Q9-Prozesse — nicht WASM. Grund: nur 68k läuft auf allen drei Zielen (nativ via Musashi, Browser via Musashi→WASM, UND später echte Vinculum-Hardware ganz ohne Emulation) — WASM hat auf der echten Zielhardware keinen brauchbaren Weg (Interpretation auf ohnehin langsamer echter Hardware unrealistisch). Bisherige "Phase 6" (68k-Runtime) wird zu **Phase 5**, bisherige "Phase 5" (Shell) wird zu **Phase 6** — die Shell braucht eine echte, langlebige Prozess-Ausführung, die es vor der 68k-Runtime nicht geben kann (sonst nur ein weiterer `Q9_MOD_NATIVE`-Behelf, E9-Falle). WASM bleibt wichtig als (a) Implementierungssprache des Kernels selbst (Browser-Ziel) und (b) Nische für kurzlebige, sandboxed Werkzeuge (4.6–4.9, `userland/`) — aber nicht mehr als "primäres Executable-Format" missverstanden | Phase 5 (68k-Runtime) ist NOCH NICHT feingranular geplant — bewusst zurückgestellt für eine eigene Planungsrunde, siehe ARBEITSPLAN.md |
 
 ## ❓ Offene Entscheidungen
 
@@ -161,7 +171,7 @@ Tests in `test/` (01_test_..., PASS/FAIL, standalone).
 | O2 | Grafik-Device: Framebuffer-Layout, Auflösung, Register — im Emulator entwerfen, später in Hardware (CPLD/FPGA)? | Design steht aus, Phase ≥5 |
 | O4 | 68k-Board-Emulation: nur CPU (Musashi) oder auch QUICC-Peripherie für Phase 7 | zu klären in Phase 6/7 |
 | O5 | WASM-Runtime für den nativen PC-Build: WAMR vs. wasm3 vs. wasmtime (eingebettet als LANG_WASM-Runtime, damit die native Version voll benutzbar ist, nicht nur Debug) | **Entschieden 2026-07-04: wasm3, siehe Entscheidung E10.** Grundbaustein (Laden + Ausführen ohne Syscall-Bridge) steht seit Schritt 4.6; die eigentliche Import-/Syscall-Anbindung folgt mit 4.7/4.8 |
-| O6 | Wie werden Userland-Programme (z.B. die in `userland/` vorbereiteten Tools) zu echten ladbaren Q9-Modulen? Zwei getrennte Probleme je Language-Byte: **WASM** — kein klassisches Relozierbarkeits-Problem (adressiert nur linearen Speicher), sondern ein Instanziierungs-/Import-Problem: ein geladenes `.wasm`-Modul braucht eine Import-Tabelle, die den Rücksprung zu Q9-Syscalls bereitstellt; im Browser kann JS beliebige `.wasm`-Blobs instanziieren, nativ bräuchte es die eingebettete Runtime aus O5. **68k** (Phase 6/7) — klassisches PIC-Problem, vbcc mit PC-relativer Codeerzeugung, dazu ein definierter Rücksprung-Mechanismus für Syscalls (bei echtem OS-9 ein TRAP) | aufgeworfen 2026-07-04 (Andreas, während der `userland/`-Vorarbeiten mit Codex); **WASM-Teil, native Seite: 4.6 (Runtime) + 4.7 (Syscall-Bridge F$ID/F$Time/F$Exit über `wasmproc.c`) fertig seit 2026-07-04** — löst E9s Stopgap für native WASM-Prozesse ab; **Browser-Seite (WebAssembly.instantiate im Worker für Gastmodule) bewusst zurückgestellt** (ARBEITSPLAN.md, Abschnitt „Geparkt" — verschachteltes WASM-in-WASM ist eine eigene Design-/Implementierungsaufgabe); Zeiger-/Speicher-Marshaling folgt mit 4.8; 68k-Teil weiterhin offen bis Phase 6/7 |
+| O6 | Wie werden Userland-Programme (z.B. die in `userland/` vorbereiteten Tools) zu echten ladbaren Q9-Modulen? Zwei getrennte Probleme je Language-Byte: **WASM** — kein klassisches Relozierbarkeits-Problem (adressiert nur linearen Speicher), sondern ein Instanziierungs-/Import-Problem: ein geladenes `.wasm`-Modul braucht eine Import-Tabelle, die den Rücksprung zu Q9-Syscalls bereitstellt; im Browser kann JS beliebige `.wasm`-Blobs instanziieren, nativ bräuchte es die eingebettete Runtime aus O5. **68k** (jetzt Phase 5/7, s. E11) — klassisches PIC-Problem, vbcc mit PC-relativer Codeerzeugung, dazu ein definierter Rücksprung-Mechanismus für Syscalls (bei echtem OS-9 ein TRAP) | aufgeworfen 2026-07-04 (Andreas, während der `userland/`-Vorarbeiten mit Codex); **WASM-Teil fertig seit 2026-07-04** (4.6–4.9: Runtime, Syscall-Bridge, Pointer-Marshaling, Fixed-Heap) — löst E9s Stopgap für native WASM-Prozesse ab, aber siehe **E11**: WASM bleibt damit Nische für kurzlebige Werkzeuge, nicht primäres Format; **Browser-Seite (WebAssembly.instantiate im Worker für Gastmodule) bewusst zurückgestellt** (ARBEITSPLAN.md, Abschnitt „Geparkt"); 68k-Teil weiterhin offen, jetzt Phase 5 (vorgezogen, s. E11) |
 
 ---
 
