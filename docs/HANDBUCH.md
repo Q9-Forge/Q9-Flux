@@ -45,6 +45,7 @@ Für Details verweist es auf die Fachdokumente in `docs/` statt sie zu wiederhol
 - [`MODULES.md`](MODULES.md) — OS-9-Modulsystem als Referenz für Q9s eigenes
 - [`TOOLCHAIN.md`](TOOLCHAIN.md) — Toolchain-Stand je Entwicklungsrechner (Versionen, Pfade)
 - [`AUTONOMIE.md`](AUTONOMIE.md) — Setup für den automatisierten Arbeitsmodus (projektintern, für Aussenstehende irrelevant)
+- [`CB030.md`](CB030.md) — Hardware-Referenz (Speicherkarte, DUART/CF-Register) für die Musashi-Board-Emulation (Phase 5.2)
 
 ---
 
