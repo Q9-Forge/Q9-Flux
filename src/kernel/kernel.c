@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   kernel.c                                                                        Ver. 3.00
+// File:   kernel.c                                                                        Ver. 3.10
 // Owner:  AF
 // Desc.:  Q9-Kernel, Phase 1: Boot + Zeilen-REPL, komplett über die eigene Syscall-Schicht
 //         (I$ReadLn/I$WritLn — Dogfooding der OS-9-kompatiblen ABI, siehe docs/SYSCALLS.md).
@@ -44,6 +44,10 @@
 //         │      │ F$Chain (echter zweiter Prozess, Verkettung auf neues Modul); alter      │
 //         │      │ q9_proc_halted()-Guard in repl_step entfernt (obsolet: Scheduler ruft    │
 //         │      │ nicht-aktive Prozesse ohnehin nie)                                       │
+// 26-07-04│ 3.10 │ 4.3: Selbsttests fuer echtes Blockieren — I$ReadLn ohne Eingabe versetzt │ CF
+//         │      │ den Prozess in WAITING/Q9_WAIT_DEVICE (Scheduler skippt ihn), F$Wait      │
+//         │      │ ohne Zombie ebenso in WAITING/Q9_WAIT_CHILD (weckt automatisch bei Exit   │
+//         │      │ des Kindes), F$Sleep legt per Q9_WAIT_TIMER fuer N Ticks schlafen         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "../hal/q9_hal.h"
@@ -271,6 +275,80 @@ static void child_before_chain_step(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: readln_block_step
+// Desc.:    4.3-Selbsttest: versucht bei jedem Aufruf I$ReadLn auf Pfad 0 (stdin, /term) —
+//           zaehlt mit, wie oft der Scheduler die Step-Funktion tatsaechlich aufgerufen hat. Im
+//           Testharness kommt nie Konsoleneingabe an (stdin nicht-blockierend, s. hal_posix.c),
+//           also bleibt der Prozess nach dem ersten Aufruf WAITING/Q9_WAIT_DEVICE — der Zaehler
+//           beweist, dass der Scheduler ihn danach NICHT mehr steppt.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int readln_block_calls = 0;
+
+static void readln_block_step(void)
+{
+    q9_regs_t r = {0};
+    uint8_t   line[16];
+
+    readln_block_calls++;
+    r.d[0] = 0;                                        /* path 0 = stdin                          */
+    r.d[1] = sizeof(line);
+    r.a[0] = line;
+    q9_syscall(I_READLN, &r);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: wait_parent_step
+// Desc.:    4.3-Selbsttest fuer echtes F$Wait-Blockieren: forkt beim ersten Aufruf einen Enkel
+//           (Modul "wait_grandchild" -> child_step, beendet sich sofort mit Exit-Code 42) und
+//           ruft direkt danach F$Wait auf — der noch nicht gestepte Enkel liefert garantiert
+//           E$NotRdy (das passiert synchron VOR dem ersten Scheduler-Tick des Enkels). Bei jedem
+//           weiteren Aufruf (nur nach dem Aufwachen aus WAITING/Q9_WAIT_CHILD moeglich) wird
+//           erneut F$Wait gerufen, das den inzwischen zum Zombie gewordenen Enkel reapt.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int      wait_parent_calls      = 0;
+static int      wait_parent_result     = -1;
+static uint32_t wait_parent_gcpid      = 0;
+static uint32_t wait_parent_reaped_pid = 0;
+
+static void wait_parent_step(void)
+{
+    q9_regs_t wt = {0};
+    q9_pd_t  *me = q9_proc_current();
+
+    wait_parent_calls++;
+    if (wait_parent_calls == 1) {
+        q9_proc_fork(me ? me->pid : 1, 0, child_step, &wait_parent_gcpid);
+    }
+    wait_parent_result = q9_syscall(F_WAIT, &wt);
+    if (wait_parent_result == 0) {
+        wait_parent_reaped_pid = wt.d[0];
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: sleep_test_step
+// Desc.:    4.3-Selbsttest fuer F$Sleep: legt sich beim ersten Aufruf per F$Sleep(2 Ticks)
+//           schlafen, beendet sich beim zweiten Aufruf (nach dem Aufwachen) mit Exit-Code 55.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int sleep_step_calls = 0;
+
+static void sleep_test_step(void)
+{
+    sleep_step_calls++;
+    if (sleep_step_calls == 1) {
+        q9_regs_t sl = {0};
+        sl.d[1] = 2;                                    /* F$Sleep: 2 Ticks                        */
+        q9_syscall(F_SLEEP, &sl);
+        return;
+    }
+    {
+        q9_regs_t ex = {0};
+        ex.d[1] = 55;
+        q9_syscall(F_EXIT, &ex);
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: test_fm_open
 // Desc.:    Minimaler Test-File-Manager (3.2-Selbsttest): "open" akzeptiert nur den Rest-Pfad
 //           "datei", legt dessen Laenge im Datei-Kontext (fmctx) ab. Alles andere -> E$PNNF.
@@ -303,7 +381,7 @@ int q9_kernel_selftest(void)
     struct {
         const char *name;
         int         ok;
-    } checks[64];
+    } checks[96];
     int nchecks = 0;
 
     {   /* I$WritLn on stdout succeeds and reports the byte count */
@@ -445,6 +523,103 @@ int q9_kernel_selftest(void)
                         wt2.d[0] == childpid && wt2.d[1] == 77);
         }
         checks[nchecks].name = "F$Chain: Kind wechselt Modul, laeuft weiter, endet mit neuem Code";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.3: I$ReadLn ohne Eingabe versetzt den Prozess in WAITING/Q9_WAIT_DEVICE — der       */
+        /* Scheduler steppt ihn danach nicht mehr, bis /term SS.Ready meldet (im Testharness nie, */
+        /* stdin ist nicht-blockierend ohne echte Eingabe, s. hal_posix.c). Forkt direkt ueber     */
+        /* q9_proc_fork (proc.c) statt F$Fork/Modul-Directory — braucht kein registriertes Modul   */
+        /* und belegt deshalb keinen der nur 8 Directory-Slots dauerhaft.                          */
+        int            ok;
+        uint32_t       childpid;
+        q9_pd_t       *pd;
+        q9_dev_t      *term;
+
+        readln_block_calls = 0;
+        ok = (q9_proc_fork(1, 0, readln_block_step, &childpid) == 0);
+
+        q9_kernel_step();                               /* Tick 1: I$ReadLn -> E$NotRdy -> WAITING */
+        pd   = q9_proc_find(childpid);
+        term = q9_dev_find("term");
+        ok = ok && (readln_block_calls == 1);
+        ok = ok && (pd != 0 && pd->state == Q9_PS_WAITING &&
+                    pd->wait_reason == Q9_WAIT_DEVICE && pd->wait_dev == term);
+
+        q9_kernel_step();                               /* Tick 2/3: WAITING -> Scheduler skippt   */
+        q9_kernel_step();
+        ok = ok && (readln_block_calls == 1);           /* Step wurde NICHT erneut aufgerufen       */
+
+        q9_proc_exit(childpid, 0);                       /* Testprozess aufraeumen (kein SS.Ready    */
+        {                                                 /*   im Testharness moeglich)               */
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == 0 && wt.d[0] == childpid);
+        }
+        checks[nchecks].name = "4.3: I$ReadLn ohne Eingabe -> WAITING/Q9_WAIT_DEVICE, Scheduler skippt";
+        checks[nchecks++].ok = ok;
+    }
+    {   /* 4.3: F$Wait ohne Zombie-Kind versetzt den wartenden Prozess ebenso in WAITING/          */
+        /* Q9_WAIT_CHILD — sobald das Kind zum Zombie wird, weckt der Scheduler ihn automatisch.   */
+        /* Ob Enkel oder Parent innerhalb desselben Ticks zuerst an der Reihe sind, haengt von      */
+        /* ihrer Tabellenposition ab (Round-Robin) — die Schleife unten ist deshalb bewusst nicht  */
+        /* auf einen festen Tick-Wert fixiert, sondern laeuft bis zum Aufwachen oder Abbruch.       */
+        /* Wie beim I$ReadLn-Test oben: q9_proc_fork direkt statt F$Fork/Modul-Directory (weder     */
+        /* Parent noch Enkel brauchen ein registriertes Modul, s.o.)                                */
+        int            ok;
+        uint32_t       parentpid;
+        q9_pd_t       *ppd;
+
+        wait_parent_calls  = 0;
+        wait_parent_result = -1;
+        ok = (q9_proc_fork(1, 0, wait_parent_step, &parentpid) == 0);
+
+        q9_kernel_step();                               /* Tick 1: forkt Enkel, F$Wait -> E$NotRdy */
+                                                         /*   -> WAITING/Q9_WAIT_CHILD (Enkel kann  */
+                                                         /*   diesen Tick unmoeglich schon fertig   */
+                                                         /*   sein — er wurde ja gerade erst gestartet)*/
+        ppd = q9_proc_find(parentpid);
+        ok = ok && (wait_parent_calls == 1 && wait_parent_result == E_NOTRDY);
+        ok = ok && (ppd != 0 && ppd->state == Q9_PS_WAITING && ppd->wait_reason == Q9_WAIT_CHILD);
+
+        for (int i = 0; i < Q9_NPROCS + 2 && wait_parent_calls < 2; i++) {
+            q9_kernel_step();                           /* bis Enkel Zombie ist und Parent weckt    */
+        }
+        ok = ok && (wait_parent_calls == 2 && wait_parent_result == 0 &&
+                    wait_parent_reaped_pid == wait_parent_gcpid);
+
+        checks[nchecks].name = "4.3: F$Wait ohne Zombie -> WAITING/Q9_WAIT_CHILD, weckt bei Exit";
+        checks[nchecks++].ok = ok;
+
+        q9_proc_exit(parentpid, 0);                      /* Testprozess aufraeumen, bevor er als    */
+        {                                                 /*   ACTIVE weiter F$Wait -> E$NoChld rufen*/
+            q9_regs_t wt = {0};                           /*   wuerde                                 */
+            q9_syscall(F_WAIT, &wt);
+        }
+    }
+    {   /* 4.3: F$Sleep legt den Prozess fuer N Ticks schlafen (Q9_WAIT_TIMER) — der Scheduler     */
+        /* steppt ihn erst wieder, wenn wake_tick erreicht ist. q9_proc_fork direkt, s.o.          */
+        int            ok;
+        uint32_t       childpid;
+        q9_pd_t       *pd;
+
+        sleep_step_calls = 0;
+        ok = (q9_proc_fork(1, 0, sleep_test_step, &childpid) == 0);
+
+        q9_kernel_step();                               /* Tick 1: F$Sleep(2) -> SLEEPING           */
+        pd = q9_proc_find(childpid);
+        ok = ok && (sleep_step_calls == 1 && pd != 0 &&
+                    pd->state == Q9_PS_SLEEPING && pd->wait_reason == Q9_WAIT_TIMER);
+
+        q9_kernel_step();                               /* Tick 2: noch schlafend (1 von 2 Ticks)   */
+        ok = ok && (sleep_step_calls == 1);
+
+        q9_kernel_step();                               /* Tick 3: wach, beendet sich mit Code 55   */
+        ok = ok && (sleep_step_calls == 2);
+
+        {
+            q9_regs_t wt = {0};
+            ok = ok && (q9_syscall(F_WAIT, &wt) == 0 && wt.d[0] == childpid && wt.d[1] == 55);
+        }
+        checks[nchecks].name = "4.3: F$Sleep legt Prozess fuer N Ticks schlafen (Q9_WAIT_TIMER)";
         checks[nchecks++].ok = ok;
     }
     {   /* F$Time delivers uptime */
@@ -1139,5 +1314,5 @@ int q9_kernel_selftest(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF kernel.c                                                                            Ver. 2.70
+// EOF kernel.c                                                                            Ver. 3.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -70,12 +70,12 @@ ein einfacheres Prozessmodell, ohne sie 1:1 als Syscalls nachzubilden.
 | # | Name | Beschreibung | Status | Notiz |
 |---|------|--------------|--------|-------|
 | $03 | F$Fork | Neuen Prozess starten | ✅ | Phase 4.2: nur `Q9_MOD_NATIVE`-Module (Entscheidung E9), sonst `E$NEMod` |
-| $04 | F$Wait | Auf Kind-Prozess warten | ✅ | Phase 4.2: `E$NoChld` ($E2, bestätigt) ohne Kinder, `E$NotRdy` als Poll-Provisorium vor 4.3 |
+| $04 | F$Wait | Auf Kind-Prozess warten | ✅ | Phase 4.2: `E$NoChld` ($E2, bestätigt) ohne Kinder; Phase 4.3: `E$NotRdy` ohne Zombie-Kind versetzt den Aufrufer echt in WAITING/Q9_WAIT_CHILD statt zu pollen |
 | $05 | F$Chain | Prozess mit neuem Modul verketten | ✅ | Phase 4.2 |
 | $08 | F$Send | Signal senden | 🟢 Phase 4 | |
 | $09 | F$Icpt | Signal-Intercept setzen | 🟢 Phase 4 | |
 | $1E | F$RTE | Rückkehr aus Intercept | 🟢 Phase 4 | Gegenstück zu F$Icpt |
-| $0A | F$Sleep | Prozess schlafen legen | 🟢 Phase 4 | |
+| $0A | F$Sleep | Prozess schlafen legen | ✅ | Phase 4.3: SLEEPING/Q9_WAIT_TIMER, `wake_tick` = Tick-Zaehler + Ticks (0 = einmal yielden) |
 | $0B | F$SSpd | Prozess suspendieren | 🟢 Phase 4 | |
 | $0D | F$SPrior | Priorität setzen | 🟢 Phase 4 | |
 | $0E | F$STrap | Trap-Intercept setzen | 💤 | eher 6809/68k-Trap-Mechanik, niedrige Prio |

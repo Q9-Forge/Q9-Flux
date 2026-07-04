@@ -307,7 +307,7 @@ schreibend, inklusive langer Dateinamen beim Lesen) — gewählt wegen
 Interoperabilität: ein Q9-Disk-Image lässt sich am Host-Rechner mounten,
 befüllen und mit Standard-Tools inspizieren.
 
-### 5.6 Prozessmodell (Entscheidung E8/E9, Mehrprozess-Semantik seit Phase 4.2)
+### 5.6 Prozessmodell (Entscheidung E8/E9, Mehrprozess-Semantik seit Phase 4.2, echtes Blockieren seit 4.3)
 
 WebAssembly erlaubt kein Umschalten von Aufruf-Stacks — ein klassischer,
 Stack-wechselnder Scheduler scheidet daher aus. Q9s Scheduler verwaltet
@@ -337,8 +337,21 @@ gilt **Entscheidung E9** (PROJECT.md): ein neues Language-Byte
 `Q9_MOD_NATIVE` markiert Module, die statt echtem Byte-Code einen rohen
 `q9_proc_step_fn`-Funktionszeiger direkt hinter dem Header tragen (gültig
 nur innerhalb desselben laufenden Host-Prozesses) — F$Fork/F$Chain lesen
-genau diesen Zeiger. Blockieren/Aufwecken, Prioritäten und Signale folgen in
-den Schritten 4.3–4.5.
+genau diesen Zeiger.
+
+**Seit Phase 4.3** löst der Scheduler das E$NotRdy-Poll-Provisorium (I$Read/
+I$ReadLn seit 1.2, F$Wait seit 4.2) durch echtes Blockieren ab: ein neuer
+Weckgrund (`q9_wait_reason_t` — `Q9_WAIT_DEVICE`/`Q9_WAIT_CHILD`/
+`Q9_WAIT_TIMER`) je Prozess-Deskriptor sagt dem Scheduler, worauf ein
+`WAITING`/`SLEEPING`-Prozess wartet; `q9_proc_schedule()` prüft das VOR jedem
+Stepp-Aufruf und weckt bei Erfüllung auf `ACTIVE`. `syscall.c` liefert an den
+Aufrufer weiterhin sofort `E$NotRdy` zurück (kein eingefrorener Stack möglich,
+Entscheidung E8 gilt unverändert) — geblockt wird nur die Scheduler-Sicht: ein
+wartender Prozess wird schlicht nicht mehr bei jedem Tick sinnlos erneut
+gestept. `Q9_WAIT_DEVICE` prüft `SS.Ready` des Geräts (z.B. `/term`-Eingabe),
+`Q9_WAIT_CHILD` ein Zombie-Kind (F$Wait), `Q9_WAIT_TIMER` einen Tick-Zähler
+(neuer Syscall **F$Sleep**: Ticks schlafen, 0 = einmal yielden). Prioritäten
+und Signale folgen in den Schritten 4.4–4.5.
 
 ### 5.7 HAL-Schnittstelle
 
@@ -415,6 +428,7 @@ vorausgesetzt werden:
 | **Language-Byte** | Feld im Modul-Header, das die Ausführungsform festlegt (bei Q9: WASM/68k/perspektivisch 6809, dazu `Q9_MOD_NATIVE` als Übergangslösung, s.u.) |
 | **`Q9_MOD_NATIVE`** | Q9-eigenes Language-Byte (Entscheidung E9): das Modul trägt statt Byte-Code einen rohen Funktionszeiger direkt hinter dem Header — Übergangslösung, solange es vor Phase 6 keine 68k/WASM-Ausführungs-Engine gibt |
 | **Zombie-Prozess** | Prozess, der sich per F$Exit beendet hat, aber noch in der Prozesstabelle steht, weil sein Parent den Exit-Code per F$Wait noch nicht abgeholt hat |
+| **Weckgrund** (`q9_wait_reason_t`) | seit Phase 4.3: Grund, aus dem ein `WAITING`/`SLEEPING`-Prozess vom Scheduler übersprungen wird — Geräte-Bereitschaft (`Q9_WAIT_DEVICE`, SS.Ready), ein Zombie-Kind (`Q9_WAIT_CHILD`, F$Wait) oder ein Tick-Zähler-Zielwert (`Q9_WAIT_TIMER`, F$Sleep) |
 | **IOMan** | OS-9s I/O-Manager — Vorbild für Q9s Geräte-/Pfadtabelle |
 | **File-Manager** | Komponente, die die Semantik eines Dateisystemtyps kennt (z.B. RBF für OS-9-Disketten, FAT16 bei Q9) — sitzt zwischen Pfad und Block-Treiber |
 | **RBF** | „Random Block File" — OS-9s natives Dateisystem/File-Manager |
