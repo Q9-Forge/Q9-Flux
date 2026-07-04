@@ -198,12 +198,12 @@ kennt — der Emulator darf "voller" sein als das, was wir tatsächlich benutzen
 
 **Einzelgeräte für 5.2** (Andreas, 2026-07-04 abends — Aufschlüsselung nach `docs/CB030.md`):
 
-| # | Gerät | Status | Notizen |
-|---|-------|--------|---------|
-| 5.2a | RAM/ROM/Remap-Speicherlogik | 💡 | Reset-Zustand: Flash-ROM gespiegelt ab Adresse 0 bis `0xFEFF_FFFF`. Einmaliger Buszugriff (beliebiger Wert) auf `0xFFFF_8000`-Bereich schaltet dauerhaft um: RAM ab Adresse 0 (Größe je SIM-Bestückung), ROM danach nur noch einmal bei `0xFE00_0000`–`0xFE07_FFFF`. Grundlage für alles Weitere — ohne funktionierende Speicherzugriffe kann kein Boot-Code laufen |
-| 5.2b | 68681-DUART (seriell) | 💡 | Mindestens genug für Boot-ROM-Konsolen-I/O (RHRA/THRA + Statusbits); volles Register-Set siehe `docs/CB030.md` |
-| 5.2c | Compact-Flash-Interface | 💡 | ATA-Subset-Register (`docs/CB030.md`); Anbindung an eine Image-Datei, ähnlich `q9disk.img`-Konzept aus 3.1 |
-| 5.2d | Timer/IRQ3 | 💡 | `TI_IRQ_ON`/`TI_IRQ_OFF` sind reine Adress-Trigger (kein Datenwert), schalten einen Timer ein/aus, der IRQ3 auslöst — Frequenz/Periode noch unbekannt, Anbindung an Musashis Interrupt-Mechanismus (`m68k_set_irq`) noch offen |
+| # | Gerät | Status | Wer | Notizen |
+|---|-------|--------|-----|---------|
+| 5.2a | RAM/ROM/Remap-Speicherlogik | 🟢 | Claudia | Adress-Dispatch als if/else-Kette, RAM-Fall zuerst geprüft (Performance). REMAP-Zustand als Merker in neuer Board-Struktur (unabhängig von Musashis CPU-Zustand). Reset: ROM gespiegelt ab Adresse 0 bis `0xFEFF_FFFF`; einmaliger Buszugriff (beliebiger Wert) auf `0xFFFF_8000`-Bereich schaltet dauerhaft um: RAM ab Adresse 0 (Default-Annahme 16 MB, konfigurierbar), ROM danach nur noch einmal bei `0xFE00_0000`–`0xFE07_FFFF`. ROM-Inhalt aus lokaler Datei (Microware-Boot-ROM, proprietär, NICHT ins Repo — Pfad konfigurierbar), einmal beim Board-Start eingelesen. Details/Pseudocode: `docs/CB030.md` Abschnitt „Emulations-Architektur". Grundlage für 5.2b–d — ohne funktionierende Speicherzugriffe kann kein Boot-Code laufen. Noch OHNE Syscall-Bridge/Scheduler-Anbindung (reiner Hardware-/Musashi-Test) |
+| 5.2b | 68681-DUART (seriell) | 💡 | — | Minimalansatz: JEDER Registerzugriff muss sauber angenommen werden (Init-Sequenz des Boot-ROMs), aber nur SRA (Status) + THRA/RHRA (Zeichenpuffer) müssen wirklich funktionieren — THRA-Schreibzugriff gibt das Zeichen an die Q9-Konsole aus. Volles Register-Set: `docs/CB030.md` |
+| 5.2c | Compact-Flash-Interface | 💡 | — | Backing Store: große Datei (Vorschlag 4 GB), Zugriff über Host-Datei-I/O — Muster von `q9disk.img` (3.1) wiederverwendbar. Anders als UART reicht rohes Registerdurchreichen NICHT: mindestens ATA-Lesen/Schreiben-Kommando-Protokoll (Busy-/Fertig-Bits) muss nachgebildet werden. Details: `docs/CB030.md` |
+| 5.2d | Timer/IRQ3 | 💡 | — | `TI_IRQ_ON`/`TI_IRQ_OFF` sind reine Adress-Trigger (kein Datenwert), schalten einen Timer ein/aus, der IRQ3 auslöst — Frequenz/Periode noch unbekannt, hängt am noch offenen Zyklen-Budget pro `q9_kernel_step()`; Anbindung an Musashis Interrupt-Mechanismus (`m68k_set_irq`) noch offen |
 | 5.1 | Musashi als CPU-Kern einbinden — Grundbaustein + Rauchtest, KEINE Scheduler-/Syscall-Bridge-Entscheidungen (die kommen erst mit der Detailplanung). Analog zu 4.6 (wasm3): Makefile-Integration (Musashis Zweistufen-Build — `m68kmake` generiert `m68kops.c/.h` aus `m68k_in.c` zur Bauzeit, siehe `third_party/musashi/Q9_VENDOR.md`), schmaler Wrapper `src/kernel/m68krt.c/.h` (analog `wasmrt.c/.h`), CPU-Typ `M68K_CPU_TYPE_68030`. Rauchtest: ein von Hand geschriebenes/assembliertes 68k-Testprogramm (z.B. zwei Zahlen addieren) in emuliertes RAM legen, `m68k_pulse_reset()` + `m68k_execute()` aufrufen, Ergebnis über die emulierten Register prüfen | ✅ | Claudia | Makefile-Integration steht: `m68kmake` wird als Host-Tool gebaut, generiert `m68kops.c/.h` zur Bauzeit nach `build/native/musashi_gen/` (nicht versioniert); `m68kcpu.c` (bindet `m68kfpu.c` bereits selbst per `#include` ein — deshalb `m68kfpu.c` NICHT separat als eigene TU kompilieren, sonst doppelte Symbole `m68040_fpu_op0/op1` beim Linken) + `softfloat.c` + generiertes `m68kops.c` werden mit eigenen, laxeren Flags gebaut (analog `WASM3_CFLAGS`). Wrapper `src/kernel/m68krt.c/.h` (analog `wasmrt.c/.h`, aber ohne Mehrfachinstanz-Fähigkeit — Musashi haelt seinen Zustand in eigenen Globals, keine Kontext-Zeiger in `m68k_read/write_memory_*`) implementiert genau die sechs von Musashi verlangten Speicherfunktionen (`M68K_SEPARATE_READS` aus in `m68kconf.h`, deshalb genuegen die sechs Basisfunktionen). Rauchtest (`-DQ9_HAVE_M68K`, native-only, wie `Q9_HAVE_WASM3`): `MOVEQ #2,D0`/`ADDI.W #3,D0`/`BRA.S *-2` (Endlosschleife) von Hand assembliert + Reset-Vektoren in 256-Byte-RAM, `q9_m68krt_reset()`+`q9_m68krt_execute(100)`, `D0==5` bestaetigt. `make native`/`make test` (alle 6 Testskripte inkl. FAT16-Nachvalidierung) PASS, warnungsfrei; `make wasm` unveraendert warnungsfrei (Musashi bleibt native-only). PROJECT.md E12 + docs/HANDBUCH.md (Abschnitt 3/5.9/6/7/8) aktualisiert. |
 
 ---
@@ -861,7 +861,18 @@ Zukunftsideen ohne Handlungsdruck.
 
 ---
 
-**Letzte Aktualisierung**: 2026-07-04 abends — **Phase U (`codex-userland`)
+**Letzte Aktualisierung**: 2026-07-04 abends — **5.2a freigegeben.** Adress-
+Dispatch-Architektur für die CB030-Board-Emulation geklärt (Andreas): if/else-
+Kette, RAM-Fall zuerst geprüft (Performance), REMAP-Zustand als separater
+Merker. ROM-Inhalt kommt aus einer lokalen Datei (Microware-Boot-ROM,
+proprietär, nicht im Repo). UART braucht nur SRA+THRA/RHRA wirklich
+funktionsfähig, aber jeder Registerzugriff muss angenommen werden. CF-Karte
+braucht mindestens ein ATA-Lese/Schreib-Kommandoprotokoll, nicht nur rohe
+Register. Details: `docs/CB030.md` Abschnitt „Emulations-Architektur".
+5.2b–d bleiben 💡 bis zu weiteren Detailfragen (RAM-Größe/CF-Kommandos/
+Timer-Frequenz).
+
+Davor: 2026-07-04 abends — **Phase U (`codex-userland`)
 per Pull Request #1 in `main` gemerged.** Andreas hatte den Code bereits
 reviewt und die Kommentar-Nachbesserung (U.5) abgenommen — PR über die
 GitHub-Weboberfläche erstellt und bestätigt (Merge-Commit `ebdde4b`),
