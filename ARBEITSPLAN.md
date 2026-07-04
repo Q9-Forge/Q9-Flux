@@ -135,7 +135,7 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 |---|---------|--------|-----|---------|
 | 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | ✅ | Claudia | `src/kernel/proc.c/.h` neu — Details siehe „Erledigt" unten |
 | 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | ✅ | Claudia | Entscheidung E9 (Q9_MOD_NATIVE) — Details siehe „Erledigt" unten |
-| 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | 🟢 | Claudia | danach fühlt sich I$ReadLn blockierend an, ohne je einen Stack einzufrieren |
+| 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | ✅ | Claudia | Details siehe „Erledigt" unten |
 | 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | 🟢 | Claudia | Scheduler bleibt Round-Robin, Priorität erstmal nur Datenfeld — Aging lohnt erst bei echter Konkurrenz |
 | 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | 🟢 | Claudia | konzeptionell unabhängig vom Kern, bewusst eigener Schritt |
 
@@ -163,14 +163,18 @@ zu klären ab Phase 5/6).
 | U.2 | `q9dir`: Verzeichnis auflisten | ✅ | Codex | Liest rohe 32-Byte-FAT16-Directory-Einträge über `I$Read` auf einen Verzeichnispfad (Kernel-Unterstützung existierte schon seit 3.3); Parsing in `userland/` selbst, da die interne `fat16_dirent_t` privat ist |
 | U.3 | `q9mkdir` + `q9rm` | ✅ | Codex | Rundet das ursprünglich gewünschte "dir/list/copy"-Set ab; kein rekursives Löschen |
 | U.4 | `q9touch` + `q9stat` + Testumgebung konsolidiert | ✅ | Codex | Sieben Tools insgesamt (cat/copy/dir/mkdir/rm/touch/stat); README vollständig; Test-Redundanzen aufgeräumt |
-| U.5 (Idee) | Lange Dateinamen (LFN) auch in `q9dir`/`q9stat` anzeigen | 💭 | — | LFN-Parse-Logik steckt privat in `fat16.c` — Duplizieren oder Kernel müsste sie exportieren |
-| U.6 (Idee) | Tools als echte ladbare Q9-Module, sobald Phase 5/6 (Modul-Ausführung) und O6 (Verpackungsformat) stehen | 💭 | — | heute nur Design-Vorgriff |
+| U.5 | Funktions-Kommentare nachtragen (Andreas' Review: Code gut, aber unkommentiert) | ✅ | Codex | 88 Funktionen in 16 Dateien im Q9-Standardstil (Function/Desc/Call-Header) kommentiert; reine Ergänzung, +520/-0 Zeilen, kein Verhalten geändert (per Diff verifiziert) |
+| U.6 (Idee) | Lange Dateinamen (LFN) auch in `q9dir`/`q9stat` anzeigen | 💭 | — | LFN-Parse-Logik steckt privat in `fat16.c` — Duplizieren oder Kernel müsste sie exportieren |
+| U.7 (Idee) | Tools als echte ladbare Q9-Module, sobald Phase 5/6 (Modul-Ausführung) und O6 (Verpackungsformat) stehen | 💭 | — | heute nur Design-Vorgriff |
 
-**Stand 2026-07-04**: U.1–U.4 fertig, alle vier Runden von Claudia unabhängig
+**Stand 2026-07-04**: U.1–U.5 fertig, jede Runde von Claudia unabhängig
 nachgebaut (`userland/build.sh`, PASS, `-Wall -Wextra` warnungsfrei), Branch
-`codex-userland` gepusht (Commit `bf5d494`). **Merge nach `main` steht noch
-aus** — wartet auf Andreas' eigene Durchsicht, dann gemeinsame Entscheidung
-über Merge-Weg und Anbindung an O6.
+`codex-userland` gepusht (Commits `bf5d494`, `a94ca93`). Nebenbefund bei der
+Kommentar-Durchsicht: auch der Hauptkernel wurde stichprobenartig geprüft
+(fast lückenlos kommentiert, eine echte Lücke `is_leap()` in `syscall.c`
+gefunden und behoben, Commit `1caf2b3`). **Merge nach `main` steht noch aus**
+— wartet auf Andreas' eigene Durchsicht, dann gemeinsame Entscheidung über
+Merge-Weg und Anbindung an O6.
 
 ---
 
@@ -206,6 +210,53 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.3 (echtes Blockieren: Waiting/Sleeping + Weckgrund, F$Sleep)** ✅: ersetzt
+  das E$NotRdy-Poll-Provisorium (I$Read/I$ReadLn seit 1.2, F$Wait seit 4.2) durch echte
+  Scheduler-Zustandswechsel — kein eingefrorener Stack (E8 gilt weiter), aber der Scheduler
+  steppt blockierte Prozesse gar nicht erst, statt sie bei jedem Tick sinnlos erneut aufzurufen.
+  **proc.h/.c**: neuer Enum `q9_wait_reason_t` (`Q9_WAIT_NONE/DEVICE/CHILD/TIMER`) + drei neue
+  `q9_pd_t`-Felder (`wait_reason`, `wait_dev`, `wake_tick`); neue Funktionen
+  `q9_proc_wait_device(pid, dev)` (WAITING/DEVICE), `q9_proc_wait_child(pid)` (WAITING/CHILD),
+  `q9_proc_sleep(pid, ticks)` (SLEEPING/TIMER, `wake_tick` = aktueller Tick-Zähler + ticks,
+  `ticks == 0` → +1 = "einmal yielden"). Neuer statischer Tick-Zähler `q9_tick` (proc.c, zählt
+  abgeschlossene Scheduler-Durchläufe). `q9_proc_schedule()` prüft je Slot VOR dem Stepp-Aufruf,
+  ob ein WAITING/SLEEPING-Weckgrund erfüllt ist (`dev_ready()` fragt `SS.Ready` ab — kein
+  Gerät/keine getstat-Op zählt sofort als bereit, sonst würde ein Prozess ohne Weckmöglichkeit
+  für immer hängen; `zombie_child_exists()` sucht ein Zombie-Kind), weckt dann auf ACTIVE und
+  steppt im selben Tick weiter.
+  **syscall.c**: `sc_read` (I$Read/I$ReadLn) versetzt bei `E$NotRdy` auf dem Treiberpfad (kein
+  File-Manager — FAT16-`E$NotRdy` bleibt ein echter I/O-Fehler, kein Weckgrund) den aufrufenden
+  Prozess per `q9_proc_wait_device` in WAITING; der Rückgabewert an den Aufrufer bleibt
+  `E$NotRdy` (kein eingefrorener Stack möglich). `F$Wait` ruft bei `E$NotRdy` zusätzlich
+  `q9_proc_wait_child` auf. Neuer Dispatcher-Case **F$Sleep** ($0A, Register schon seit 1.0 in
+  syscall.h reserviert): `d1.l` Ticks, ruft `q9_proc_sleep`; außerhalb eines Prozesses (kein
+  `q9_proc_current()`) → `E$IPrcID`, analog zu F$Chain.
+  **dev_term.c**: nur Kommentare präzisiert (Treiber selbst bleibt unverändert
+  nicht-blockierend — das Blockieren sitzt eine Ebene höher in `syscall.c`).
+  **Selbsttests** (kernel.c): drei neue Prozess-Step-Funktionen — `readln_block_step` (ruft
+  I$ReadLn auf stdin; im Testharness nie Eingabe, stdin ist nicht-blockierend ohne echte
+  Tastatureingabe, s. `hal_posix.c` — bleibt deshalb deterministisch WAITING) beweist, dass der
+  Scheduler einen blockierten Prozess NICHT erneut steppt (Zähler bleibt nach dem ersten Tick
+  stehen); `wait_parent_step` (forkt einen Enkel, der sich sofort beendet, ruft F$Wait) beweist
+  WAITING/Q9_WAIT_CHILD + automatisches Aufwachen bei Zombie — die Wartschleife im Test ist
+  bewusst NICHT auf einen festen Tick-Wert fixiert, weil die Reihenfolge von Enkel/Parent im
+  Round-Robin von ihrer Tabellenposition abhängt; `sleep_test_step` (F$Sleep(2), beendet sich
+  erst beim zweiten Aufruf) beweist SLEEPING/Q9_WAIT_TIMER über genau die erwartete Anzahl
+  Ticks. Alle drei forken direkt über `q9_proc_fork()` (proc.c-API) statt über F$Fork/
+  Modul-Directory — kein registriertes Modul nötig, belegt also keinen der nur 8
+  Modul-Directory-Slots dauerhaft (ein erster Anlauf über F$Fork + `q9_mod_register()` hatte
+  genau das getan und dadurch spätere modulverzeichnis-abhängige Selbsttests zum Scheitern
+  gebracht, weil das Directory dann schon voll war, bevor sie liefen).
+  **Bugfix im Zuge dessen**: das feste `checks[64]`-Array im Selbsttest (kernel.c) war mit den
+  drei neuen Checks auf 66 Einträge gewachsen → Stack-Buffer-Overflow (per AddressSanitizer
+  verifiziert, `checks[96]` behebt es mit Luft nach oben).
+  docs/SYSCALLS.md ($8B/$89 I$Read/I$ReadLn-Blockier-Hinweis, F$Wait-Abschnitt, neuer
+  F$Sleep-Abschnitt, „Bewusste Abweichungen"-Punkt 1 aktualisiert), docs/SYSCALL_ROADMAP.md
+  (F$Sleep ✅, F$Wait-Notiz aktualisiert), docs/HANDBUCH.md (Abschnitt 5.6 Prozessmodell)
+  aktualisiert. `make clean && make native && make test` PASS, warnungsfrei; zusätzlich mit
+  AddressSanitizer/UBSan gegenverifiziert (sauber). `make wasm` baut warnungsfrei (reine
+  Kernel-Logik, kein HAL-Bezug — Browser-Verifikation nicht nötig, da keine wasm-HAL-Datei
+  berührt wurde). **Nächster Ready-Schritt: 4.4** (F$SSpd + F$SPrior).
 - **2026-07-04 — Phase 4.2 (F$Fork + F$Exit + F$Wait + F$Chain)** ✅: echte Mehrprozess-Semantik
   auf dem 4.1-Fundament. **Design-Entscheidung E9** (PROJECT.md, neu): Q9 hat vor Phase 6 keine
   68k/WASM-Ausführungs-Engine, die aus einem geladenen Modul heraus echten Byte-Code starten
