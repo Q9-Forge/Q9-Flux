@@ -362,6 +362,31 @@ Step-Funktion muss danach selbst zurückkehren, der Scheduler ruft sie erst wied
 Tick-Zähler den Zielwert erreicht hat. Außerhalb eines Prozesses (kein `q9_proc_current()`):
 `E$IPrcID`, analog zu F$Chain.
 
+### F$SSpd ($0B) — seit Phase 4.4
+
+| Register | Input                                        |
+|----------|-------------------------------------------------|
+| d0.w     | PID (0 = aufrufender Prozess)                   |
+
+Versetzt den ZIELPROZESS (nicht zwingend der Aufrufer — wie in echtem OS-9 darf jede bekannte PID
+suspendiert werden) in den Zustand `Q9_PS_WAITING` mit Weckgrund `Q9_WAIT_SIGNAL` (proc.c:
+`q9_proc_suspend`). Bewusst **ohne** eigenen Weckmechanismus: der Scheduler steppt einen so
+suspendierten Prozess nie wieder von selbst — erst `F$Send` (Phase 4.5) wird `WAITING`/`SLEEPING`
+unabhängig vom Weckgrund gewaltsam abbrechen können. `d0.w == 0` außerhalb eines Prozesses (kein
+`q9_proc_current()`): `E$IPrcID`. Unbekannte PID: `E$IPrcID`.
+
+### F$SPrior ($0D) — seit Phase 4.4
+
+| Register | Input                          | Output              |
+|----------|----------------------------------|----------------------|
+| d0.w     | PID (0 = aufrufender Prozess)   | —                    |
+| d1.b     | neue Priorität                  | alte Priorität       |
+
+Setzt das `priority`-Feld der Ziel-PID (proc.c: `q9_proc_set_priority`) und liefert den alten Wert
+zurück. **Reines Datenfeld** — der Scheduler bleibt Round-Robin, Priorisierung/Aging lohnt sich
+erst bei echter Konkurrenz um Rechenzeit (ARBEITSPLAN.md, Schritt 4.4). `d0.w == 0` außerhalb
+eines Prozesses: `E$IPrcID`. Unbekannte PID: `E$IPrcID`.
+
 ### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 MWOS-korrigiert
 
 | Register | F$Time Output                          | F$STime Input     |

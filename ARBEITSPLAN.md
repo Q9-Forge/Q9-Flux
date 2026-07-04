@@ -136,7 +136,7 @@ aus Phase 2 auf (Fork = F$Link + Descriptor + Active-Queue). Scheduler-Interna
 | 4.1 | Prozess-Descriptor-Tabelle (statisch, wie devtab): PID, Parent, Modul, Zustand, Exit-Code, eigene Std-Pfade 0/1/2; Scheduler als Round-Robin über Active in q9_kernel_step() | ✅ | Claudia | `src/kernel/proc.c/.h` neu — Details siehe „Erledigt" unten |
 | 4.2 | F$Fork + F$Exit + F$Wait + F$Chain: Prozess aus Modul starten (via Modul-Directory), beenden, auf Kind warten (E$NoChld $E2), verketten | ✅ | Claudia | Entscheidung E9 (Q9_MOD_NATIVE) — Details siehe „Erledigt" unten |
 | 4.3 | Echtes Blockieren: E$NotRdy-Provisorium (1.2) ersetzen — Waiting-Zustand + Weckgrund, /term weckt bei Eingabe (SS.Ready-Mechanik), F$Sleep (Ticks, 0 = yield) | ✅ | Claudia | Details siehe „Erledigt" unten |
-| 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | 🟢 | Claudia | Scheduler bleibt Round-Robin, Priorität erstmal nur Datenfeld — Aging lohnt erst bei echter Konkurrenz |
+| 4.4 | F$SSpd (suspendieren) + F$SPrior (Prioritätsfeld setzen) | ✅ | Claudia | Details siehe „Erledigt" unten |
 | 4.5 | Signale: F$Send, F$Icpt, F$RTE (Signal bricht Waiting/Sleeping ab, Intercept-Handler als Step-Aufruf) | 🟢 | Claudia | konzeptionell unabhängig vom Kern, bewusst eigener Schritt |
 
 ---
@@ -210,6 +210,29 @@ Zukunftsideen ohne Handlungsdruck.
 
 ## Erledigt
 
+- **2026-07-04 — Phase 4.4 (F$SSpd + F$SPrior)** ✅: zwei unabhängige, kleine Ergänzungen zum
+  Prozessmodell. **syscall.h**: neue Funktionsnummern `F_SSPD` ($0B) und `F_SPRIOR` ($0D).
+  **proc.h/.c**: vierter Weckgrund `Q9_WAIT_SIGNAL` (neuer Enum-Wert in `q9_wait_reason_t`) +
+  neues `priority`-Feld (`uint8_t`) in `q9_pd_t`. `q9_proc_suspend(pid)` versetzt eine beliebige
+  bekannte PID nach `Q9_PS_WAITING`/`Q9_WAIT_SIGNAL` — bewusst OHNE eigenen Weckcheck in
+  `q9_proc_schedule()` (der `default: return 0;`-Zweig in `wait_condition_met()` deckt das
+  automatisch ab, ganz ohne Sonderfall): ein so suspendierter Prozess bleibt dauerhaft stehen,
+  bis `F$Send` (4.5) `WAITING`/`SLEEPING` unabhängig vom Weckgrund gewaltsam abbricht.
+  `q9_proc_set_priority(pid, new, &old)` setzt/liefert das reine Datenfeld — der Scheduler
+  bleibt Round-Robin, Priorisierung/Aging lohnt sich erst bei echter Konkurrenz um Rechenzeit.
+  **syscall.c**: `F_SSPD`/`F_SPRIOR` im Dispatcher, beide mit `d0.w` = Ziel-PID (`0` = aufrufender
+  Prozess — `E$IPrcID`, falls das außerhalb eines Scheduler-Aufrufs verwendet wird, analog zu
+  F$Chain); unbekannte PID liefert ebenfalls `E$IPrcID`.
+  **Selbsttests** (kernel.c): `sspd_test_step` (zählt nur mit, wie oft der Scheduler ihn steppt)
+  beweist, dass F$SSpd den Zähler dauerhaft einfriert (kein Aufwachen ohne 4.5); F$SPrior-Check
+  setzt zweimal hintereinander die Priorität von PID 1 und prüft den jeweils zurückgelieferten
+  alten Wert, plus ein Fehlerpfad-Check je Syscall (unbekannte PID → `E$IPrcID`). Fork über
+  `q9_proc_fork()` direkt (wie schon bei 4.3), kein Modul-Directory-Slot belegt.
+  docs/SYSCALLS.md (neue $0B/$0D-Abschnitte), docs/SYSCALL_ROADMAP.md (Status-Spalten),
+  docs/HANDBUCH.md (Abschnitt 5.6 Prozessmodell) aktualisiert. `make clean && make native &&
+  make test` PASS, warnungsfrei; zusätzlich mit AddressSanitizer/UBSan gegenverifiziert (sauber).
+  `make wasm` baut warnungsfrei (reine Kernel-Logik, kein HAL-Bezug). **Nächster Ready-Schritt:
+  4.5** (Signale: F$Send/F$Icpt/F$RTE).
 - **2026-07-04 — Phase 4.3 (echtes Blockieren: Waiting/Sleeping + Weckgrund, F$Sleep)** ✅: ersetzt
   das E$NotRdy-Poll-Provisorium (I$Read/I$ReadLn seit 1.2, F$Wait seit 4.2) durch echte
   Scheduler-Zustandswechsel — kein eingefrorener Stack (E8 gilt weiter), aber der Scheduler

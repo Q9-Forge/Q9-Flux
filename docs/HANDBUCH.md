@@ -350,8 +350,18 @@ Entscheidung E8 gilt unverändert) — geblockt wird nur die Scheduler-Sicht: ei
 wartender Prozess wird schlicht nicht mehr bei jedem Tick sinnlos erneut
 gestept. `Q9_WAIT_DEVICE` prüft `SS.Ready` des Geräts (z.B. `/term`-Eingabe),
 `Q9_WAIT_CHILD` ein Zombie-Kind (F$Wait), `Q9_WAIT_TIMER` einen Tick-Zähler
-(neuer Syscall **F$Sleep**: Ticks schlafen, 0 = einmal yielden). Prioritäten
-und Signale folgen in den Schritten 4.4–4.5.
+(neuer Syscall **F$Sleep**: Ticks schlafen, 0 = einmal yielden).
+
+**Seit Phase 4.4** kommen zwei weitere, unabhängige Zusatzfunktionen dazu: ein
+vierter Weckgrund `Q9_WAIT_SIGNAL` für den neuen Syscall **F$SSpd**
+(suspendiert eine beliebige, bekannte PID nach `WAITING`) — bewusst **ohne**
+eigenen Weckcheck in `q9_proc_schedule()`, ein so suspendierter Prozess bleibt
+also dauerhaft stehen, bis `F$Send` (Phase 4.5) `WAITING`/`SLEEPING`
+unabhängig vom Weckgrund gewaltsam abbricht. Daneben **F$SPrior**: setzt ein
+neues `priority`-Feld im Prozess-Deskriptor und liefert den alten Wert zurück
+— reines Datenfeld, der Scheduler bleibt Round-Robin (Priorisierung/Aging
+lohnt sich erst bei echter Konkurrenz um Rechenzeit). Signale folgen in
+Schritt 4.5.
 
 ### 5.7 HAL-Schnittstelle
 

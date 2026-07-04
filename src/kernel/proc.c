@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   proc.c                                                                          Ver. 1.20
+// File:   proc.c                                                                          Ver. 1.30
 // Owner:  AF
 // Desc.:  Q9 Prozess-Descriptor-Tabelle + Round-Robin-Scheduler (Phase 4). Siehe proc.h fuer die
 //         Architekturentscheidung (E8, Step-Modell; E9, Q9_MOD_NATIVE-Funktionszeiger-Module).
@@ -16,6 +16,8 @@
 // 26-07-04│ 1.20 │ 4.3: Tick-Zaehler + Weckgrund-Pruefung in q9_proc_schedule;             │ CF
 //         │      │ q9_proc_wait_device/wait_child/sleep ersetzen das E$NotRdy-Poll-        │ CF
 //         │      │ Provisorium durch echtes Blockieren (WAITING/SLEEPING)                  │ CF
+// 26-07-04│ 1.30 │ 4.4: q9_proc_suspend (WAITING/Q9_WAIT_SIGNAL, ohne Weckcheck) +          │ CF
+//         │      │ q9_proc_set_priority (priority-Feld, reine Bookkeeping-Info)             │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include "device.h"
@@ -95,6 +97,7 @@ static q9_pd_t *alloc_slot(void)
             pd->wait_reason = Q9_WAIT_NONE;
             pd->wait_dev    = 0;
             pd->wake_tick   = 0;
+            pd->priority    = 0;
             return pd;
         }
     }
@@ -112,6 +115,7 @@ void q9_proc_init(q9_proc_step_fn step)
         proctab[i].wait_reason = Q9_WAIT_NONE;
         proctab[i].wait_dev    = 0;
         proctab[i].wake_tick   = 0;
+        proctab[i].priority    = 0;
     }
     scheduler_pos = -1;
     current        = 0;
@@ -312,6 +316,36 @@ void q9_proc_sleep(uint32_t pid, uint32_t ticks)
     pd->wake_tick   = q9_tick + (ticks == 0 ? 1u : ticks);
 }
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_suspend
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_suspend(uint32_t pid)
+{
+    q9_pd_t *pd = q9_proc_find(pid);
+
+    if (!pd) {
+        return E_IPRCID;
+    }
+    pd->state       = Q9_PS_WAITING;
+    pd->wait_reason = Q9_WAIT_SIGNAL;
+    return 0;
+}
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_proc_set_priority
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_proc_set_priority(uint32_t pid, uint8_t new_prio, uint8_t *out_old)
+{
+    q9_pd_t *pd = q9_proc_find(pid);
+
+    if (!pd) {
+        return E_IPRCID;
+    }
+    *out_old     = pd->priority;
+    pd->priority = new_prio;
+    return 0;
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF proc.c                                                                              Ver. 1.20
+// EOF proc.c                                                                              Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
