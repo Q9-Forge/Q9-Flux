@@ -1,0 +1,93 @@
+#!/usr/bin/expect -f
+# Save all RAM modules to CF disk - tests write functionality
+
+set timeout 180
+set CF "local_images/Q9-cb030-work-test.hda"
+
+# You need to manually provide the ROM path
+if {$argc < 1} {
+    puts "Usage: $argv0 <rom-image-path>"
+    puts "Example: $argv0 /path/to/romimage.bin"
+    exit 1
+}
+set ROM [lindex $argv 0]
+
+# Enable CF tracing
+set env(Q9_CB030_CF_TRACE) 1
+
+puts "=== CB030 Module Save Test ==="
+puts "ROM: $ROM"
+puts "CF:  $CF"
+puts ""
+
+spawn ./build/native/q9.exe --cb030 $ROM --cf $CF
+
+# Wait for shell prompt (mshell or shell)
+expect {
+    timeout { puts "\nTIMEOUT: No shell prompt"; exit 1 }
+    -re {\$ $} { puts "\nGot shell prompt!" }
+}
+
+sleep 1
+
+# Set time to avoid "Module Directory at 00:00:00" warnings
+puts "\n=== Setting time ==="
+send "setime 26/07/05 20:00:00\r"
+expect -re {\$ $}
+
+# List all modules in RAM
+puts "\n=== Listing RAM modules ==="
+send "mdir\r"
+expect -re {\$ $}
+
+# Create target directory
+puts "\n=== Creating /d0/CMDS/BOOTOBJS/RAMTEST ==="
+send "makdir /d0/CMDS/BOOTOBJS/RAMTEST\r"
+expect {
+    -re "Error #000:0\[0-9]+.*\\\$ $" {
+        puts "Directory already exists, continuing..."
+    }
+    -re {\$ $} {
+        puts "Directory created"
+    }
+}
+
+# Try to save the most common modules
+# OS9, Init, IOMan, RBF, SCF are usually in RAM
+set modules {
+    "OS9" "OS9p2" "Init" "IOMan" "RBF" "SCF"
+    "Boot" "SysMem" "Clock"
+}
+
+puts "\n=== Saving modules to CF image ==="
+foreach mod $modules {
+    puts "\n--- Saving $mod ---"
+    send "save $mod /d0/CMDS/BOOTOBJS/RAMTEST/$mod\r"
+    expect {
+        timeout {
+            puts "TIMEOUT on $mod"
+        }
+        -re "Error.*\\\$ $" {
+            puts "$mod not found or error"
+        }
+        -re {\$ $} {
+            puts "$mod saved successfully"
+        }
+    }
+    sleep 0.3
+}
+
+# Verify
+puts "\n=== Verifying saved modules ==="
+send "dir -e /d0/CMDS/BOOTOBJS/RAMTEST\r"
+expect -re {\$ $}
+
+# Count files
+send "dir /d0/CMDS/BOOTOBJS/RAMTEST ! wc\r"
+expect -re {\$ $}
+
+puts "\n=== Test complete ==="
+send "\003"
+expect eof
+
+puts "\n✓ Done! Check the CF image for saved modules."

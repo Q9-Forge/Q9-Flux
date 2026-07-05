@@ -1,0 +1,59 @@
+#!/usr/bin/expect -f
+# Automatisiertes Script: Startet CB030-Emulator und speichert alle RAM-Module
+
+set timeout 120
+set ROM "local_images/HD5-skip2-work.hda"
+set CF "local_images/Q9-cb030-work-test.hda"
+
+# Enable CF tracing
+set env(Q9_CB030_CF_TRACE) 1
+
+puts "=== Starting CB030 Emulator ==="
+spawn ./build/native/q9.exe --cb030 $ROM --cf $CF
+
+# Wait for boot and shell prompt
+expect {
+    timeout { puts "TIMEOUT waiting for prompt"; exit 1 }
+    -re ".*\\\$" { puts "Got shell prompt" }
+}
+
+send "setime\r"
+expect -re ".*\\\$"
+
+puts "\n=== Listing RAM modules ==="
+send "mdir\r"
+expect -re ".*\\\$"
+
+puts "\n=== Creating target directory ==="
+send "makdir /d0/CMDS/BOOTOBJS/RAMTEST\r"
+expect -re ".*\\\$"
+
+# List of common OS-9 modules to save
+# We'll try to save the most important ones
+set modules {
+    "OS9" "OS9p2" "IOMan" "Init" "RBF"
+    "SCF" "Boot" "SysMem" "RomInfo"
+    "CSTART" "Term" "T0" "T1"
+}
+
+puts "\n=== Saving modules to CF ==="
+foreach module $modules {
+    puts "Trying to save: $module"
+    send "save $module /d0/CMDS/BOOTOBJS/RAMTEST/$module\r"
+    expect {
+        timeout { puts "TIMEOUT on save $module" }
+        -re "Error.*\\\$" { puts "Error saving $module (might not exist)" }
+        -re ".*\\\$" { puts "Saved $module" }
+    }
+    sleep 0.2
+}
+
+puts "\n=== Verifying saved modules ==="
+send "dir /d0/CMDS/BOOTOBJS/RAMTEST\r"
+expect -re ".*\\\$"
+
+puts "\n=== Test complete, exiting ==="
+send "ex\r"
+expect eof
+
+puts "\nDone!"
