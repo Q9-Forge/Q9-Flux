@@ -102,11 +102,14 @@ typedef struct q9_cb030 {
     /* 5.2c: Compact-Flash — Backing Store lazy geoeffnet (Muster wie q9disk.img). */
     const char    *cf_path;
     FILE          *cf_file;
+    uint32_t       cf_image_sector_size;                 /* 256 fuer alte RBF-Images, sonst 512 */
     uint32_t       cf_lba;
+    uint8_t        cf_lba3;                              /* LBA bits 27..24 + DEV/LBA flags      */
     uint8_t        cf_sectcnt;
     uint8_t        cf_status;
     uint8_t        cf_sector[Q9_CB030_CF_SECTOR_SIZE];
     uint32_t       cf_pos;                              /* Index in cf_sector, 0..SECTOR_SIZE   */
+    uint32_t       cf_transfer_size;                    /* 256 fuer alte RBF-Daten, IDENTIFY 512 */
     int            cf_write_pending;                     /* 1 waehrend WRITE-SECTOR-Datenphase   */
     uint32_t       cf_remaining;                          /* 5.5a: noch ausstehende Sektoren im  */
                                                            /* laufenden Kommando (cf_sectcnt==0   */

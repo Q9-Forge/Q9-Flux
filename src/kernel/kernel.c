@@ -75,6 +75,7 @@
 #include "syscall.h"
 #include "vfs.h"
 #include "kernel.h"
+#include <stdio.h>
 #ifdef Q9_HAVE_WASM3
 #include "wasmrt.h"
 #endif
@@ -1931,6 +1932,77 @@ int q9_kernel_selftest(void)
         }
 
         checks[nchecks].name = "5.5a: CB030 Compact-Flash — Multi-Sektor WRITE/READ SECTOR(S) (2 Sektoren)";
+        checks[nchecks++].ok = ok;
+    }
+
+    {
+        /* 5.5b: RBF-Images aus OS-9/68K haben 256-Byte-LSNs. Die CF-Emulation muss solche
+           Images sektorweise in 256-Byte-Transfers bedienen, sonst bleiben save/write-Pfade
+           am Ende eines logischen Sektors haengen oder schreiben versetzt. */
+        static uint8_t ram[64];
+        q9_cb030_t     board;
+        int            ok = 0;
+        uint32_t       cf_base = Q9_CB030_CF_BASE;
+        FILE          *f;
+
+        f = fopen("cb030_cf_rbf256_test.img", "wb");
+        if (f) {
+            uint8_t lsn0[256] = {0};
+            lsn0[0] = 0x00;                              /* DD.TOT = 2 */
+            lsn0[1] = 0x00;
+            lsn0[2] = 0x02;
+            lsn0[8] = 0x00;                              /* DD.DIR = 1 */
+            lsn0[9] = 0x00;
+            lsn0[10] = 0x01;
+            lsn0[0x68] = 0x01;                           /* DD.LSNSize = 256 */
+            lsn0[0x69] = 0x00;
+            ok = (fwrite(lsn0, 1, sizeof(lsn0), f) == sizeof(lsn0));
+            for (int i = 0; i < 256 && ok; i++) {
+                ok = (fputc(0, f) != EOF);
+            }
+            ok = (fclose(f) == 0) && ok;
+        }
+
+        ok = ok && (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+        q9_cb030_reset(&board);
+        (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
+        q9_cb030_cf_attach(&board, "cb030_cf_rbf256_test.img");
+
+        q9_cb030_write8(&board, cf_base + 3, 1);          /* LBA0 */
+        q9_cb030_write8(&board, cf_base + 4, 0);          /* LBA1 */
+        q9_cb030_write8(&board, cf_base + 5, 0);          /* LBA2 */
+        q9_cb030_write8(&board, cf_base + 2, 1);          /* Sectcount */
+        q9_cb030_write8(&board, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
+        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+        for (int i = 0; i < 256; i++) {
+            q9_cb030_write8(&board, cf_base + 0, (uint8_t)(0xA0u + (uint8_t)i));
+        }
+        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+
+        {
+            q9_cb030_t board2;
+            int        read_ok;
+
+            read_ok = (q9_cb030_init(&board2, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+            q9_cb030_reset(&board2);
+            (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
+            q9_cb030_cf_attach(&board2, "cb030_cf_rbf256_test.img");
+
+            q9_cb030_write8(&board2, cf_base + 3, 1);
+            q9_cb030_write8(&board2, cf_base + 4, 0);
+            q9_cb030_write8(&board2, cf_base + 5, 0);
+            q9_cb030_write8(&board2, cf_base + 2, 1);
+            q9_cb030_write8(&board2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+
+            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+            for (int i = 0; i < 256 && read_ok; i++) {
+                read_ok = (q9_cb030_read8(&board2, cf_base + 0) == (uint8_t)(0xA0u + (uint8_t)i));
+            }
+            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+            ok = ok && read_ok;
+        }
+
+        checks[nchecks].name = "5.5b: CB030 Compact-Flash — 256-Byte-RBF-Image WRITE/READ";
         checks[nchecks++].ok = ok;
     }
 

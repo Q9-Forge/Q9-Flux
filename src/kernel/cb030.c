@@ -19,6 +19,7 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
+#include <stdlib.h>
 #include <string.h>
 
 /* 5.2c: interne ATA-Registeroffsets relativ zu Q9_CB030_CF_BASE. Nur das Minimum, das das
@@ -28,7 +29,12 @@
 #define CF_REG_LBA0     0x03u                        /* LBA Bits  7.. 0                           */
 #define CF_REG_LBA1     0x04u                        /* LBA Bits 15.. 8                           */
 #define CF_REG_LBA2     0x05u                        /* LBA Bits 23..16                           */
+#define CF_REG_LBA3     0x06u                        /* LBA/DEV: 111x + LBA Bits 27..24           */
 #define CF_REG_CMD      0x07u                        /* Kommando (schreiben) / Status (lesen)     */
+#define CF_REG_FEAT     0x01u                        /* Feature (schreiben) / Error (lesen)       */
+#define CF_CMD_IDENTIFY 0xECu
+#define RBF_DD_DIR      0x08u
+#define RBF_DD_LSNSIZE  0x68u
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: cb030_is_remap_reg
@@ -79,6 +85,17 @@ static void cb030_uart_poll_rx(q9_cb030_t *b)
 #else
 #define UART_TRACE(...)
 #endif
+
+static int cb030_cf_trace_enabled(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        cached = getenv("Q9_CB030_CF_TRACE") != 0;
+    }
+    return cached;
+}
+
+#define CF_TRACE(...) do { if (cb030_cf_trace_enabled()) fprintf(stderr, __VA_ARGS__); } while (0)
 
 static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
 {
@@ -187,6 +204,36 @@ static int cb030_cf_ensure_open(q9_cb030_t *b)
     if (!b->cf_file) {
         b->cf_file = fopen(b->cf_path, "w+b");
     }
+    if (b->cf_file && b->cf_image_sector_size == 0) {
+        uint8_t hdr[Q9_CB030_CF_SECTOR_SIZE];
+        size_t  n;
+        long    cur;
+
+        b->cf_image_sector_size = Q9_CB030_CF_SECTOR_SIZE;
+        cur = ftell(b->cf_file);
+        fseek(b->cf_file, 0, SEEK_SET);
+        n = fread(hdr, 1, sizeof(hdr), b->cf_file);
+        fseek(b->cf_file, cur, SEEK_SET);
+
+        if (n >= 128) {
+            uint32_t root_lsn = ((uint32_t)hdr[RBF_DD_DIR] << 16) |
+                                ((uint32_t)hdr[RBF_DD_DIR + 1] << 8) |
+                                 (uint32_t)hdr[RBF_DD_DIR + 2];
+            uint16_t lsn_size = (uint16_t)(((uint16_t)hdr[RBF_DD_LSNSIZE] << 8) |
+                                            (uint16_t)hdr[RBF_DD_LSNSIZE + 1]);
+            if (lsn_size == 256u) {
+                b->cf_image_sector_size = 256u;
+            } else if (root_lsn > 0) {
+                uint8_t fd0 = 0;
+                fseek(b->cf_file, (long)root_lsn * 256L, SEEK_SET);
+                if (fread(&fd0, 1, 1, b->cf_file) == 1 && (fd0 & 0x80u)) {
+                    b->cf_image_sector_size = 256u;
+                }
+                fseek(b->cf_file, cur, SEEK_SET);
+            }
+        }
+        CF_TRACE("[cf image-sector-size=%u]\n", b->cf_image_sector_size);
+    }
     return b->cf_file != NULL;
 }
 
@@ -200,10 +247,35 @@ static int cb030_cf_ensure_open(q9_cb030_t *b)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static void cb030_cf_load_sector(q9_cb030_t *b)
 {
+    uint32_t img_sec;
+
     memset(b->cf_sector, 0, Q9_CB030_CF_SECTOR_SIZE);
     if (cb030_cf_ensure_open(b)) {
-        fseek(b->cf_file, (long)b->cf_lba * Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
-        fread(b->cf_sector, 1, Q9_CB030_CF_SECTOR_SIZE, b->cf_file);
+        img_sec = b->cf_image_sector_size ? b->cf_image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+        fseek(b->cf_file, (long)b->cf_lba * (long)img_sec, SEEK_SET);
+        fread(b->cf_sector, 1, img_sec, b->cf_file);
+    }
+    if (b->cf_lba == 0 || cb030_cf_trace_enabled()) {
+        CF_TRACE("[cf read lba=%u first=%02x %02x %02x %02x %02x %02x %02x %02x]\n",
+                 b->cf_lba, b->cf_sector[0], b->cf_sector[1], b->cf_sector[2], b->cf_sector[3],
+                 b->cf_sector[4], b->cf_sector[5], b->cf_sector[6], b->cf_sector[7]);
+    }
+    b->cf_pos = 0;
+}
+
+static void cb030_cf_load_write_buffer(q9_cb030_t *b)
+{
+    uint32_t img_sec;
+
+    memset(b->cf_sector, 0, Q9_CB030_CF_SECTOR_SIZE);
+    if (cb030_cf_ensure_open(b)) {
+        img_sec = b->cf_image_sector_size ? b->cf_image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+        fseek(b->cf_file, (long)b->cf_lba * (long)img_sec, SEEK_SET);
+        fread(b->cf_sector, 1, img_sec, b->cf_file);
+        if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
+            fseek(b->cf_file, (long)(b->cf_lba + 1u) * (long)img_sec, SEEK_SET);
+            fread(b->cf_sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, b->cf_file);
+        }
     }
     b->cf_pos = 0;
 }
@@ -211,10 +283,88 @@ static void cb030_cf_load_sector(q9_cb030_t *b)
 static void cb030_cf_store_sector(q9_cb030_t *b)
 {
     if (cb030_cf_ensure_open(b)) {
-        fseek(b->cf_file, (long)b->cf_lba * Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
-        fwrite(b->cf_sector, 1, Q9_CB030_CF_SECTOR_SIZE, b->cf_file);
+        uint32_t img_sec = b->cf_image_sector_size ? b->cf_image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+        uint32_t written = b->cf_pos;
+        if (written == 0 || written > Q9_CB030_CF_SECTOR_SIZE) {
+            written = Q9_CB030_CF_SECTOR_SIZE;
+        }
+        fseek(b->cf_file, (long)b->cf_lba * (long)img_sec, SEEK_SET);
+        
+        /* For 256-byte images: write TWO sectors (matching the read behavior in load_write_buffer) */
+        if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
+            fwrite(b->cf_sector, 1, img_sec, b->cf_file);
+            fseek(b->cf_file, (long)(b->cf_lba + 1u) * (long)img_sec, SEEK_SET);
+            fwrite(b->cf_sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, b->cf_file);
+        } else {
+            fwrite(b->cf_sector, 1, written < img_sec ? written : img_sec, b->cf_file);
+        }
         fflush(b->cf_file);
     }
+    CF_TRACE("[cf write lba=%u first=%02x %02x %02x %02x %02x %02x %02x %02x]\n",
+             b->cf_lba, b->cf_sector[0], b->cf_sector[1], b->cf_sector[2], b->cf_sector[3],
+             b->cf_sector[4], b->cf_sector[5], b->cf_sector[6], b->cf_sector[7]);
+}
+
+static void cb030_cf_identify(q9_cb030_t *b)
+{
+    uint32_t sectors = 0;
+
+    memset(b->cf_sector, 0, Q9_CB030_CF_SECTOR_SIZE);
+    if (cb030_cf_ensure_open(b)) {
+        uint8_t hdr[16];
+        long cur;
+
+        cur = ftell(b->cf_file);
+        fseek(b->cf_file, 0, SEEK_SET);
+        if (fread(hdr, 1, sizeof(hdr), b->cf_file) == sizeof(hdr)) {
+            uint32_t dd_tot = ((uint32_t)hdr[0] << 16) |
+                              ((uint32_t)hdr[1] << 8) |
+                               (uint32_t)hdr[2];
+            if (dd_tot > 0) {
+                sectors = dd_tot;
+            }
+        }
+        fseek(b->cf_file, cur, SEEK_SET);
+
+        fseek(b->cf_file, 0, SEEK_END);
+        cur = ftell(b->cf_file);
+        if (sectors == 0 && cur > 0) {
+            uint32_t img_sec = b->cf_image_sector_size ? b->cf_image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+            sectors = (uint32_t)((unsigned long)cur / img_sec);
+        }
+    }
+
+    /* ATA identify words are little-endian on the data port. Word 0 = 0 means a regular ATA
+       device; words 60/61 report total LBA28 sectors. */
+    b->cf_sector[120] = (uint8_t)(sectors & 0xFFu);
+    b->cf_sector[121] = (uint8_t)((sectors >> 8) & 0xFFu);
+    b->cf_sector[122] = (uint8_t)((sectors >> 16) & 0xFFu);
+    b->cf_sector[123] = (uint8_t)((sectors >> 24) & 0xFFu);
+    b->cf_pos = 0;
+    b->cf_transfer_size = Q9_CB030_CF_SECTOR_SIZE;
+    CF_TRACE("[cf identify sectors=%u]\n", sectors);
+}
+
+static uint32_t cb030_cf_read_transfer_size(q9_cb030_t *b)
+{
+    uint32_t size;
+
+    if (!cb030_cf_ensure_open(b)) {
+        return Q9_CB030_CF_SECTOR_SIZE;
+    }
+    size = b->cf_image_sector_size ? b->cf_image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+    return (size < Q9_CB030_CF_SECTOR_SIZE) ? size : Q9_CB030_CF_SECTOR_SIZE;
+}
+
+static uint32_t cb030_cf_write_transfer_size(q9_cb030_t *b)
+{
+    uint32_t size;
+
+    if (!cb030_cf_ensure_open(b)) {
+        return Q9_CB030_CF_SECTOR_SIZE;
+    }
+    size = b->cf_image_sector_size ? b->cf_image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+    return (size < Q9_CB030_CF_SECTOR_SIZE) ? size : Q9_CB030_CF_SECTOR_SIZE;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -234,9 +384,10 @@ static uint8_t cb030_cf_read(q9_cb030_t *b, uint32_t off)
         return b->cf_status;
     }
     if (off == CF_REG_DATA) {
-        if (b->cf_pos < Q9_CB030_CF_SECTOR_SIZE) {
+        uint32_t xfer_size = b->cf_transfer_size ? b->cf_transfer_size : Q9_CB030_CF_SECTOR_SIZE;
+        if (b->cf_pos < xfer_size) {
             uint8_t v = b->cf_sector[b->cf_pos++];
-            if (b->cf_pos >= Q9_CB030_CF_SECTOR_SIZE) {
+            if (b->cf_pos >= xfer_size) {
                 b->cf_remaining--;
                 b->cf_lba++;
                 if (b->cf_remaining > 0) {
@@ -256,6 +407,8 @@ static uint8_t cb030_cf_read(q9_cb030_t *b, uint32_t off)
 static void cb030_cf_write(q9_cb030_t *b, uint32_t off, uint8_t val)
 {
     switch (off) {
+    case CF_REG_FEAT:
+        return;                                           /* 8-bit feature wird beim Kommando angenommen */
     case CF_REG_SECCNT:
         b->cf_sectcnt = val;
         return;
@@ -268,10 +421,14 @@ static void cb030_cf_write(q9_cb030_t *b, uint32_t off, uint8_t val)
     case CF_REG_LBA2:
         b->cf_lba = (b->cf_lba & 0xFF00FFFFu) | ((uint32_t)val << 16);
         return;
+    case CF_REG_LBA3:
+        b->cf_lba3 = val;
+        b->cf_lba = (b->cf_lba & 0x00FFFFFFu) | ((uint32_t)(val & 0x0Fu) << 24);
+        return;
     case CF_REG_DATA:
-        if (b->cf_write_pending && b->cf_pos < Q9_CB030_CF_SECTOR_SIZE) {
+        if (b->cf_write_pending && b->cf_pos < b->cf_transfer_size) {
             b->cf_sector[b->cf_pos++] = val;
-            if (b->cf_pos >= Q9_CB030_CF_SECTOR_SIZE) {
+            if (b->cf_pos >= b->cf_transfer_size) {
                 cb030_cf_store_sector(b);
                 b->cf_remaining--;
                 b->cf_lba++;
@@ -286,20 +443,29 @@ static void cb030_cf_write(q9_cb030_t *b, uint32_t off, uint8_t val)
         }
         return;
     case CF_REG_CMD:
+        CF_TRACE("[cf cmd=%02x count=%u lba=%u lba3=%02x]\n",
+                 val, b->cf_sectcnt ? b->cf_sectcnt : 256u, b->cf_lba, b->cf_lba3);
         if (val == Q9_CB030_CF_CMD_READ) {
             b->cf_remaining = b->cf_sectcnt ? b->cf_sectcnt : 256u;
+            b->cf_transfer_size = cb030_cf_read_transfer_size(b);
             cb030_cf_load_sector(b);
             b->cf_write_pending = 0;
             b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
         } else if (val == Q9_CB030_CF_CMD_WRITE) {
             b->cf_remaining = b->cf_sectcnt ? b->cf_sectcnt : 256u;
-            b->cf_pos = 0;
+            b->cf_transfer_size = cb030_cf_write_transfer_size(b);
+            cb030_cf_load_write_buffer(b);
             b->cf_write_pending = 1;
             b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
         } else if (val == Q9_CB030_CF_CMD_SETFEAT) {
             /* SET FEATURES (z.B. 8-Bit-Mode, den der CB030-Boot-Treiber setzt): kommentarlos
                annehmen — unser Datenregister ist ohnehin byteweise (s. cb030_cf_read). */
             b->cf_status = Q9_CB030_CF_STAT_RDY;
+        } else if (val == CF_CMD_IDENTIFY) {
+            b->cf_remaining = 1;
+            cb030_cf_identify(b);
+            b->cf_write_pending = 0;
+            b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
         } else {
             b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_ERR);
         }
@@ -431,7 +597,20 @@ void q9_cb030_reset(q9_cb030_t *b)
 
 void q9_cb030_cf_attach(q9_cb030_t *b, const char *path)
 {
+    if (b->cf_file) {
+        fclose(b->cf_file);
+    }
     b->cf_path = path;
+    b->cf_file = NULL;
+    b->cf_image_sector_size = 0;
+    b->cf_lba = 0;
+    b->cf_lba3 = 0;
+    b->cf_sectcnt = 0;
+    b->cf_pos = 0;
+    b->cf_transfer_size = 0;
+    b->cf_write_pending = 0;
+    b->cf_remaining = 0;
+    b->cf_status = Q9_CB030_CF_STAT_RDY;
 }
 
 int q9_cb030_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t *out_len)
@@ -471,6 +650,11 @@ uint8_t q9_cb030_read8(q9_cb030_t *b, uint32_t addr)
 
 uint16_t q9_cb030_read16(q9_cb030_t *b, uint32_t addr)
 {
+    if (addr == Q9_CB030_CF_BASE) {
+        uint16_t hi = cb030_cf_read(b, CF_REG_DATA);
+        uint16_t lo = cb030_cf_read(b, CF_REG_DATA);
+        return (uint16_t)((hi << 8) | lo);
+    }
     uint16_t hi = cb030_read_byte(b, addr);
     uint16_t lo = cb030_read_byte(b, addr + 1);
     return (uint16_t)((hi << 8) | lo);
@@ -478,6 +662,13 @@ uint16_t q9_cb030_read16(q9_cb030_t *b, uint32_t addr)
 
 uint32_t q9_cb030_read32(q9_cb030_t *b, uint32_t addr)
 {
+    if (addr == Q9_CB030_CF_BASE) {
+        uint32_t b0 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b1 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b2 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b3 = cb030_cf_read(b, CF_REG_DATA);
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+    }
     uint32_t b0 = cb030_read_byte(b, addr);
     uint32_t b1 = cb030_read_byte(b, addr + 1);
     uint32_t b2 = cb030_read_byte(b, addr + 2);
@@ -492,12 +683,24 @@ void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val)
 
 void q9_cb030_write16(q9_cb030_t *b, uint32_t addr, uint16_t val)
 {
+    if (addr == Q9_CB030_CF_BASE) {
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
+        return;
+    }
     cb030_write_byte(b, addr, (uint8_t)(val >> 8));
     cb030_write_byte(b, addr + 1, (uint8_t)val);
 }
 
 void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val)
 {
+    if (addr == Q9_CB030_CF_BASE) {
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 24));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 16));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
+        return;
+    }
     cb030_write_byte(b, addr, (uint8_t)(val >> 24));
     cb030_write_byte(b, addr + 1, (uint8_t)(val >> 16));
     cb030_write_byte(b, addr + 2, (uint8_t)(val >> 8));

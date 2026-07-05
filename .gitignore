@@ -14,12 +14,14 @@ cb030_cf_test.img
 
 # CB030-Compact-Flash-Multi-Sektor-Testimage (5.5a)
 cb030_cf_multi_test.img
+cb030_cf_rbf256_test.img
 
 # CB030-Boot-Betrieb (5.3): CF-Image des Runners + lokale Boot-ROM-Images
 # (das Microware-ROM ist proprietaer und darf NIE ins Repository, s. docs/CB030.md)
 cb030_cf.img
 cb030rom*.bin
 *.rom
+local_images/
 
 # Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
 *.wasm.map
