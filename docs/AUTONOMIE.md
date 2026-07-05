@@ -176,5 +176,21 @@ den Compare-Link noch selbst öffnen muss.
   `gh pr create` aus, muss Andreas den PR sogar selbst über den Compare-Link
   anlegen — bekannte Einschränkung dieser Sandbox-Umgebung, siehe Schritt 7
   im Prompt oben).
+- **GitHub Copilot CLI** (`copilot`, seit 2026-07-05, noch KEIN fester
+  Delegations-Track wie Codex — bisher nur manuell von Andreas ausprobiert,
+  s. Chat-Verlauf) läuft bei Andreas auf dem alten Legacy-Multiplikator-
+  Abrechnungsmodell, nicht auf Token-Preisen. Andreas' reale Werte
+  (`/model` in der interaktiven CLI, 2026-07-05): **Claude Haiku 4.5 = 0,33×,
+  Claude Sonnet 4.5 = 6×, Claude Opus 4.5 = 15×, GPT-5 mini = 0,33×,
+  GPT-4.1 = 0× (kostenlos)** — Sonnet verbraucht damit **~18× so viel**
+  Kontingent wie Haiku pro Prompt. Faustregel, falls/wenn Copilot als
+  zweiter Delegations-Track aufgesetzt wird: **Haiku als Standard**
+  (mechanische Arbeit: Boilerplate, Tests nach klarem Muster, Doku-Updates),
+  **Sonnet nur gezielt** für Aufgaben mit echter architektonischer Tiefe
+  (Analogon zu den harten Musashi-MMU/FPU-Debugging-Sessions), **GPT-4.1**
+  als kostenloser Fallback für Wegwerf-Experimente/schnelle Nachfragen.
+  Nicht-interaktiver Aufruf: `copilot -p "<prompt>" --model claude-haiku-4.5
+  --allow-all-tools --add-dir <verzeichnis>` (Modell explizit setzen, sonst
+  greift die zuletzt in der interaktiven Sitzung gewählte Vorgabe).
 
 **Erstellt**: 2026-07-03
