@@ -1871,6 +1871,70 @@ int q9_kernel_selftest(void)
     }
 
     {
+        /* 5.5a: Compact-Flash Multi-Sektor — 2 Sektoren mit EINEM WRITE-SECTOR(S)-Kommando
+           schreiben (Sectcount=2, 1024 Byte am Stueck), dann mit EINEM READ-SECTOR(S)-Kommando
+           wieder zuruecklesen; DRQ muss ueber die Sektorgrenze hinweg gesetzt bleiben und erst
+           nach dem zweiten Sektor geloescht werden. */
+        static uint8_t ram[64];
+        q9_cb030_t     board;
+        int            ok;
+        uint32_t       cf_base = Q9_CB030_CF_BASE;
+
+        ok = (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+        q9_cb030_reset(&board);
+        (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
+        q9_cb030_cf_attach(&board, "cb030_cf_multi_test.img");
+
+        /* LBA 0, 2 Sektoren, WRITE SECTOR(S): 1024 Byte Testmuster (0x00..0xFF wiederholt)
+           in einem Rutsch schreiben — kein zweites Kommando dazwischen. */
+        q9_cb030_write8(&board, cf_base + 3, 0);            /* LBA0 */
+        q9_cb030_write8(&board, cf_base + 4, 0);            /* LBA1 */
+        q9_cb030_write8(&board, cf_base + 5, 0);            /* LBA2 */
+        q9_cb030_write8(&board, cf_base + 2, 2);            /* Sectcount = 2 */
+        q9_cb030_write8(&board, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
+        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+        for (int i = 0; i < 1024; i++) {
+            /* DRQ muss nach dem ersten Sektor (i==511->512) noch gesetzt sein. */
+            if (i == 512) {
+                ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+            }
+            q9_cb030_write8(&board, cf_base + 0, (uint8_t)i);
+        }
+        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+
+        /* Frische Instanz (simuliert Neustart) liest beide Sektoren ueber EIN READ SECTOR(S) zurueck. */
+        {
+            q9_cb030_t board2;
+            int        read_ok;
+
+            read_ok = (q9_cb030_init(&board2, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
+            q9_cb030_reset(&board2);
+            (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
+            q9_cb030_cf_attach(&board2, "cb030_cf_multi_test.img");
+
+            q9_cb030_write8(&board2, cf_base + 3, 0);
+            q9_cb030_write8(&board2, cf_base + 4, 0);
+            q9_cb030_write8(&board2, cf_base + 5, 0);
+            q9_cb030_write8(&board2, cf_base + 2, 2);       /* Sectcount = 2 */
+            q9_cb030_write8(&board2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+
+            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+            for (int i = 0; i < 1024 && read_ok; i++) {
+                if (i == 512) {
+                    read_ok = read_ok
+                        && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+                }
+                read_ok = read_ok && (q9_cb030_read8(&board2, cf_base + 0) == (uint8_t)i);
+            }
+            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+            ok = ok && read_ok;
+        }
+
+        checks[nchecks].name = "5.5a: CB030 Compact-Flash — Multi-Sektor WRITE/READ SECTOR(S) (2 Sektoren)";
+        checks[nchecks++].ok = ok;
+    }
+
+    {
         /* 5.2d: Timer/IRQ3 — kooperative Host-Zeitpruefung (s. docs/CB030.md), noch OHNE
            tatsaechlichen m68k_set_irq()-Aufruf (das ist Sache des Aufrufers/der Scheduler-
            Integration, hier wird nur q9_cb030_poll_timer's Signal geprueft). */

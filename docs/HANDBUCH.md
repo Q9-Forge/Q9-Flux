@@ -207,10 +207,12 @@ Q9/
 │   │   │                       68681-DUART, Compact-Flash (ATA-PIO), Timer/IRQ3 (kooperativ)
 │   │   │                       und ROM-Datei-Lader (q9_cb030_rom_load), alles als eigenes
 │   │   │                       Handle (q9_cb030_t) ohne Musashi-Abhaengigkeit
-│   │   └── cb030run.c/.h      CB030-Boot-Runner (Schritt 5.3, NUR im nativen Build) —
-│   │                           Einstiegspunkt fuer `q9.exe --cb030 <rom-datei>`: ROM laden,
-│   │                           Board+Musashi verdrahten, CPU-Endlosschleife mit Timer-Polling
-│   │                           (das echte Microware-ROM bleibt lokal, NIE im Repository)
+│   │   └── cb030run.c/.h      CB030-Boot-Runner (Schritte 5.3/5.5a, NUR im nativen Build) —
+│   │                           Einstiegspunkt fuer `q9.exe --cb030 <rom-datei> [--cf <image>]`:
+│   │                           ROM laden, Board+Musashi verdrahten, CPU-Endlosschleife mit
+│   │                           Timer-Polling (das echte Microware-ROM bleibt lokal, NIE im
+│   │                           Repository); `--cf` waehlt optional ein eigenes CF-Backing-Image
+│   │                           statt des Default `cb030_cf.img`
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -716,15 +718,19 @@ erreichbar (die DUART wird vor dem Remap initialisiert). Der Boot-Runner
 (`cb030run.c`) macht daraus ein Kommando:
 
 ```
-./build/native/q9.exe --cb030 <pfad-zum-rom-image>
+./build/native/q9.exe --cb030 <pfad-zum-rom-image> [--cf <pfad-zum-cf-image>]
 ```
 
 Lädt das ROM (max. 512 KByte, `q9_cb030_rom_load`), stellt 16 MByte
-emuliertes RAM, hängt die CF-Backing-Datei `cb030_cf.img` an (lazy angelegt)
-und lässt die CPU laufen (Ende: Ctrl-C). Das echte Microware-Boot-ROM ist
-proprietär und bleibt lokal — `.gitignore` deckt `cb030rom*.bin`/`*.rom` ab.
-Der Selbsttest bootet stattdessen ein synthetisches 32-Byte-ROM über exakt
-dasselbe Bootmuster (Vektoren aus dem ROM, Sprung hoch, REMAP, RAM-Schreiben).
+emuliertes RAM, hängt die CF-Backing-Datei an (lazy angelegt — standardmäßig
+`cb030_cf.img`, mit `--cf` ein beliebiger anderer Pfad, 5.5a) und lässt die
+CPU laufen (Ende: Ctrl-C). Das echte Microware-Boot-ROM ist proprietär und
+bleibt lokal — `.gitignore` deckt `cb030rom*.bin`/`*.rom` ab. Der Selbsttest
+bootet stattdessen ein synthetisches 32-Byte-ROM über exakt dasselbe
+Bootmuster (Vektoren aus dem ROM, Sprung hoch, REMAP, RAM-Schreiben). Die
+CF-Emulation (`cb030_cf_read/write`) zählt READ/WRITE SECTOR(S) seit 5.5a
+echt über mehrere Sektoren durch (Sector-Count 0 = 256 Sektoren, ATA-
+Konvention) statt nur einen Sektor pro Kommando zu bedienen.
 
 ---
 
