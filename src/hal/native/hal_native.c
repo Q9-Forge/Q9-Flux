@@ -127,9 +127,10 @@ const char *q9_hal_target(void)
 // Function: main
 // Desc.:    Host-Loop: initialisiert HAL + Kernel und ruft q9_kernel_step() zyklisch auf.
 //           Mit --selftest: 100 Ticks laufen lassen, "SELFTEST PASS" ausgeben, Exit 0.
-//           Mit --cb030 <rom>: statt des Q9-Kernels das emulierte CB030-Board mit dem
-//           angegebenen Boot-ROM starten (5.3, s. cb030run.h) — Ende per Ctrl-C.
-// Call:     q9.exe [--selftest | --cb030 <rom-datei>]
+//           Mit --cb030 <rom> [--cf <image>]: statt des Q9-Kernels das emulierte CB030-Board
+//           mit dem angegebenen Boot-ROM starten (5.3, s. cb030run.h), optional mit eigenem
+//           CF-Backing-Image statt "cb030_cf.img" (5.5a) — Ende per Ctrl-C.
+// Call:     q9.exe [--selftest | --cb030 <rom-datei> [--cf <image>]]
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
@@ -137,8 +138,12 @@ int main(int argc, char **argv)
 
 #ifdef Q9_HAVE_M68K
     if (argc > 2 && strcmp(argv[1], "--cb030") == 0) {
+        const char *cf_path = NULL;
+        if (argc > 4 && strcmp(argv[3], "--cf") == 0) {
+            cf_path = argv[4];
+        }
         q9_hal_init();
-        return q9_cb030_boot(argv[2]);
+        return q9_cb030_boot(argv[2], cf_path);
     }
 #endif
 

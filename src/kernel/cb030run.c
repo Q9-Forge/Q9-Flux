@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030run.c                                                                      Ver. 1.00
+// File:   cb030run.c                                                                      Ver. 1.10
 // Owner:  AF
 // Desc.:  Implementierung des CB030-Boot-Runners, siehe cb030run.h.
 //
@@ -8,6 +8,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-05│ 1.00 │ 5.3: Erster Boot-Runner                                                 │ CF
+// 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (NULL = Default CB030_CF_IMAGE)                 │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
@@ -26,11 +27,15 @@
 static uint8_t cb030_ram[CB030_RAM_BYTES];
 static uint8_t cb030_rom[CB030_ROM_MAX];
 
-int q9_cb030_boot(const char *rom_path)
+int q9_cb030_boot(const char *rom_path, const char *cf_path)
 {
     static q9_cb030_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
     q9_m68krt_t       rt;
     uint32_t          rom_len = 0;
+
+    if (cf_path == NULL || cf_path[0] == '\0') {
+        cf_path = CB030_CF_IMAGE;                       /* Andreas' fertige Images bleiben unangetastet */
+    }
 
     if (q9_cb030_rom_load(rom_path, cb030_rom, sizeof(cb030_rom), &rom_len) != Q9_CB030_OK) {
         fprintf(stderr, "cb030: ROM-Datei '%s' nicht lesbar (fehlt, leer oder > %u KByte)\n",
@@ -39,11 +44,11 @@ int q9_cb030_boot(const char *rom_path)
     }
 
     printf("cb030: ROM '%s' geladen (%u Byte), %u MByte RAM, CF -> %s — Reset.\n",
-           rom_path, rom_len, CB030_RAM_BYTES / (1024u * 1024u), CB030_CF_IMAGE);
+           rom_path, rom_len, CB030_RAM_BYTES / (1024u * 1024u), cf_path);
     fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
 
     q9_cb030_init(&board, cb030_rom, rom_len, cb030_ram, sizeof(cb030_ram));
-    q9_cb030_cf_attach(&board, CB030_CF_IMAGE);
+    q9_cb030_cf_attach(&board, cf_path);
 
     q9_m68krt_init(&rt, cb030_ram, sizeof(cb030_ram));
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */

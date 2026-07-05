@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 1.40
+// File:   cb030.h                                                                         Ver. 1.50
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
@@ -30,6 +30,8 @@
 //         │      │ s. docs/CB030.md Speicherkarte — noetig, weil das echte Boot-ROM vor      │
 //         │      │ dem REMAP hoch nach 0xFE00_xxxx springt), I/O auch VOR dem Remap          │
 //         │      │ erreichbar, neuer Lade-Helfer q9_cb030_rom_load                           │
+// 26-07-05│ 1.50 │ 5.5a: CF-Multi-Sektor — READ/WRITE SECTOR(S) zaehlen cf_sectcnt jetzt      │ CF
+//         │      │ echt durch (0 = 256 Sektoren, ATA-Konvention), neues cf_remaining          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
@@ -106,6 +108,9 @@ typedef struct q9_cb030 {
     uint8_t        cf_sector[Q9_CB030_CF_SECTOR_SIZE];
     uint32_t       cf_pos;                              /* Index in cf_sector, 0..SECTOR_SIZE   */
     int            cf_write_pending;                     /* 1 waehrend WRITE-SECTOR-Datenphase   */
+    uint32_t       cf_remaining;                          /* 5.5a: noch ausstehende Sektoren im  */
+                                                           /* laufenden Kommando (cf_sectcnt==0   */
+                                                           /* bedeutet 256, ATA-Konvention)        */
 
     /* 5.2d: Timer/IRQ3 — kooperativ per Host-Uhrzeit, s. q9_cb030_poll_timer. */
     int            timer_active;

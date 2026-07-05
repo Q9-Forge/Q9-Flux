@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 1.40
+// File:   cb030.c                                                                         Ver. 1.50
 // Owner:  AF
 // Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
 //
@@ -13,6 +13,9 @@
 // 26-07-04│ 1.30 │ 5.2d: Timer/IRQ3 (kooperative Host-Zeitpruefung)                         │ CF
 // 26-07-05│ 1.40 │ 5.3: Spiegelgrenze bis 0xFEFF_FFFF (statt 0x0800_0000), I/O vor dem       │ CF
 //         │      │ Remap erreichbar (Dispatch umgestellt), q9_cb030_rom_load neu             │
+// 26-07-05│ 1.50 │ 5.5a: CF-Multi-Sektor — READ/WRITE SECTOR(S) zaehlen cf_sectcnt jetzt      │ CF
+//         │      │ echt durch (0 = 256 Sektoren), Puffer wird pro Sektor nachgeladen/          │
+//         │      │ geschrieben, DRQ bleibt bis zum letzten Sektor gesetzt                     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -188,11 +191,42 @@ static int cb030_cf_ensure_open(q9_cb030_t *b)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: cb030_cf_load_sector / cb030_cf_store_sector
+// Desc.:    5.5a: Ein einzelner Sektor-Transfer zwischen Backing-Datei und cf_sector, an der
+//           aktuellen b->cf_lba. Ausgelagert aus cb030_cf_write, weil READ/WRITE SECTOR(S) jetzt
+//           mehrere Sektoren hintereinander bedienen (s. cb030_cf_read/write unten) und pro
+//           Sektor genau dieselben zwei Operationen brauchen.
+// Call:     cb030_cf_load_sector(b); ... cb030_cf_store_sector(b);
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void cb030_cf_load_sector(q9_cb030_t *b)
+{
+    memset(b->cf_sector, 0, Q9_CB030_CF_SECTOR_SIZE);
+    if (cb030_cf_ensure_open(b)) {
+        fseek(b->cf_file, (long)b->cf_lba * Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
+        fread(b->cf_sector, 1, Q9_CB030_CF_SECTOR_SIZE, b->cf_file);
+    }
+    b->cf_pos = 0;
+}
+
+static void cb030_cf_store_sector(q9_cb030_t *b)
+{
+    if (cb030_cf_ensure_open(b)) {
+        fseek(b->cf_file, (long)b->cf_lba * Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
+        fwrite(b->cf_sector, 1, Q9_CB030_CF_SECTOR_SIZE, b->cf_file);
+        fflush(b->cf_file);
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: cb030_cf_read / cb030_cf_write
-// Desc.:    5.2c: ATA-PIO-Minimalprotokoll — nur READ SECTOR(S) (0x20) und WRITE SECTOR(S) (0x30),
-//           je genau ein Sektor pro Kommando (Sector-Count wird angenommen, aber fuer den ersten
-//           Ausbaustand nicht mehrfach durchgezaehlt). Datenregister ist 8-Bit-weise adressiert
-//           (ein Byte pro Zugriff, cf_pos zaehlt 0..511 hoch).
+// Desc.:    5.2c/5.5a: ATA-PIO-Minimalprotokoll — READ SECTOR(S) (0x20) und WRITE SECTOR(S)
+//           (0x30) zaehlen den Sector-Count jetzt echt durch (cf_remaining, 0 in CF_REG_SECCNT
+//           bedeutet 256 Sektoren, ATA-Konvention): nach jedem vollen Sektor wird die LBA
+//           weitergezaehlt und — solange noch Sektoren ausstehen — der naechste Sektor
+//           nachgeladen (Read) bzw. angenommen (Write), DRQ bleibt dabei gesetzt; erst beim
+//           letzten Sektor wird DRQ geloescht (Read) bzw. cf_write_pending beendet (Write).
+//           Datenregister ist 8-Bit-weise adressiert (ein Byte pro Zugriff, cf_pos zaehlt
+//           0..511 pro Sektor hoch).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint8_t cb030_cf_read(q9_cb030_t *b, uint32_t off)
 {
@@ -203,7 +237,14 @@ static uint8_t cb030_cf_read(q9_cb030_t *b, uint32_t off)
         if (b->cf_pos < Q9_CB030_CF_SECTOR_SIZE) {
             uint8_t v = b->cf_sector[b->cf_pos++];
             if (b->cf_pos >= Q9_CB030_CF_SECTOR_SIZE) {
-                b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY);   /* DRQ fertig geloescht */
+                b->cf_remaining--;
+                b->cf_lba++;
+                if (b->cf_remaining > 0) {
+                    cb030_cf_load_sector(b);              /* naechster Sektor, DRQ bleibt gesetzt */
+                    b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
+                } else {
+                    b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY);   /* DRQ fertig geloescht */
+                }
             }
             return v;
         }
@@ -231,27 +272,27 @@ static void cb030_cf_write(q9_cb030_t *b, uint32_t off, uint8_t val)
         if (b->cf_write_pending && b->cf_pos < Q9_CB030_CF_SECTOR_SIZE) {
             b->cf_sector[b->cf_pos++] = val;
             if (b->cf_pos >= Q9_CB030_CF_SECTOR_SIZE) {
-                if (cb030_cf_ensure_open(b)) {
-                    fseek(b->cf_file, (long)b->cf_lba * Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
-                    fwrite(b->cf_sector, 1, Q9_CB030_CF_SECTOR_SIZE, b->cf_file);
-                    fflush(b->cf_file);
+                cb030_cf_store_sector(b);
+                b->cf_remaining--;
+                b->cf_lba++;
+                if (b->cf_remaining > 0) {
+                    b->cf_pos = 0;                        /* naechster Sektor, DRQ bleibt gesetzt */
+                    b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
+                } else {
+                    b->cf_write_pending = 0;
+                    b->cf_status = Q9_CB030_CF_STAT_RDY;
                 }
-                b->cf_write_pending = 0;
-                b->cf_status = Q9_CB030_CF_STAT_RDY;
             }
         }
         return;
     case CF_REG_CMD:
         if (val == Q9_CB030_CF_CMD_READ) {
-            memset(b->cf_sector, 0, Q9_CB030_CF_SECTOR_SIZE);
-            if (cb030_cf_ensure_open(b)) {
-                fseek(b->cf_file, (long)b->cf_lba * Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
-                fread(b->cf_sector, 1, Q9_CB030_CF_SECTOR_SIZE, b->cf_file);
-            }
-            b->cf_pos = 0;
+            b->cf_remaining = b->cf_sectcnt ? b->cf_sectcnt : 256u;
+            cb030_cf_load_sector(b);
             b->cf_write_pending = 0;
             b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
         } else if (val == Q9_CB030_CF_CMD_WRITE) {
+            b->cf_remaining = b->cf_sectcnt ? b->cf_sectcnt : 256u;
             b->cf_pos = 0;
             b->cf_write_pending = 1;
             b->cf_status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
