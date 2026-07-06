@@ -29,6 +29,52 @@
 #define DISK_IMAGE "q9disk.img"
 
 static FILE *disk = NULL;
+static unsigned char keybuf[8];
+static int keybuf_head = 0;
+static int keybuf_tail = 0;
+
+static BOOL WINAPI q9_console_ctrl_handler(DWORD event)
+{
+    if (event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void keybuf_push(unsigned char c)
+{
+    int next = (keybuf_tail + 1) % (int)sizeof(keybuf);
+    if (next != keybuf_head) {
+        keybuf[keybuf_tail] = c;
+        keybuf_tail = next;
+    }
+}
+
+static int keybuf_pop(void)
+{
+    int c;
+    if (keybuf_head == keybuf_tail) {
+        return -1;
+    }
+    c = keybuf[keybuf_head];
+    keybuf_head = (keybuf_head + 1) % (int)sizeof(keybuf);
+    return c;
+}
+
+static void keybuf_push_csi(char final)
+{
+    keybuf_push(0x1b);
+    keybuf_push('[');
+    keybuf_push((unsigned char)final);
+}
+
+static void keybuf_push_csi_tilde(char code)
+{
+    keybuf_push(0x1b);
+    keybuf_push('[');
+    keybuf_push((unsigned char)code);
+    keybuf_push('~');
+}
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ HAL IMPLEMENTATION                                                                           ║
@@ -36,7 +82,16 @@ static FILE *disk = NULL;
 
 void q9_hal_init(void)
 {
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD  mode;
+
     SetConsoleOutputCP(CP_UTF8);                       /* kernel output is a UTF-8 byte stream   */
+    SetConsoleCtrlHandler(q9_console_ctrl_handler, TRUE);
+
+    if (input != INVALID_HANDLE_VALUE && GetConsoleMode(input, &mode)) {
+        mode &= ~ENABLE_PROCESSED_INPUT;               /* pass Ctrl-C and extended keys to guest */
+        SetConsoleMode(input, mode);
+    }
 }
 
 void q9_hal_con_put(char c)
@@ -47,8 +102,31 @@ void q9_hal_con_put(char c)
 
 int q9_hal_con_get(void)
 {
+    int queued = keybuf_pop();
+    if (queued >= 0) {
+        return queued;
+    }
+
     if (_kbhit()) {
-        return _getch();
+        int c = _getch();
+        if (c == 0 || c == 0xe0) {
+            int scan = _getch();
+            switch (scan) {
+            case 0x48: keybuf_push_csi('A'); break;     /* Up       */
+            case 0x50: keybuf_push_csi('B'); break;     /* Down     */
+            case 0x4b: keybuf_push_csi('D'); break;     /* Left     */
+            case 0x4d: keybuf_push_csi('C'); break;     /* Right    */
+            case 0x47: keybuf_push_csi('H'); break;     /* Home     */
+            case 0x4f: keybuf_push_csi('F'); break;     /* End      */
+            case 0x52: keybuf_push_csi_tilde('2'); break; /* Insert */
+            case 0x53: keybuf_push_csi_tilde('3'); break; /* Delete */
+            case 0x49: keybuf_push_csi_tilde('5'); break; /* PageUp */
+            case 0x51: keybuf_push_csi_tilde('6'); break; /* PageDn */
+            default: return -1;
+            }
+            return keybuf_pop();
+        }
+        return c;
     }
     return -1;
 }

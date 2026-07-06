@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <signal.h>
 
 #include "../q9_hal.h"
 #include "../../kernel/kernel.h"
@@ -48,6 +49,13 @@ static void restore_termios(void)
     }
 }
 
+static void restore_termios_on_signal(int sig)
+{
+    restore_termios();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
 void q9_hal_init(void)
 {
     struct termios raw;
@@ -55,15 +63,21 @@ void q9_hal_init(void)
     if (tcgetattr(STDIN_FILENO, &orig_termios) == 0) {
         termios_saved = 1;
         atexit(restore_termios);
+        signal(SIGTERM, restore_termios_on_signal);
+        signal(SIGHUP,  restore_termios_on_signal);
 
         raw = orig_termios;
-        raw.c_lflag &= (tcflag_t)~(ICANON | ECHO);        /* kein Zeilenpuffer, kein lokales Echo   */
-        raw.c_iflag &= (tcflag_t)~(ICRNL | INLCR | IGNCR | IXON);
+        raw.c_lflag &= (tcflag_t)~(ICANON | ECHO | ISIG | IEXTEN);
+                                                           /* kein Zeilenpuffer, kein lokales Echo,
+                                                              keine Host-Signale: Ctrl-C/Z/\\ sollen
+                                                              als echte Eingaben bei OS-9 ankommen  */
+        raw.c_iflag &= (tcflag_t)~(ICRNL | INLCR | IGNCR | IXON | IXOFF | ISTRIP);
                                                            /* 5.2e: transparente Leitung — Enter muss
                                                               als CR (0x0D) durchkommen (OS-9s SCF
                                                               erwartet CR als Zeilenende; ICRNL wuerde
                                                               es zu LF verbiegen), keine LF/CR-Um-
                                                               schreibung, kein Ctrl-S/Q-Abfangen     */
+        raw.c_oflag &= (tcflag_t)~OPOST;
         raw.c_cc[VMIN]  = 0;                               /* read() liefert sofort zurueck          */
         raw.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSANOW, &raw);
