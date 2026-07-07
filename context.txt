@@ -20,6 +20,37 @@
 - [ ] 8. Phase 8: Vision (6809-Runtime, Netzwerk, wasm2c, Self-Hosting)
 
 # Letzter Arbeitsstand
+
+Zuletzt bearbeitet: 2026-07-07 (Windows AF-PC, CB030/OS9SYS-CF-Boot).
+OS9SYS-CF-Boot funktioniert lokal: `local_images/OS9SYS.hda` bootet mit
+`romimage.dev.running.BIN` direkt von CompactFlash, erkennt `OS9Boot`, startet
+den CF-Treiber und fuehrt das CF-`startup` aus (`iniz /dd`, `iniz /c0`,
+`chx /c0/CMDS`, `chd /c0`, `setenv TERM q9`, `motd`, Prompt).
+
+Start unter Windows:
+`.\build\native\q9.exe --cb030 .\local_images\roms\romimage.dev.running.BIN --cf .\local_images\OS9SYS.hda`
+
+Wichtige Erkenntnisse:
+- Bootfile-Erzeugung braucht den formatierbaren Descriptor `/c0_fmt`; `/c0`
+  ist formatgeschuetzt. Fehler `000:255` = `E$Format`.
+- Ein zu kleines/falsch zusammengesetztes `OS9Boot` fuehrt beim Boot zu
+  `Sysgo can't chx to 'CMDS'`, `Sysgo can't open 'startup'`, Fehler `000:215`
+  = `E$BPNam`.
+- Ursache war letztlich ein Schreibfehler in der Bootlist plus falscher
+  Descriptor. Mit korrigierter Bootlist und `/c0_fmt` bootet CF.
+- Windows-`umacs`-Bedienung funktioniert mit `TERM=q9`: der Windows-HAL mappt
+  `_getch()`-Sondertasten (`0xE0` + Scan-Code) auf ANSI-Sequenzen; `termcap`
+  nutzt `ku=\E[A`, `kd=\E[B`, `kl=\E[D`, `kr=\E[C`. Direkte `0xE0`/`\340`
+  in `termcap` war nicht stabil.
+- `SYS/termcap` muss OS-9-CR-Zeilenenden haben; LF fuehrte zu "unknown terminal
+  type".
+- Nicht gleichzeitig Toolshed und Emulator auf dasselbe `.hda` schreiben.
+- Vor Neubuilds alte `q9*.exe`-Prozesse pruefen/killen, sonst wird die EXE
+  gesperrt oder ein alter Prozess getestet.
+
+Dokumentiert in `docs/OS9SYS_BOOT.md`, `docs/CB030.md`,
+`Q9_CURRENT_STATUS.md`, `docs/HANDBUCH.md`.
+
 Zuletzt bearbeitet: 2026-07-03 (dritte Session, Mac Mini, erste Session dort)
 PHASE 1.10 (POSIX-HAL) ABGESCHLOSSEN: src/hal/posix/hal_posix.c neu (termios
 raw+nonblocking statt conio, clock_gettime statt GetTickCount64, Rest wie
