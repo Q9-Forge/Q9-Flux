@@ -29,6 +29,8 @@
 # 26-07-05│ 1.80 │ 5.3: Musashi-CB030-Verdrahtung (q9_m68krt_attach_board), ROM-Laden         │ CF
 #         │      │ (q9_cb030_rom_load), Boot-Runner cb030run.c/.h (q9.exe --cb030 <rom>),     │
 #         │      │ Spiegelgrenzen-Korrektur (bis 0xFEFF_FFFF, I/O vor Remap erreichbar)       │
+# 26-07-07│ 1.90 │ OS9SYS-CF-Boot, os9gen /c0_fmt, Windows-Terminal-Keyfix und Toolshed/WSL    │ CF
+#         │      │ Arbeitsregeln dokumentiert; alten 5.2a-Spiegelgrenzen-Satz korrigiert       │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -54,6 +56,7 @@ Für Details verweist es auf die Fachdokumente in `docs/` statt sie zu wiederhol
 - [`TOOLCHAIN.md`](TOOLCHAIN.md) — Toolchain-Stand je Entwicklungsrechner (Versionen, Pfade)
 - [`AUTONOMIE.md`](AUTONOMIE.md) — Setup für den automatisierten Arbeitsmodus (projektintern, für Aussenstehende irrelevant)
 - [`CB030.md`](CB030.md) — Hardware-Referenz (Speicherkarte, DUART/CF-Register) für die Musashi-Board-Emulation (Phase 5.2)
+- [`OS9SYS_BOOT.md`](OS9SYS_BOOT.md) — lokales Runbook fuer OS9SYS-CF-Boot, `os9gen /c0_fmt`, Toolshed/WSL und Terminal-Keyfix
 
 ---
 
@@ -291,6 +294,41 @@ make native
 ./build/native/q9.exe            # interaktive REPL
 ./build/native/q9.exe --selftest # Selbsttest, Exit-Code 0 = PASS
 ```
+
+Windows PowerShell auf dem lokalen AF-PC:
+
+```powershell
+cd D:\projekts\Q9
+$env:PATH = "C:\Users\AF\w64devkit\bin;$env:PATH"
+$env:OS = "Windows_NT"
+make native
+.\build\native\q9.exe --selftest
+```
+
+Auf dem AF-PC zeigt `python3.exe` auf den Microsoft-Store-Alias. Fuer die
+Tests daher explizit das echte Python verwenden:
+
+```powershell
+make test PYTHON=python
+```
+
+CB030/OS-9-Arbeitsimage unter Windows:
+
+```powershell
+cd D:\projekts\Q9
+.\build\native\q9.exe --cb030 .\local_images\roms\romimage.dev.running.BIN --cf .\local_images\OS9SYS.hda
+```
+
+Vor Neubuilds oder Image-Arbeiten pruefen, ob noch alte Emulatorprozesse laufen:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.ExecutablePath -like 'D:\projekts\Q9\build\native\q9*.exe' } |
+  Select-Object ProcessId,Name,ExecutablePath,CommandLine
+```
+
+Fenster/Tab schließen beendet `q9*.exe` nicht immer zuverlaessig; ein alter
+Prozess kann die EXE sperren oder zu falschen Testergebnissen fuehren.
 
 ### 4.2 Browser-Build ausprobieren
 
@@ -659,7 +697,7 @@ uint8_t  q9_cb030_read8(q9_cb030_t *b, uint32_t addr);   // + read16/read32
 void     q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val);  // + write16/write32
 ```
 
-Reset-Zustand: ROM bei Adresse 0, gespiegelt bis `0x0800_0000`. Ein einzelner
+Reset-Zustand: ROM bei Adresse 0, gespiegelt bis `0xFEFF_FFFF`. Ein einzelner
 Buszugriff (lesend oder schreibend) auf den REMAP-Registerbereich
 (`0xFFFF_8000`–`0xFFFF_8FFF`) schaltet dauerhaft um — reiner Adress-Trigger,
 kein Datenwert; danach liegt RAM ab Adresse 0 und das ROM nur noch einmal,
@@ -732,12 +770,35 @@ CF-Emulation (`cb030_cf_read/write`) zählt READ/WRITE SECTOR(S) seit 5.5a
 echt über mehrere Sektoren durch (Sector-Count 0 = 256 Sektoren, ATA-
 Konvention) statt nur einen Sektor pro Kommando zu bedienen.
 
+**Windows-Terminal-Eingabe (2026-07-07):** Der native Windows-HAL normalisiert
+erweiterte `_getch()`-Tasten auf ANSI-Sequenzen, damit OS-9-Programme wie
+`umacs` sie ueber `termcap` auswerten koennen. Beispiel: Cursor hoch kommt von
+Windows als `0xE0 0x48`, wird im HAL zu `ESC [ A`, und `SYS/termcap` beschreibt
+fuer `q9|q9term` entsprechend `ku=\E[A`. Direkte `termcap`-Versuche mit
+echtem `0xE0` oder `\340H` waren nicht stabil; sichtbares Symptom waren die
+zweiten Bytes (`H`, `M`, `P`, `K`) im Editor. `Ctrl-C` wird vom Windows-HAL
+abgefangen, damit es nicht den Hostprozess beendet.
+
+**OS9SYS-CF-Boot und `os9gen` (2026-07-07):** Das lokale Arbeitsimage
+`local_images/OS9SYS.hda` bootet direkt von CompactFlash und fuehrt danach das
+CF-`startup` aus. Fuer Bootfile-Experimente muss der formatierbare Descriptor
+`/c0_fmt` verwendet werden; `/c0` ist formatgeschuetzt und fuehrt beim finalen
+Rename von `OS9Boot` zu `E$Format` (`000:255`). Eine fehlerhafte Bootlist kann
+ohne auffaellige `os9gen`-Meldung ein zu kleines/unbrauchbares `OS9Boot`
+erzeugen; typisches Bootsymptom ist `Sysgo can't chx to 'CMDS'`, `Sysgo can't
+open 'startup' file`, danach `E$BPNam` (`000:215`). Details und Arbeitsregeln:
+[`CB030.md`](CB030.md), Abschnitt "Erkenntnisse aus dem produktiven CF-Boot".
+
+**Toolshed/WSL fuer Images:** RBF-/OS-9-Images werden lokal ueber Toolshed in
+Debian WSL bearbeitet (`~/.local/bin/os9`). Nicht gleichzeitig mit Toolshed
+und im laufenden Emulator auf dasselbe `.hda` schreiben.
+
 ---
 
 ## 6. Stand der Dinge
 
 Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARBEITSPLAN.md)
-(Statusmodell 💡/💤/🟢/🔄/✅/⛔). Kurzfassung nach Phase (Stand 2026-07-04):
+(Statusmodell 💡/💤/🟢/🔄/✅/⛔). Kurzfassung nach Phase (Stand 2026-07-07):
 
 | Phase | Inhalt | Stand |
 |-------|--------|-------|
@@ -746,7 +807,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
 | 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig, inkl. Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite), 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module), 4.9 (Fixed-Heap statt Host-malloc in wasm3, Q9-Systemkonfiguration `config.h`); Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
-| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10), 5.3 (Musashi↔CB030-Verdrahtung + Boot-Runner `q9.exe --cb030 <rom>`, Abschnitt 5.10) — bereit für den ersten Boot-Versuch mit dem echten Microware-ROM |
+| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10), 5.3/5.5a (Musashi↔CB030-Verdrahtung, Boot-Runner `q9.exe --cb030 <rom> [--cf <image>]`, CF-Multisektor) — OS9SYS-CF-Boot funktioniert lokal mit `OS9Boot`, `startup`, `q9term` und `umacs` |
 | 6 | Shell | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
 | 8 | Vision: 6809-Runtime, Netzwerk, Self-Hosting | offen |
