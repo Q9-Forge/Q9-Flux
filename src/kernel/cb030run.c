@@ -79,8 +79,9 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path)
             if (dbg && now_ms - last_dbg_ms >= 3000u) {
                 uint32_t pc, sr, acks;
                 q9_m68krt_debug_state(&pc, &sr, &acks);
-                fprintf(stderr, "\n[dbg pc=%08x sr=%04x acks=%u imr=%02x rxpend=%d timer=%d]\n",
-                        pc, sr, acks, board.uart_imr, board.uart_rx_pending, board.timer_active);
+                fprintf(stderr, "\n[dbg pc=%08x sr=%04x acks=%u imr=%02x rxfifo=%u rxovf=%u timer=%d]\n",
+                        pc, sr, acks, board.uart_imr, board.uart_rx_count,
+                        board.uart_rx_overflow, board.timer_active);
                 last_dbg_ms = now_ms;
             }
         }
