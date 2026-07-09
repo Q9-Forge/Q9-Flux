@@ -48,25 +48,55 @@ static int cb030_is_remap_reg(uint32_t addr)
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: cb030_uart_poll_rx
-// Desc.:    Fuellt den 1-Byte-Empfangspuffer nach, falls leer (q9_hal_con_get KONSUMIERT das
-//           Zeichen aus der HAL, darum der Zwischenpuffer — sonst ginge ein Byte zwischen
-//           Status- und Datenabfrage verloren).
+// Desc.:    Leert alle momentan verfuegbaren Host-Terminalzeichen in den emulierten RX-FIFO.
+//           Das ist wichtig fuer Copy/Paste: der Host kann viele Bytes auf einmal liefern,
+//           OS-9 liest sie aber ueber die 68681 zeichenweise aus RHRA.
 //────────────────────────────────────────────────────────────────────────────────────────────────
+static int cb030_uart_rx_has_data(const q9_cb030_t *b)
+{
+    return b->uart_rx_count != 0;
+}
+
+static int cb030_uart_rx_push(q9_cb030_t *b, uint8_t c)
+{
+    if (!b->uart_rx_fifo || b->uart_rx_count >= b->uart_rx_fifo_size) {
+        b->uart_rx_overflow++;
+        return 0;
+    }
+    b->uart_rx_fifo[b->uart_rx_head] = c;
+    b->uart_rx_head = (b->uart_rx_head + 1u) % b->uart_rx_fifo_size;
+    b->uart_rx_count++;
+    return 1;
+}
+
+static uint8_t cb030_uart_rx_pop(q9_cb030_t *b)
+{
+    uint8_t c;
+
+    if (!cb030_uart_rx_has_data(b)) {
+        return 0;
+    }
+    c = b->uart_rx_fifo[b->uart_rx_tail];
+    b->uart_rx_tail = (b->uart_rx_tail + 1u) % b->uart_rx_fifo_size;
+    b->uart_rx_count--;
+    return c;
+}
+
 static void cb030_uart_poll_rx(q9_cb030_t *b)
 {
-    if (!b->uart_rx_pending) {
+    while (b->uart_rx_fifo && b->uart_rx_count < b->uart_rx_fifo_size) {
         int c = q9_hal_con_get();
-        if (c >= 0) {
-            b->uart_rx_pending = 1;
-            b->uart_rx_char = (uint8_t)c;
+        if (c < 0) {
+            break;
         }
+        cb030_uart_rx_push(b, (uint8_t)c);
     }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: cb030_uart_read / cb030_uart_write
 // Desc.:    5.2b/5.4: 68681-DUART, Registerkarte s. docs/CB030.md. Kanal A ist die Konsole
-//           (THRA -> q9_hal_con_put, RHRA <- q9_hal_con_get via 1-Byte-Puffer); Kanal B ist
+//           (THRA -> q9_hal_con_put, RHRA <- Host-Terminal via RX-FIFO); Kanal B ist
 //           unverbunden (sendet ins Leere, empfaengt nie). Die Mode-Register MR1/MR2 (einziges
 //           echtes R/W-Register der 68681, interner Zeiger: nach jedem Zugriff auf MR2, Reset
 //           auf MR1 per CR-Kommando 0x1x) und das IVR werden als Latches gefuehrt — der
@@ -109,17 +139,13 @@ static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
     }
     case 0x02:                                         /* SRA */
         cb030_uart_poll_rx(b);
-        return (uint8_t)(0x0Cu | (b->uart_rx_pending ? 0x01u : 0u));
+        return (uint8_t)(0x0Cu | (cb030_uart_rx_has_data(b) ? 0x01u : 0u));
     case 0x06:                                         /* RHRA */
         cb030_uart_poll_rx(b);
-        if (b->uart_rx_pending) {
-            b->uart_rx_pending = 0;
-            return b->uart_rx_char;
-        }
-        return 0;
+        return cb030_uart_rx_pop(b);
     case 0x0A:                                         /* ISR (Polling-Bits, s.o.)               */
         cb030_uart_poll_rx(b);
-        return (uint8_t)(0x11u | (b->uart_rx_pending ? 0x02u : 0u));
+        return (uint8_t)(0x11u | (cb030_uart_rx_has_data(b) ? 0x02u : 0u));
     case 0x10:                                         /* MRB (MR1B/MR2B, interner Zeiger)       */
     {
         uint8_t v = b->uart_mr_b[b->uart_mr_ptr_b];
@@ -175,12 +201,13 @@ static void cb030_uart_write(q9_cb030_t *b, uint32_t addr, uint8_t val)
 
 int q9_cb030_uart_irq_pending(q9_cb030_t *b)
 {
+    cb030_uart_poll_rx(b);
+
     if (b->uart_imr & 0x01u) {                         /* TxRDYA-Interrupt: bei uns immer bereit */
         return 1;
     }
     if (b->uart_imr & 0x02u) {                         /* RxRDYA-Interrupt: Zeichen da?          */
-        cb030_uart_poll_rx(b);
-        if (b->uart_rx_pending) {
+        if (cb030_uart_rx_has_data(b)) {
             return 1;
         }
     }
@@ -583,6 +610,11 @@ int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *
     b->ram     = ram;
     b->ram_len = ram_len;
     b->remapped = 0;
+    b->uart_rx_fifo = (uint8_t *)malloc(Q9_CB030_UART_RX_FIFO_SIZE);
+    if (!b->uart_rx_fifo) {
+        return Q9_CB030_ERR_RAM;
+    }
+    b->uart_rx_fifo_size = Q9_CB030_UART_RX_FIFO_SIZE;
     b->cf_status = Q9_CB030_CF_STAT_RDY;
     b->uart_ivr  = 0x0F;                              /* 68681-Reset-Wert "uninitialisierter
                                                          Vektor" — der OS-9-Treiber sc68681

@@ -79,6 +79,7 @@
 #define Q9_CB030_UART_TOP    0xFFFFFFFFu
 #define Q9_CB030_UART_SRA    (Q9_CB030_UART_BASE + 0x02u)  /* Status A (lesen)                 */
 #define Q9_CB030_UART_THRA   (Q9_CB030_UART_BASE + 0x06u)  /* Tx-Holding (schreiben) = RHRA-Adr.*/
+#define Q9_CB030_UART_RX_FIFO_SIZE (4u * 1024u * 1024u)
 
 typedef struct q9_cb030 {
     const uint8_t *rom;                               /* Boot-ROM-Inhalt, nur lesend            */
@@ -87,11 +88,15 @@ typedef struct q9_cb030 {
     uint32_t       ram_len;
     int            remapped;                           /* 0 = Reset-Zustand, 1 = nach REMAP-Trigger */
 
-    /* 5.2b/5.4: DUART — 1-Byte-Empfangspuffer (Kanal A = Konsole) + Register-Latches, die der
+    /* 5.2b/5.4: DUART — Empfangs-FIFO (Kanal A = Konsole) + Register-Latches, die der
        OS-9-Treiber (sc68681) zurueckliest, um den Chip zu verifizieren: MR1/MR2 (einziges echtes
        R/W-Register der 68681, mit internem Zeiger) und IVR. S. cb030.c. */
-    int            uart_rx_pending;
-    uint8_t        uart_rx_char;
+    uint8_t       *uart_rx_fifo;
+    uint32_t       uart_rx_fifo_size;
+    uint32_t       uart_rx_head;
+    uint32_t       uart_rx_tail;
+    uint32_t       uart_rx_count;
+    uint32_t       uart_rx_overflow;
     int            uart_mr_ptr_a;                      /* 0 = naechster Zugriff MR1A, 1 = MR2A   */
     uint8_t        uart_mr_a[2];
     int            uart_mr_ptr_b;
