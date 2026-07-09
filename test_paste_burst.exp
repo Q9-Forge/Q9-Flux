@@ -1,0 +1,82 @@
+#!/usr/bin/expect -f
+# Reproduziert den Paste-Stall (Andreas, 2026-07-09): 400 KURZE Zeilen (je
+# 11 Byte, insgesamt nur 4,8 KByte - bewusst weit unter jedem Zeilenlaengen-
+# limit) werden dem emulierten CB030 als EIN Block praesentiert, wie ein
+# echtes Cmd-V-Paste in ein Terminal es tut. Heutiges (fehlerhaftes) Ergebnis:
+# "build" echot ca. 20-25 Zeilen und friert dann komplett ein - kein Prompt,
+# keine Fehlermeldung, keine Reaktion mehr, auch nach vielen Sekunden nicht.
+# Mit Q9_CB030_DEBUG=1 sieht man: der PC/SR-Heartbeat (alle 3s) setzt in
+# diesem Moment ebenfalls aus - der GESAMTE q9.exe-Host-Prozess blockiert,
+# nicht nur der OS-9-Gast. Ursache: q9_hal_con_put() (hal_posix.c) macht pro
+# Echo-Zeichen ein blockierendes fputc()+fflush(stdout); haelt der Pty-Leser
+# (Terminal.app/iTerm/expect) nicht mit, blockiert der naechste write() den
+# kompletten Single-Thread-Loop, und waehrenddessen laeuft der Eingabe-Pty-
+# Puffer (klein, unabhaengig vom Ausgabepuffer) still ueber. Details/Fix-
+# Richtung: ARBEITSPLAN.md Schritt 5.8.
+#
+# Aufruf: ./build/native/q9.exe muss vorher gebaut sein (make native).
+#         Nutzt einen frischen Clone von local_images/OS9SYS.hda, damit das
+#         Arbeitsimage nicht angefasst wird.
+#
+# Login: super / Al35uUbC (s. /dd/SYS/password im Image)
+
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend paste_burst_result.txt
+
+set image local_images/OS9SYS.claudia-paste-test.hda
+exec cp -c local_images/OS9SYS.hda $image
+
+spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+
+set timeout 60
+expect "devices online"
+set timeout 20
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+
+sleep 1
+send -s "chd /dd\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "del paste_burst.txt\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "build paste_burst.txt\r"
+expect -re {\? ?$}
+
+# 400 kurze Zeilen als EIN Block, 3ms/Zeichen (simuliert ~330 Zeichen/s) -
+# der zuverlaessige Reproduktionsfall (im Gegensatz zum sehr kleinen
+# 5-Zeilen-Fall, der nicht deterministisch war).
+set data ""
+for {set i 0} {$i < 400} {incr i} {
+    append data [format "LINE%04dXXX\r" $i]
+}
+append data "\r"
+send_log "\n<<<SENDE [string length $data] BYTES ALS EIN BLOCK, 400 ZEILEN>>>\n"
+send -s -- $data
+
+set timeout 60
+expect {
+    -re {\$ ?$} { send_log "\n<<<ZURUECK BEIM SHELL-PROMPT>>>\n" }
+    timeout    { send_log "\n<<<TIMEOUT NACH 60s - build haengt vermutlich fest>>>\n" }
+}
+
+sleep 1
+send -s "list paste_burst.txt\r"
+set timeout 60
+expect -re {\$ ?$}
+
+sleep 1
+send "\003"
+expect eof

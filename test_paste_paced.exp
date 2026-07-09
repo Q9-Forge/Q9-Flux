@@ -1,0 +1,62 @@
+#!/usr/bin/expect -f
+# Referenz/Kontrolltest zu test_paste_burst.exp: dieselben 5 Zeilen, aber
+# jede Zeile wartet einzeln auf den naechsten "?"-Prompt von "build", bevor
+# die naechste Zeile gesendet wird - simuliert exakt einen Tastatur-Eingabe-
+# fluss statt eines Pastes. Erwartetes Ergebnis: "list" zeigt die 5 Zeilen
+# unveraendert. Wenn dieser Test irgendwann NICHT mehr durchlaeuft, ist etwas
+# ganz anderes kaputtgegangen (keine Paste-Timing-Frage mehr). Siehe ARBEITSPLAN 5.8.
+
+set timeout 90
+set send_slow {1 .02}
+log_file -noappend paste_paced_result.txt
+
+set image local_images/OS9SYS.claudia-paste-test.hda
+exec cp -c local_images/OS9SYS.hda $image
+
+spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+
+set timeout 60
+expect "devices online"
+set timeout 20
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+
+sleep 1
+send -s "chd /dd\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "del paste_paced.txt\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "build paste_paced.txt\r"
+expect -re {\? ?$}
+
+foreach zeile {"AAAAAAAAAA" "BBBBBBBBBB" "CCCCCCCCCC" "DDDDDDDDDD" "EEEEEEEEEE"} {
+    send -s "$zeile\r"
+    expect -re {\? ?$}
+}
+send -s "\r"
+
+set timeout 15
+expect {
+    -re {\$ ?$} { send_log "\n<<<ZURUECK BEIM SHELL-PROMPT - ERFOLG>>>\n" }
+    timeout    { send_log "\n<<<TIMEOUT - unerwartet, siehe Log>>>\n" }
+}
+
+sleep 1
+send -s "list paste_paced.txt\r"
+expect -re {\$ ?$}
+
+sleep 1
+send "\003"
+expect eof
