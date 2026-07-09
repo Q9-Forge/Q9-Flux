@@ -26,6 +26,10 @@ local_images/
 # Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
 *.wasm.map
 
+# Paste-Timing-Testskripte (5.8): Log-Ausgabe, Clone-Image wird ueber local_images/ schon ignoriert
+paste_burst_result.txt
+paste_paced_result.txt
+
 # Editor / OS
 .vscode/
 .idea/
