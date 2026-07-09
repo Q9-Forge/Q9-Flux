@@ -113,3 +113,31 @@ ku=\E[A:kd=\E[B:kl=\E[D:kr=\E[C
 ```
 
 `TERM=q9` und `TERM=q9term` sind Aliasnamen desselben Eintrags.
+
+## C-Compiler auf OS9SYS.hda (verifiziert 2026-07-09)
+
+Live-Test auf einem APFS-Clone (`local_images/OS9SYS.claudia-test.hda`),
+Emulator per expect gesteuert:
+
+- Compiler ist der klassische K&R-cc (`cc`, `cpp`, `c68`, `o68`, `r68`,
+  `l68`), liegt direkt in `/dd/CMDS`; Header in `/dd/DEFS`, Libs (`clib.l`,
+  `cstart.r`) in `/dd/LIB`.
+- Benoetigte Umgebungsvariablen (klassischer cc, NICHT Ultra C):
+
+  ```text
+  setenv DEFS /dd/DEFS
+  setenv LIB /dd/LIB
+  ```
+
+  (Ultra C wuerde stattdessen `CDEF`/`CLIB`/`MWOS`/`TMPDIR`/`CC` nutzen —
+  s. `ultrac_use.pdf` Kap. 3 im SDK.)
+- Kompletter Durchlauf getestet: `build hello.c` → `cc hello.c` (alle fuenf
+  Phasen) → `hello` laeuft und druckt. Das Ausgabemodul landet im
+  **Execution Directory** (`chx`, hier `/dd/CMDS`), nicht im
+  Datenverzeichnis.
+- Login des Images: User `super`, Passwort `Al35uUbC` (weitere User: `afoe`,
+  `q9`, `tools`, s. `/dd/SYS/password`).
+- Automatisierungs-Hinweise: nach "1 devices online" erst ein CR senden,
+  damit tsmon den Login-Prompt zeigt; Eingaben gebremst senden (expect
+  `send -s`, ~50 ms/Zeichen), sonst gehen Zeichen verloren. Muster:
+  `test_paste_burst.exp`/`test_paste_paced.exp` im Repo-Root.
