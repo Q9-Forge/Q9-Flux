@@ -9,6 +9,8 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-05│ 1.00 │ 5.3: Erster Boot-Runner                                                 │ CF
 // 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (NULL = Default CB030_CF_IMAGE)                 │ CF
+// 26-07-10│ 1.20 │ 5.7: q9_hal_con_flush() pro Runde -- TX-Ringpuffer-Rest ausliefern,     │ CF
+//         │      │ auch ohne neues THRA-Byte im selben Durchlauf                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
@@ -65,6 +67,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path)
             uint32_t now_ms;
 
             q9_m68krt_execute(&rt, CB030_SLICE_CYCLES);
+            q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
             now_ms = q9_hal_ticks_ms();
 
             /* Timer (100Hz, Autovektor 27) und DUART (vektorisiert, IVR) teilen sich IRQ3 —

@@ -76,6 +76,13 @@ int q9_hal_con_get(void)
     return js_con_get();
 }
 
+/* 5.7: kein Software-TX-Puffer auf diesem Target -- js_con_put liefert synchron an den Worker,
+   also ist der Puffer immer sofort leer. Reine Interface-Erfuellung (s. q9_hal.h); cb030.c (der
+   einzige Aufrufer der neuen Funktionen) wird im wasm-Build ohnehin nicht mitkompiliert. */
+void q9_hal_con_flush(void) { }
+int  q9_hal_con_tx_ready(void) { return 1; }
+int  q9_hal_con_tx_empty(void) { return 1; }
+
 uint32_t q9_hal_ticks_ms(void)
 {
     return (uint32_t)emscripten_get_now();

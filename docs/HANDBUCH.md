@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.80
+# File:   HANDBUCH.md                                                                     Ver. 1.91
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -31,6 +31,9 @@
 #         │      │ Spiegelgrenzen-Korrektur (bis 0xFEFF_FFFF, I/O vor Remap erreichbar)       │
 # 26-07-07│ 1.90 │ OS9SYS-CF-Boot, os9gen /c0_fmt, Windows-Terminal-Keyfix und Toolshed/WSL    │ CF
 #         │      │ Arbeitsregeln dokumentiert; alten 5.2a-Spiegelgrenzen-Satz korrigiert       │
+# 26-07-10│ 1.91 │ 5.7: TX-Ringpuffer (hal_posix.c) — HAL-Schnittstelle (Abschnitt 5.7) um     │ CF
+#         │      │ q9_hal_con_flush/tx_ready/tx_empty erweitert, veraltete "TxRDY immer        │
+#         │      │ gesetzt"-Aussage in Abschnitt 5.10 (5.2b) korrigiert                        │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -489,6 +492,9 @@ Blockieren (4.3), Suspend/Priorität (4.4), Signale (4.5).
 void          q9_hal_init(void);
 void          q9_hal_con_put(char c);
 int           q9_hal_con_get(void);              /* -1 = nichts da, nicht-blockierend */
+void          q9_hal_con_flush(void);            /* 5.7: TX-Puffer-Rest nachliefern (Haupt-Loop) */
+int           q9_hal_con_tx_ready(void);          /* 5.7: Platz fuer mind. 1 weiteres Byte (TxRDY) */
+int           q9_hal_con_tx_empty(void);          /* 5.7: Puffer vollstaendig geleert (TxEMT)      */
 uint32_t      q9_hal_ticks_ms(void);
 int           q9_hal_blk_read (uint32_t lba, void *buf);        /* 512-Byte-Block */
 int           q9_hal_blk_write(uint32_t lba, const void *buf);
@@ -498,6 +504,9 @@ const char   *q9_hal_target(void);
 
 Jedes Target implementiert genau diese Funktionen; alles Weitere (Geräte,
 Pfade, Dateisystem, Module) ist reiner Kernel-Code und läuft überall gleich.
+`q9_hal_con_flush/tx_ready/tx_empty` sind nur auf POSIX ein echter TX-
+Ringpuffer (5.7, `hal_posix.c`) — native (Windows) und wasm bleiben synchron
+und liefern trivial "immer leer/bereit".
 
 ### 5.8 WASM-Runtime + Syscall-Bridge (native Build, Phase 4.6-4.9, Entscheidung E10)
 
@@ -712,11 +721,11 @@ native-only, synthetisches 4-Byte-Test-ROM statt des echten Boot-ROMs).
 **5.2b** (68681-DUART): Minimalansatz — nur SRA (Status, `UART_BASE+0x02`)
 und THRA/RHRA (Zeichenpuffer, `UART_BASE+0x06`) sind wirklich aktiv, der
 restliche Registersatz wird sauber angenommen (liest 0, verwirft
-Schreibzugriffe). SRA-Bits: TxRDY (`0x04`, immer gesetzt, da `q9_hal_con_put`
-synchron ist) und RxRDY (`0x01`, gesetzt wenn ein Zeichen im 1-Byte-
-Empfangspuffer wartet — der Puffer existiert, weil `q9_hal_con_get()` das
-Zeichen aus der HAL konsumiert und es sonst zwischen Status- und
-Datenabfrage verloren ginge). THRA-Schreibzugriff → `q9_hal_con_put`.
+Schreibzugriffe). SRA-Bits: RxRDY (`0x01`, gesetzt wenn ein Zeichen im
+Empfangs-FIFO wartet) sowie **seit 5.7** TxRDY (`0x04`) und TxEMT (`0x08`),
+die den Füllstand des HAL-seitigen TX-Ringpuffers ehrlich widerspiegeln
+(`q9_hal_con_tx_ready`/`q9_hal_con_tx_empty`, Abschnitt 5.7) statt wie zu
+Beginn immer "sofort bereit" zu melden. THRA-Schreibzugriff → `q9_hal_con_put`.
 
 **5.2c** (Compact-Flash): ATA-PIO-Minimalprotokoll — Register `CF_BASE+0`
 (Data, 1 Byte/Zugriff), `+2` (Sectcount), `+3..+5` (LBA0-2), `+7`
