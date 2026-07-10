@@ -16,6 +16,8 @@
 // 26-07-05│ 1.50 │ 5.5a: CF-Multi-Sektor — READ/WRITE SECTOR(S) zaehlen cf_sectcnt jetzt      │ CF
 //         │      │ echt durch (0 = 256 Sektoren), Puffer wird pro Sektor nachgeladen/          │
 //         │      │ geschrieben, DRQ bleibt bis zum letzten Sektor gesetzt                     │
+// 26-07-10│ 1.60 │ 5.7: SRA-TxRDY/TxEMT sind kein Immer-Bereit-Fake mehr, sondern spiegeln     │ CF
+//         │      │ den Fuellstand des HAL-TX-Ringpuffers (q9_hal_con_tx_ready/tx_empty)        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -101,9 +103,11 @@ static void cb030_uart_poll_rx(q9_cb030_t *b)
 //           echtes R/W-Register der 68681, interner Zeiger: nach jedem Zugriff auf MR2, Reset
 //           auf MR1 per CR-Kommando 0x1x) und das IVR werden als Latches gefuehrt — der
 //           OS-9-Treiber sc68681 verifiziert den Chip per Readback (sonst E$BMode beim
-//           Konsolen-Open). SRA/SRB: TxRDY (0x04) UND TxEMT (0x08) immer gesetzt — der Sender
-//           ist synchron sofort fertig; manche Sende-Schleifen warten auf TxEMT statt TxRDY.
-//           ISR liefert die entsprechenden Polling-Bits (TxRDYA 0x01, RxRDYA 0x02, TxRDYB 0x10).
+//           Konsolen-Open). SRA: TxRDY (0x04)/TxEMT (0x08) spiegeln seit 5.7 den HAL-TX-Ringpuffer
+//           (q9_hal_con_tx_ready/tx_empty) statt immer gesetzt zu sein — manche Sende-Schleifen
+//           warten auf TxEMT statt TxRDY. SRB bleibt "immer bereit" (Kanal B unverbunden, sendet
+//           ins Leere, kein Host-Puffer noetig). ISR liefert die entsprechenden Polling-Bits
+//           (TxRDYA 0x01, RxRDYA 0x02, TxRDYB 0x10).
 //           Der Rest des Registersatzes wird sauber angenommen (liest 0, Schreiben verworfen).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 /* Debug-Werkzeug (5.4): mit -DQ9_CB030_UART_TRACE uebersetzt, protokolliert jeder UART-Zugriff
@@ -137,9 +141,21 @@ static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
         b->uart_mr_ptr_a = 1;
         return v;
     }
-    case 0x02:                                         /* SRA */
+    case 0x02:                                         /* SRA: 5.7 -- TxRDY/TxEMT ehrlich */
+    {
+        uint8_t sr = 0;
         cb030_uart_poll_rx(b);
-        return (uint8_t)(0x0Cu | (cb030_uart_rx_has_data(b) ? 0x01u : 0u));
+        if (cb030_uart_rx_has_data(b)) {
+            sr |= 0x01u;                                /* RxRDY                                  */
+        }
+        if (q9_hal_con_tx_ready()) {
+            sr |= 0x04u;                                /* TxRDY: Platz fuer mind. 1 weiteres Byte */
+        }
+        if (q9_hal_con_tx_empty()) {
+            sr |= 0x08u;                                /* TxEMT: Puffer vollstaendig geleert     */
+        }
+        return sr;
+    }
     case 0x06:                                         /* RHRA */
         cb030_uart_poll_rx(b);
         return cb030_uart_rx_pop(b);
@@ -203,8 +219,10 @@ int q9_cb030_uart_irq_pending(q9_cb030_t *b)
 {
     cb030_uart_poll_rx(b);
 
-    if (b->uart_imr & 0x01u) {                         /* TxRDYA-Interrupt: bei uns immer bereit */
-        return 1;
+    if (b->uart_imr & 0x01u) {                         /* TxRDYA-Interrupt: 5.7 -- ehrlich pruefen */
+        if (q9_hal_con_tx_ready()) {
+            return 1;
+        }
     }
     if (b->uart_imr & 0x02u) {                         /* RxRDYA-Interrupt: Zeichen da?          */
         if (cb030_uart_rx_has_data(b)) {
@@ -214,11 +232,8 @@ int q9_cb030_uart_irq_pending(q9_cb030_t *b)
     return 0;
 }
 
-//────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_cf_ensure_open
-// Desc.:    5.2c: Oeffnet die Backing-Datei lazy (analog zu q9disk.img in der nativen HAL) —
-//           "r+b" wenn sie existiert, sonst neu anlegen ("w+b"). Liefert 1 bei Erfolg.
-//────────────────────────────────────────────────────────────────────────────────────────────────
+
+
 static int cb030_cf_ensure_open(q9_cb030_t *b)
 {
     if (b->cf_file) {
@@ -533,6 +548,9 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
         return cb030_uart_read(b, addr);
     }
 
+    
+    
+    
     if (!b->remapped) {
         /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
            Adressraums (0xFEFF_FFFF einschl., docs/CB030.md Speicherkarte) — das Boot-ROM
@@ -585,7 +603,7 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
         cb030_uart_write(b, addr, val);
         return;
     }
-
+    
     if (!b->remapped) {
         return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
     }

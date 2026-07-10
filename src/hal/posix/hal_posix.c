@@ -11,6 +11,8 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-03│ 1.00 │ 1.10: Konsole (termios raw+nonblocking), Timer, Disk-Image, Selftest    │ CF
+// 26-07-10│ 1.10 │ 5.7: TX-Ringpuffer fuer q9_hal_con_put (nicht-blockierendes write()),    │ CF
+//         │      │ statt pro Zeichen zu blockieren -- Gegenstueck zum RX-FIFO (cb030.c)     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <stdio.h>
@@ -19,6 +21,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <termios.h>
 #include <signal.h>
 
@@ -33,6 +36,53 @@
 static FILE *disk = NULL;
 static struct termios orig_termios;
 static int termios_saved = 0;
+
+/* 5.7: TX-Ringpuffer -- Gegenstueck zum RX-FIFO in cb030.c. q9_hal_con_put() darf den Haupt-Loop
+   nie blockieren (sonst friert bei einem langsamen/gestockten Terminal-Leser die GESAMTE Emulation
+   ein, s. ARBEITSPLAN 5.7). 256 KiB reichen fuer jeden realistischen Ausgabe-Burst zwischen zwei
+   Haupt-Loop-Durchlaeufen bei weitem -- Ueberlauf wird (wie beim RX-FIFO) nur gezaehlt, nicht
+   blockierend erzwungen. */
+#define TX_BUF_SIZE (256u * 1024u)
+static uint8_t tx_buf[TX_BUF_SIZE];
+static uint32_t tx_head = 0;
+static uint32_t tx_tail = 0;
+static uint32_t tx_count = 0;
+static uint32_t tx_overflow = 0;
+static int tx_nonblock_set = 0;
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: tx_drain_nonblocking
+// Desc.:    Schreibt so viel wie moeglich aus dem TX-Ringpuffer nicht-blockierend nach STDOUT.
+//           Bricht bei EAGAIN/EWOULDBLOCK (Leser haelt nicht mit) sofort ab -- der Rest bleibt
+//           im Puffer und wird beim naechsten Aufruf weiterversucht.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void tx_drain_nonblocking(void)
+{
+    if (!tx_nonblock_set) {
+        fcntl(STDOUT_FILENO, F_SETFL, fcntl(STDOUT_FILENO, F_GETFL, 0) | O_NONBLOCK);
+        tx_nonblock_set = 1;
+    }
+    while (tx_count > 0) {
+        uint32_t chunk = (tx_head < tx_tail) ? (tx_tail - tx_head) : (TX_BUF_SIZE - tx_head);
+        ssize_t  n;
+
+        if (chunk > tx_count) {
+            chunk = tx_count;
+        }
+        n = write(STDOUT_FILENO, &tx_buf[tx_head], chunk);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;                                    /* Leser blockiert -- Rest bleibt liegen  */
+            }
+            break;                                        /* anderer Fehler: dieser Durchlauf ist hin */
+        }
+        if (n == 0) {
+            break;
+        }
+        tx_head   = (tx_head + (uint32_t)n) % TX_BUF_SIZE;
+        tx_count -= (uint32_t)n;
+    }
+}
 
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ HAL IMPLEMENTATION                                                                           ║
@@ -87,8 +137,31 @@ void q9_hal_init(void)
 
 void q9_hal_con_put(char c)
 {
-    fputc(c, stdout);
-    fflush(stdout);
+    tx_drain_nonblocking();                               /* zuerst Platz schaffen               */
+    if (tx_count >= TX_BUF_SIZE) {
+        tx_overflow++;                                    /* Puffer voll -- wie uart_rx_overflow  */
+        return;
+    }
+    tx_buf[tx_tail] = (uint8_t)c;
+    tx_tail = (tx_tail + 1u) % TX_BUF_SIZE;
+    tx_count++;
+    tx_drain_nonblocking();                                /* gleich versuchen loszuwerden         */
+}
+
+void q9_hal_con_flush(void)
+{
+    tx_drain_nonblocking();
+}
+
+int q9_hal_con_tx_ready(void)
+{
+    return tx_count < TX_BUF_SIZE;
+}
+
+int q9_hal_con_tx_empty(void)
+{
+    tx_drain_nonblocking();
+    return tx_count == 0;
 }
 
 int q9_hal_con_get(void)
@@ -218,6 +291,7 @@ int main(int argc, char **argv)
 
     for (;;) {
         q9_kernel_step();
+        q9_hal_con_flush();                                 /* 5.7: TX-Rest aus vorherigen Runden   */
         usleep(1000);                                      /* don't burn a whole core               */
     }
 }

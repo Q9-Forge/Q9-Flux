@@ -100,6 +100,13 @@ void q9_hal_con_put(char c)
     fflush(stdout);
 }
 
+/* 5.7: kein Software-TX-Puffer auf diesem Target -- con_put oben ist bereits synchron/blockierend,
+   also ist der Puffer immer sofort leer. Reine Interface-Erfuellung (s. q9_hal.h), Windows-seitig
+   nicht Teil von Schritt 5.7. */
+void q9_hal_con_flush(void) { }
+int  q9_hal_con_tx_ready(void) { return 1; }
+int  q9_hal_con_tx_empty(void) { return 1; }
+
 int q9_hal_con_get(void)
 {
     int queued = keybuf_pop();

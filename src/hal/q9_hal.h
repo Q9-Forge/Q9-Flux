@@ -12,6 +12,8 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-02│ 1.00 │ Initiale Version (Konsole, Timer, Block-Device, Target-Info)           │ CF
 // 26-07-03│ 1.10 │ 1.9: q9_hal_time (Echtzeit-Quelle für F$Time)                          │ CF
+// 26-07-10│ 1.20 │ 5.7: TX-Puffer-Auskunft (q9_hal_con_flush/tx_ready/tx_empty), damit    │ CF
+//         │      │ die CB030-DUART-Emulation ehrliche TxRDY/TxEMT-Bits liefern kann        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_HAL_H
 #define Q9_HAL_H
@@ -43,6 +45,21 @@ void q9_hal_init(void);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_hal_con_put(char c);
 int  q9_hal_con_get(void);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_hal_con_flush / q9_hal_con_tx_ready / q9_hal_con_tx_empty
+// Desc.:    5.7: con_put darf den Aufrufer nie blockieren — Targets mit einem echten TX-Puffer
+//           (POSIX: Ringpuffer + nicht-blockierendes write()) versuchen bei jedem Aufruf so viel
+//           wie moeglich auszuliefern; q9_hal_con_flush() gibt dem Host-Loop die Moeglichkeit,
+//           das auch OHNE neue Ausgabe pro Hauptschleifen-Durchlauf zu wiederholen (Rest bleibt
+//           sonst bis zum naechsten con_put liegen). tx_ready = Platz fuer mind. ein weiteres
+//           Byte (TxRDY-Aequivalent); tx_empty = Puffer vollstaendig geleert (TxEMT-Aequivalent).
+//           Targets ohne echten Puffer (Windows/wasm) liefern immer 1 bzw. tun nichts.
+// Call:     q9_hal_con_flush();   if (q9_hal_con_tx_ready()) ...   if (q9_hal_con_tx_empty()) ...
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_hal_con_flush(void);
+int  q9_hal_con_tx_ready(void);
+int  q9_hal_con_tx_empty(void);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_hal_ticks_ms
