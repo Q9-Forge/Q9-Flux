@@ -196,3 +196,52 @@ Ziel:
 ## Merksatz
 
 Nicht gleichzeitig hostseitig mit Toolshed und im Emulator auf dasselbe Image schreiben.
+
+---
+
+## Nachtrag 2026-07-09: MWOS-SDK auf OS9SYS.hda + "Directory-Grenze" aufgeklaert (Claudia)
+
+### MWOS-SDK ist jetzt im Image
+
+Komplette SDK (ohne DOC, 710 MB PDFs) hostseitig per Toolshed nach
+`OS9SYS.hda,MWOS` kopiert: Top-Level-Dateien, DIST, DOS, MAKETMPL, APPS, SRC
+und OS9 mit ALLEN CPU-Verzeichnissen (68000/68020/68030/68040/68060/CPU32/SRC —
+68030 fehlte vorher komplett). Ausgelassen: 2956 "(2)"-Duplikate (2913 exakt
+identisch, 43 nur CRLF/LF-Unterschied — bleiben nur auf dem Mac), Windows-Junk
+(Zone.Identifier, .DS_Store). Drei Dateien mit ECHTEN Unterschieden zwischen
+Original und "(2)"-Version wurden in BEIDEN Versionen kopiert (Andreas'
+Entscheidung; Herkunft der (2)-Variante ungeklaert, sysgo_nodisk (2).a enthaelt
+u.a. einen undokumentierten Patch mit Hardware-Zugriff auf $a00040):
+`OS9/SRC/SYSMODS/GCLOCK/tickgeneric.a`, `OS9/SRC/SYSMODS/SYSGO/sysgo_nodisk.a`,
+`OS9/SRC/SYSMODS/SYSGO/makefile`.
+
+### "Directory-Grows-Grenze" existiert NICHT (auf diesem Image)
+
+Die alte Beobachtung "der Emulator/ROM-RBF sieht in groesseren Directories nur
+den ersten Teil" wurde geprueft und ist fuer OS9SYS.hda (32-Sektor-Cluster)
+WIDERLEGT — Gast und Host byte-genau verglichen:
+
+- `/dd/MWOS/OS9/68000/CMDS`: 179 Eintraege im Gast = 179 im Host, identisch.
+- `/dd/MWOS/OS9/SRC/DEFS`: 81 = 81, identisch.
+
+Was tatsaechlich kaputt ist: **Toolshed `dsave` hat einen Bug** — es bricht
+beim Fuellen groesserer Verzeichnisse nach ~72 Eintraegen mit "pathname not
+found" ab (reproduzierbar, auch in ein frisches leeres Zielverzeichnis).
+Einzelne `os9 copy`-Aufrufe fuer DIESELBEN Dateien in DASSELBE Verzeichnis
+funktionieren dagegen fehlerfrei bis 180+ Eintraege. Workaround-Skript
+(rekursiver Merge per Einzel-copy, ueberspringt Vorhandenes und nicht
+kopierbare Dateien): Muster in der Session vom 2026-07-09, bei Bedarf neu
+erzeugbar (~60 Zeilen Python).
+
+Weitere Toolshed-Stolperfallen (gleiche Sitzung):
+- Dateinamen mit `~` (Editor-Backups wie `send.c~`) → "badly formed pathname".
+- `os9 copy` stuerzt bei mind. einer grossen Binaerdatei ab
+  (`free-virtual-serial-ports.exe`, 5,4 MB, Exit-Code 133, keine Meldung).
+- `dcheck` meldet nach der Aktion ~4576 verwaiste Cluster (~73 MB, durch
+  zwischenzeitlich angelegte/gelöschte Verzeichnisse beim Debugging) —
+  "file structure is intact", nur verlorener Platz, kein Defekt.
+
+Die aeltere 256-Sektor-Cluster-Beobachtung (Q9-cb030-work-max.hda) ist damit
+nicht automatisch erklaert — moeglicherweise war auch dort dsave der
+eigentliche Schuldige. Falls das Thema wieder aufkommt: zuerst mit Einzel-copy
+gegentesten, bevor RBF/Emulator verdaechtigt werden.
