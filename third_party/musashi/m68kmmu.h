@@ -247,12 +247,12 @@ void m68881_mmu_ops(void)
 	// catch the 2 "weird" encodings up front (PBcc)
 	if ((m68ki_cpu.ir & 0xffc0) == 0xf0c0)
 	{
-		fprintf(stderr,"680x0: unhandled PBcc\n");
+		fprintf(stderr,"680x0: unhandled PBcc\r\n");
 		return;
 	}
 	else if ((m68ki_cpu.ir & 0xffc0) == 0xf080)
 	{
-		fprintf(stderr,"680x0: unhandled PBcc\n");
+		fprintf(stderr,"680x0: unhandled PBcc\r\n");
 		return;
 	}
 	else	// the rest are 1111000xxxXXXXXX where xxx is the instruction family
@@ -264,7 +264,7 @@ void m68881_mmu_ops(void)
 
 				if ((modes & 0xfde0) == 0x2000)	// PLOAD
 				{
-					fprintf(stderr,"680x0: unhandled PLOAD\n");
+					fprintf(stderr,"680x0: unhandled PLOAD\r\n");
 					return;
 				}
 				else if ((modes & 0xe200) == 0x2000)	// PFLUSH
@@ -277,23 +277,23 @@ void m68881_mmu_ops(void)
 					if (!warned_pflush)
 					{
 						warned_pflush = 1;
-						fprintf(stderr,"680x0: unhandled PFLUSH PC=%x (ok/ignoriert - kein TLB; weitere Meldungen unterdrueckt)\n", REG_PC);
+						fprintf(stderr,"680x0: unhandled PFLUSH PC=%x (ok/ignoriert - kein TLB; weitere Meldungen unterdrueckt)\r\n", REG_PC);
 					}
 					return;
 				}
 				else if (modes == 0xa000)	// PFLUSHR
 				{
-					fprintf(stderr,"680x0: unhandled PFLUSHR\n");
+					fprintf(stderr,"680x0: unhandled PFLUSHR\r\n");
 					return;
 				}
 				else if (modes == 0x2800)	// PVALID (FORMAT 1)
 				{
-					fprintf(stderr,"680x0: unhandled PVALID1\n");
+					fprintf(stderr,"680x0: unhandled PVALID1\r\n");
 					return;
 				}
 				else if ((modes & 0xfff8) == 0x2c00)	// PVALID (FORMAT 2)
 				{
-					fprintf(stderr,"680x0: unhandled PVALID2\n");
+					fprintf(stderr,"680x0: unhandled PVALID2\r\n");
 					return;
 				}
 				else if ((modes & 0xe000) == 0x8000)	// PTEST
@@ -306,7 +306,7 @@ void m68881_mmu_ops(void)
 					if (!warned_ptest)
 					{
 						warned_ptest = 1;
-						fprintf(stderr,"680x0: unhandled PTEST (weitere Meldungen unterdrueckt)\n");
+						fprintf(stderr,"680x0: unhandled PTEST (weitere Meldungen unterdrueckt)\r\n");
 					}
 					return;
 				}
