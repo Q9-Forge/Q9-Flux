@@ -169,6 +169,13 @@ int q9_hal_con_get(void)
     unsigned char c;
     ssize_t       n = read(STDIN_FILENO, &c, 1);
 
+    if (n == 1 && c == 0x1d) {                         /* Host-Escape: Ctrl-] beendet den Emulator */
+        fputs("\nq9: Host-Escape Ctrl-] — Emulator beendet.\n", stderr);
+        exit(0);
+    }
+    if (n == 1 && c == 0x7f) {
+        c = 0x08;                                      /* macOS Backspace (DEL) -> OS-9 BS       */
+    }
     return (n == 1) ? c : -1;
 }
 
