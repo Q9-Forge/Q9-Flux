@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.91
+# File:   HANDBUCH.md                                                                     Ver. 1.92
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -34,6 +34,9 @@
 # 26-07-10│ 1.91 │ 5.7: TX-Ringpuffer (hal_posix.c) — HAL-Schnittstelle (Abschnitt 5.7) um     │ CF
 #         │      │ q9_hal_con_flush/tx_ready/tx_empty erweitert, veraltete "TxRDY immer        │
 #         │      │ gesetzt"-Aussage in Abschnitt 5.10 (5.2b) korrigiert                        │
+# 26-07-10│ 1.92 │ 5.9: Idle-Drossel CB030-Runner — q9_hal_sleep_ms (Abschnitt 5.7),           │ CF
+#         │      │ q9_m68krt_is_stopped (Abschnitt 5.9), Boot-Runner-Beschreibung in           │
+#         │      │ Abschnitt 5.10 aktualisiert (Ctrl-] statt Ctrl-C, Idle-Drossel-Absatz)       │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -664,6 +667,7 @@ void     q9_m68krt_reset(q9_m68krt_t *rt);
 int      q9_m68krt_execute(q9_m68krt_t *rt, int cycles);
 uint32_t q9_m68krt_get_d(q9_m68krt_t *rt, int n);   // Dn, n=0..7
 void     q9_m68krt_free(q9_m68krt_t *rt);
+int      q9_m68krt_is_stopped(void);                // 5.9: CPU per STOP angehalten?
 ```
 
 Mit `M68K_SEPARATE_READS` aus (third_party/musashi/m68kconf.h) genügen genau
@@ -771,7 +775,13 @@ erreichbar (die DUART wird vor dem Remap initialisiert). Der Boot-Runner
 Lädt das ROM (max. 512 KByte, `q9_cb030_rom_load`), stellt 16 MByte
 emuliertes RAM, hängt die CF-Backing-Datei an (lazy angelegt — standardmäßig
 `cb030_cf.img`, mit `--cf` ein beliebiger anderer Pfad, 5.5a) und lässt die
-CPU laufen (Ende: Ctrl-C). Das echte Microware-Boot-ROM ist proprietär und
+CPU laufen (Ende: Ctrl-] als Host-Escape, s. `q9_hal_con_get`). **Idle-Drossel
+(5.9):** Ist die CPU per `STOP` angehalten (`q9_m68krt_is_stopped`, z.B. OS-9s
+Leerlauf am Login-Prompt) UND liegt kein IRQ an, schläft der Host-Loop kurz
+(`q9_hal_sleep_ms(1)`) statt den nächsten Slice sofort "leer" zu verbrennen —
+senkt die Host-CPU-Last im Leerlauf von ~100 % auf ca. 1–2 %, ohne die
+OS-9-Uhr zu verfälschen (`q9_hal_ticks_ms()` bleibt Wanduhr-basiert, der
+nächste 10-ms-Timer-Tick weckt die CPU regulär). Das echte Microware-Boot-ROM ist proprietär und
 bleibt lokal — `.gitignore` deckt `cb030rom*.bin`/`*.rom` ab. Der Selbsttest
 bootet stattdessen ein synthetisches 32-Byte-ROM über exakt dasselbe
 Bootmuster (Vektoren aus dem ROM, Sprung hoch, REMAP, RAM-Schreiben). Die
@@ -816,7 +826,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
 | 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig, inkl. Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite), 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module), 4.9 (Fixed-Heap statt Host-malloc in wasm3, Q9-Systemkonfiguration `config.h`); Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
-| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10), 5.3/5.5a (Musashi↔CB030-Verdrahtung, Boot-Runner `q9.exe --cb030 <rom> [--cf <image>]`, CF-Multisektor) — OS9SYS-CF-Boot funktioniert lokal mit `OS9Boot`, `startup`, `q9term` und `umacs` |
+| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10), 5.3/5.5a (Musashi↔CB030-Verdrahtung, Boot-Runner `q9.exe --cb030 <rom> [--cf <image>]`, CF-Multisektor) — OS9SYS-CF-Boot funktioniert lokal mit `OS9Boot`, `startup`, `q9term` und `umacs`; 5.7-5.9 (TX-Ringpuffer, Ctrl-]/DEL-Mapping, Idle-Drossel, Abschnitt 5.7/5.10) seither ebenfalls fertig |
 | 6 | Shell | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
 | 8 | Vision: 6809-Runtime, Netzwerk, Self-Hosting | offen |
