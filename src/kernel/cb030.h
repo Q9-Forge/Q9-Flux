@@ -53,6 +53,41 @@
 #define Q9_CB030_REMAP_REG_BASE    0xFFFF8000u        /* REMAP-Register: reiner Adress-Trigger  */
 #define Q9_CB030_REMAP_REG_TOP     0xFFFF8FFFu
 
+// ===============================================================================================
+// OS-9 Netzwerk Terminal Server Peripherie-Definitionen (Erweiterung Ver. 1.30)
+// ===============================================================================================
+#define MAX_CHANNELS 4
+#define MAIN_LISTEN_PORT 2000
+
+/* I/O-Bloecke je Kanal (3 Register: +0 Status, +2 RX-Data, +4 TX-Data), freie Luecke zwischen
+   ROM-Spiegelgrenze (bis 0xFFFF_0000 frei, s. Q9_CB030_ROM_MIRROR_TOP) und REMAP-Register
+   (Q9_CB030_REMAP_REG_BASE ab 0xFFFF_8000) — kollidiert bewusst NICHT mit dem RAM (anders als
+   die urspruengliche 0x00FF00xx-Adressierung, die mitten im 16-MByte-RAM lag). */
+#define Q9_CB030_NET_T1_BASE       0xFFFF1010u
+#define Q9_CB030_NET_T2_BASE       0xFFFF1020u
+#define Q9_CB030_NET_T3_BASE       0xFFFF1030u
+#define Q9_CB030_NET_T4_BASE       0xFFFF1040u
+#define Q9_CB030_NET_BASE          Q9_CB030_NET_T1_BASE
+#define Q9_CB030_NET_TOP           0xFFFF104Fu
+
+typedef struct {
+    int client_fd;
+    unsigned char rx_data;
+    unsigned char tx_data;
+    unsigned char status;  // Bit 0 = RX Ready, Bit 1 = TX Empty
+    unsigned int base_addr;
+    int irq_level;
+    int irq_vector;
+} os9_uart_t;
+
+
+static os9_uart_t channels[MAX_CHANNELS] = {
+    {-1, 0, 0, 0x02, Q9_CB030_NET_T1_BASE, 4, 70}, // /t1
+    {-1, 0, 0, 0x02, Q9_CB030_NET_T2_BASE, 4, 71}, // /t2
+    {-1, 0, 0, 0x02, Q9_CB030_NET_T3_BASE, 4, 72}, // /t3
+    {-1, 0, 0, 0x02, Q9_CB030_NET_T4_BASE, 4, 73}  // /t4
+};
+
 /* 5.2d: Timer/IRQ3 — reine Adress-Trigger, kein Datenwert. */
 #define Q9_CB030_TIRQ_OFF_BASE     0xFFFF9000u
 #define Q9_CB030_TIRQ_OFF_TOP      0xFFFF97FFu
@@ -124,6 +159,7 @@ typedef struct q9_cb030 {
     int            timer_active;
     uint32_t       timer_last_ms;
 } q9_cb030_t;
+
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_init

@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // File:   m68krt.c                                                                        Ver. 1.20
 // Owner:  AF
@@ -20,6 +21,16 @@
 #include "cb030.h"
 #include "m68k.h"
 #include <string.h>
+#include <unistd.h>  
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <fcntl.h>
+#include <errno.h>
+
 
 /* Musashi haelt seinen CPU-Zustand in eigenen globalen Variablen und ruft m68k_read/write_memory_*
    ohne Kontext-Zeiger auf (s. m68krt.h) — deshalb muessen der aktive RAM-Block bzw. das aktive
@@ -30,8 +41,120 @@ static uint8_t     *g_ram;
 static uint32_t     g_ram_len;
 static q9_cb030_t  *g_board;
 
+// === Forward-Deklarationen für den Netzwerk-Server ===
+static void init_network_terminals(void);
+static void update_network_terminals(void);
+static unsigned char network_read8(unsigned int address);
+static void network_write8(unsigned int address, unsigned char value);
+static int main_server_fd = -1;  
+
+
+static void init_network_terminals(void) {
+    struct sockaddr_in addr;
+    int opt = 1;
+
+    main_server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (main_server_fd < 0) return;
+
+    setsockopt(main_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    fcntl(main_server_fd, F_SETFL, O_NONBLOCK);
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(MAIN_LISTEN_PORT);
+
+    bind(main_server_fd, (struct sockaddr *)&addr, sizeof(addr));
+    listen(main_server_fd, 5);
+    printf("[OS-9 Net] Multi-Terminal Server gestartet auf Mac-Port %d\n", MAIN_LISTEN_PORT);
+}
+
+static void update_network_terminals(void) {
+    if (main_server_fd < 0) return;
+
+    int incoming = accept(main_server_fd, NULL, NULL);
+    if (incoming >= 0) {
+        fcntl(incoming, F_SETFL, O_NONBLOCK);
+        int assigned = 0;
+        for (int i = 0; i < MAX_CHANNELS; i++) {
+            if (channels[i].client_fd < 0) {
+                channels[i].client_fd = incoming;
+                printf("[OS-9 Net] Gast dynamisch an /t%d uebergeben.\n", i + 1);
+                assigned = 1;
+                break;
+            }
+        }
+        if (!assigned) {
+            write(incoming, "OS-9: All lines busy.\r\n", 23);
+            close(incoming);
+        }
+    }
+
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (channels[i].client_fd < 0) {
+            continue;
+        }
+
+        /* read() laeuft IMMER, unabhaengig vom RX-Ready-Status — sonst bleibt jedes Byte,
+           das ankommt waehrend OS-9 das vorherige noch nicht abgeholt hat, fuer immer
+           ungelesen im Socket-Puffer stehen, und ein Verbindungsabbruch (n==0) wird nie
+           erkannt (Socket blieb bisher dauerhaft in CLOSE_WAIT haengen). Ist das Register
+           noch belegt, wird das neu gelesene Byte bewusst verworfen (Overrun, wie bei einer
+           echten UART ohne FIFO) statt das wartende Byte zu ueberschreiben. */
+        unsigned char byte_in;
+        int n = read(channels[i].client_fd, &byte_in, 1);
+        if (n == 1) {
+            if (!(channels[i].status & 0x01)) {
+                channels[i].rx_data = byte_in;
+                channels[i].status |= 0x01;
+                m68k_set_irq((unsigned int)channels[i].irq_level);
+            }
+        } else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+            close(channels[i].client_fd);
+            channels[i].client_fd = -1;
+            channels[i].status &= ~0x01;
+            printf("[OS-9 Net] Gast von /t%d getrennt.\n", i + 1);
+        }
+    }
+}
+
+
+static unsigned char network_read8(unsigned int address) {
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (address == channels[i].base_addr) {
+            return channels[i].status;
+        }
+        if (address == channels[i].base_addr + 2) {
+            channels[i].status &= ~0x01; // RX Ready löschen
+            m68k_set_irq(0);             // Interrupt-Pin absenken
+            return channels[i].rx_data;
+        }
+    }
+    return 0;
+}
+
+static void network_write8(unsigned int address, unsigned char value) {
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (address == channels[i].base_addr + 4) {
+            channels[i].tx_data = value;
+            if (channels[i].client_fd >= 0) {
+                write(channels[i].client_fd, &channels[i].tx_data, 1);
+            }
+            channels[i].status |= 0x02; // TX wieder leer/bereit
+            break;
+        }
+    }
+}
+
+
+
 unsigned int m68k_read_memory_8(unsigned int address)
 {
+    
+      if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
+        return network_read8(address);
+    }
+    
     if (g_board) {
         return q9_cb030_read8(g_board, (uint32_t)address);
     }
@@ -40,6 +163,11 @@ unsigned int m68k_read_memory_8(unsigned int address)
 
 unsigned int m68k_read_memory_16(unsigned int address)
 {
+    
+    if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
+        return (network_read8(address) << 8) | network_read8(address + 1);
+    }
+    
     if (g_board) {
         return q9_cb030_read16(g_board, (uint32_t)address);
     }
@@ -51,6 +179,12 @@ unsigned int m68k_read_memory_16(unsigned int address)
 
 unsigned int m68k_read_memory_32(unsigned int address)
 {
+    
+    if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
+        return (network_read8(address) << 24) | (network_read8(address + 1) << 16) |
+               (network_read8(address + 2) << 8)  | network_read8(address + 3);
+    }
+    
     if (g_board) {
         return q9_cb030_read32(g_board, (uint32_t)address);
     }
@@ -63,6 +197,12 @@ unsigned int m68k_read_memory_32(unsigned int address)
 
 void m68k_write_memory_8(unsigned int address, unsigned int value)
 {
+    
+    if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
+        network_write8(address, (unsigned char)value);
+        return;
+    }
+    
     if (g_board) {
         q9_cb030_write8(g_board, (uint32_t)address, (uint8_t)value);
         return;
@@ -74,6 +214,13 @@ void m68k_write_memory_8(unsigned int address, unsigned int value)
 
 void m68k_write_memory_16(unsigned int address, unsigned int value)
 {
+    
+    if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
+        network_write8(address, (unsigned char)(value >> 8));
+        network_write8(address + 1, (unsigned char)value);
+        return;
+    }
+    
     if (g_board) {
         q9_cb030_write16(g_board, (uint32_t)address, (uint16_t)value);
         return;
@@ -87,6 +234,16 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
 
 void m68k_write_memory_32(unsigned int address, unsigned int value)
 {
+    
+    if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
+        network_write8(address, (unsigned char)(value >> 24));
+        network_write8(address + 1, (unsigned char)(value >> 16));
+        network_write8(address + 2, (unsigned char)(value >> 8));
+        network_write8(address + 3, (unsigned char)value);
+        return;
+    }
+    
+    
     if (g_board) {
         q9_cb030_write32(g_board, (uint32_t)address, (uint32_t)value);
         return;
@@ -120,8 +277,17 @@ static int m68krt_board_int_ack(int int_level)
     if (g_board && q9_cb030_uart_irq_pending(g_board)) {
         return g_board->uart_ivr;
     }
+    
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+    if ((channels[i].status & 0x01) && int_level == channels[i].irq_level) {
+        return channels[i].irq_vector; 
+    }
+}
+
+    
     return M68K_INT_ACK_AUTOVECTOR;
 }
+
 
 int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
 {
@@ -139,8 +305,14 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
     m68k_set_cpu_type(M68K_CPU_TYPE_68030);
     m68k_init();
     m68k_set_int_ack_callback(0);
+
+    // === NEU: Netzwerk-Server beim Start hochfahren ===
+    init_network_terminals();
+
     return Q9_M68KRT_OK;
 }
+
+
 
 void q9_m68krt_attach_board(q9_cb030_t *board)
 {
@@ -157,6 +329,7 @@ void q9_m68krt_reset(q9_m68krt_t *rt)
 int q9_m68krt_execute(q9_m68krt_t *rt, int cycles)
 {
     (void)rt;
+    update_network_terminals();
     return m68k_execute(cycles);
 }
 
@@ -168,6 +341,12 @@ uint32_t q9_m68krt_get_d(q9_m68krt_t *rt, int n)
 
 void q9_m68krt_free(q9_m68krt_t *rt)
 {
+    
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (channels[i].client_fd >= 0) close(channels[i].client_fd);
+    }
+    if (main_server_fd >= 0) close(main_server_fd);
+    
     g_ram     = NULL;
     g_ram_len = 0;
     g_board   = NULL;
