@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_wasm.c                                                                      Ver. 1.20
+// File:   hal_wasm.c                                                                      Ver. 1.21
 // Owner:  AF
 // Desc.:  HAL-Implementierung für das WASM/Browser-Target (Emscripten).
 //         Konsole läuft über globalThis.q9host (definiert in web/worker.js), Block-Device über
@@ -17,6 +17,8 @@
 // 26-07-04│ 1.20 │ 3.6: q9_hal_blk_read/write via globalThis.q9blk (OPFS-SyncAccessHandle │ CF
 //         │      │ im Worker, web/worker.js); Modul läuft jetzt komplett im Worker         │
 //         │      │ (ungetestet, emsdk fehlt lokal weiterhin)                              │
+// 26-07-10│ 1.21 │ 5.7/5.9: HAL-Interface-Erfuellung (con_flush/tx_ready/tx_empty trivial, │ CF
+//         │      │ q9_hal_sleep_ms no-op) -- cb030.c wird im wasm-Build nicht mitgebaut    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <emscripten.h>
@@ -86,6 +88,15 @@ int  q9_hal_con_tx_empty(void) { return 1; }
 uint32_t q9_hal_ticks_ms(void)
 {
     return (uint32_t)emscripten_get_now();
+}
+
+/* 5.9: kein echtes Schlafen im synchronen Worker-Kontext -- q9_kernel_step() wird ohnehin
+   getaktet vom Browser aufgerufen (Muster wie q9_hal_con_flush oben), und cb030.c (der einzige
+   Aufrufer der Idle-Drossel) wird im wasm-Build ohnehin nicht mitkompiliert. Reine Interface-
+   Erfuellung (s. q9_hal.h). */
+void q9_hal_sleep_ms(uint32_t ms)
+{
+    (void)ms;
 }
 
 int q9_hal_blk_read(uint32_t lba, void *buf)

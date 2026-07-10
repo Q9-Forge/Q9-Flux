@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_native.c                                                                    Ver. 1.10
+// File:   hal_native.c                                                                    Ver. 1.11
 // Owner:  AF
 // Desc.:  HAL-Implementierung für den nativen PC-Build (Windows, w64devkit/gcc).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
@@ -12,6 +12,8 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-02│ 1.00 │ Initiale Version: Konsole (conio), Timer, Disk-Image, Selftest         │ CF
 // 26-07-03│ 1.10 │ 1.9: q9_hal_time via localtime                                         │ CF
+// 26-07-10│ 1.11 │ 5.7/5.9: HAL-Interface-Erfuellung (con_flush/tx_ready/tx_empty trivial, │ CF
+//         │      │ q9_hal_sleep_ms via Sleep()) -- kein echter TX-Puffer auf diesem Target │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <stdio.h>
@@ -141,6 +143,11 @@ int q9_hal_con_get(void)
 uint32_t q9_hal_ticks_ms(void)
 {
     return (uint32_t)GetTickCount64();
+}
+
+void q9_hal_sleep_ms(uint32_t ms)
+{
+    Sleep((DWORD)ms);                                      /* 5.9: CB030-Idle-Drossel           */
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -26,6 +26,8 @@
 //         │      │ cb030.c's Timer/IRQ3-Polling                                            │
 // 26-07-05│ 1.20 │ 5.3: q9_m68krt_attach_board — Speicherzugriffe wahlweise ueber den       │ CF
 //         │      │ CB030-Adress-Dispatch (cb030.h) statt nacktem RAM-Block                 │
+// 26-07-10│ 1.30 │ 5.9: q9_m68krt_is_stopped — Wrapper um Musashis m68k_is_stopped()        │ CF
+//         │      │ (Vendor-Patch) fuer die CB030-Idle-Drossel                              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_M68KRT_H
 #define Q9_M68KRT_H
@@ -120,6 +122,17 @@ void q9_m68krt_attach_board(q9_cb030_t *board);
 // Call:     q9_m68krt_debug_state(&pc, &sr, &acks)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_debug_state(uint32_t *pc, uint32_t *sr, uint32_t *acks);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_is_stopped
+// Desc.:    5.9: Duenner Wrapper um Musashis m68k_is_stopped() (Vendor-Patch, s.
+//           third_party/musashi/Q9_VENDOR.md) — 1 wenn die CPU per STOP-Instruktion angehalten
+//           ist (z.B. OS-9s Idle-Loop), sonst 0. Grundlage fuer die Host-Idle-Drossel im
+//           CB030-Runner (cb030run.c): wenn gestoppt UND kein IRQ anliegt, kann der Host
+//           kurz schlafen statt den Slice sofort wieder "leer" zu verbrennen.
+// Call:     if (q9_m68krt_is_stopped()) ...
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_m68krt_is_stopped(void);
 
 #endif // Q9_M68KRT_H
 

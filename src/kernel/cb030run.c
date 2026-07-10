@@ -11,6 +11,8 @@
 // 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (NULL = Default CB030_CF_IMAGE)                 │ CF
 // 26-07-10│ 1.20 │ 5.7: q9_hal_con_flush() pro Runde -- TX-Ringpuffer-Rest ausliefern,     │ CF
 //         │      │ auch ohne neues THRA-Byte im selben Durchlauf                           │
+// 26-07-10│ 1.30 │ 5.9: Idle-Drossel -- q9_hal_sleep_ms(1) statt Busy-Loop, wenn die CPU    │ CF
+//         │      │ per STOP angehalten ist UND kein IRQ ansteht (OS-9-Leerlauf)             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
@@ -77,6 +79,16 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path)
             irq |= q9_cb030_uart_irq_pending(&board);
             if (irq) {
                 q9_m68krt_set_irq(3);
+            }
+
+            /* 5.9: OS-9 idlet per STOP -- m68k_execute() "verbrennt" dann sofort alle
+               angeforderten Takte, ohne etwas zu tun (busy loop, 100% Host-CPU). Ohne anstehenden
+               IRQ kann in dieser Zeit nichts passieren, bevor der naechste 10ms-Timer-Tick (oder
+               ein DUART-Interrupt) die CPU sowieso weckt -- also kurz schlafen statt sofort
+               weiterzudrehen. q9_hal_ticks_ms() bleibt Wanduhr-basiert, die OS-9-Uhr geht also
+               nicht falsch. */
+            if (!irq && q9_m68krt_is_stopped()) {
+                q9_hal_sleep_ms(1);
             }
 
             if (dbg && now_ms - last_dbg_ms >= 3000u) {

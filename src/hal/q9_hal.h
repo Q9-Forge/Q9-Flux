@@ -14,6 +14,8 @@
 // 26-07-03│ 1.10 │ 1.9: q9_hal_time (Echtzeit-Quelle für F$Time)                          │ CF
 // 26-07-10│ 1.20 │ 5.7: TX-Puffer-Auskunft (q9_hal_con_flush/tx_ready/tx_empty), damit    │ CF
 //         │      │ die CB030-DUART-Emulation ehrliche TxRDY/TxEMT-Bits liefern kann        │
+// 26-07-10│ 1.30 │ 5.9: q9_hal_sleep_ms — oeffentliche Schlaf-API fuer die Idle-Drossel    │ CF
+//         │      │ des CB030-Runners (vorher nur internes usleep in hal_posix.c)           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_HAL_H
 #define Q9_HAL_H
@@ -60,6 +62,16 @@ int  q9_hal_con_get(void);
 void q9_hal_con_flush(void);
 int  q9_hal_con_tx_ready(void);
 int  q9_hal_con_tx_empty(void);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_hal_sleep_ms
+// Desc.:    5.9: Legt den aufrufenden Thread fuer ungefaehr 'ms' Millisekunden schlafen (POSIX:
+//           usleep/nanosleep, Windows: Sleep). Fuer Idle-Drosseln im Host-Loop gedacht (z.B.
+//           CB030-Runner, wenn die emulierte CPU per STOP angehalten ist) — kein Echtzeit-Timer,
+//           kann laenger als angefordert dauern (Scheduler-Jitter), aber nie kuerzer im Normalfall.
+// Call:     q9_hal_sleep_ms(1)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_hal_sleep_ms(uint32_t ms);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_hal_ticks_ms

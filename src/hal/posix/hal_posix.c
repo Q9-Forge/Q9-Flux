@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_posix.c                                                                     Ver. 1.00
+// File:   hal_posix.c                                                                     Ver. 1.20
 // Owner:  AF
 // Desc.:  HAL-Implementierung für den nativen POSIX-Build (macOS/Linux, clang/gcc).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
@@ -13,6 +13,8 @@
 // 26-07-03│ 1.00 │ 1.10: Konsole (termios raw+nonblocking), Timer, Disk-Image, Selftest    │ CF
 // 26-07-10│ 1.10 │ 5.7: TX-Ringpuffer fuer q9_hal_con_put (nicht-blockierendes write()),    │ CF
 //         │      │ statt pro Zeichen zu blockieren -- Gegenstueck zum RX-FIFO (cb030.c)     │
+// 26-07-10│ 1.11 │ 5.8: Ctrl-]-Host-Escape + DEL->BS-Mapping in q9_hal_con_get()            │ CF
+// 26-07-10│ 1.20 │ 5.9: q9_hal_sleep_ms (usleep) fuer die CB030-Idle-Drossel                │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <stdio.h>
@@ -187,6 +189,11 @@ uint32_t q9_hal_ticks_ms(void)
     return (uint32_t)((uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u);
 }
 
+void q9_hal_sleep_ms(uint32_t ms)
+{
+    usleep((useconds_t)ms * 1000u);
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: disk_open
 // Desc.:    Öffnet das Disk-Image lazy (legt es beim ersten Schreibzugriff an).
@@ -304,5 +311,5 @@ int main(int argc, char **argv)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF hal_posix.c                                                                         Ver. 1.00
+// EOF hal_posix.c                                                                         Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

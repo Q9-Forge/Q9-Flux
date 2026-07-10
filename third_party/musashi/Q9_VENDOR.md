@@ -64,3 +64,13 @@ Modifikation; Upstream-tauglich, falls je gewünscht):
 
 Ergebnis: Das unveraenderte Microware-ROM-Image bootet OS-9/68K bis zur interaktiven
 mshell (`$`-Prompt, `mdir` funktioniert) — s. ARBEITSPLAN.md 5.4.
+
+## Q9-eigene Änderung am Vendor-Code (2026-07-10, Schritt 5.9)
+
+6. **`m68kcpu.c`/`m68k.h` — `m68k_is_stopped(void)` neu**: schmaler Accessor, der
+   zurückgibt, ob `CPU_STOPPED` (internes Flag, wird u.a. von der `STOP`-Instruktion
+   gesetzt) ungleich 0 ist. Grund: OS-9 idlet im Login-Prompt per `STOP #$3000` —
+   ohne diesen Accessor "verbrennt" `cb030run.c` die angeforderten Zyklen einer
+   gestoppten CPU sofort wieder (100 % Host-CPU im Leerlauf), weil es von aussen
+   keine Möglichkeit gab, den Stopp-Zustand abzufragen. Rein additiv (keine
+   bestehende Funktion geändert), markiert mit `Q9/CB030`.
