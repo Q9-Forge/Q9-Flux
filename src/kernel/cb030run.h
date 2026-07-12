@@ -11,7 +11,7 @@
 //         Das echte Microware-Boot-ROM ist proprietaer und bleibt lokal — der Pfad kommt
 //         deshalb per Kommandozeile, nichts davon liegt im Repository (docs/CB030.md).
 //
-// Call:   return q9_cb030_boot("cb030rom.bin", NULL);
+// Call:   return q9_cb030_boot("cb030rom.bin", NULL, NULL);
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -19,6 +19,7 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-05│ 1.00 │ 5.3: Erster Boot-Runner (ROM laden, Board verdrahten, laufen lassen)    │ CF
 // 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (--cf <pfad>), NULL = Default "cb030_cf.img"    │ CF
+// 26-07-13│ 1.20 │ 5.12: net_mode-Parameter (--net nat|vmnet), NULL = "nat"                │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030RUN_H
 #define Q9_CB030RUN_H
@@ -32,9 +33,11 @@
 //           pollen (q9_cb030_poll_timer -> q9_m68krt_set_irq(3), s. 5.2d). Kehrt nur bei
 //           Ladefehler zurueck (Exit-Code fuer main); beendet wird der Lauf per Ctrl-C (die HAL
 //           stellt das Terminal via atexit-Handler zurueck).
-// Call:     return q9_cb030_boot(argv[2], cf_path_or_NULL);
+//           net_mode waehlt das Ethernet-Backend (s. q9_quicc_net_mode): NULL/"nat" =
+//           eingebautes Mini-NAT, "vmnet" = echtes Netz via vmnet.framework (macOS, sudo).
+// Call:     return q9_cb030_boot(argv[2], cf_path_or_NULL, net_mode_or_NULL);
 //════════════════════════════════════════════════════════════════════════════════════════════════
-int q9_cb030_boot(const char *rom_path, const char *cf_path);
+int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode);
 
 #endif // Q9_CB030RUN_H
 

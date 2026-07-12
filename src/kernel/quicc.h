@@ -17,14 +17,21 @@
 //         Die Frame-Puffer selbst liegen NICHT im Fenster: die Buffer-Descriptoren im DPRAM
 //         zeigen auf mbufs im Gast-RAM — die SDMA-Emulation liest/schreibt dort direkt.
 //
-//         Host-Backend: User-Mode-Mini-NAT (kein Root, kein TAP): der Host beantwortet als
-//         Gegenstelle 10.0.0.2 ARP und ICMP-Echo; TCP-NAT folgt als Ausbaustufe.
+//         Host-Backend, waehlbar per `--net` (s. q9_quicc_net_mode):
+//           nat   (Default) User-Mode-Mini-NAT, kein Root: der Host beantwortet als Gegenstelle
+//                 10.0.0.2 ARP und ICMP-Echo — reicht fuer den Treiber-/Stack-Test.
+//           vmnet (5.12, macOS, braucht sudo) Frames gehen roh an Apples vmnet.framework
+//                 (Shared Mode, Gateway 10.0.0.2 = dieselbe Adresse): OS-9 kommt echt ins
+//                 Netz (raus und rein). vmnet erzwingt seine zugewiesene Absender-MAC, der
+//                 spqe0-Descriptor hat aber eine feste — deshalb uebersetzt das Backend die
+//                 Gast-MAC in beiden Richtungen (inkl. der MAC-Felder in ARP-Paketen).
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-12│ 1.00 │ 5.11: Erster Wurf — Registerfenster, BD-Ringe, IRQ, ARP/ICMP-Backend    │ CF
+// 26-07-13│ 1.10 │ 5.12: vmnet-Backend (--net vmnet) + MAC-Uebersetzung Gast<->vmnet       │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_QUICC_H
 #define Q9_QUICC_H
@@ -49,10 +56,17 @@ typedef struct q9_quicc {
     uint8_t   mem[Q9_QUICC_MEM_LEN];                  /* DPRAM + PRAM + Registerbank              */
     uint8_t  *ram;                                    /* Gast-RAM (SDMA-Ziel/-Quelle)             */
     uint32_t  ram_len;
+    int       use_vmnet;                              /* 5.12: Backend (0 = Mini-NAT, 1 = vmnet)  */
+    uint8_t   guest_mac[6];                           /* 5.12: aus dem ersten TX-Frame gelernt    */
+    int       guest_mac_ok;
 } q9_quicc_t;
 
 //─── API ──────────────────────────────────────────────────────────────────────────────────────────
 void     q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len);
+
+/* 5.12: Backend waehlen — mode NULL/"nat" = Mini-NAT (Default), "vmnet" = vmnet.framework
+   (macOS, braucht sudo). Rueckgabe 0 = ok; sonst ist die Fehlermeldung schon ausgegeben. */
+int      q9_quicc_net_mode(q9_quicc_t *q, const char *mode);
 
 /* Trifft die Adresse das QUICC-Fenster? (fuer den Dispatch in m68krt.c) */
 int      q9_quicc_hit(uint32_t addr);
