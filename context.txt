@@ -99,3 +99,49 @@ Status: Abgeschlossen
   untergesetzt; später sogar 6809-Runtime für original OS-9/6809-Binaries
   (Syscall-Semantik von OS-9/6809 und /68k ist weitgehend identisch)
 - Offene Entscheidungen O1-O4 siehe PROJECT.md
+
+## Session 2026-07-12 abends (interaktiv mit Andreas): Schritt 5.11 komplett — OS-9 PINGT DEN HOST
+
+Ganzer Bogen an einem Abend: QUICC-Ethernet von null bis zum funktionierenden ping.
+
+### MWOS-Seite (Repo /Volumes/SSD1TB/projects/MWOS, dort NICHT committet — Andreas' Entscheidung ausstehend)
+- Original-Microware-SPF-Treiber sp360 + Descriptor spqe0 aus OS9/CPU32/PORTS/QUADS
+  in den Q9-Port uebernommen (OS9/68030/PORTS/Q9/SPF/), fuer 68020/030 uebersetzt
+  (ALL_TRGTS k020, gendefs.h-Includepfad ergaenzt), beide Module CRC Good
+- Komplette SPF-Infrastruktur: ETC (interfaces.conf: enet0=10.0.0.1/24,
+  binding /spqe0/enet, hostname q9 -> steckt in inetdb2!), neues Bootflavor
+  net.bl (98 Module, 838 KB — passt NICHT ins 512K-ROM, gedacht fuer os9gen
+  in den CF-Bootbereich), startspf-Vorlage, CHANGELOG/context.txt gepflegt
+- Adressentscheidung: QUICC-Basis $FFFF2000 (8K, kollisionsfrei), PORTADDR
+  $FFFF2C00 im spqe0 (Treiber maskiert & $FFFFF000, Kanalbits 8-9 -> SCC1)
+
+### Q9-Seite (committet + gepusht: a43f804, d94cd81, e42361e)
+- src/kernel/quicc.c/.h NEU: 8K-Fenster (DPRAM/PRAM/Register, Offsets per
+  offsetof aus Motorolas quicc.h verifiziert: PRAM +$C00, CR +$15C0, SCC1
+  +$1600), CP-Kommandos synchron, TX/RX-BD-Ringe mit tbptr/rbptr-Fort-
+  schreibung, SDMA = direkte Gast-RAM-Zugriffe, SCCE/SCCM/CIPR/CIMR-Pegel,
+  IRQ Level 5 / Vektor 254; Mini-NAT-Backend: Proxy-ARP + ICMP-Echo als
+  Gegenstelle 10.0.0.2 (User-Mode, kein Root/TAP)
+- m68krt.c: QUICC-Dispatch in allen 6 Speicher-Hooks + IACK-Zweig Level 5;
+  cb030run.c: Instanz/attach/poll/IRQ; Makefile: quicc.c im CB030_SRC
+- Host-Rauchtest (BD-Mechanik+ARP) UND End-to-End: test_quicc_net.exp
+  (Klon-Image OS9SYS.claudia-net-test.hda, netmods-Merge mit 23 SPF-Modulen
+  via ToolShed): load netmods + mbinstall + ipstart, ping 10.0.0.2 ->
+  "64 bytes from 10.0.0.2: ttl=255 time=0 ms", netstat: enet0 UP, 0 Fehler
+- make test PASS, make native warnungsfrei; HANDBUCH: Abschnitt 3 + neu 5.11
+
+### Erkenntnisse (dokumentiert in ARBEITSPLAN 5.11 + startspf)
+1. sysmbuf = Coldstart-Systemmodul (Typ $C): beim Laufzeit-Laden MUSS
+   mbinstall vor ipstart laufen ("sysmbuf is not installed" sonst)
+2. ToolShed-Kopien brauchen attr -e -pe, sonst Error 214 beim load
+3. dev.bf war mit 511.970 Bytes exakt an der 512K-ROM-Kante — deshalb
+   Netzwerk als eigenes net-Flavor, dev.bl unangetastet
+
+### Offen / naechste Schritte
+- Stuendliche Routine (q9-arbeitsplan) ist PAUSIERT (Andreas' Wunsch,
+  vor Wiederaktivierung fragen bzw. auf Zuruf)
+- Ausbaustufe TCP/UDP-NAT im Backend (telnet/ftp Gast<->Host) — bei
+  Bedarf als neuer 💡-Vorschlag
+- MWOS-Repo: Q9-Port-Aenderungen sind unversioniert (ganzer Ordner
+  untracked) — Committen ist Andreas' Entscheidung
+- net.bf via os9gen in den CF-Bootbereich = Andreas' Image-Pflege
