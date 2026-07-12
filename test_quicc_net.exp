@@ -1,0 +1,71 @@
+#!/usr/bin/expect -f
+# 5.11 End-to-End-Test: QUICC-Ethernet-Emulation gegen den echten sp360-Treiber.
+# Ablauf: Boot bis Login (super), SPF-Modulpaket laden (/dd/netmods, von
+# ToolShed aufs Test-Image kopiert), ipstart, ifconfig, ping 10.0.0.2
+# (= Mini-NAT-Gegenstelle im Emulator, quicc.c).
+#
+# Login: super / Al35uUbC (s. /dd/SYS/password im Image)
+
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend quicc_net_result.txt
+
+set image local_images/OS9SYS.claudia-net-test.hda
+
+spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+
+set timeout 60
+expect "devices online"
+set timeout 20
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+
+sleep 1
+send -s "chd /dd\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "load /dd/netmods\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "mbinstall\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "mdir\r"
+expect -re {\$ ?$}
+
+sleep 1
+set timeout 40
+send -s "ipstart\r"
+expect -re {\$ ?$}
+
+sleep 2
+send -s "ifconfig\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "ping 10.0.0.2\r"
+set timeout 30
+expect {
+    -re {\$ ?$} {}
+    timeout { send_log "\n<<<PING TIMEOUT>>>\n" }
+}
+
+sleep 1
+send -s "netstat -i\r"
+expect -re {\$ ?$}
+
+send_log "\n<<<TEST ENDE>>>\n"
+send "\x1d"
+expect eof

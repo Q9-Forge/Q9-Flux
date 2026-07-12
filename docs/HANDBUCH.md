@@ -216,6 +216,13 @@ Q9/
 │   │   │                       68681-DUART, Compact-Flash (ATA-PIO), Timer/IRQ3 (kooperativ)
 │   │   │                       und ROM-Datei-Lader (q9_cb030_rom_load), alles als eigenes
 │   │   │                       Handle (q9_cb030_t) ohne Musashi-Abhaengigkeit
+│   │   ├── quicc.c/.h         QUICC-Ethernet-Emulation (Schritt 5.11, NUR im nativen Build,
+│   │   │                       s. Abschnitt 5.11) — MC68360-SCC1 im Ethernet-Modus als 8K-Fenster
+│   │   │                       $FFFF2000-$FFFF3FFF (DPRAM, SCC1-Parameter-RAM, Registerbank),
+│   │   │                       TX-/RX-Buffer-Descriptor-Ringe, IRQ Level 5/Vektor 254 und ein
+│   │   │                       User-Mode-Mini-NAT-Backend (ARP/ICMP als Gegenstelle 10.0.0.2);
+│   │   │                       Gegenstueck zum originalen Microware-SPF-Treiber sp360 im
+│   │   │                       MWOS-Q9-Port
 │   │   └── cb030run.c/.h      CB030-Boot-Runner (Schritte 5.3/5.5a, NUR im nativen Build) —
 │   │                           Einstiegspunkt fuer `q9.exe --cb030 <rom-datei> [--cf <image>]`:
 │   │                           ROM laden, Board+Musashi verdrahten, CPU-Endlosschleife mit
@@ -813,6 +820,35 @@ Debian WSL bearbeitet (`~/.local/bin/os9`). Nicht gleichzeitig mit Toolshed
 und im laufenden Emulator auf dasselbe `.hda` schreiben.
 
 ---
+
+### 5.11 QUICC-Ethernet-Emulation (Schritt 5.11, `src/kernel/quicc.c/.h`)
+
+Das im Q9-Emulator laufende OS-9 bekommt echtes TCP/IP: Im MWOS-Q9-Port
+(`OS9/68030/PORTS/Q9/SPF/`) wurde der originale Microware-SPF-Ethernet-Treiber
+`sp360` fuer den MC68360/QUICC uebernommen und fuer 68020/030 uebersetzt —
+`quicc.c` emuliert die Hardware-Seite, die dieser Treiber programmiert:
+
+- **Fenster** `$FFFF2000`–`$FFFF3FFF` (8K, kollisionsfrei zwischen den
+  Netz-Terminals und dem REMAP-Register): Dual-Port-RAM mit den
+  Buffer-Descriptor-Ringen, SCC1-Parameter-RAM ab `+$C00`, Registerbank ab
+  `+$1000` (Offsets per `offsetof` aus Motorolas `quicc.h` verifiziert).
+  Der Descriptor `spqe0` liefert dem Treiber die PRAM-Adresse `$FFFF2C00`;
+  die QUICC-Basis rechnet sich der Treiber per `& $FFFFF000` selbst aus.
+- **BD-Ringe/SDMA**: TX-Kick per TODR (`$8000`), Frames werden direkt aus dem
+  bzw. in das Gast-RAM kopiert (die BD-Puffer sind OS-9-mbufs); `tbptr`/`rbptr`
+  im PRAM werden wie vom echten CP fortgeschrieben, RX-Laengen inklusive der
+  4 CRC-Bytes (der Treiber zieht sie wieder ab).
+- **Interrupts**: SCCE/SCCM-Ereignislogik, CIPR/CIMR-Pegel, IRQ Level 5 mit
+  Vektor 254 ueber den IACK-Callback in `m68krt.c`.
+- **Host-Backend** (User-Mode-Mini-NAT, kein Root/TAP): der Emulator ist die
+  Gegenstelle `10.0.0.2` — beantwortet ARP (Proxy-ARP) und ICMP-Echo;
+  TCP/UDP-NAT ist eine geplante Ausbaustufe.
+
+Verifiziert end-to-end (2026-07-12): OS-9 laedt den SPF-Stack zur Laufzeit
+(`load netmods` + `mbinstall` + `ipstart` — `sysmbuf` ist ein
+Coldstart-Systemmodul, beim Laufzeit-Weg uebernimmt `mbinstall` die
+Installation), `ping 10.0.0.2` bekommt Antworten, `netstat -i` zeigt enet0
+mit 0 Fehlern. Testskript: `test_quicc_net.exp`.
 
 ## 6. Stand der Dinge
 
