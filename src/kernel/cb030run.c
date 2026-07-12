@@ -17,6 +17,7 @@
 #include "cb030run.h"
 #include "cb030.h"
 #include "m68krt.h"
+#include "quicc.h"
 #include "../hal/q9_hal.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,7 @@ static uint8_t cb030_rom[CB030_ROM_MAX];
 int q9_cb030_boot(const char *rom_path, const char *cf_path)
 {
     static q9_cb030_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
+    static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
     q9_m68krt_t       rt;
     uint32_t          rom_len = 0;
 
@@ -56,6 +58,8 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path)
 
     q9_m68krt_init(&rt, cb030_ram, sizeof(cb030_ram));
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
+    q9_quicc_init(&quicc, cb030_ram, sizeof(cb030_ram));
+    q9_m68krt_attach_quicc(&quicc);                    /* 5.11: Ethernet-Fenster $FFFF2000       */
     q9_m68krt_reset(&rt);                              /* Reset-Vektoren kommen aus dem ROM      */
 
     {
@@ -79,6 +83,15 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path)
             irq |= q9_cb030_uart_irq_pending(&board);
             if (irq) {
                 q9_m68krt_set_irq(3);
+            }
+
+            /* 5.11: QUICC-Ethernet — Backend bedienen; fordert der SCC1 einen Interrupt an,
+               Level 5 anlegen (schlaegt Level 3; nach dem IACK hebt die naechste Runde einen
+               noch anstehenden Timer-/DUART-IRQ wieder an — gleiches Muster wie bisher). */
+            q9_quicc_poll(&quicc);
+            if (q9_quicc_irq_pending(&quicc)) {
+                q9_m68krt_set_irq(Q9_QUICC_IRQ_LEVEL);
+                irq = 1;
             }
 
             /* 5.9: OS-9 idlet per STOP -- m68k_execute() "verbrennt" dann sofort alle

@@ -119,8 +119,8 @@ $(BUILD)/native/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 
 # 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap, docs/CB030.md), NUR im nativen Build (reine
 # Musashi-Bootstrap-Validierung, s. cb030.h) -- Q9-eigener Code, volle CFLAGS wie M68KRT_SRC.
-CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c
-CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h
+CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c src/kernel/quicc.c
+CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows w64devkit oder macOS/Linux, HAL wird automatisch gewaehlt)

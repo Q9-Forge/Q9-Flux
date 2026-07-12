@@ -115,6 +115,18 @@ void q9_m68krt_set_irq(int level);
 void q9_m68krt_attach_board(q9_cb030_t *board);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_attach_quicc
+// Desc.:    5.11: Haengt die QUICC-Ethernet-Emulation (quicc.h) in den Adress-Dispatch ein —
+//           Zugriffe auf das Fenster $FFFF2000-$FFFF3FFF gehen dann an q9_quicc_read/write*,
+//           und der Interrupt-Acknowledge liefert fuer Level 5 den QUICC-Vektor (254), solange
+//           der QUICC einen Interrupt anfordert. quicc = NULL haengt das Fenster wieder aus;
+//           q9_m68krt_free setzt ebenfalls zurueck. Aufruf NACH q9_m68krt_attach_board.
+// Call:     q9_m68krt_attach_quicc(&quicc);  ...  q9_m68krt_attach_quicc(0);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+struct q9_quicc;
+void q9_m68krt_attach_quicc(struct q9_quicc *quicc);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_debug_state
 // Desc.:    Diagnose (5.4): aktueller PC + SR der emulierten CPU und Anzahl der bisher
 //           durchlaufenen Interrupt-Acknowledge-Zyklen — fuer die Boot-Fehlersuche im Runner

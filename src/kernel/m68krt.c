@@ -19,6 +19,7 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "cb030.h"
+#include "quicc.h"
 #include "m68k.h"
 #include <string.h>
 #include <unistd.h>  
@@ -40,6 +41,7 @@
 static uint8_t     *g_ram;
 static uint32_t     g_ram_len;
 static q9_cb030_t  *g_board;
+static q9_quicc_t  *g_quicc;                          /* 5.11: QUICC-Ethernet, optional (attach) */
 
 // === Forward-Deklarationen für den Netzwerk-Server ===
 static void init_network_terminals(void);
@@ -154,6 +156,9 @@ unsigned int m68k_read_memory_8(unsigned int address)
       if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
         return network_read8(address);
     }
+    if (g_quicc && q9_quicc_hit(address)) {
+        return q9_quicc_read8(g_quicc, (uint32_t)address);
+    }
     
     if (g_board) {
         return q9_cb030_read8(g_board, (uint32_t)address);
@@ -166,6 +171,9 @@ unsigned int m68k_read_memory_16(unsigned int address)
     
     if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
         return (network_read8(address) << 8) | network_read8(address + 1);
+    }
+    if (g_quicc && q9_quicc_hit(address)) {
+        return q9_quicc_read16(g_quicc, (uint32_t)address);
     }
     
     if (g_board) {
@@ -183,6 +191,9 @@ unsigned int m68k_read_memory_32(unsigned int address)
     if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
         return (network_read8(address) << 24) | (network_read8(address + 1) << 16) |
                (network_read8(address + 2) << 8)  | network_read8(address + 3);
+    }
+    if (g_quicc && q9_quicc_hit(address)) {
+        return q9_quicc_read32(g_quicc, (uint32_t)address);
     }
     
     if (g_board) {
@@ -202,6 +213,10 @@ void m68k_write_memory_8(unsigned int address, unsigned int value)
         network_write8(address, (unsigned char)value);
         return;
     }
+    if (g_quicc && q9_quicc_hit(address)) {
+        q9_quicc_write8(g_quicc, (uint32_t)address, (uint8_t)value);
+        return;
+    }
     
     if (g_board) {
         q9_cb030_write8(g_board, (uint32_t)address, (uint8_t)value);
@@ -218,6 +233,10 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
     if (address >= Q9_CB030_NET_BASE && address <= Q9_CB030_NET_TOP) {
         network_write8(address, (unsigned char)(value >> 8));
         network_write8(address + 1, (unsigned char)value);
+        return;
+    }
+    if (g_quicc && q9_quicc_hit(address)) {
+        q9_quicc_write16(g_quicc, (uint32_t)address, (uint16_t)value);
         return;
     }
     
@@ -240,6 +259,10 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
         network_write8(address + 1, (unsigned char)(value >> 16));
         network_write8(address + 2, (unsigned char)(value >> 8));
         network_write8(address + 3, (unsigned char)value);
+        return;
+    }
+    if (g_quicc && q9_quicc_hit(address)) {
+        q9_quicc_write32(g_quicc, (uint32_t)address, (uint32_t)value);
         return;
     }
     
@@ -274,6 +297,9 @@ static int m68krt_board_int_ack(int int_level)
     (void)int_level;
     g_ack_count++;
     m68k_set_irq(0);
+    if (g_quicc && int_level == Q9_QUICC_IRQ_LEVEL && q9_quicc_irq_pending(g_quicc)) {
+        return Q9_QUICC_IRQ_VECTOR;                   /* 5.11: SCC1-Ethernet, vektorisiert       */
+    }
     if (g_board && q9_cb030_uart_irq_pending(g_board)) {
         return g_board->uart_ivr;
     }
@@ -320,6 +346,11 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
     m68k_set_int_ack_callback(board ? m68krt_board_int_ack : 0);
 }
 
+void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
+{
+    g_quicc = quicc;                                  /* 5.11: ab jetzt dekodiert das QUICC-     */
+}                                                     /* Fenster $FFFF2000-$FFFF3FFF             */
+
 void q9_m68krt_reset(q9_m68krt_t *rt)
 {
     (void)rt;
@@ -350,6 +381,7 @@ void q9_m68krt_free(q9_m68krt_t *rt)
     g_ram     = NULL;
     g_ram_len = 0;
     g_board   = NULL;
+    g_quicc   = NULL;
     m68k_set_int_ack_callback(0);
     memset(rt, 0, sizeof(*rt));
 }
