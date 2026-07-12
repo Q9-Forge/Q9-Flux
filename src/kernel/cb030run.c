@@ -13,6 +13,7 @@
 //         │      │ auch ohne neues THRA-Byte im selben Durchlauf                           │
 // 26-07-10│ 1.30 │ 5.9: Idle-Drossel -- q9_hal_sleep_ms(1) statt Busy-Loop, wenn die CPU    │ CF
 //         │      │ per STOP angehalten ist UND kein IRQ ansteht (OS-9-Leerlauf)             │
+// 26-07-13│ 1.40 │ 5.12: net_mode-Parameter -> q9_quicc_net_mode (nat|vmnet)               │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
@@ -32,7 +33,7 @@
 static uint8_t cb030_ram[CB030_RAM_BYTES];
 static uint8_t cb030_rom[CB030_ROM_MAX];
 
-int q9_cb030_boot(const char *rom_path, const char *cf_path)
+int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode)
 {
     static q9_cb030_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
     static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
@@ -59,6 +60,9 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path)
     q9_m68krt_init(&rt, cb030_ram, sizeof(cb030_ram));
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     q9_quicc_init(&quicc, cb030_ram, sizeof(cb030_ram));
+    if (q9_quicc_net_mode(&quicc, net_mode) != 0) {    /* 5.12: nat (Default) oder vmnet         */
+        return 1;
+    }
     q9_m68krt_attach_quicc(&quicc);                    /* 5.11: Ethernet-Fenster $FFFF2000       */
     q9_m68krt_reset(&rt);                              /* Reset-Vektoren kommen aus dem ROM      */
 

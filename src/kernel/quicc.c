@@ -20,21 +20,29 @@
 //           isr():       prueft CIPR&INTR_SCC1, quittiert per CISR, liest SCCE, schreibt die
 //                        behandelten Bits zurueck (write-1-to-clear).
 //
-//         Host-Backend (User-Mode-Mini-NAT, kein Root/TAP): der Emulator IST die Gegenstelle
-//         10.0.0.2 (Q9_QUICC_HOST_IP) — beantwortet jede ARP-Anfrage mit seiner MAC und
-//         ICMP-Echo-Requests an 10.0.0.2 mit einem Echo-Reply. TCP/UDP-NAT: Ausbaustufe.
+//         Host-Backend, waehlbar per q9_quicc_net_mode (5.12):
+//           nat   (Default) User-Mode-Mini-NAT, kein Root/TAP: der Emulator IST die Gegenstelle
+//                 10.0.0.2 — beantwortet jede ARP-Anfrage mit seiner MAC (Proxy-ARP) und
+//                 ICMP-Echo-Requests an 10.0.0.2 mit einem Echo-Reply.
+//           vmnet (macOS, sudo) Frames roh von/zu Apples vmnet.framework (vmnet_net.c) mit
+//                 MAC-Uebersetzung Gast <-> vmnet-Interface-MAC (q_vmnet_tx/q_vmnet_rx_poll).
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-12│ 1.00 │ 5.11: Erster Wurf — Registerfenster, BD-Ringe, IRQ, ARP/ICMP-Backend    │ CF
+// 26-07-13│ 1.10 │ 5.12: vmnet-Backend (--net vmnet) + MAC-Uebersetzung Gast<->vmnet       │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "quicc.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef Q9_HAVE_VMNET
+#include "vmnet_net.h"                                /* 5.12: vmnet-Backend (nur macOS)          */
+#endif
 
 //─── Register-/PRAM-Offsets (per offsetof aus Motorolas quicc.h verifiziert, 2026-07-12) ─────────
 #define QO_PRAM_RBASE    0x0C00u                      /* u16: RX-BD-Ringanfang (DPRAM-Offset)     */
@@ -177,16 +185,89 @@ static uint16_t q_ipsum(const uint8_t *data, uint32_t len)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q_vmnet_tx
+// Desc.:    5.12: Frame vom Gast an vmnet durchreichen. vmnet (Shared Mode) verwirft Frames,
+//           deren Absender-MAC nicht die zugewiesene Interface-MAC ist — der sp360-Treiber
+//           sendet aber mit der festen MAC aus dem spqe0-Descriptor. Deshalb: Gast-MAC aus dem
+//           Frame lernen (fuer die Rueckrichtung), dann Quell-MAC ersetzen; bei ARP zusaetzlich
+//           das Sender-Hardware-Feld im Paket (Offset 22), sonst lernen die Gegenstellen die
+//           Gast-MAC, die vmnet nie zustellen wuerde.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+#ifdef Q9_HAVE_VMNET
+static void q_vmnet_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
+{
+    uint8_t out[QC_FRAME_MAX];
+
+    if (len < 14u || len > sizeof(out)) {
+        return;
+    }
+    memcpy(q->guest_mac, f + 6, 6);                   /* Gast-MAC lernen (Descriptor-MAC)         */
+    q->guest_mac_ok = 1;
+
+    memcpy(out, f, len);
+    memcpy(out + 6, q9_vmnet_mac(), 6);               /* Quell-MAC -> vmnet-Interface-MAC         */
+    if (out[12] == 0x08 && out[13] == 0x06 && len >= 42u) {
+        memcpy(out + 22, q9_vmnet_mac(), 6);          /* ARP: Sender-HW-Adresse mit uebersetzen   */
+    }
+    q9_vmnet_send(out, len);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q_vmnet_rx_poll
+// Desc.:    5.12: Empfangsrichtung — Frames aus dem vmnet-Ringpuffer holen, MAC zuruecktauschen
+//           (Ziel-MAC vmnet -> Gast; bei ARP auch die Target-HW-Adresse ab Offset 32) und in
+//           den RX-Ring einspeisen. Broadcast/Multicast geht unveraendert durch; Unicast an
+//           fremde MACs wird verworfen (vmnet stellt normalerweise ohnehin nur eigene zu).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void q_vmnet_rx_poll(q9_quicc_t *q)
+{
+    uint8_t f[QC_FRAME_MAX];
+    uint32_t len;
+    uint32_t budget;
+
+    for (budget = 0; budget < 32u; budget++) {        /* pro Runde begrenzen (RX-Ring ist klein)  */
+        len = q9_vmnet_recv(f, sizeof(f));
+        if (len == 0) {
+            return;
+        }
+        if ((f[0] & 0x01u) == 0) {                    /* Unicast: nur an unsere Interface-MAC     */
+            if (memcmp(f, q9_vmnet_mac(), 6) != 0) {
+                continue;
+            }
+            if (q->guest_mac_ok) {
+                memcpy(f, q->guest_mac, 6);           /* Ziel-MAC -> Gast-MAC zuruecktauschen     */
+            }
+        }
+        if (f[12] == 0x08 && f[13] == 0x06 && len >= 42u && q->guest_mac_ok &&
+            memcmp(f + 32, q9_vmnet_mac(), 6) == 0) {
+            memcpy(f + 32, q->guest_mac, 6);          /* ARP: Target-HW-Adresse zuruecktauschen   */
+        }
+        q9_quicc_rx_frame(q, f, len);
+    }
+}
+#endif /* Q9_HAVE_VMNET */
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q_backend_tx
-// Desc.:    Ein kompletter Frame aus dem TX-Ring. ARP-Requests werden mit der Host-MAC
-//           beantwortet (der Emulator antwortet fuer JEDE erfragte IP — Proxy-ARP, damit der
-//           Gast spaeter beliebige Ziele ueber uns erreichen kann); ICMP-Echo-Requests an
-//           10.0.0.2 kommen als Echo-Reply zurueck. Alles andere wird (noch) verworfen —
-//           TCP/UDP-NAT ist die naechste Ausbaustufe von 5.11.
+// Desc.:    Ein kompletter Frame aus dem TX-Ring — je nach Backend (5.12): im vmnet-Modus roh
+//           (mit MAC-Uebersetzung) ans echte Netz, sonst Mini-NAT: ARP-Requests werden mit der
+//           Host-MAC beantwortet (der Emulator antwortet fuer JEDE erfragte IP — Proxy-ARP,
+//           damit der Gast beliebige Ziele ueber uns erreichen kann); ICMP-Echo-Requests an
+//           10.0.0.2 kommen als Echo-Reply zurueck. Alles andere wird verworfen.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 {
     uint8_t reply[QC_FRAME_MAX];
+
+#ifdef Q9_HAVE_VMNET
+    if (q->use_vmnet) {
+        if (qd_on()) {
+            fprintf(stderr, "[quicc tx>vmnet %u]\n", (unsigned)len);
+        }
+        q_vmnet_tx(q, f, len);
+        return;
+    }
+#endif
 
     if (qd_on()) {
         fprintf(stderr, "[quicc tx %u] %02x%02x%02x%02x%02x%02x <- %02x%02x%02x%02x%02x%02x typ %02x%02x\n",
@@ -329,6 +410,28 @@ void q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len)
     q->ram_len = ram_len;
 }
 
+int q9_quicc_net_mode(q9_quicc_t *q, const char *mode)
+{
+    if (mode == NULL || strcmp(mode, "nat") == 0) {
+        q->use_vmnet = 0;                             /* Default: eingebautes Mini-NAT            */
+        return 0;
+    }
+    if (strcmp(mode, "vmnet") == 0) {
+#ifdef Q9_HAVE_VMNET
+        if (q9_vmnet_start() != 0) {
+            return 1;                                 /* Fehlermeldung kam aus q9_vmnet_start     */
+        }
+        q->use_vmnet = 1;
+        return 0;
+#else
+        fprintf(stderr, "q9: --net vmnet gibt es nur im macOS-Build (vmnet.framework).\n");
+        return 1;
+#endif
+    }
+    fprintf(stderr, "q9: unbekannter Netzwerk-Modus '%s' (--net nat|vmnet).\n", mode);
+    return 1;
+}
+
 int q9_quicc_hit(uint32_t addr)
 {
     return addr >= Q9_QUICC_BASE && addr <= Q9_QUICC_TOP;
@@ -421,9 +524,14 @@ void q9_quicc_poll(q9_quicc_t *q)
 {
     /* Sicherheitsnetz: haengengebliebene TX-BDs abraeumen (der Treiber kickt zwar bei jedem
        Frame per TODR, aber ein verpasster Kick darf keinen Stillstand bedeuten). Das
-       ARP/ICMP-Backend arbeitet synchron im TX-Pfad — hier ist sonst nichts zu tun; die
-       TCP/UDP-NAT-Ausbaustufe wird ihre Sockets in dieser Funktion bedienen. */
+       ARP/ICMP-Backend arbeitet synchron im TX-Pfad. */
     q_tx_run(q);
+
+#ifdef Q9_HAVE_VMNET
+    if (q->use_vmnet) {
+        q_vmnet_rx_poll(q);                           /* 5.12: eingegangene echte Frames zustellen */
+    }
+#endif
 }
 
 void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)

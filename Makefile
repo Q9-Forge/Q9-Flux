@@ -122,17 +122,27 @@ $(BUILD)/native/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c src/kernel/quicc.c
 CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h
 
+# 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
+# Auf anderen Plattformen bleibt Q9_HAVE_VMNET ungesetzt und --net vmnet meldet sich sauber ab.
+ifeq ($(shell uname -s 2>/dev/null),Darwin)
+    CB030_NET_SRC   = src/kernel/vmnet_net.c
+    CB030_NET_HDR   = src/kernel/vmnet_net.h
+    CB030_NET_FLAGS = -DQ9_HAVE_VMNET
+    CB030_NET_LIBS  = -framework vmnet
+endif
+
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows w64devkit oder macOS/Linux, HAL wird automatisch gewaehlt)
 #───────────────────────────────────────────────────────────────────────────────────────────────
 native: $(BUILD)/native/q9.exe
 
 $(BUILD)/native/q9.exe: $(KSRC) $(WASMRT_SRC) $(WASMRT_HDR) $(M68KRT_SRC) $(M68KRT_HDR) \
-                        $(CB030_SRC) $(CB030_HDR) \
+                        $(CB030_SRC) $(CB030_HDR) $(CB030_NET_SRC) $(CB030_NET_HDR) \
                         $(NATIVE_HAL_SRC) $(HDRS) $(WASM3_OBJS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/native
-	$(CC) $(CFLAGS) -DQ9_HAVE_WASM3 -DQ9_HAVE_M68K -I$(WASM3_DIR) -I$(MUSASHI_DIR) \
-	    $(KSRC) $(WASMRT_SRC) $(M68KRT_SRC) $(CB030_SRC) $(NATIVE_HAL_SRC) $(WASM3_OBJS) $(MUSASHI_OBJS) -o $@
+	$(CC) $(CFLAGS) -DQ9_HAVE_WASM3 -DQ9_HAVE_M68K $(CB030_NET_FLAGS) -I$(WASM3_DIR) -I$(MUSASHI_DIR) \
+	    $(KSRC) $(WASMRT_SRC) $(M68KRT_SRC) $(CB030_SRC) $(CB030_NET_SRC) $(NATIVE_HAL_SRC) \
+	    $(WASM3_OBJS) $(MUSASHI_OBJS) $(CB030_NET_LIBS) -o $@
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # wasm: Browser-Build (Emscripten); kopiert das Frontend mit nach build/wasm/

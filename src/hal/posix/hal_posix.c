@@ -269,8 +269,9 @@ const char *q9_hal_target(void)
 //           Mit --selftest: 100 Ticks laufen lassen, "SELFTEST PASS" ausgeben, Exit 0.
 //           Mit --cb030 <rom> [--cf <image>]: statt des Q9-Kernels das emulierte CB030-Board
 //           mit dem angegebenen Boot-ROM starten (5.3, s. cb030run.h), optional mit eigenem
-//           CF-Backing-Image statt "cb030_cf.img" (5.5a) — Ende per Ctrl-C.
-// Call:     q9.exe [--selftest | --cb030 <rom-datei> [--cf <image>]]
+//           CF-Backing-Image statt "cb030_cf.img" (5.5a) und Ethernet-Backend --net nat|vmnet
+//           (5.12, Default nat; vmnet = echtes Netz, macOS + sudo) — Ende per Ctrl-C.
+// Call:     q9.exe [--selftest | --cb030 <rom-datei> [--cf <image>] [--net nat|vmnet]]
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
@@ -278,12 +279,17 @@ int main(int argc, char **argv)
 
 #ifdef Q9_HAVE_M68K
     if (argc > 2 && strcmp(argv[1], "--cb030") == 0) {
-        const char *cf_path = NULL;
-        if (argc > 4 && strcmp(argv[3], "--cf") == 0) {
-            cf_path = argv[4];
+        const char *cf_path  = NULL;
+        const char *net_mode = NULL;
+        for (int i = 3; i + 1 < argc; i += 2) {        /* --cf <img> und --net <nat|vmnet> (5.12) */
+            if (strcmp(argv[i], "--cf") == 0) {
+                cf_path = argv[i + 1];
+            } else if (strcmp(argv[i], "--net") == 0) {
+                net_mode = argv[i + 1];
+            }
         }
         q9_hal_init();                                 /* termios raw — die UART braucht das     */
-        return q9_cb030_boot(argv[2], cf_path);
+        return q9_cb030_boot(argv[2], cf_path, net_mode);
     }
 #endif
 
