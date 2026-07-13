@@ -7,9 +7,9 @@
 //         echte Netz — das emulierte OS-9 kommt damit raus ins Internet, und der Mac erreicht
 //         es direkt unter seiner Gast-IP (rein UND raus).
 //
-//         Subnetz-Verordnung: vmnet bekommt beim Start das Subnetz 10.0.0.0/24 mit Gateway
-//         10.0.0.2 zugewiesen (vmnet_start_address_key) — exakt die Adresse, die bisher das
-//         Mini-NAT gespielt hat. Die OS-9-Konfiguration (inetdb2: enet0 = 10.0.0.1/24) bleibt
+//         Subnetz-Verordnung: vmnet bekommt beim Start das Subnetz 192.168.0.0/16 mit Gateway
+//         192.168.200.1 zugewiesen (vmnet_start_address_key) — exakt die Adresse, die bisher das
+//         Mini-NAT gespielt hat. Die OS-9-Konfiguration (inetdb2: enet0 = 192.168.200.2/16) bleibt
 //         dadurch unveraendert; nur die Gegenstelle ist jetzt echt.
 //
 //         Voraussetzung: root (sudo) oder das Entitlement com.apple.vm.networking — ohne das
@@ -30,7 +30,7 @@
 
 #include <stdint.h>
 
-/* Interface starten (Shared Mode, Subnetz 10.0.0.0/24, Gateway 10.0.0.2). 0 = ok, sonst ist
+/* Interface starten (Shared Mode, Subnetz 192.168.0.0/16, Gateway 192.168.200.1). 0 = ok, sonst ist
    die Fehlermeldung (inkl. sudo-Hinweis) schon auf stderr ausgegeben. */
 int q9_vmnet_start(void);
 

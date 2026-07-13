@@ -22,8 +22,8 @@
 //
 //         Host-Backend, waehlbar per q9_quicc_net_mode (5.12):
 //           nat   (Default) User-Mode-Mini-NAT, kein Root/TAP: der Emulator IST die Gegenstelle
-//                 10.0.0.2 — beantwortet jede ARP-Anfrage mit seiner MAC (Proxy-ARP) und
-//                 ICMP-Echo-Requests an 10.0.0.2 mit einem Echo-Reply.
+//                 192.168.200.1 — beantwortet jede ARP-Anfrage mit seiner MAC (Proxy-ARP) und
+//                 ICMP-Echo-Requests an 192.168.200.1 mit einem Echo-Reply.
 //           vmnet (macOS, sudo) Frames roh von/zu Apples vmnet.framework (vmnet_net.c) mit
 //                 MAC-Uebersetzung Gast <-> vmnet-Interface-MAC (q_vmnet_tx/q_vmnet_rx_poll).
 //
@@ -42,6 +42,9 @@
 
 #ifdef Q9_HAVE_VMNET
 #include "vmnet_net.h"                                /* 5.12: vmnet-Backend (nur macOS)          */
+#endif
+#ifdef Q9_HAVE_BPF
+#include "bpf_net.h"                                  /* 5.13: bridge-Backend (nur macOS)         */
 #endif
 
 //─── Register-/PRAM-Offsets (per offsetof aus Motorolas quicc.h verifiziert, 2026-07-12) ─────────
@@ -81,11 +84,11 @@
 #define QC_FRAME_MAX     1518u                        /* max. Ethernet-Frame (inkl. Header)       */
 #define QC_TX_RING_MAX   64u                          /* Schutz gegen kaputte Ringe               */
 
-//─── Mini-NAT-Gegenstelle (muss zu interfaces.conf im MWOS-Q9-Port passen: Gast = 10.0.0.1) ──────
-#define QH_IP0 10
-#define QH_IP1 0
-#define QH_IP2 0
-#define QH_IP3 2                                      /* Host-Gegenstelle: 10.0.0.2               */
+//─── Mini-NAT-Gegenstelle (muss zu interfaces.conf im MWOS-Q9-Port passen: Gast = 192.168.200.2) ─
+#define QH_IP0 192
+#define QH_IP1 168
+#define QH_IP2 200
+#define QH_IP3 1                                      /* Host-Gegenstelle: 192.168.200.1          */
 static const uint8_t qh_mac[6] = { 0x02, 0x51, 0x39, 0x00, 0x00, 0x02 };   /* lokal verwaltet    */
 
 static int qd_debug = -1;                             /* Q9_QUICC_DEBUG=1: Frame-Trace auf stderr */
@@ -160,7 +163,7 @@ static void q_event(q9_quicc_t *q, uint16_t bits)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Mini-NAT-Backend: ARP + ICMP-Echo als Gegenstelle 10.0.0.2
+// Mini-NAT-Backend: ARP + ICMP-Echo als Gegenstelle 192.168.200.1
 //────────────────────────────────────────────────────────────────────────────────────────────────
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -248,23 +251,77 @@ static void q_vmnet_rx_poll(q9_quicc_t *q)
 #endif /* Q9_HAVE_VMNET */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q_bridge_tx
+// Desc.:    5.13: Frame vom Gast roh an die physische Schnittstelle (BPF) durchreichen — echtes
+//           Bridging, KEINE MAC-Uebersetzung (anders als vmnet): der Gast sendet mit seiner festen
+//           Descriptor-MAC, die geht unveraendert auf die Leitung. Guest-MAC trotzdem lernen, um
+//           in q_bridge_rx_poll ein Echo des eigenen gesendeten Frames zuverlaessig zu erkennen
+//           und zu verwerfen (falls der Treiber/BPF-Pfad eigene Writes zurueckspiegelt).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+#ifdef Q9_HAVE_BPF
+static void q_bridge_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
+{
+    if (len < 14u) {
+        return;
+    }
+    memcpy(q->guest_mac, f + 6, 6);                   /* Gast-MAC lernen (fuer Echo-Filter unten)  */
+    q->guest_mac_ok = 1;
+    q9_bpf_send(f, len);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q_bridge_rx_poll
+// Desc.:    5.13: Empfangsrichtung — Frames aus dem BPF-Ringpuffer holen und unveraendert in den
+//           RX-Ring einspeisen (kein MAC-Mapping noetig). Frames mit der eigenen Gast-MAC als
+//           Absender werden verworfen (Selbst-Echo-Schutz, s. q_bridge_tx).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void q_bridge_rx_poll(q9_quicc_t *q)
+{
+    uint8_t f[QC_FRAME_MAX];
+    uint32_t len;
+    uint32_t budget;
+
+    for (budget = 0; budget < 32u; budget++) {        /* pro Runde begrenzen (RX-Ring ist klein)  */
+        len = q9_bpf_recv(f, sizeof(f));
+        if (len == 0) {
+            return;
+        }
+        if (q->guest_mac_ok && memcmp(f + 6, q->guest_mac, 6) == 0) {
+            continue;                                 /* eigenes gesendetes Frame: verwerfen      */
+        }
+        q9_quicc_rx_frame(q, f, len);
+    }
+}
+#endif /* Q9_HAVE_BPF */
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q_backend_tx
-// Desc.:    Ein kompletter Frame aus dem TX-Ring — je nach Backend (5.12): im vmnet-Modus roh
-//           (mit MAC-Uebersetzung) ans echte Netz, sonst Mini-NAT: ARP-Requests werden mit der
-//           Host-MAC beantwortet (der Emulator antwortet fuer JEDE erfragte IP — Proxy-ARP,
-//           damit der Gast beliebige Ziele ueber uns erreichen kann); ICMP-Echo-Requests an
-//           10.0.0.2 kommen als Echo-Reply zurueck. Alles andere wird verworfen.
+// Desc.:    Ein kompletter Frame aus dem TX-Ring — je nach Backend (5.13): im vmnet-/bridge-Modus
+//           roh (vmnet mit MAC-Uebersetzung, bridge unveraendert) ans echte Netz, sonst Mini-NAT:
+//           ARP-Requests werden mit der Host-MAC beantwortet (der Emulator antwortet fuer JEDE
+//           erfragte IP — Proxy-ARP, damit der Gast beliebige Ziele ueber uns erreichen kann);
+//           ICMP-Echo-Requests an 192.168.200.1 kommen als Echo-Reply zurueck. Alles andere wird
+//           verworfen.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 {
     uint8_t reply[QC_FRAME_MAX];
 
 #ifdef Q9_HAVE_VMNET
-    if (q->use_vmnet) {
+    if (q->net_backend == Q9_NET_VMNET) {
         if (qd_on()) {
             fprintf(stderr, "[quicc tx>vmnet %u]\n", (unsigned)len);
         }
         q_vmnet_tx(q, f, len);
+        return;
+    }
+#endif
+#ifdef Q9_HAVE_BPF
+    if (q->net_backend == Q9_NET_BRIDGE) {
+        if (qd_on()) {
+            fprintf(stderr, "[quicc tx>bridge %u]\n", (unsigned)len);
+        }
+        q_bridge_tx(q, f, len);
         return;
     }
 #endif
@@ -296,7 +353,7 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
         return;
     }
 
-    /* ICMP-Echo-Request an die Host-Gegenstelle 10.0.0.2? */
+    /* ICMP-Echo-Request an die Host-Gegenstelle 192.168.200.1? */
     if (f[12] == 0x08 && f[13] == 0x00 && len >= 14 + 20 + 8 &&
         (f[14] & 0xF0) == 0x40 &&                     /* IPv4                                     */
         f[23] == 1 &&                                 /* Protokoll ICMP                           */
@@ -413,7 +470,7 @@ void q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len)
 int q9_quicc_net_mode(q9_quicc_t *q, const char *mode)
 {
     if (mode == NULL || strcmp(mode, "nat") == 0) {
-        q->use_vmnet = 0;                             /* Default: eingebautes Mini-NAT            */
+        q->net_backend = Q9_NET_NAT;                  /* Default: eingebautes Mini-NAT            */
         return 0;
     }
     if (strcmp(mode, "vmnet") == 0) {
@@ -421,14 +478,31 @@ int q9_quicc_net_mode(q9_quicc_t *q, const char *mode)
         if (q9_vmnet_start() != 0) {
             return 1;                                 /* Fehlermeldung kam aus q9_vmnet_start     */
         }
-        q->use_vmnet = 1;
+        q->net_backend = Q9_NET_VMNET;
         return 0;
 #else
         fprintf(stderr, "q9: --net vmnet gibt es nur im macOS-Build (vmnet.framework).\n");
         return 1;
 #endif
     }
-    fprintf(stderr, "q9: unbekannter Netzwerk-Modus '%s' (--net nat|vmnet).\n", mode);
+    if (strncmp(mode, "bridge", 6) == 0) {
+#ifdef Q9_HAVE_BPF
+        const char *ifname = NULL;
+
+        if (mode[6] == ':' && mode[7] != '\0') {
+            ifname = mode + 7;                        /* "bridge:en5" -> "en5"                    */
+        }
+        if (q9_bpf_start(ifname) != 0) {
+            return 1;                                 /* Fehlermeldung kam aus q9_bpf_start        */
+        }
+        q->net_backend = Q9_NET_BRIDGE;
+        return 0;
+#else
+        fprintf(stderr, "q9: --net bridge gibt es nur im macOS-Build (BPF).\n");
+        return 1;
+#endif
+    }
+    fprintf(stderr, "q9: unbekannter Netzwerk-Modus '%s' (--net nat|vmnet|bridge:<ifname>).\n", mode);
     return 1;
 }
 
@@ -528,8 +602,13 @@ void q9_quicc_poll(q9_quicc_t *q)
     q_tx_run(q);
 
 #ifdef Q9_HAVE_VMNET
-    if (q->use_vmnet) {
+    if (q->net_backend == Q9_NET_VMNET) {
         q_vmnet_rx_poll(q);                           /* 5.12: eingegangene echte Frames zustellen */
+    }
+#endif
+#ifdef Q9_HAVE_BPF
+    if (q->net_backend == Q9_NET_BRIDGE) {
+        q_bridge_rx_poll(q);                          /* 5.13: eingegangene echte Frames zustellen */
     }
 #endif
 }

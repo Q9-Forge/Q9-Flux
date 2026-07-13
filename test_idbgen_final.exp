@@ -1,0 +1,145 @@
+#!/usr/bin/expect -f
+# 5.14 FINALER Verifikationslauf mit den korrigierten SDK-Quelldateien
+# (startup + loadidb + startspf). Zwei Teile:
+# A) Sicherheit: Klon OHNE idbgen-Lauf - Boot MUSS normal durchlaufen (alte IP
+#    aus netmods-Bundle, kein Abbruch).
+# B) Fix: gleicher Klon, jetzt idbgen komplett durchlaufen lassen + neu booten
+#    - MUSS jetzt die neue IP 192.168.200.2/16 zeigen.
+
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend idbgen_final_result.txt
+
+set image local_images/OS9SYS.claudia-final-test.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+
+exec rm -f $image
+exec cp $mwos/../Q9/local_images/OS9SYS.hda $image
+
+proc login {} {
+    set timeout 60
+    expect "devices online"
+    set timeout 20
+    set logged_in 0
+    for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+        expect {
+            "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+            -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+            -re {\$ ?$} { set logged_in 1 }
+            timeout { send "\r" }
+        }
+    }
+    if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+}
+
+proc paste_file {localpath remotename blankmarker} {
+    send_log "\n<<<TRANSFER $remotename>>>\n"
+    sleep 1
+    send -s "del $remotename\r"
+    expect -re {\$ ?$}
+    sleep 1
+    send -s "build $remotename\r"
+    expect -re {\? ?$}
+    set fp [open $localpath r]
+    set raw [read $fp]
+    close $fp
+    set data ""
+    foreach line [split $raw "\n"] {
+        if {[string trim $line] eq ""} { append data "$blankmarker\r" } else { append data "$line\r" }
+    }
+    append data "\r"
+    send -s -- $data
+    set timeout 60
+    expect -re {\$ ?$}
+    set timeout 20
+}
+
+# === TEIL A: neue startup/loadidb/startspf OHNE idbgen-Lauf einspielen ===
+send_log "\n=== TEIL A: Sicherheitstest (keine frische inetdb vorhanden) ===\n"
+spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+login
+
+sleep 1
+send -s "chd /dd/SYS\r"
+expect -re {\$ ?$}
+
+paste_file "$mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/BOOTFILES/loadidb" "loadidb" "*"
+sleep 1
+send -s "attr -e -pe /dd/SYS/loadidb\r"
+expect -re {\$ ?$}
+
+paste_file "$mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/BOOTFILES/startup" "startup" "*"
+sleep 1
+send -s "attr -e -pe /dd/SYS/startup\r"
+expect -re {\$ ?$}
+
+paste_file "$mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/BOOTFILES/startspf" "startspf" "*"
+sleep 1
+send -s "attr -e -pe /dd/SYS/startspf\r"
+expect -re {\$ ?$}
+
+send_log "\n<<<HOST-ESCAPE>>>\n"
+send "\x1d"
+expect eof
+
+send_log "\n<<<TEIL A: REBOOT OHNE FRISCHE DB - MUSS NORMAL DURCHLAUFEN>>>\n"
+spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+login
+
+sleep 2
+send -s "ifconfig enet0\r"
+expect -re {\$ ?$}
+
+send_log "\n=== TEIL B: idbgen komplett durchlaufen lassen ===\n"
+sleep 1
+send -s "chd /dd/ETC\r"
+expect -re {\$ ?$}
+paste_file "$mwos/OS9/68030/PORTS/Q9/SPF/ETC/resolv.conf" "resolv.conf" "#"
+paste_file "$mwos/OS9/68030/PORTS/Q9/SPF/ETC/routes.conf" "routes.conf" "#"
+paste_file "$mwos/OS9/68030/PORTS/Q9/SPF/ETC/interfaces.conf" "interfaces.conf" "#"
+
+sleep 1
+send -s "makdir /dd/CMDS/BOOTOBJS/SPF\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "chd /dd/CMDS/BOOTOBJS/SPF\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "idbgen -d=/dd/ETC -d=/dd/MWOS/SRC/ETC inetdb\r"
+set timeout 30
+expect -re {\$ ?$}
+sleep 1
+send -s "attr -e -pe /dd/CMDS/BOOTOBJS/SPF/inetdb\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "attr -e -pe /dd/CMDS/BOOTOBJS/SPF/inetdb2\r"
+expect -re {\$ ?$}
+
+send_log "\n<<<HOST-ESCAPE>>>\n"
+send "\x1d"
+expect eof
+
+send_log "\n<<<TEIL B: REBOOT MIT FRISCHER DB - MUSS 192.168.200.2/16 ZEIGEN>>>\n"
+spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+login
+
+sleep 2
+send -s "ifconfig enet0\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "ping 192.168.200.1\r"
+set timeout 30
+expect {
+    -re {\$ ?$} {}
+    timeout { send_log "\n<<<PING TIMEOUT>>>\n" }
+}
+sleep 1
+send -s "hostname\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "netstat -i\r"
+expect -re {\$ ?$}
+
+send_log "\n<<<TEST ENDE>>>\n"
+send "\x1d"
+expect eof

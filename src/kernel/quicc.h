@@ -18,13 +18,24 @@
 //         zeigen auf mbufs im Gast-RAM — die SDMA-Emulation liest/schreibt dort direkt.
 //
 //         Host-Backend, waehlbar per `--net` (s. q9_quicc_net_mode):
-//           nat   (Default) User-Mode-Mini-NAT, kein Root: der Host beantwortet als Gegenstelle
-//                 10.0.0.2 ARP und ICMP-Echo — reicht fuer den Treiber-/Stack-Test.
-//           vmnet (5.12, macOS, braucht sudo) Frames gehen roh an Apples vmnet.framework
-//                 (Shared Mode, Gateway 10.0.0.2 = dieselbe Adresse): OS-9 kommt echt ins
-//                 Netz (raus und rein). vmnet erzwingt seine zugewiesene Absender-MAC, der
-//                 spqe0-Descriptor hat aber eine feste — deshalb uebersetzt das Backend die
-//                 Gast-MAC in beiden Richtungen (inkl. der MAC-Felder in ARP-Paketen).
+//           nat    (Default) User-Mode-Mini-NAT, kein Root: der Host beantwortet als Gegenstelle
+//                  192.168.200.1 ARP und ICMP-Echo — reicht fuer den Treiber-/Stack-Test.
+//           vmnet  (5.12, macOS, braucht sudo ODER das von Apple gesperrte Entitlement
+//                  com.apple.vm.networking — Ad-hoc-Signierung reicht dafuer NICHT, macOS killt
+//                  den Prozess dann per SIGKILL, s. ARBEITSPLAN 5.13) Frames gehen roh an Apples
+//                  vmnet.framework (Shared Mode, Subnetz 192.168.0.0/16, Gateway 192.168.200.1 =
+//                  dieselbe Adresse): OS-9 kommt echt ins Netz (raus und rein). vmnet erzwingt
+//                  seine zugewiesene Absender-MAC, der spqe0-Descriptor hat aber eine feste —
+//                  deshalb uebersetzt das Backend die Gast-MAC in beiden Richtungen (inkl. der
+//                  MAC-Felder in ARP-Paketen).
+//           bridge (5.13, macOS, --net bridge:<ifname>, z.B. bridge:en5) Frames gehen roh per BPF
+//                  (/dev/bpf*) an eine PHYSISCHE Netzwerkschnittstelle — echtes Layer-2-Bridging,
+//                  KEINE MAC-Uebersetzung noetig, der Gast bekommt seine IP direkt vom echten
+//                  Router per DHCP. Braucht KEIN root/Entitlement, sondern einmalig per Setup-
+//                  Skript angepasste BPF-Geraeterechte (tools/macos/setup_bpf_access.sh) — dafuer
+//                  eine dedizierte Kabel-Ethernet-Schnittstelle (WLAN laesst sich meist nicht
+//                  bridgen). Status 2026-07-13: Code vorbereitet, mangels zweiter physischer
+//                  Schnittstelle noch NICHT end-to-end getestet (s. bpf_net.h).
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -32,6 +43,7 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-12│ 1.00 │ 5.11: Erster Wurf — Registerfenster, BD-Ringe, IRQ, ARP/ICMP-Backend    │ CF
 // 26-07-13│ 1.10 │ 5.12: vmnet-Backend (--net vmnet) + MAC-Uebersetzung Gast<->vmnet       │ CF
+// 26-07-13│ 1.20 │ 5.13: bridge-Backend (--net bridge:<ifname>) per BPF, kein root noetig  │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_QUICC_H
 #define Q9_QUICC_H
@@ -47,6 +59,11 @@
 #define Q9_QUICC_IRQ_LEVEL   5                        /* Port IRQ Level                           */
 #define Q9_QUICC_IRQ_VECTOR  254                      /* Port vector                              */
 
+//─── Backend-Auswahl ──────────────────────────────────────────────────────────────────────────────
+#define Q9_NET_NAT     0                                  /* Mini-NAT (Default), kein root          */
+#define Q9_NET_VMNET   1                                  /* vmnet.framework, macOS, braucht sudo    */
+#define Q9_NET_BRIDGE  2                                  /* 5.13: BPF an physischer NIC, kein root  */
+
 //─── Zustand ──────────────────────────────────────────────────────────────────────────────────────
 /* Gesamter QUICC-Zustand. mem[] haelt das Fenster byteweise in Big-Endian-Sicht (wie der 68k es
    liest) — DPRAM, PRAM und alle Register leben dort; nur Zugriffe mit Nebenwirkung (CR, TODR,
@@ -56,7 +73,7 @@ typedef struct q9_quicc {
     uint8_t   mem[Q9_QUICC_MEM_LEN];                  /* DPRAM + PRAM + Registerbank              */
     uint8_t  *ram;                                    /* Gast-RAM (SDMA-Ziel/-Quelle)             */
     uint32_t  ram_len;
-    int       use_vmnet;                              /* 5.12: Backend (0 = Mini-NAT, 1 = vmnet)  */
+    int       net_backend;                            /* 5.13: Q9_NET_NAT/VMNET/BRIDGE            */
     uint8_t   guest_mac[6];                           /* 5.12: aus dem ersten TX-Frame gelernt    */
     int       guest_mac_ok;
 } q9_quicc_t;
@@ -64,8 +81,9 @@ typedef struct q9_quicc {
 //─── API ──────────────────────────────────────────────────────────────────────────────────────────
 void     q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len);
 
-/* 5.12: Backend waehlen — mode NULL/"nat" = Mini-NAT (Default), "vmnet" = vmnet.framework
-   (macOS, braucht sudo). Rueckgabe 0 = ok; sonst ist die Fehlermeldung schon ausgegeben. */
+/* 5.13: Backend waehlen — mode NULL/"nat" = Mini-NAT (Default), "vmnet" = vmnet.framework (macOS,
+   braucht sudo/Entitlement), "bridge:<ifname>" = BPF an physischer NIC (macOS, kein root, s.
+   bpf_net.h). Rueckgabe 0 = ok; sonst ist die Fehlermeldung schon ausgegeben. */
 int      q9_quicc_net_mode(q9_quicc_t *q, const char *mode);
 
 /* Trifft die Adresse das QUICC-Fenster? (fuer den Dispatch in m68krt.c) */

@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 # 5.11 End-to-End-Test: QUICC-Ethernet-Emulation gegen den echten sp360-Treiber.
 # Ablauf: Boot bis Login (super), SPF-Modulpaket laden (/dd/netmods, von
-# ToolShed aufs Test-Image kopiert), ipstart, ifconfig, ping 10.0.0.2
+# ToolShed aufs Test-Image kopiert), ipstart, ifconfig, ping 192.168.200.1
 # (= Mini-NAT-Gegenstelle im Emulator, quicc.c).
 #
 # Login: super / Al35uUbC (s. /dd/SYS/password im Image)
@@ -12,7 +12,7 @@ log_file -noappend quicc_net_result.txt
 
 set image local_images/OS9SYS.claudia-net-test.hda
 
-spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
 
 set timeout 60
 expect "devices online"
@@ -55,7 +55,7 @@ send -s "ifconfig\r"
 expect -re {\$ ?$}
 
 sleep 1
-send -s "ping 10.0.0.2\r"
+send -s "ping 192.168.200.1\r"
 set timeout 30
 expect {
     -re {\$ ?$} {}
