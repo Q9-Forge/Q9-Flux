@@ -18,6 +18,8 @@
 //         │      │ geschrieben, DRQ bleibt bis zum letzten Sektor gesetzt                     │
 // 26-07-10│ 1.60 │ 5.7: SRA-TxRDY/TxEMT sind kein Immer-Bereit-Fake mehr, sondern spiegeln     │ CF
 //         │      │ den Fuellstand des HAL-TX-Ringpuffers (q9_hal_con_tx_ready/tx_empty)        │
+// 26-07-14│ 1.70 │ 5.6: RTC72421 ($FFFFD000): cb030_rtc_refresh/_read — Host-Uhr als BCD-   │ CF
+//         │      │ Nibbles mit S1-Latch, Schreibzugriffe im Dispatch ignoriert               │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -130,6 +132,61 @@ static int cb030_cf_trace_enabled(void)
 }
 
 #define CF_TRACE(...) do { if (cb030_cf_trace_enabled()) fprintf(stderr, __VA_ARGS__); } while (0)
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// 5.6: RTC72421 — Epson-Echtzeituhr am Bus ($FFFFD000, 16 Nibble-Register).
+// Lesen = Host-Uhr (q9_hal_time), Schreiben wird ignoriert (s. cb030.h). Register:
+//   0 S1  1 S10  2 MI1  3 MI10  4 H1  5 H10  6 D1  7 D10  8 MO1  9 MO10  A Y1  B Y10  C W
+//   D Control D (HOLD/BUSY/IRQ — bei uns immer 0, nie busy)   E Control E (0)
+//   F Control F (Bit2 = 24h-Modus, fest gesetzt)
+// Ein Lesezugriff auf Register 0 frischt den Latch auf; die uebrigen Register lesen aus dem
+// Latch, damit ein Treiber-Lesedurchlauf S1..W einen konsistenten Zeitstempel sieht.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void cb030_rtc_refresh(q9_cb030_t *b)
+{
+    q9_datetime_t dt;
+    if (q9_hal_time(&dt) != 0) {
+        memset(b->rtc_regs, 0, sizeof(b->rtc_regs));
+        b->rtc_latch_valid = 1;
+        return;
+    }
+    /* Wochentag nach Sakamoto, 0 = Sonntag (uebliche 72421-Konvention) */
+    static const int wt[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    int y = dt.year, m = dt.month, d = dt.day;
+    if (m < 3) {
+        y -= 1;
+    }
+    int w = (y + y / 4 - y / 100 + y / 400 + wt[m - 1] + d) % 7;
+
+    b->rtc_regs[0]  = (uint8_t)(dt.sec % 10);          /* S1   */
+    b->rtc_regs[1]  = (uint8_t)(dt.sec / 10);          /* S10  */
+    b->rtc_regs[2]  = (uint8_t)(dt.min % 10);          /* MI1  */
+    b->rtc_regs[3]  = (uint8_t)(dt.min / 10);          /* MI10 */
+    b->rtc_regs[4]  = (uint8_t)(dt.hour % 10);         /* H1   */
+    b->rtc_regs[5]  = (uint8_t)(dt.hour / 10);         /* H10 (24h-Modus: 0..2, kein PM-Bit)     */
+    b->rtc_regs[6]  = (uint8_t)(dt.day % 10);          /* D1   */
+    b->rtc_regs[7]  = (uint8_t)(dt.day / 10);          /* D10  */
+    b->rtc_regs[8]  = (uint8_t)(dt.month % 10);        /* MO1  */
+    b->rtc_regs[9]  = (uint8_t)(dt.month / 10);        /* MO10 */
+    b->rtc_regs[10] = (uint8_t)((dt.year % 100) % 10); /* Y1 (Basis 2000, wie rtclock-Treiber)   */
+    b->rtc_regs[11] = (uint8_t)((dt.year % 100) / 10); /* Y10  */
+    b->rtc_regs[12] = (uint8_t)w;                      /* W    */
+    b->rtc_latch_valid = 1;
+}
+
+static uint8_t cb030_rtc_read(q9_cb030_t *b, uint32_t off)
+{
+    if (off == 0 || !b->rtc_latch_valid) {
+        cb030_rtc_refresh(b);
+    }
+    if (off <= 12) {
+        return b->rtc_regs[off];
+    }
+    if (off == 15) {
+        return 0x04;                                   /* Control F: Bit2 = 24h-Modus            */
+    }
+    return 0x00;                                       /* Control D/E: nie HOLD/BUSY/IRQ         */
+}
 
 static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
 {
@@ -541,6 +598,9 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
         b->timer_active = 1;
         return 0;
     }
+    if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
+        return cb030_rtc_read(b, addr - Q9_CB030_RTC_BASE);
+    }
     if (addr >= Q9_CB030_CF_BASE && addr <= Q9_CB030_CF_TOP) {
         return cb030_cf_read(b, addr - Q9_CB030_CF_BASE);
     }
@@ -594,6 +654,9 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
     if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
         b->timer_active = 1;
         return;
+    }
+    if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
+        return;                                       /* 5.6: RTC72421 — Schreiben ignoriert     */
     }
     if (addr >= Q9_CB030_CF_BASE && addr <= Q9_CB030_CF_TOP) {
         cb030_cf_write(b, addr - Q9_CB030_CF_BASE, val);
