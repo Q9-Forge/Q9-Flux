@@ -128,21 +128,26 @@ static void update_network_terminals(void) {
             continue;
         }
 
-        /* read() laeuft IMMER, unabhaengig vom RX-Ready-Status — sonst bleibt jedes Byte,
-           das ankommt waehrend OS-9 das vorherige noch nicht abgeholt hat, fuer immer
-           ungelesen im Socket-Puffer stehen, und ein Verbindungsabbruch (n==0) wird nie
-           erkannt (Socket blieb bisher dauerhaft in CLOSE_WAIT haengen). Ist das Register
-           noch belegt, wird das neu gelesene Byte bewusst verworfen (Overrun, wie bei einer
-           echten UART ohne FIFO) statt das wartende Byte zu ueberschreiben. */
+        /* 5.10: Solange das 1-Byte-Latch belegt ist, wird NICHT konsumiert — die Daten
+           stauen sich im TCP-Puffer (Backpressure), statt verworfen zu werden (vorher
+           gingen bei Burst-Eingabe auf mehreren Kanaelen Bytes verloren, z.B. 'super'
+           -> 'sper' beim 8-Kanal-Login-Test). Der Verbindungsabbruch wird trotzdem
+           erkannt: bei freiem Latch durch das normale read() (n==0), bei belegtem
+           Latch durch ein nicht-konsumierendes recv(MSG_PEEK) — damit bleibt der
+           CLOSE_WAIT-Bugfix vom 2026-07-10 wirksam. */
         unsigned char byte_in;
-        int n = read(channels[i].client_fd, &byte_in, 1);
-        if (n == 1) {
-            if (!(channels[i].status & 0x01)) {
+        int n;
+        if (!(channels[i].status & 0x01)) {
+            n = read(channels[i].client_fd, &byte_in, 1);
+            if (n == 1) {
                 channels[i].rx_data = byte_in;
                 channels[i].status |= 0x01;
                 m68k_set_irq((unsigned int)channels[i].irq_level);
             }
-        } else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+        } else {
+            n = (int)recv(channels[i].client_fd, &byte_in, 1, MSG_PEEK);
+        }
+        if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
             close(channels[i].client_fd);
             channels[i].client_fd = -1;
             channels[i].status &= ~0x01;
