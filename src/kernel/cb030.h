@@ -32,6 +32,8 @@
 //         │      │ erreichbar, neuer Lade-Helfer q9_cb030_rom_load                           │
 // 26-07-05│ 1.50 │ 5.5a: CF-Multi-Sektor — READ/WRITE SECTOR(S) zaehlen cf_sectcnt jetzt      │ CF
 //         │      │ echt durch (0 = 256 Sektoren, ATA-Konvention), neues cf_remaining          │
+// 26-07-14│ 1.60 │ 5.10: Netzwerk-Terminals 4 → 8 Kanaele (/x1../x8, $FFFF1010–$FFFF108F,     │ CF
+//         │      │ Vektoren 70–77), Kanaltabelle aus dem Header nach m68krt.c verlegt         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
@@ -54,21 +56,26 @@
 #define Q9_CB030_REMAP_REG_TOP     0xFFFF8FFFu
 
 // ===============================================================================================
-// OS-9 Netzwerk Terminal Server Peripherie-Definitionen (Erweiterung Ver. 1.30)
+// OS-9 Netzwerk Terminal Server Peripherie-Definitionen (Erweiterung Ver. 1.30; 5.10: 8 Kanaele)
 // ===============================================================================================
-#define MAX_CHANNELS 4
+#define MAX_CHANNELS 8
 #define MAIN_LISTEN_PORT 2000
 
 /* I/O-Bloecke je Kanal (3 Register: +0 Status, +2 RX-Data, +4 TX-Data), freie Luecke zwischen
    ROM-Spiegelgrenze (bis 0xFFFF_0000 frei, s. Q9_CB030_ROM_MIRROR_TOP) und REMAP-Register
    (Q9_CB030_REMAP_REG_BASE ab 0xFFFF_8000) — kollidiert bewusst NICHT mit dem RAM (anders als
-   die urspruengliche 0x00FF00xx-Adressierung, die mitten im 16-MByte-RAM lag). */
-#define Q9_CB030_NET_T1_BASE       0xFFFF1010u
-#define Q9_CB030_NET_T2_BASE       0xFFFF1020u
-#define Q9_CB030_NET_T3_BASE       0xFFFF1030u
-#define Q9_CB030_NET_T4_BASE       0xFFFF1040u
-#define Q9_CB030_NET_BASE          Q9_CB030_NET_T1_BASE
-#define Q9_CB030_NET_TOP           0xFFFF104Fu
+   die urspruengliche 0x00FF00xx-Adressierung, die mitten im 16-MByte-RAM lag).
+   5.10: OS-9-Geraetenamen sind /x1../x8 (t1.. existiert im MWOS-Port schon anderweitig). */
+#define Q9_CB030_NET_X1_BASE       0xFFFF1010u
+#define Q9_CB030_NET_X2_BASE       0xFFFF1020u
+#define Q9_CB030_NET_X3_BASE       0xFFFF1030u
+#define Q9_CB030_NET_X4_BASE       0xFFFF1040u
+#define Q9_CB030_NET_X5_BASE       0xFFFF1050u
+#define Q9_CB030_NET_X6_BASE       0xFFFF1060u
+#define Q9_CB030_NET_X7_BASE       0xFFFF1070u
+#define Q9_CB030_NET_X8_BASE       0xFFFF1080u
+#define Q9_CB030_NET_BASE          Q9_CB030_NET_X1_BASE
+#define Q9_CB030_NET_TOP           0xFFFF108Fu
 
 typedef struct {
     int client_fd;
@@ -80,13 +87,9 @@ typedef struct {
     int irq_vector;
 } os9_uart_t;
 
-
-static os9_uart_t channels[MAX_CHANNELS] = {
-    {-1, 0, 0, 0x02, Q9_CB030_NET_T1_BASE, 4, 70}, // /t1
-    {-1, 0, 0, 0x02, Q9_CB030_NET_T2_BASE, 4, 71}, // /t2
-    {-1, 0, 0, 0x02, Q9_CB030_NET_T3_BASE, 4, 72}, // /t3
-    {-1, 0, 0, 0x02, Q9_CB030_NET_T4_BASE, 4, 73}  // /t4
-};
+/* Die Kanaltabelle selbst (channels[]) lebt seit 5.10 in m68krt.c — sie war hier als static im
+   Header definiert und haette jeder weiteren einbindenden Uebersetzungseinheit eine eigene,
+   unbenutzte Kopie beschert. */
 
 /* 5.2d: Timer/IRQ3 — reine Adress-Trigger, kein Datenwert. */
 #define Q9_CB030_TIRQ_OFF_BASE     0xFFFF9000u
