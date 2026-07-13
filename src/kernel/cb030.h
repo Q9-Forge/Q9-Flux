@@ -34,6 +34,8 @@
 //         │      │ echt durch (0 = 256 Sektoren, ATA-Konvention), neues cf_remaining          │
 // 26-07-14│ 1.60 │ 5.10: Netzwerk-Terminals 4 → 8 Kanaele (/x1../x8, $FFFF1010–$FFFF108F,     │ CF
 //         │      │ Vektoren 70–77), Kanaltabelle aus dem Header nach m68krt.c verlegt         │
+// 26-07-14│ 1.70 │ 5.6: RTC72421 bei $FFFFD000 — Lesen = Host-Uhr (BCD-Nibbles, Latch bei     │ CF
+//         │      │ S1-Zugriff), Schreiben ignoriert                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
@@ -98,6 +100,15 @@ typedef struct {
 #define Q9_CB030_TIRQ_ON_TOP       0xFFFF9FFFu
 #define Q9_CB030_TIMER_PERIOD_MS   10u                /* 100 Hz */
 
+/* 5.6: RTC72421 — Epson-Echtzeituhr, busadressiert, 16 Nibble-Register in 16 Bytes.
+   LESEN liefert die Host-Uhr (Register 0..C als BCD-Nibbles, D/E/F Control), SCHREIBEN
+   wird komplett ignoriert (die Host-Uhr ist die Wahrheit). Atomaritaet: ein Lesezugriff
+   auf Register 0 (S1) frischt den internen Latch aus der Host-Uhr auf, alle weiteren
+   Register lesen aus dem Latch — wer S1 zuerst liest (wie der rtclock-Treiber im
+   MWOS-Q9-Port), bekommt einen in sich konsistenten Zeitstempel ohne Rollover-Risiko. */
+#define Q9_CB030_RTC_BASE          0xFFFFD000u
+#define Q9_CB030_RTC_TOP           0xFFFFD00Fu
+
 /* 5.2c: Compact-Flash-Interface (docs/CB030.md, Abschnitt "Compact-Flash-Interface"). */
 #define Q9_CB030_CF_BASE           0xFFFFE000u
 #define Q9_CB030_CF_TOP            0xFFFFE0FFu
@@ -161,6 +172,11 @@ typedef struct q9_cb030 {
     /* 5.2d: Timer/IRQ3 — kooperativ per Host-Uhrzeit, s. q9_cb030_poll_timer. */
     int            timer_active;
     uint32_t       timer_last_ms;
+
+    /* 5.6: RTC72421 — Latch der 13 Zeit-Register (S1..W) als fertige Nibbles, wird beim
+       Lesen von Register 0 (bzw. beim allerersten Zugriff) aus der Host-Uhr befuellt. */
+    uint8_t        rtc_regs[13];
+    int            rtc_latch_valid;
 } q9_cb030_t;
 
 
