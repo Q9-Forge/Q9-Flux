@@ -16,6 +16,8 @@
 // 26-07-04│ 1.10 │ 5.2d: q9_m68krt_set_irq (Wrapper um m68k_set_irq())                     │ CF
 // 26-07-05│ 1.20 │ 5.3: q9_m68krt_attach_board — Speicher-Hooks koennen wahlweise ueber     │ CF
 //         │      │ den CB030-Adress-Dispatch laufen (inkl. Autovector-Int-Ack)             │
+// 26-07-14│ 1.30 │ 5.10: Netzwerk-Terminals 4 → 8 (/x1../x8), Kanaltabelle aus cb030.h      │ CF
+//         │      │ hierher, network_irq_resync gegen verlorene Interrupts bei >1 Kanal      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "cb030.h"
@@ -48,7 +50,36 @@ static void init_network_terminals(void);
 static void update_network_terminals(void);
 static unsigned char network_read8(unsigned int address);
 static void network_write8(unsigned int address, unsigned char value);
-static int main_server_fd = -1;  
+static int main_server_fd = -1;
+
+/* 5.10: 8 virtuelle Netzwerk-Terminals /x1../x8 (vorher 4x /t1../t4) — Registerlayout je Kanal
+   s. cb030.h. Jeder Kanal hat seinen EIGENEN Autovektor (70..77), der IACK-Zyklus liefert genau
+   den Vektor des Kanals mit gesetztem RX-Ready-Bit (s. m68krt_board_int_ack). */
+static os9_uart_t channels[MAX_CHANNELS] = {
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X1_BASE, 4, 70}, // /x1
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X2_BASE, 4, 71}, // /x2
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X3_BASE, 4, 72}, // /x3
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X4_BASE, 4, 73}, // /x4
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X5_BASE, 4, 74}, // /x5
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X6_BASE, 4, 75}, // /x6
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X7_BASE, 4, 76}, // /x7
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X8_BASE, 4, 77}  // /x8
+};
+
+/* 5.10: Die IRQ-Leitung ist das ODER aller RX-Ready-Bits (level-getriggert). Nach jedem Verbrauch
+   eines Bytes bzw. nach jedem globalen Absenken (int_ack) muss sie erneut angehoben werden, wenn
+   IRGENDEIN anderer Kanal noch ein unabgeholtes Byte hat — sonst verliert der Kanal seinen
+   Interrupt und bekommt erst beim NAECHSTEN Byte wieder einen (die im ARBEITSPLAN dokumentierte
+   4-Kanal-Einschraenkung, vor dem 8-Kanal-Betrieb zu beheben). */
+static void network_irq_resync(void) {
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (channels[i].status & 0x01) {
+            m68k_set_irq((unsigned int)channels[i].irq_level);
+            return;
+        }
+    }
+    m68k_set_irq(0);
+}
 
 
 static void init_network_terminals(void) {
@@ -81,7 +112,7 @@ static void update_network_terminals(void) {
         for (int i = 0; i < MAX_CHANNELS; i++) {
             if (channels[i].client_fd < 0) {
                 channels[i].client_fd = incoming;
-                printf("[OS-9 Net] Gast dynamisch an /t%d uebergeben.\n", i + 1);
+                printf("[OS-9 Net] Gast dynamisch an /x%d uebergeben.\n", i + 1);
                 assigned = 1;
                 break;
             }
@@ -115,7 +146,18 @@ static void update_network_terminals(void) {
             close(channels[i].client_fd);
             channels[i].client_fd = -1;
             channels[i].status &= ~0x01;
-            printf("[OS-9 Net] Gast von /t%d getrennt.\n", i + 1);
+            printf("[OS-9 Net] Gast von /x%d getrennt.\n", i + 1);
+        }
+    }
+
+    /* 5.10: Leitung erneut anheben, falls noch irgendein Kanal ein unabgeholtes Byte hat —
+       deckt den Fall ab, dass int_ack die gemeinsame Leitung global gesenkt hat, bevor alle
+       anstehenden Kanaele bedient waren. Bewusst nur anheben, nie senken (das Senken passiert
+       ausschliesslich beim Verbrauch in network_read8, wie bisher). */
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (channels[i].status & 0x01) {
+            m68k_set_irq((unsigned int)channels[i].irq_level);
+            break;
         }
     }
 }
@@ -128,7 +170,8 @@ static unsigned char network_read8(unsigned int address) {
         }
         if (address == channels[i].base_addr + 2) {
             channels[i].status &= ~0x01; // RX Ready löschen
-            m68k_set_irq(0);             // Interrupt-Pin absenken
+            network_irq_resync();        // Pin absenken — oder oben halten, wenn ein anderer
+                                         // Kanal noch ein unabgeholtes Byte hat (5.10)
             return channels[i].rx_data;
         }
     }
