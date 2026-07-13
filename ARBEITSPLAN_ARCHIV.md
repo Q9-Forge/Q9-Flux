@@ -1007,3 +1007,59 @@ Davor: **Phase 2.3 (Modul-Directory) komplett abgeschlossen** — 2.3b
 (q9_mod_validate), 2.3c (q9_mod_register/find, Directory), 2.3d (F$Link/F$UnLink),
 `make test` PASS, warnungsfrei (34 Selbsttest-Checks). 2.2/2.4 bleiben 💤 bis
 freigegeben.
+
+## 5.10 — Netzwerk-Terminals /x1../x8 (fertig 2026-07-14 nachts, autonome Session)
+
+**Auftrag (Andreas, 2026-07-14):** Descriptor-Namen x1..x8 statt t1..t4 (t1 existiert
+im Port schon), gleich 8 Kanaele, Emulator entsprechend erweitern. Akzeptanz: 8 parallele
+Telnet-Verbindungen, auf allen arbeiten.
+
+**Emulator-Seite (Q9-Repo, Release 1.65):**
+- `cb030.h`: MAX_CHANNELS 4 -> 8, Registerfenster $FFFF1010-$FFFF108F
+  (Q9_CB030_NET_X1..X8_BASE), Kanaltabelle aus dem Header nach m68krt.c verlegt
+  (war static im Header = tote Kopie je Uebersetzungseinheit).
+- `m68krt.c`: Vektoren 70..77 (je Kanal ein eigener Autovektor), zwei Bugfixes:
+  1. `network_irq_resync()`: Die IRQ-Leitung ist das ODER aller RX-Ready-Bits.
+     Vorher senkten int_ack/RX-Read die gemeinsame Leitung global — ein Kanal mit
+     unabgeholtem Byte verlor seinen Interrupt bis zum naechsten Byte (die im
+     ARBEITSPLAN dokumentierte 4-Kanal-Einschraenkung). Jetzt wird nach jedem
+     Verbrauch neu synchronisiert und update_network_terminals hebt die Leitung
+     wieder an, solange irgendein Kanal ein Byte haelt.
+  2. TCP-Backpressure: Bei belegtem 1-Byte-Latch wird der Socket NICHT mehr
+     gelesen+verworfen (beim 8-Kanal-Test kam 'super' als 'sper' an), sondern die
+     Daten stauen im TCP-Puffer. Abbrucherkennung bei belegtem Latch per
+     recv(MSG_PEEK) — der CLOSE_WAIT-Fix vom 10.7. bleibt wirksam.
+- Smoke-Test: 8 Verbindungen gehalten, 9. bekommt "All lines busy".
+
+**MWOS-Q9-Port (unversioniert, Andreas committet selbst):**
+- `SCF/nettty.a` NEU: eigener SCF-Treiber (656 Byte, ed 1, good crc), Struktur nach
+  ueblichem OSK-Muster (sc68681.a nur als ABI-Referenz gelesen, KEIN Code uebernommen):
+  Init (SR-Maske bilden, F$IRQ auf Vektor/Level/Prio aus dem Descriptor), Read
+  (128-Byte-Ringpuffer + V_WAKE/F$Sleep-0-Muster, E$NotRdy bei aktivem SS_SSig),
+  Write (direkt nach Port+4, Sender nie busy), GetStat (SS_Ready/SS_EOF/SS_Opt),
+  PutStat (SS_SSig inkl. Sofort-Signal bei vorhandenen Daten, SS_Relea), TrmNat
+  (F$IRQ-Deregistrierung), IRQ-Handler (nur eigenen Kanal pruefen dank
+  Pro-Kanal-Vektor; ^C/^E -> S$Intrpt/S$Abort an V_LPRC wie ueblich; Overrun-Bit).
+- `SCF/x1.a..x8.a` NEU: Minimal-Descriptoren nach ttyS0-Muster (nam xN + Makro).
+- `systype.d`: Abschnitt "Q9 Netzwerk-Terminal-Server" — _NETX1.._NETX8_Base
+  ($FFFF1010 + n*$10), Level 4, Vektor 70+n; Makros x1..x8 (SCFDesc ...,nettty).
+  Backup: systype.d.vor-5.10.
+- `SCF/scf_nettty.make` NEU (nach oxc16954-Muster, sys.l+scfstat.l),
+  `scf_descriptors.make` + `SCF/makefile` erweitert.
+- Stolperstein: IPOverrun ist KEIN SDK-Def, sondern treiberlokal in sc68681.a —
+  in nettty.a selbst definiert ($10).
+- Merge: `CMDS/BOOTOBJS/xterms` (nettty+x1..x8, 1648 B, alle good crc; merge.exe
+  direkt aufgerufen, weil der os9merge-Wrapper kaputt ist — s. Geparkt).
+
+**Deployment (Laufzeit-Lade-Weg wie 5.11, keine Bootfile-Chirurgie):**
+- Testlauf auf Klon OS9SYS.claudia-x-test.hda: attr -e -pe, load /dd/xterms,
+  iniz x1..x8, tsmon /x1../x8 & — erster 8-Kanal-Test 7/8 (Byte-Verlust
+  'sper'), nach Backpressure-Fix 8/8.
+- Produktiv: Backup OS9SYS.before-xterms-20260714.hda; xterms nach /dd,
+  attr -e -pe (ToolShed), /dd/SYS/startup um load+iniz+tsmon-Block ergaenzt
+  (os9 copy -l fuer Text!). Boot-Test: nach Autostart 8/8 parallele Logins
+  (super), pd auf allen Kanaelen, Logout/Reconnect ok, make test PASS.
+
+**Bedienung:** `telnet <mac> 2000` — der Host weist dynamisch den ersten freien
+Kanal zu (Meldung "Gast dynamisch an /xN uebergeben"), tsmon startet login.
+9. Verbindung: "OS-9: All lines busy."
