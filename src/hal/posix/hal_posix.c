@@ -269,9 +269,11 @@ const char *q9_hal_target(void)
 //           Mit --selftest: 100 Ticks laufen lassen, "SELFTEST PASS" ausgeben, Exit 0.
 //           Mit --cb030 <rom> [--cf <image>]: statt des Q9-Kernels das emulierte CB030-Board
 //           mit dem angegebenen Boot-ROM starten (5.3, s. cb030run.h), optional mit eigenem
-//           CF-Backing-Image statt "cb030_cf.img" (5.5a) und Ethernet-Backend --net nat|vmnet
-//           (5.12, Default nat; vmnet = echtes Netz, macOS + sudo) — Ende per Ctrl-C.
-// Call:     q9.exe [--selftest | --cb030 <rom-datei> [--cf <image>] [--net nat|vmnet]]
+//           CF-Backing-Image statt "cb030_cf.img" (5.5a) und Ethernet-Backend --net
+//           nat|vmnet|bridge:<ifname> (5.13, Default nat; vmnet = echtes Netz via vmnet.framework,
+//           macOS + sudo/Entitlement; bridge = echtes Netz via BPF an physischer NIC, macOS, kein
+//           root noetig, s. bpf_net.h) — Ende per Ctrl-C.
+// Call:     q9.exe [--selftest | --cb030 <rom-datei> [--cf <image>] [--net nat|vmnet|bridge:<if>]]
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {

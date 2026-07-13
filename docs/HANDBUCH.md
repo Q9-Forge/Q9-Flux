@@ -220,7 +220,7 @@ Q9/
 │   │   │                       s. Abschnitt 5.11) — MC68360-SCC1 im Ethernet-Modus als 8K-Fenster
 │   │   │                       $FFFF2000-$FFFF3FFF (DPRAM, SCC1-Parameter-RAM, Registerbank),
 │   │   │                       TX-/RX-Buffer-Descriptor-Ringe, IRQ Level 5/Vektor 254 und ein
-│   │   │                       User-Mode-Mini-NAT-Backend (ARP/ICMP als Gegenstelle 10.0.0.2);
+│   │   │                       User-Mode-Mini-NAT-Backend (ARP/ICMP als Gegenstelle 192.168.200.1);
 │   │   │                       Gegenstueck zum originalen Microware-SPF-Treiber sp360 im
 │   │   │                       MWOS-Q9-Port
 │   │   └── cb030run.c/.h      CB030-Boot-Runner (Schritte 5.3/5.5a, NUR im nativen Build) —
@@ -841,14 +841,15 @@ Das im Q9-Emulator laufende OS-9 bekommt echtes TCP/IP: Im MWOS-Q9-Port
 - **Interrupts**: SCCE/SCCM-Ereignislogik, CIPR/CIMR-Pegel, IRQ Level 5 mit
   Vektor 254 ueber den IACK-Callback in `m68krt.c`.
 - **Host-Backend** (User-Mode-Mini-NAT, kein Root/TAP): der Emulator ist die
-  Gegenstelle `10.0.0.2` — beantwortet ARP (Proxy-ARP) und ICMP-Echo;
+  Gegenstelle `192.168.200.1` — beantwortet ARP (Proxy-ARP) und ICMP-Echo;
   TCP/UDP-NAT ist eine geplante Ausbaustufe.
 
 Verifiziert end-to-end (2026-07-12): OS-9 laedt den SPF-Stack zur Laufzeit
 (`load netmods` + `mbinstall` + `ipstart` — `sysmbuf` ist ein
 Coldstart-Systemmodul, beim Laufzeit-Weg uebernimmt `mbinstall` die
-Installation), `ping 10.0.0.2` bekommt Antworten, `netstat -i` zeigt enet0
-mit 0 Fehlern. Testskript: `test_quicc_net.exp`.
+Installation), `ping 192.168.200.1` bekommt Antworten, `netstat -i` zeigt enet0
+mit 0 Fehlern. Testskript: `test_quicc_net.exp`. (Adressierung 2026-07-13 von
+10.0.0.0/24 auf 192.168.200.0/16 umgestellt, s. ARBEITSPLAN 5.13.)
 
 ## 6. Stand der Dinge
 

@@ -123,11 +123,13 @@ CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c src/kernel/quicc.c
 CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h
 
 # 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
-# Auf anderen Plattformen bleibt Q9_HAVE_VMNET ungesetzt und --net vmnet meldet sich sauber ab.
+# 5.13: bridge-Ethernet-Backend (--net bridge:<ifname>), nur macOS: BPF (/dev/bpf*), kein Framework
+# noetig (reines POSIX/ioctl). Auf anderen Plattformen bleiben beide Defines ungesetzt und die
+# jeweilige --net-Option meldet sich sauber ab.
 ifeq ($(shell uname -s 2>/dev/null),Darwin)
-    CB030_NET_SRC   = src/kernel/vmnet_net.c
-    CB030_NET_HDR   = src/kernel/vmnet_net.h
-    CB030_NET_FLAGS = -DQ9_HAVE_VMNET
+    CB030_NET_SRC   = src/kernel/vmnet_net.c src/kernel/bpf_net.c
+    CB030_NET_HDR   = src/kernel/vmnet_net.h src/kernel/bpf_net.h
+    CB030_NET_FLAGS = -DQ9_HAVE_VMNET -DQ9_HAVE_BPF
     CB030_NET_LIBS  = -framework vmnet
 endif
 

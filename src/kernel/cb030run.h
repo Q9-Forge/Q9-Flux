@@ -20,6 +20,7 @@
 // 26-07-05│ 1.00 │ 5.3: Erster Boot-Runner (ROM laden, Board verdrahten, laufen lassen)    │ CF
 // 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (--cf <pfad>), NULL = Default "cb030_cf.img"    │ CF
 // 26-07-13│ 1.20 │ 5.12: net_mode-Parameter (--net nat|vmnet), NULL = "nat"                │ CF
+// 26-07-13│ 1.30 │ 5.13: net_mode "bridge:<ifname>" (BPF an physischer NIC)                │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030RUN_H
 #define Q9_CB030RUN_H
@@ -34,7 +35,9 @@
 //           Ladefehler zurueck (Exit-Code fuer main); beendet wird der Lauf per Ctrl-C (die HAL
 //           stellt das Terminal via atexit-Handler zurueck).
 //           net_mode waehlt das Ethernet-Backend (s. q9_quicc_net_mode): NULL/"nat" =
-//           eingebautes Mini-NAT, "vmnet" = echtes Netz via vmnet.framework (macOS, sudo).
+//           eingebautes Mini-NAT, "vmnet" = echtes Netz via vmnet.framework (macOS, sudo/
+//           Entitlement), "bridge:<ifname>" = echtes Netz via BPF an physischer NIC (macOS,
+//           kein root, s. bpf_net.h).
 // Call:     return q9_cb030_boot(argv[2], cf_path_or_NULL, net_mode_or_NULL);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode);
