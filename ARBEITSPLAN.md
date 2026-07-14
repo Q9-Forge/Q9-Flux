@@ -235,7 +235,9 @@ kennt — der Emulator darf "voller" sein als das, was wir tatsächlich benutzen
 **Konfigurierbare Hardware-Module (5.17–5.21)** — geplant 2026-07-14 abends,
 gemeinsame Planungsrunde Andreas + Claudia (im Chat als „6.1–6.5" skizziert,
 hier als 5.17–5.21 nummeriert, weil Phase 6 seit E11 für die Shell reserviert
-ist). **Ziel (Andreas):** (1) Hardware-Module einzeln erstellen und per
+ist). **→ Vollständige Design-Referenz mit allen Begründungen und dem
+Referenz-Beispiel der Config-Datei: `docs/HWCONFIG.md`** — dort zuerst lesen,
+die Tabellenzellen hier sind die Kurzfassung. **Ziel (Andreas):** (1) Hardware-Module einzeln erstellen und per
 Konfiguration ins Board aufnehmen, (2) Descriptor-Angaben (Adresse, Name,
 Vektor, Level, …) konfigurierbar — und zwar EINMAL für beide Seiten (Emulator
 + MWOS-Port), (3) maximale Geschwindigkeit mit möglichst wenigen
