@@ -169,8 +169,11 @@ typedef struct q9_cb030 {
                                                            /* laufenden Kommando (cf_sectcnt==0   */
                                                            /* bedeutet 256, ATA-Konvention)        */
 
-    /* 5.2d: Timer/IRQ3 — kooperativ per Host-Uhrzeit, s. q9_cb030_poll_timer. */
+    /* 5.2d: Timer/IRQ3 — kooperativ per Host-Uhrzeit, s. q9_cb030_poll_timer.
+       5.6: timer_synced=0 nach TI_IRQ_ON — der erste Poll loest sofort aus und startet
+       die Tick-Epoche; danach werden verpasste Perioden einzeln nachgeholt. */
     int            timer_active;
+    int            timer_synced;
     uint32_t       timer_last_ms;
 
     /* 5.6: RTC72421 — Latch der 13 Zeit-Register (S1..W) als fertige Nibbles, wird beim

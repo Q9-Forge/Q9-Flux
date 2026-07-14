@@ -348,9 +348,10 @@ static int m68krt_board_int_ack(int int_level)
     if (g_quicc && int_level == Q9_QUICC_IRQ_LEVEL && q9_quicc_irq_pending(g_quicc)) {
         return Q9_QUICC_IRQ_VECTOR;                   /* 5.11: SCC1-Ethernet, vektorisiert       */
     }
-    if (g_board && q9_cb030_uart_irq_pending(g_board)) {
-        return g_board->uart_ivr;
-    }
+    if (g_board && int_level == 3 && q9_cb030_uart_irq_pending(g_board)) {
+        return g_board->uart_ivr;                     /* DUART: vektorisiert nur auf Level 3 —   */
+    }                                                 /* Level 6 (Timer) faellt zum Autovektor   */
+                                                      /* 30 durch (5.6, _TckVect im Q9-Port)     */
     
     for (int i = 0; i < MAX_CHANNELS; i++) {
     if ((channels[i].status & 0x01) && int_level == channels[i].irq_level) {
