@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 1.80
+// File:   cb030.c                                                                         Ver. 1.90
 // Owner:  AF
 // Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
 //
@@ -605,10 +605,6 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
     if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
         return cb030_rtc_read(b, addr - Q9_CB030_RTC_BASE);
     }
-    if (addr >= Q9_CB030_CF_BASE && addr <= Q9_CB030_CF_TOP) {
-        return cb030_cf_read(b, addr - Q9_CB030_CF_BASE);
-    }
-
     if (!b->remapped) {
         /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
            Adressraums (0xFEFF_FFFF einschl., docs/CB030.md Speicherkarte) — das Boot-ROM
@@ -657,11 +653,6 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
     if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
         return;                                       /* 5.6: RTC72421 — Schreiben ignoriert     */
     }
-    if (addr >= Q9_CB030_CF_BASE && addr <= Q9_CB030_CF_TOP) {
-        cb030_cf_write(b, addr - Q9_CB030_CF_BASE, val);
-        return;
-    }
-
     if (!b->remapped) {
         return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
     }
@@ -777,11 +768,9 @@ uint8_t q9_cb030_read8(q9_cb030_t *b, uint32_t addr)
 
 uint16_t q9_cb030_read16(q9_cb030_t *b, uint32_t addr)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        uint16_t hi = cb030_cf_read(b, CF_REG_DATA);
-        uint16_t lo = cb030_cf_read(b, CF_REG_DATA);
-        return (uint16_t)((hi << 8) | lo);
-    }
+    /* 5.17: CF hat einen eigenen Word/Long-Pfad (q9_devtype_cf, s.u.) — wird ueber die
+       Geraete-Registry in m68krt.c VOR diesem Board-Fallback abgefangen, erreicht diese
+       Funktion also nicht mehr. */
     uint16_t hi = cb030_read_byte(b, addr);
     uint16_t lo = cb030_read_byte(b, addr + 1);
     return (uint16_t)((hi << 8) | lo);
@@ -789,13 +778,6 @@ uint16_t q9_cb030_read16(q9_cb030_t *b, uint32_t addr)
 
 uint32_t q9_cb030_read32(q9_cb030_t *b, uint32_t addr)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        uint32_t b0 = cb030_cf_read(b, CF_REG_DATA);
-        uint32_t b1 = cb030_cf_read(b, CF_REG_DATA);
-        uint32_t b2 = cb030_cf_read(b, CF_REG_DATA);
-        uint32_t b3 = cb030_cf_read(b, CF_REG_DATA);
-        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    }
     uint32_t b0 = cb030_read_byte(b, addr);
     uint32_t b1 = cb030_read_byte(b, addr + 1);
     uint32_t b2 = cb030_read_byte(b, addr + 2);
@@ -810,24 +792,12 @@ void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val)
 
 void q9_cb030_write16(q9_cb030_t *b, uint32_t addr, uint16_t val)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
-        return;
-    }
     cb030_write_byte(b, addr, (uint8_t)(val >> 8));
     cb030_write_byte(b, addr + 1, (uint8_t)val);
 }
 
 void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 24));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 16));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
-        return;
-    }
     cb030_write_byte(b, addr, (uint8_t)(val >> 24));
     cb030_write_byte(b, addr + 1, (uint8_t)(val >> 16));
     cb030_write_byte(b, addr + 2, (uint8_t)(val >> 8));
@@ -881,5 +851,103 @@ const q9_device_vtable_t q9_devtype_duart68681 = {
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.c                                                                             Ver. 1.80
+// Function: cf_dev_* / q9_devtype_cf
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), zweites umgezogenes Geraet.
+//           dev->state zeigt auf das q9_cb030_t-Board; cb030_cf_read/cb030_cf_write bleiben
+//           unveraendert (nehmen weiterhin den OFFSET ab Q9_CB030_CF_BASE, nicht die absolute
+//           Adresse). CF ist die im ARBEITSPLAN 5.17 genannte Ausnahme "behaelt eigene 16/32-Bit-
+//           Pfade": am Datenregister (CF_REG_DATA, addr==Q9_CB030_CF_BASE) liest/schreibt ein
+//           16/32-Bit-Zugriff MEHRERE aufeinanderfolgende Byte-Transfers desselben ATA-PIO-
+//           Datenregisters (kein Adress-Fortschreiten wie bei generischer Byte-Synthese!) --
+//           genau das musste schon vor 5.17 in q9_cb030_read16/32/write16/32 speziell behandelt
+//           werden und wandert jetzt unveraendert hierher. Kein IRQ (poll/irq_pending bleiben
+//           NULL, wie im alten Board-Fallback: CF wurde nie vom Hauptschleifen-Poll abgefragt).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t cf_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    return cb030_cf_read((q9_cb030_t *)dev->state, addr - Q9_CB030_CF_BASE);
+}
+
+static void cf_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    cb030_cf_write((q9_cb030_t *)dev->state, addr - Q9_CB030_CF_BASE, val);
+}
+
+static uint16_t cf_dev_read16(q9_device_t *dev, uint32_t addr)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        uint16_t hi = cb030_cf_read(b, CF_REG_DATA);
+        uint16_t lo = cb030_cf_read(b, CF_REG_DATA);
+        return (uint16_t)((hi << 8) | lo);
+    }
+    {
+        uint16_t hi = cf_dev_read8(dev, addr);
+        uint16_t lo = cf_dev_read8(dev, addr + 1);
+        return (uint16_t)((hi << 8) | lo);
+    }
+}
+
+static void cf_dev_write16(q9_device_t *dev, uint32_t addr, uint16_t val)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
+        return;
+    }
+    cf_dev_write8(dev, addr,      (uint8_t)(val >> 8));
+    cf_dev_write8(dev, addr + 1u, (uint8_t)val);
+}
+
+static uint32_t cf_dev_read32(q9_device_t *dev, uint32_t addr)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        uint32_t b0 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b1 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b2 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b3 = cb030_cf_read(b, CF_REG_DATA);
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+    }
+    {
+        uint32_t b0 = cf_dev_read8(dev, addr);
+        uint32_t b1 = cf_dev_read8(dev, addr + 1);
+        uint32_t b2 = cf_dev_read8(dev, addr + 2);
+        uint32_t b3 = cf_dev_read8(dev, addr + 3);
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+    }
+}
+
+static void cf_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 24));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 16));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
+        return;
+    }
+    cf_dev_write8(dev, addr,      (uint8_t)(val >> 24));
+    cf_dev_write8(dev, addr + 1u, (uint8_t)(val >> 16));
+    cf_dev_write8(dev, addr + 2u, (uint8_t)(val >> 8));
+    cf_dev_write8(dev, addr + 3u, (uint8_t)val);
+}
+
+const q9_device_vtable_t q9_devtype_cf = {
+    .read8         = cf_dev_read8,
+    .write8        = cf_dev_write8,
+    .read16        = cf_dev_read16,                   /* eigener Pfad (s.o.), NICHT synthetisiert */
+    .write16       = cf_dev_write16,
+    .read32        = cf_dev_read32,
+    .write32       = cf_dev_write32,
+    .poll          = NULL,
+    .irq_pending   = NULL,                            /* CF hat keinen IRQ (wie vor 5.17)         */
+    .reset         = NULL,
+    .irq_vector_fn = NULL,
+};
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF cb030.c                                                                             Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────
