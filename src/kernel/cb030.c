@@ -596,6 +596,7 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
     }
     if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
         b->timer_active = 1;
+        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
         return 0;
     }
     if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
@@ -653,6 +654,7 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
     }
     if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
         b->timer_active = 1;
+        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
         return;
     }
     if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
@@ -749,8 +751,27 @@ int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms)
     if (!b->timer_active) {
         return 0;
     }
-    if (now_ms - b->timer_last_ms >= Q9_CB030_TIMER_PERIOD_MS) {
+    if (!b->timer_synced) {
+        /* Erster Poll nach TI_IRQ_ON: sofort ausloesen und die Tick-Epoche starten
+           (Verhalten wie bisher, s. Selbsttest 5.2d). */
+        b->timer_synced  = 1;
         b->timer_last_ms = now_ms;
+        return 1;
+    }
+    if (now_ms - b->timer_last_ms >= Q9_CB030_TIMER_PERIOD_MS) {
+        /* 5.6: Tick-Schulden nachholen statt verwerfen — vorher wurde timer_last_ms auf
+           "jetzt" gesetzt, d.h. pro Poll hoechstens EIN Tick, egal wie viel Echtzeit
+           vergangen war. Im Idle-Betrieb (STOP + Host-Schlafdrossel, 5.9) verlor die
+           OS-9-Uhr dadurch fast alle Ticks und blieb praktisch stehen ('date' fror ein).
+           Jetzt rueckt timer_last_ms nur um EINE Periode vor, so dass aufeinanderfolgende
+           Polls die aufgelaufenen Ticks einzeln nachliefern (OS-9 zaehlt pro Interrupt
+           genau einen Tick). Deckel bei 30 s Rueckstand, damit ein stundenlang
+           schlafender Host keinen minutenlangen Tick-Sturm ausloest — den absoluten
+           Abgleich liefert dann ohnehin die RTC (setime -s). */
+        if (now_ms - b->timer_last_ms > 30000u) {
+            b->timer_last_ms = now_ms - 30000u;
+        }
+        b->timer_last_ms += Q9_CB030_TIMER_PERIOD_MS;
         return 1;
     }
     return 0;

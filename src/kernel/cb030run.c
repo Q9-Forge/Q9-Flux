@@ -80,21 +80,30 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
             now_ms = q9_hal_ticks_ms();
 
-            /* Timer (100Hz, Autovektor 27) und DUART (vektorisiert, IVR) teilen sich IRQ3 —
-               die Vektor-Auswahl macht der IACK-Callback (m68krt.c). Timer-Poll immer
-               ausfuehren (haelt last_ms aktuell). */
-            irq  = q9_cb030_poll_timer(&board, now_ms);
-            irq |= q9_cb030_uart_irq_pending(&board);
-            if (irq) {
+            /* DUART: vektorisiert (IVR) auf Level 3 (_DUARTLevel im MWOS-Q9-Port). */
+            irq = 0;
+            if (q9_cb030_uart_irq_pending(&board)) {
                 q9_m68krt_set_irq(3);
+                irq = 1;
             }
 
             /* 5.11: QUICC-Ethernet — Backend bedienen; fordert der SCC1 einen Interrupt an,
                Level 5 anlegen (schlaegt Level 3; nach dem IACK hebt die naechste Runde einen
-               noch anstehenden Timer-/DUART-IRQ wieder an — gleiches Muster wie bisher). */
+               noch anstehenden IRQ wieder an — kooperatives Re-Raise-Muster). */
             q9_quicc_poll(&quicc);
             if (q9_quicc_irq_pending(&quicc)) {
                 q9_m68krt_set_irq(Q9_QUICC_IRQ_LEVEL);
+                irq = 1;
+            }
+
+            /* Timer (100Hz): Level 6, Autovektor 30 — so erwartet es der MWOS-Q9-Port
+               (_TckVect equ 30, "new CPLD, level 6 autovector"). 5.6-Befund: der Emulator
+               legte den Timer bisher auf Level 3/Autovektor 27, wo der tkq9-Handler nie
+               registriert war — die OS-9-Uhr bekam deshalb KEINEN einzigen Tick ('date'
+               stand still, "Module Directory at 00:00:00"). Als hoechster Level zuletzt
+               anlegen, damit er ein gleichzeitig angefordertes 3/5 ueberschreibt. */
+            if (q9_cb030_poll_timer(&board, now_ms)) {
+                q9_m68krt_set_irq(6);
                 irq = 1;
             }
 
