@@ -21,7 +21,10 @@
 //─── Subnetz-Zuweisung (muss zur OS-9-Konfiguration im MWOS-Q9-Port passen) ──────────────────────
 #define QV_GATEWAY   "192.168.200.1"                  /* vmnet-Gateway = alte Mini-NAT-Adresse    */
 #define QV_DHCP_END  "192.168.200.254"                /* DHCP-Bereich (Gast 192.168.200.2 ist statisch) */
-#define QV_NETMASK   "255.255.0.0"
+#define QV_NETMASK   "255.255.255.0"                  /* /24 statt /16 (5.15): die /16-Maske kollidierte
+                                                          mit privaten /16-Heimnetzen (z.B. WLAN-Router mit
+                                                          192.168.0.0/16) und schickte den gesamten Traffic
+                                                          am vmnet-Interface vorbei; IPs bleiben unveraendert */
 
 //─── Ringpuffer fuer empfangene Frames (Dispatch-Queue -> Runner-Thread) ─────────────────────────
 #define QV_SLOT_LEN  2048u                            /* > max. Ethernet-Frame (1518)             */
@@ -160,7 +163,7 @@ int q9_vmnet_start(void)
             qv_drain();
         });
 
-    printf("[OS-9 Net] vmnet Shared Mode: Gateway %s/16, Interface-MAC %s\n", QV_GATEWAY, qv_macs);
+    printf("[OS-9 Net] vmnet Shared Mode: Gateway %s/24, Interface-MAC %s\n", QV_GATEWAY, qv_macs);
     return 0;
 }
 
