@@ -340,27 +340,61 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint32_t g_ack_count;                          /* Diagnose: wie oft wurde IACK durchlaufen */
 
-static int m68krt_board_int_ack(int int_level)
+/* 5.15-Befund: echte Hardware haelt pro Geraet eine EIGENE IRQ-Leitung; quittiert die CPU
+   das Level eines Geraets, senken NUR dessen eigene Leitung, alle anderen gleichzeitig
+   anliegenden Anforderungen bleiben unberuehrt bestehen und der Prioritaets-Encoder praesentiert
+   der CPU sofort wieder das naechsthoehere noch anstehende Level. Dieser Emulator bildet aber
+   nur EINEN kombinierten `m68k_set_irq()`-Wert nach (kein Bus mit unabhaengigen Leitungen) -
+   das blanke `m68k_set_irq(0)` unten wirft deshalb bislang ALLE gleichzeitig anstehenden
+   Anforderungen weg, nicht nur die des gerade quittierten Geraets, und ueberlaesst die
+   Wiederherstellung der naechsten Hauptschleifen-Runde (ganze CB030_SLICE_CYCLES spaeter).
+   Traf ein SCC1-TXB-Event (Level 5) wiederholt mit dem 100Hz-Timer (Level 6, wird zuletzt
+   gesetzt und ueberschreibt daher bewusst 3/5) zusammen, ging die QUICC-Anforderung dadurch
+   in einer Weise "verloren", die kein reines Hardware-Aequivalent hat - vermutlicher Ausloeser
+   des TCP-Haengers bei sptcp/telnetd nach ~15 Segmenten (der geschlossene Microware-Treiber
+   zaehlt vermutlich ausstehende TXB-Bestaetigungen und verliert bei einer verschmolzenen/
+   verzoegerten Zustellung die Spur). Fix: nach dem Zuruecksetzen sofort das naechsthoechste
+   NOCH anstehende Level neu anlegen, statt bis zur naechsten Runde zu warten - macht die
+   Ack-Behandlung analog zum Prioritaets-Encoder echter Hardware selbstheilend. */
+static void m68krt_reassert_pending_irq(void)
 {
-    (void)int_level;
-    g_ack_count++;
-    m68k_set_irq(0);
-    if (g_quicc && int_level == Q9_QUICC_IRQ_LEVEL && q9_quicc_irq_pending(g_quicc)) {
-        return Q9_QUICC_IRQ_VECTOR;                   /* 5.11: SCC1-Ethernet, vektorisiert       */
+    if (g_quicc && q9_quicc_irq_pending(g_quicc)) {
+        m68k_set_irq(Q9_QUICC_IRQ_LEVEL);
+        return;
     }
-    if (g_board && int_level == 3 && q9_cb030_uart_irq_pending(g_board)) {
-        return g_board->uart_ivr;                     /* DUART: vektorisiert nur auf Level 3 —   */
-    }                                                 /* Level 6 (Timer) faellt zum Autovektor   */
-                                                      /* 30 durch (5.6, _TckVect im Q9-Port)     */
-    
+    if (g_board && q9_cb030_uart_irq_pending(g_board)) {
+        m68k_set_irq(3);
+        return;
+    }
     for (int i = 0; i < MAX_CHANNELS; i++) {
-    if ((channels[i].status & 0x01) && int_level == channels[i].irq_level) {
-        return channels[i].irq_vector; 
+        if (channels[i].status & 0x01) {
+            m68k_set_irq((unsigned int)channels[i].irq_level);
+            return;
+        }
     }
 }
 
-    
-    return M68K_INT_ACK_AUTOVECTOR;
+static int m68krt_board_int_ack(int int_level)
+{
+    int vector = M68K_INT_ACK_AUTOVECTOR;
+
+    g_ack_count++;
+    m68k_set_irq(0);
+    if (g_quicc && int_level == Q9_QUICC_IRQ_LEVEL && q9_quicc_irq_pending(g_quicc)) {
+        vector = Q9_QUICC_IRQ_VECTOR;                  /* 5.11: SCC1-Ethernet, vektorisiert       */
+    } else if (g_board && int_level == 3 && q9_cb030_uart_irq_pending(g_board)) {
+        vector = g_board->uart_ivr;                    /* DUART: vektorisiert nur auf Level 3 —   */
+    } else {                                           /* Level 6 (Timer) faellt zum Autovektor   */
+        for (int i = 0; i < MAX_CHANNELS; i++) {       /* 30 durch (5.6, _TckVect im Q9-Port)     */
+            if ((channels[i].status & 0x01) && int_level == channels[i].irq_level) {
+                vector = channels[i].irq_vector;
+                break;
+            }
+        }
+    }
+
+    m68krt_reassert_pending_irq();                     /* 5.15: sofort statt erst naechste Runde  */
+    return vector;
 }
 
 
