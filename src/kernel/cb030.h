@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 1.50
+// File:   cb030.h                                                                         Ver. 1.80
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
@@ -36,12 +36,14 @@
 //         │      │ Vektoren 70–77), Kanaltabelle aus dem Header nach m68krt.c verlegt         │
 // 26-07-14│ 1.70 │ 5.6: RTC72421 bei $FFFFD000 — Lesen = Host-Uhr (BCD-Nibbles, Latch bei     │ CF
 //         │      │ S1-Zugriff), Schreiben ignoriert                                           │
+// 26-07-14│ 1.80 │ 5.17: devreg.h eingebunden, q9_devtype_duart68681-Vtable exportiert         │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
 
 #include <stdint.h>
 #include <stdio.h>
+#include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
 
 #define Q9_CB030_OK          0
 #define Q9_CB030_ERR_RAM    -1                       /* RAM fehlt */
@@ -273,8 +275,16 @@ void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val);
 void q9_cb030_write16(q9_cb030_t *b, uint32_t addr, uint16_t val);
 void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// 5.17: Geraete-Vtables der bisher hier eingebauten Board-Geraete (s. devreg.h fuer das Konzept).
+// dev->state zeigt bei allen dreien auf das q9_cb030_t-Board selbst (kein separater Zustand noetig
+// -- die Register/Puffer bleiben in q9_cb030_t, nur der DISPATCH wandert aus cb030_read_byte/
+// cb030_write_byte in die generische Registry). Instanzen werden von m68krt.c angelegt.
+//════════════════════════════════════════════════════════════════════════════════════════════════
+extern const q9_device_vtable_t q9_devtype_duart68681;   /* 5.17: 68681-DUART                    */
+
 #endif // Q9_CB030_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.h                                                                             Ver. 1.40
+// EOF cb030.h                                                                             Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 1.50
+// File:   cb030.c                                                                         Ver. 1.80
 // Owner:  AF
 // Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
 //
@@ -20,6 +20,9 @@
 //         │      │ den Fuellstand des HAL-TX-Ringpuffers (q9_hal_con_tx_ready/tx_empty)        │
 // 26-07-14│ 1.70 │ 5.6: RTC72421 ($FFFFD000): cb030_rtc_refresh/_read — Host-Uhr als BCD-   │ CF
 //         │      │ Nibbles mit S1-Latch, Schreibzugriffe im Dispatch ignoriert               │
+// 26-07-14│ 1.80 │ 5.17: 68681-DUART aus dem hartkodierten Dispatch in cb030_read_byte/       │ CF
+//         │      │ cb030_write_byte in die Geraete-Registry verlegt (q9_devtype_duart68681,   │
+//         │      │ Instanz in m68krt.c) — Registerlogik selbst unveraendert                  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -605,13 +608,7 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
     if (addr >= Q9_CB030_CF_BASE && addr <= Q9_CB030_CF_TOP) {
         return cb030_cf_read(b, addr - Q9_CB030_CF_BASE);
     }
-    if (addr >= Q9_CB030_UART_BASE && addr <= Q9_CB030_UART_TOP) {
-        return cb030_uart_read(b, addr);
-    }
 
-    
-    
-    
     if (!b->remapped) {
         /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
            Adressraums (0xFEFF_FFFF einschl., docs/CB030.md Speicherkarte) — das Boot-ROM
@@ -664,11 +661,7 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
         cb030_cf_write(b, addr - Q9_CB030_CF_BASE, val);
         return;
     }
-    if (addr >= Q9_CB030_UART_BASE && addr <= Q9_CB030_UART_TOP) {
-        cb030_uart_write(b, addr, val);
-        return;
-    }
-    
+
     if (!b->remapped) {
         return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
     }
@@ -842,5 +835,51 @@ void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.c                                                                             Ver. 1.40
+// Function: duart_dev_* / q9_devtype_duart68681
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h). dev->state zeigt auf das
+//           q9_cb030_t-Board; die eigentliche Registerlogik bleibt unveraendert in cb030_uart_read/
+//           cb030_uart_write/q9_cb030_uart_irq_pending (nur der Dispatch-Aufruf wandert hierher, aus
+//           dem alten if-Block in cb030_read_byte/cb030_write_byte). level_held=1: die IRQ-Leitung
+//           bleibt an, bis der RX-Puffer geleert bzw. TxRDY nicht mehr ansteht -- nimmt an der
+//           IACK-/Reassert-Pruefschleife in m68krt.c teil (wie vor 5.17).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t duart_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    return cb030_uart_read((q9_cb030_t *)dev->state, addr);
+}
+
+static void duart_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    cb030_uart_write((q9_cb030_t *)dev->state, addr, val);
+}
+
+static int duart_dev_irq_pending(q9_device_t *dev)
+{
+    return q9_cb030_uart_irq_pending((q9_cb030_t *)dev->state);
+}
+
+/* Der OS-9-Treiber (sc68681) programmiert seinen Vektor laufzeit ins IVR-Register (s. cb030_uart_
+   write case 0x18) -- anders als QUICC/Netz-Terminals ist das KEIN fester, bei der Registrierung
+   bekannter Wert, deshalb der dynamische Weg ueber irq_vector_fn statt des statischen
+   dev->irq_vector (wie vor 5.17: m68krt_board_int_ack las direkt g_board->uart_ivr). */
+static int duart_dev_irq_vector(q9_device_t *dev)
+{
+    return ((q9_cb030_t *)dev->state)->uart_ivr;
+}
+
+const q9_device_vtable_t q9_devtype_duart68681 = {
+    .read8         = duart_dev_read8,
+    .write8        = duart_dev_write8,
+    .read16        = NULL,                            /* aus read8 synthetisiert (wie bisher)   */
+    .write16       = NULL,
+    .read32        = NULL,
+    .write32       = NULL,
+    .poll          = NULL,                            /* RX-Poll steckt im irq_pending-Aufruf   */
+    .irq_pending   = duart_dev_irq_pending,
+    .reset         = NULL,
+    .irq_vector_fn = duart_dev_irq_vector,
+};
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF cb030.c                                                                             Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1800,9 +1800,13 @@ int q9_kernel_selftest(void)
         /* 5.2b: 68681-DUART — Minimalansatz, s. cb030.c. TxRDY ist immer gesetzt (q9_hal_con_put
            ist synchron), RxRDY ist im Testlauf immer 0 (q9_hal_con_get liefert -1 ohne Tastatur-
            eingabe), s. hal_native.c/hal_posix.c. Der Schreibzugriff auf THRA erzeugt bewusst eine
-           sichtbare Testausgabe (geht ueber q9_hal_con_put wie normale Konsolenausgabe). */
+           sichtbare Testausgabe (geht ueber q9_hal_con_put wie normale Konsolenausgabe).
+           5.17: DUART-Register haengen nicht mehr direkt an q9_cb030_read8/write8 (die reine
+           Board-Speicherlogik RAM/ROM/REMAP) — der Zugriff geht jetzt ueber die Geraete-Registry
+           (q9_devtype_duart68681, s. cb030.h/devreg.h), genau wie ihn m68krt.c jetzt aufruft. */
         static uint8_t ram[64];
         q9_cb030_t     board;
+        q9_device_t    uart_dev;
         int            ok;
         uint8_t        sr;
 
@@ -1810,10 +1814,16 @@ int q9_kernel_selftest(void)
         q9_cb030_reset(&board);
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);   /* Remap: I/O-Bereich erst danach aktiv */
 
-        sr = q9_cb030_read8(&board, Q9_CB030_UART_SRA);
+        uart_dev.type = uart_dev.name = 0;
+        uart_dev.base = uart_dev.size = 0;
+        uart_dev.irq_level = uart_dev.irq_vector = uart_dev.level_held = 0;
+        uart_dev.vt    = &q9_devtype_duart68681;
+        uart_dev.state = &board;
+
+        sr = q9_device_read8(&uart_dev, Q9_CB030_UART_SRA);
         ok = ok && ((sr & 0x04) != 0) && ((sr & 0x01) == 0);      /* TxRDY=1, RxRDY=0 (keine Eingabe) */
 
-        q9_cb030_write8(&board, Q9_CB030_UART_THRA, (uint8_t)'\n');
+        q9_device_write8(&uart_dev, Q9_CB030_UART_THRA, (uint8_t)'\n');
 
         checks[nchecks].name = "5.2b: CB030 DUART — SRA TxRDY gesetzt/RxRDY leer, THRA-Schreibzugriff ok";
         checks[nchecks++].ok = ok;
