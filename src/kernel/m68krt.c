@@ -398,6 +398,47 @@ static int m68krt_board_int_ack(int int_level)
 }
 
 
+/* 5.15/Option B (2026-07-14): optionaler Trap#0-Trace fuer die telnetdc-Ev$Wait-Untersuchung
+   (docs/re_telnetdc/OPTION_B_STATUS.md) -- nur aktiv, wenn die Env-Var Q9_TRAP_TRACE gesetzt ist,
+   sonst No-Op (kein Effekt auf normale Laeufe/Performance).
+   WICHTIG: trap #0 ist der Direktaufruf-Trap fuer ALLE F$/I$-Syscalls im GESAMTEN System (jeder
+   Prozess, staendig). Testlauf 1 (2026-07-14) mit ungefiltertem, zeilengepuffertem Log bremste
+   den Boot so massiv aus, dass er wie haengengeblieben wirkte -- Ursache war das Zeilenpuffer-
+   Flushing (ein write()-Syscall pro Trap0), nicht das Tracing an sich. Testlauf 2 mit einem
+   Register-Filter (D1==4, D2==0x7fff) ergab NULL Treffer -- die vermutete Registerbelegung war
+   falsch. Deshalb jetzt: KEIN Filter mehr (alles loggen), aber gross gepuffert (_IOFBF, 4 MiB)
+   statt zeilenweise geflusht -- vermeidet den Testlauf-1-Bremseffekt, ohne auf Verdacht zu
+   filtern. Loggt PC (= Adresse der trap-Instruktion, ueber M68K_REG_PPC) + D0..D3/A0/A1;
+   zusaetzlich ein Cap (Q9_TRAP_TRACE_CAP, Default 2 Mio. Zeilen) als Sicherheitsnetz gegen
+   unbegrenztes Log-Wachstum bei einer sehr langen Session. */
+static FILE   *g_trap_trace_fp  = NULL;
+static long    g_trap_trace_cap = 2000000;
+static long    g_trap_trace_n   = 0;
+
+/* Testlauf 3 (2026-07-14) zeigte: D0/D1 allein liefern keine brauchbare Filterung -- Grund
+   (Ghidra-Nachanalyse): der eigentliche OS-9-Aufrufcode (F$Event = 0x53) steckt NICHT in einem
+   Register, sondern klassisch OS-9-typisch als INLINE-DATENWORT direkt hinter der trap#0-
+   Instruktion im Code (Kernel liest es beim Rueckkehren und ueberspringt es). Deshalb jetzt
+   gezielt genau dieses Wort mitlesen (m68k_read_disassembler_16, seiteneffektfrei) und nur bei
+   Treffer F$Event (0x53) loggen -- das ist system-weit selten genug fuer ein sauberes Signal. */
+static int m68krt_trap_trace_callback(int trap)
+{
+    if (trap == 0 && g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
+        uint32_t pc = m68k_get_reg(NULL, M68K_REG_PPC);
+        uint32_t callcode = m68k_read_memory_16(pc + 2);
+        if (callcode == 0x53) {
+            fprintf(g_trap_trace_fp,
+                    "trap0 pc=%08x callcode=%04x d0=%08x d1=%08x d2=%08x d3=%08x a0=%08x a1=%08x\n",
+                    pc, callcode,
+                    m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                    m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_D3),
+                    m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1));
+            g_trap_trace_n++;
+        }
+    }
+    return 0;                                         /* nicht behandelt -- normale Exception laeuft weiter */
+}
+
 int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
 {
     if (!ram || ram_len < 8) {
@@ -414,6 +455,17 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
     m68k_set_cpu_type(M68K_CPU_TYPE_68030);
     m68k_init();
     m68k_set_int_ack_callback(0);
+
+    {
+        const char *trace_path = getenv("Q9_TRAP_TRACE");
+        if (trace_path && !g_trap_trace_fp) {
+            g_trap_trace_fp = fopen(trace_path, "w");
+            if (g_trap_trace_fp) {
+                setvbuf(g_trap_trace_fp, NULL, _IOFBF, 4 * 1024 * 1024);
+                m68k_set_trap_instr_callback(m68krt_trap_trace_callback);
+            }
+        }
+    }
 
     // === NEU: Netzwerk-Server beim Start hochfahren ===
     init_network_terminals();
