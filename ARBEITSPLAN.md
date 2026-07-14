@@ -232,6 +232,40 @@ kennt — der Emulator darf "voller" sein als das, was wir tatsächlich benutzen
 | 5.3 | Musashi ↔ CB030 verdrahten + Boot-ROM laden + Boot-Runner | ✅ | Claudia | Damit ist der Weg frei für den ersten Boot-Versuch mit dem echten Microware-ROM. → Details: ARBEITSPLAN_ARCHIV.md |
 | 5.1 | Musashi als CPU-Kern einbinden — Grundbaustein + Rauchtest, KEINE Scheduler-/Syscall-Bridge-Entscheidungen (die kommen erst mit der Detailplanung). Analog zu 4.6 (wasm3): Makefile-Integration (Musashis Zweistufen-Build — `m68kmake` generiert `m68kops.c/.h` aus `m68k_in.c` zur Bauzeit, siehe `third_party/musashi/Q9_VENDOR.md`), schmaler Wrapper `src/kernel/m68krt.c/.h` (analog `wasmrt.c/.h`), CPU-Typ `M68K_CPU_TYPE_68030`. Rauchtest: ein von Hand geschriebenes/assembliertes 68k-Testprogramm (z.B. zwei Zahlen addieren) in emuliertes RAM legen, `m68k_pulse_reset()` + `m68k_execute()` aufrufen, Ergebnis über die emulierten Register prüfen | ✅ | Claudia | Makefile-Integration steht: `m68kmake` wird als Host-Tool gebaut, generiert `m68kops.c/.h` zur Bauzeit nach `build/native/musashi_gen/` (nicht… → Details: ARBEITSPLAN_ARCHIV.md |
 
+**Konfigurierbare Hardware-Module (5.17–5.21)** — geplant 2026-07-14 abends,
+gemeinsame Planungsrunde Andreas + Claudia (im Chat als „6.1–6.5" skizziert,
+hier als 5.17–5.21 nummeriert, weil Phase 6 seit E11 für die Shell reserviert
+ist). **Ziel (Andreas):** (1) Hardware-Module einzeln erstellen und per
+Konfiguration ins Board aufnehmen, (2) Descriptor-Angaben (Adresse, Name,
+Vektor, Level, …) konfigurierbar — und zwar EINMAL für beide Seiten (Emulator
++ MWOS-Port), (3) maximale Geschwindigkeit mit möglichst wenigen
+Adressabfragen, (4) lauffähig auf macOS, Windows und Linux.
+**Dispatch-Design (Andreas' Idee, gemeinsam verfeinert):** RAM-Abfrage IMMER
+zuerst (>99 % aller Zugriffe inkl. Opcode-Fetches: 1 Vergleich, direkter
+Zugriff), dahinter Binärsuche über die nach Basisadresse sortierten
+Geräte-Fenster (8 Geräte = 3 Halbierungen + 1 Bereichs-Check; heute laufen
+bis zu ~10 Bereichsabfragen VOR dem RAM-Fall). REMAP wird Funktionszeiger-
+Umschaltung statt Zustandsabfrage je Zugriff; 16/32-Bit-RAM-Zugriffe lesen
+direkt big-endian statt 2×/4× durch den Byte-Pfad. Häufigkeits-Optimierung
+(unbalancierter Baum / Hot-Device-Vorabcheck nach Zugriffszählern aus dem
+Benchmark) als optionaler Feinschliff. **Einbindung der Module: statisch**
+(alle Gerätetypen in einer expliziten Registry-Tabelle einkompiliert, die
+Config entscheidet nur über die INSTANZIIERUNG — kein dlopen/LoadLibrary:
+drei ABI-Pfade, wasm-untauglich, kein Nutzen bei Modulen dieser Größe);
+plattformspezifische Backends wie bisher per `#ifdef`/Makefile
+(Q9_HAVE_VMNET-Muster). Default ohne `--config` = exakt das heutige Board
+(Adressen/Vektoren/Level identisch — bestehende Images und Descriptoren
+laufen unverändert). Nach jedem Schritt: `make test` + Boot-Test gegen
+Klon-Image mit Login über Port 2000.
+
+| # | Schritt | Status | Wer | Notizen |
+|---|---------|--------|-----|---------|
+| 5.17 | **Geräte-Interface + Registry, Bestandsgeräte umziehen.** `q9_device_t` (type/name/base/size/level/vector/state + vtable: read8/write8, optional read16/32+write16/32 — NULL = aus Byte-Zugriffen synthetisiert, CF behält eigene —, poll, irq_pending, reset); explizite Registry-Tabelle der verfügbaren Typen (bewusst KEINE Linker-Magie wie `__attribute__((constructor))` — portabel, wasm-tauglich, im Projektstil). Die sechs Bestandsgeräte (68681-DUART, CF, Timer-Trigger, RTC72421, nettty-Terminals, QUICC) EINZELN nacheinander umziehen, Verhalten unverändert. Damit verschwinden die hartkodierten Geräteketten an drei Stellen: Speicher-Dispatch (m68krt.c), Hauptschleifen-Poll (cb030run.c), IRQ-Ack/Reassert (m68krt_board_int_ack + reassert_pending_irq iterieren dann über registrierte Geräte nach Level) | 🟢 | Claudia | Größter und riskantester Brocken (jeder Speicherzugriff des bootenden OS-9 betroffen) — deshalb zuerst, solange Default = Ist-Zustand. Je Gerät einzeln committen + Boot-Test |
+| 5.18 | **Binärsuche-Dispatch + Benchmark.** Sortiertes Bereichs-Array `{base, top, dev}` beim Start aus den registrierten Instanzen gebaut; Lese-/Schreibpfad: RAM-Vergleich zuerst, dann Binärsuche (s. Designblock oben); REMAP als Funktionszeiger-Tausch zwischen Reset-/Remap-Variante (der Trigger selbst ist ein Gerät im Baum); 16/32-Bit-Direktzugriff auf RAM. Benchmark einbauen (emulierte Zyklen/Wandzeit + Zugriffszähler je Gerät) und Vorher/Nachher dokumentieren; danach entscheiden, ob Häufigkeits-Feinschliff messbar lohnt | 💤 | Claudia | Nach 5.17. Erwartung: deutlicher Boot-/Durchsatzgewinn, da heute JEDER RAM-Zugriff durch die komplette I/O-Kette läuft |
+| 5.19 | **Board-Konfigurationsdatei + CLI.** INI-artiges Textformat (C99-Parser ohne Fremdbibliothek, kommentierbar): `[board]` ram/rom + ein Abschnitt je Geräteinstanz (type, base, level, vector, typspezifische Parameter wie channels/port/image/backend/mac). `--config <datei>` lädt, einzelne CLI-Optionen können überschreiben; ohne `--config` eingebaute Default-Config = heutiges Board byte-genau. Validierung beim Start: Fensterüberlappung, Vektor-/Level-Kollisionen, unbekannte Typen → klare Fehlermeldung statt stillem Fehlverhalten | 💤 | Claudia | Nach 5.18. Bestehende CLI-Optionen (--cb030, --cf, --net) bleiben als Kurzformen erhalten |
+| 5.20 | **Descriptor-Generator für die MWOS-Seite.** Tool (Python, wie idbgen-Weg aus 5.14) liest DIESELBE Board-Config und erzeugt daraus die OS-9-Seite: `systype.d`-Fragmente + Descriptor-Quellen (`x1.a`-Muster) für den Q9-Port; gebaut wie gehabt über die Wine-Toolchain (os9make). Adresse/Vektor/Level stehen damit nur noch an EINER Stelle. Ausbaustufe (separat zu entscheiden): Descriptor-Module direkt binär erzeugen inkl. CRC (Modul-Format-Parser aus 5.15 existiert) — spart den Wine-Roundtrip, kostet einen eigenen Binär-Generator in der Pflege | 💤 | Claudia | Nach 5.19. Deployment ins Image bleibt wie gehabt (ToolShed + attr -e -pe + startup), ggf. Skript |
+| 5.21 | **Windows + Linux: Build- und Laufzeit-Parität.** (1) Winsock2-Shim (WSAStartup/closesocket/ioctlsocket, betrifft nettty-Server + Mini-NAT), (2) Netz-Backend-Abstufung: Mini-NAT (reine Sockets) = portabler Default auf allen drei OS, vmnet/BPF bleiben macOS-Extras, TAP (Linux)/npcap (Windows) als spätere eigene Vorschläge, (3) `make native` + `make test` auf allen drei OS grün (w64devkit-Pfad im Makefile existiert seit 0.1/1.10, conio-HAL vorhanden). Ergebnis: /x1-8-Terminals + TCP/IP via Mini-NAT überall; echtes LAN-Bridging zunächst nur macOS | 💤 | Claudia | Nach 5.19 (braucht die Config nicht zwingend, aber sinnvoll danach); Windows-Test auf Andreas' Desktop AF-PC nötig |
+
 ---
 
 ### Phase U — Userland-Werkzeuge (Codex-Baustelle, separater Nebenschauplatz)
