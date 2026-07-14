@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 1.91
+// File:   cb030.c                                                                         Ver. 1.92
 // Owner:  AF
 // Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
 //
@@ -26,6 +26,8 @@
 // 26-07-14│ 1.90 │ 5.17: Compact-Flash umgezogen (q9_devtype_cf, eigene 16/32-Bit-Pfade)      │ CF
 // 26-07-14│ 1.91 │ 5.17: Timer/IRQ3-Adress-Trigger umgezogen (q9_devtype_timer_irq, neues     │ CF
 //         │      │ Feld timer_irq_pending fuer den transienten Poll-Merker)                   │
+// 26-07-14│ 1.92 │ 5.17: RTC72421 umgezogen (q9_devtype_rtc72421) -- letztes board-internes   │ CF
+//         │      │ Geraet; cb030_read_byte/write_byte kennen jetzt nur noch REMAP+RAM/ROM      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -596,9 +598,6 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
         b->remapped = 1;
         return 0;
     }
-    if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
-        return cb030_rtc_read(b, addr - Q9_CB030_RTC_BASE);
-    }
     if (!b->remapped) {
         /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
            Adressraums (0xFEFF_FFFF einschl., docs/CB030.md Speicherkarte) — das Boot-ROM
@@ -634,9 +633,6 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
     if (cb030_is_remap_reg(addr)) {
         b->remapped = 1;
         return;
-    }
-    if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
-        return;                                       /* 5.6: RTC72421 — Schreiben ignoriert     */
     }
     if (!b->remapped) {
         return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
@@ -977,6 +973,37 @@ const q9_device_vtable_t q9_devtype_timer_irq = {
     .irq_vector_fn = NULL,                            /* Level 6 faellt immer zum Autovektor     */
 };
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: rtc_dev_* / q9_devtype_rtc72421
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), viertes umgezogenes Geraet
+//           (LETZTES der vier board-internen Geraete -- damit kennt cb030_read_byte/cb030_write_byte
+//           danach nur noch REMAP-Trigger + RAM/ROM, s. ARBEITSPLAN 5.17). cb030_rtc_read bleibt
+//           unveraendert; Schreiben wird weiterhin komplett ignoriert (Host-Uhr ist die Wahrheit,
+//           s. cb030.h). Kein IRQ.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t rtc_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    return cb030_rtc_read((q9_cb030_t *)dev->state, addr - Q9_CB030_RTC_BASE);
+}
+
+static void rtc_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    (void)dev; (void)addr; (void)val;                 /* 5.6: Schreiben ignoriert (wie bisher)  */
+}
+
+const q9_device_vtable_t q9_devtype_rtc72421 = {
+    .read8         = rtc_dev_read8,
+    .write8        = rtc_dev_write8,
+    .read16        = NULL,
+    .write16       = NULL,
+    .read32        = NULL,
+    .write32       = NULL,
+    .poll          = NULL,
+    .irq_pending   = NULL,
+    .reset         = NULL,
+    .irq_vector_fn = NULL,
+};
+
 const q9_device_vtable_t q9_devtype_cf = {
     .read8         = cf_dev_read8,
     .write8        = cf_dev_write8,
@@ -991,5 +1018,5 @@ const q9_device_vtable_t q9_devtype_cf = {
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.c                                                                             Ver. 1.91
+// EOF cb030.c                                                                             Ver. 1.92
 //────────────────────────────────────────────────────────────────────────────────────────────────

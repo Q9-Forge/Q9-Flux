@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 1.91
+// File:   cb030.h                                                                         Ver. 1.92
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
@@ -40,6 +40,7 @@
 // 26-07-14│ 1.90 │ 5.17: q9_devtype_cf-Vtable exportiert (zweites umgezogenes Geraet)          │ CF
 // 26-07-14│ 1.91 │ 5.17: q9_devtype_timer_irq exportiert, neues Feld timer_irq_pending         │ CF
 //         │      │ (drittes umgezogenes Geraet, s. cb030.c)                                    │
+// 26-07-14│ 1.92 │ 5.17: q9_devtype_rtc72421 exportiert (viertes/letztes board-internes Geraet)│ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
@@ -294,9 +295,10 @@ void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val);
 extern const q9_device_vtable_t q9_devtype_duart68681;   /* 5.17: 68681-DUART                    */
 extern const q9_device_vtable_t q9_devtype_cf;            /* 5.17: Compact-Flash (eigene 16/32-Bit-Pfade) */
 extern const q9_device_vtable_t q9_devtype_timer_irq;      /* 5.17: TI_IRQ_ON/OFF-Adress-Trigger    */
+extern const q9_device_vtable_t q9_devtype_rtc72421;        /* 5.17: RTC72421-Echtzeituhr             */
 
 #endif // Q9_CB030_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.h                                                                             Ver. 1.91
+// EOF cb030.h                                                                             Ver. 1.92
 //────────────────────────────────────────────────────────────────────────────────────────────────
