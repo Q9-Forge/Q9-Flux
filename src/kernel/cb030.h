@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 1.50
+// File:   cb030.h                                                                         Ver. 1.92
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
@@ -36,12 +36,18 @@
 //         │      │ Vektoren 70–77), Kanaltabelle aus dem Header nach m68krt.c verlegt         │
 // 26-07-14│ 1.70 │ 5.6: RTC72421 bei $FFFFD000 — Lesen = Host-Uhr (BCD-Nibbles, Latch bei     │ CF
 //         │      │ S1-Zugriff), Schreiben ignoriert                                           │
+// 26-07-14│ 1.80 │ 5.17: devreg.h eingebunden, q9_devtype_duart68681-Vtable exportiert         │ CF
+// 26-07-14│ 1.90 │ 5.17: q9_devtype_cf-Vtable exportiert (zweites umgezogenes Geraet)          │ CF
+// 26-07-14│ 1.91 │ 5.17: q9_devtype_timer_irq exportiert, neues Feld timer_irq_pending         │ CF
+//         │      │ (drittes umgezogenes Geraet, s. cb030.c)                                    │
+// 26-07-14│ 1.92 │ 5.17: q9_devtype_rtc72421 exportiert (viertes/letztes board-internes Geraet)│ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
 
 #include <stdint.h>
 #include <stdio.h>
+#include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
 
 #define Q9_CB030_OK          0
 #define Q9_CB030_ERR_RAM    -1                       /* RAM fehlt */
@@ -176,6 +182,13 @@ typedef struct q9_cb030 {
     int            timer_active;
     int            timer_synced;
     uint32_t       timer_last_ms;
+    /* 5.17: Transienter "hat der letzte poll() einen Tick ausgeloest"-Merker fuer den Geraete-
+       Vtable-Adapter (timer_dev_poll/timer_dev_irq_pending, s. cb030.c) -- NUR fuer die eine
+       Runde gueltig, in der q9_device_poll() aufgerufen wurde (Hauptschleife, cb030run.c);
+       bewusst NICHT level-held (s. devreg.h) und deshalb nicht Teil der IACK-/Reassert-
+       Pruefschleife in m68krt.c, exakt wie vor 5.17 (der Timer wird nie erneut angestossen,
+       bevor der naechste Tick faellig ist). */
+    int            timer_irq_pending;
 
     /* 5.6: RTC72421 — Latch der 13 Zeit-Register (S1..W) als fertige Nibbles, wird beim
        Lesen von Register 0 (bzw. beim allerersten Zugriff) aus der Host-Uhr befuellt. */
@@ -273,8 +286,19 @@ void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val);
 void q9_cb030_write16(q9_cb030_t *b, uint32_t addr, uint16_t val);
 void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// 5.17: Geraete-Vtables der bisher hier eingebauten Board-Geraete (s. devreg.h fuer das Konzept).
+// dev->state zeigt bei allen dreien auf das q9_cb030_t-Board selbst (kein separater Zustand noetig
+// -- die Register/Puffer bleiben in q9_cb030_t, nur der DISPATCH wandert aus cb030_read_byte/
+// cb030_write_byte in die generische Registry). Instanzen werden von m68krt.c angelegt.
+//════════════════════════════════════════════════════════════════════════════════════════════════
+extern const q9_device_vtable_t q9_devtype_duart68681;   /* 5.17: 68681-DUART                    */
+extern const q9_device_vtable_t q9_devtype_cf;            /* 5.17: Compact-Flash (eigene 16/32-Bit-Pfade) */
+extern const q9_device_vtable_t q9_devtype_timer_irq;      /* 5.17: TI_IRQ_ON/OFF-Adress-Trigger    */
+extern const q9_device_vtable_t q9_devtype_rtc72421;        /* 5.17: RTC72421-Echtzeituhr             */
+
 #endif // Q9_CB030_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.h                                                                             Ver. 1.40
+// EOF cb030.h                                                                             Ver. 1.92
 //────────────────────────────────────────────────────────────────────────────────────────────────

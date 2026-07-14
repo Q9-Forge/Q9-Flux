@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030run.c                                                                      Ver. 1.10
+// File:   cb030run.c                                                                      Ver. 1.60
 // Owner:  AF
 // Desc.:  Implementierung des CB030-Boot-Runners, siehe cb030run.h.
 //
@@ -14,11 +14,17 @@
 // 26-07-10│ 1.30 │ 5.9: Idle-Drossel -- q9_hal_sleep_ms(1) statt Busy-Loop, wenn die CPU    │ CF
 //         │      │ per STOP angehalten ist UND kein IRQ ansteht (OS-9-Leerlauf)             │
 // 26-07-13│ 1.40 │ 5.12: net_mode-Parameter -> q9_quicc_net_mode (nat|vmnet)               │ CF
+// 26-07-14│ 1.50 │ 5.17: Hauptschleifen-Poll fuer DUART/Timer genericisiert (Geraete-        │ CF
+//         │      │ Registry statt hartkodierter Bloecke), QUICC bleibt bis zu seinem eigenen │
+//         │      │ 5.17-Schritt explizit verdrahtet                                          │
+// 26-07-14│ 1.60 │ 5.17: QUICC ebenfalls umgezogen -- Hauptschleifen-Poll ist jetzt EINE      │ CF
+//         │      │ einzige Schleife ueber die Geraete-Registry, keine Sonderfaelle mehr       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
 #include "m68krt.h"
 #include "quicc.h"
+#include "devreg.h"
 #include "../hal/q9_hal.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,31 +86,29 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
             now_ms = q9_hal_ticks_ms();
 
-            /* DUART: vektorisiert (IVR) auf Level 3 (_DUARTLevel im MWOS-Q9-Port). */
+            /* 5.17: Hauptschleifen-Poll -- die frueher hier hartkodierten Bloecke (DUART/QUICC/
+               Timer je einzeln verdrahtet) sind vollstaendig durch EINE Schleife ueber die
+               Geraete-Registry ersetzt: erst poll() (falls vorhanden), danach irq_pending()
+               unmittelbar im Anschluss (wichtig fuer den Timer -- s. cb030.c timer_dev_poll/
+               timer_dev_irq_pending: der Merker gilt nur fuer GENAU diese Runde).
+               WICHTIG fuer die Reihenfolge: q9_m68krt_set_irq() bildet nur EINE kombinierte
+               Leitung nach (kein Bus mit unabhaengigen Level-Leitungen, s. m68krt.c-Kommentar bei
+               m68krt_reassert_pending_irq) -- der LETZTE Aufruf in dieser Runde gewinnt. Die
+               Registrierungsreihenfolge (m68krt.c: DUART 3, Netz-Terminals 4, QUICC 5, Timer 6 --
+               s. Kommentare in q9_m68krt_attach_board/attach_quicc) ist deshalb bewusst
+               aufsteigend nach IRQ-Level gehalten, damit bei gleichzeitig anstehenden Interrupts
+               am Ende dieser Schleife das hoechste Level uebrig bleibt -- genau wie vor 5.17. */
             irq = 0;
-            if (q9_cb030_uart_irq_pending(&board)) {
-                q9_m68krt_set_irq(3);
-                irq = 1;
-            }
-
-            /* 5.11: QUICC-Ethernet — Backend bedienen; fordert der SCC1 einen Interrupt an,
-               Level 5 anlegen (schlaegt Level 3; nach dem IACK hebt die naechste Runde einen
-               noch anstehenden IRQ wieder an — kooperatives Re-Raise-Muster). */
-            q9_quicc_poll(&quicc);
-            if (q9_quicc_irq_pending(&quicc)) {
-                q9_m68krt_set_irq(Q9_QUICC_IRQ_LEVEL);
-                irq = 1;
-            }
-
-            /* Timer (100Hz): Level 6, Autovektor 30 — so erwartet es der MWOS-Q9-Port
-               (_TckVect equ 30, "new CPLD, level 6 autovector"). 5.6-Befund: der Emulator
-               legte den Timer bisher auf Level 3/Autovektor 27, wo der tkq9-Handler nie
-               registriert war — die OS-9-Uhr bekam deshalb KEINEN einzigen Tick ('date'
-               stand still, "Module Directory at 00:00:00"). Als hoechster Level zuletzt
-               anlegen, damit er ein gleichzeitig angefordertes 3/5 ueberschreibt. */
-            if (q9_cb030_poll_timer(&board, now_ms)) {
-                q9_m68krt_set_irq(6);
-                irq = 1;
+            {
+                int i, n = q9_devreg_count();
+                for (i = 0; i < n; i++) {
+                    q9_device_t *d = q9_devreg_get(i);
+                    q9_device_poll(d, now_ms);
+                    if (q9_device_irq_pending(d)) {
+                        q9_m68krt_set_irq((unsigned int)d->irq_level);
+                        irq = 1;
+                    }
+                }
             }
 
             /* 5.9: OS-9 idlet per STOP -- m68k_execute() "verbrennt" dann sofort alle
@@ -130,5 +134,5 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030run.c                                                                          Ver. 1.00
+// EOF cb030run.c                                                                          Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────

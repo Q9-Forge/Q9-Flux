@@ -1,0 +1,47 @@
+#!/usr/bin/expect -f
+# 5.17: QUICC-Ping-Test gegen das 5.17-Klon-Image (aktuelle 192.168.200.x-Adressierung, s. 5.13).
+# Der normale Boot-Startup (startspf) hat SPF/QUICC bereits initialisiert (s. dir/Boot-Log) --
+# hier nur einloggen und direkt pingen/ifconfig/netstat pruefen.
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend test_517_quicc_result.txt
+
+set rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN
+set image /Volumes/SSD1TB/projects/Q9/local_images/OS9SYS.claudia-517-devreg.hda
+
+spawn ./build/native/q9.exe --cb030 $rom --cf $image --net nat
+
+set timeout 60
+expect "devices online"
+set timeout 20
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+
+sleep 1
+send -s "ifconfig enet0\r"
+expect -re {\$ ?$}
+
+sleep 1
+set timeout 30
+send -s "ping 192.168.200.1\r"
+expect {
+    -re {\$ ?$} {}
+    timeout { send_log "\n<<<PING TIMEOUT>>>\n" }
+}
+
+sleep 1
+send -s "netstat -i\r"
+expect -re {\$ ?$}
+
+send_log "\n<<<TEST ENDE>>>\n"
+send "\x1d"
+expect eof

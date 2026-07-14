@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 1.50
+// File:   cb030.c                                                                         Ver. 1.92
 // Owner:  AF
 // Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
 //
@@ -20,6 +20,14 @@
 //         │      │ den Fuellstand des HAL-TX-Ringpuffers (q9_hal_con_tx_ready/tx_empty)        │
 // 26-07-14│ 1.70 │ 5.6: RTC72421 ($FFFFD000): cb030_rtc_refresh/_read — Host-Uhr als BCD-   │ CF
 //         │      │ Nibbles mit S1-Latch, Schreibzugriffe im Dispatch ignoriert               │
+// 26-07-14│ 1.80 │ 5.17: 68681-DUART aus dem hartkodierten Dispatch in cb030_read_byte/       │ CF
+//         │      │ cb030_write_byte in die Geraete-Registry verlegt (q9_devtype_duart68681,   │
+//         │      │ Instanz in m68krt.c) — Registerlogik selbst unveraendert                  │
+// 26-07-14│ 1.90 │ 5.17: Compact-Flash umgezogen (q9_devtype_cf, eigene 16/32-Bit-Pfade)      │ CF
+// 26-07-14│ 1.91 │ 5.17: Timer/IRQ3-Adress-Trigger umgezogen (q9_devtype_timer_irq, neues     │ CF
+//         │      │ Feld timer_irq_pending fuer den transienten Poll-Merker)                   │
+// 26-07-14│ 1.92 │ 5.17: RTC72421 umgezogen (q9_devtype_rtc72421) -- letztes board-internes   │ CF
+//         │      │ Geraet; cb030_read_byte/write_byte kennen jetzt nur noch REMAP+RAM/ROM      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -590,28 +598,6 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
         b->remapped = 1;
         return 0;
     }
-    if (addr >= Q9_CB030_TIRQ_OFF_BASE && addr <= Q9_CB030_TIRQ_OFF_TOP) {
-        b->timer_active = 0;
-        return 0;
-    }
-    if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
-        b->timer_active = 1;
-        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
-        return 0;
-    }
-    if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
-        return cb030_rtc_read(b, addr - Q9_CB030_RTC_BASE);
-    }
-    if (addr >= Q9_CB030_CF_BASE && addr <= Q9_CB030_CF_TOP) {
-        return cb030_cf_read(b, addr - Q9_CB030_CF_BASE);
-    }
-    if (addr >= Q9_CB030_UART_BASE && addr <= Q9_CB030_UART_TOP) {
-        return cb030_uart_read(b, addr);
-    }
-
-    
-    
-    
     if (!b->remapped) {
         /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
            Adressraums (0xFEFF_FFFF einschl., docs/CB030.md Speicherkarte) — das Boot-ROM
@@ -648,27 +634,6 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
         b->remapped = 1;
         return;
     }
-    if (addr >= Q9_CB030_TIRQ_OFF_BASE && addr <= Q9_CB030_TIRQ_OFF_TOP) {
-        b->timer_active = 0;
-        return;
-    }
-    if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
-        b->timer_active = 1;
-        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
-        return;
-    }
-    if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
-        return;                                       /* 5.6: RTC72421 — Schreiben ignoriert     */
-    }
-    if (addr >= Q9_CB030_CF_BASE && addr <= Q9_CB030_CF_TOP) {
-        cb030_cf_write(b, addr - Q9_CB030_CF_BASE, val);
-        return;
-    }
-    if (addr >= Q9_CB030_UART_BASE && addr <= Q9_CB030_UART_TOP) {
-        cb030_uart_write(b, addr, val);
-        return;
-    }
-    
     if (!b->remapped) {
         return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
     }
@@ -784,11 +749,9 @@ uint8_t q9_cb030_read8(q9_cb030_t *b, uint32_t addr)
 
 uint16_t q9_cb030_read16(q9_cb030_t *b, uint32_t addr)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        uint16_t hi = cb030_cf_read(b, CF_REG_DATA);
-        uint16_t lo = cb030_cf_read(b, CF_REG_DATA);
-        return (uint16_t)((hi << 8) | lo);
-    }
+    /* 5.17: CF hat einen eigenen Word/Long-Pfad (q9_devtype_cf, s.u.) — wird ueber die
+       Geraete-Registry in m68krt.c VOR diesem Board-Fallback abgefangen, erreicht diese
+       Funktion also nicht mehr. */
     uint16_t hi = cb030_read_byte(b, addr);
     uint16_t lo = cb030_read_byte(b, addr + 1);
     return (uint16_t)((hi << 8) | lo);
@@ -796,13 +759,6 @@ uint16_t q9_cb030_read16(q9_cb030_t *b, uint32_t addr)
 
 uint32_t q9_cb030_read32(q9_cb030_t *b, uint32_t addr)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        uint32_t b0 = cb030_cf_read(b, CF_REG_DATA);
-        uint32_t b1 = cb030_cf_read(b, CF_REG_DATA);
-        uint32_t b2 = cb030_cf_read(b, CF_REG_DATA);
-        uint32_t b3 = cb030_cf_read(b, CF_REG_DATA);
-        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    }
     uint32_t b0 = cb030_read_byte(b, addr);
     uint32_t b1 = cb030_read_byte(b, addr + 1);
     uint32_t b2 = cb030_read_byte(b, addr + 2);
@@ -817,24 +773,12 @@ void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val)
 
 void q9_cb030_write16(q9_cb030_t *b, uint32_t addr, uint16_t val)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
-        return;
-    }
     cb030_write_byte(b, addr, (uint8_t)(val >> 8));
     cb030_write_byte(b, addr + 1, (uint8_t)val);
 }
 
 void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val)
 {
-    if (addr == Q9_CB030_CF_BASE) {
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 24));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 16));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
-        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
-        return;
-    }
     cb030_write_byte(b, addr, (uint8_t)(val >> 24));
     cb030_write_byte(b, addr + 1, (uint8_t)(val >> 16));
     cb030_write_byte(b, addr + 2, (uint8_t)(val >> 8));
@@ -842,5 +786,237 @@ void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.c                                                                             Ver. 1.40
+// Function: duart_dev_* / q9_devtype_duart68681
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h). dev->state zeigt auf das
+//           q9_cb030_t-Board; die eigentliche Registerlogik bleibt unveraendert in cb030_uart_read/
+//           cb030_uart_write/q9_cb030_uart_irq_pending (nur der Dispatch-Aufruf wandert hierher, aus
+//           dem alten if-Block in cb030_read_byte/cb030_write_byte). level_held=1: die IRQ-Leitung
+//           bleibt an, bis der RX-Puffer geleert bzw. TxRDY nicht mehr ansteht -- nimmt an der
+//           IACK-/Reassert-Pruefschleife in m68krt.c teil (wie vor 5.17).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t duart_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    return cb030_uart_read((q9_cb030_t *)dev->state, addr);
+}
+
+static void duart_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    cb030_uart_write((q9_cb030_t *)dev->state, addr, val);
+}
+
+static int duart_dev_irq_pending(q9_device_t *dev)
+{
+    return q9_cb030_uart_irq_pending((q9_cb030_t *)dev->state);
+}
+
+/* Der OS-9-Treiber (sc68681) programmiert seinen Vektor laufzeit ins IVR-Register (s. cb030_uart_
+   write case 0x18) -- anders als QUICC/Netz-Terminals ist das KEIN fester, bei der Registrierung
+   bekannter Wert, deshalb der dynamische Weg ueber irq_vector_fn statt des statischen
+   dev->irq_vector (wie vor 5.17: m68krt_board_int_ack las direkt g_board->uart_ivr). */
+static int duart_dev_irq_vector(q9_device_t *dev)
+{
+    return ((q9_cb030_t *)dev->state)->uart_ivr;
+}
+
+const q9_device_vtable_t q9_devtype_duart68681 = {
+    .read8         = duart_dev_read8,
+    .write8        = duart_dev_write8,
+    .read16        = NULL,                            /* aus read8 synthetisiert (wie bisher)   */
+    .write16       = NULL,
+    .read32        = NULL,
+    .write32       = NULL,
+    .poll          = NULL,                            /* RX-Poll steckt im irq_pending-Aufruf   */
+    .irq_pending   = duart_dev_irq_pending,
+    .reset         = NULL,
+    .irq_vector_fn = duart_dev_irq_vector,
+};
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: cf_dev_* / q9_devtype_cf
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), zweites umgezogenes Geraet.
+//           dev->state zeigt auf das q9_cb030_t-Board; cb030_cf_read/cb030_cf_write bleiben
+//           unveraendert (nehmen weiterhin den OFFSET ab Q9_CB030_CF_BASE, nicht die absolute
+//           Adresse). CF ist die im ARBEITSPLAN 5.17 genannte Ausnahme "behaelt eigene 16/32-Bit-
+//           Pfade": am Datenregister (CF_REG_DATA, addr==Q9_CB030_CF_BASE) liest/schreibt ein
+//           16/32-Bit-Zugriff MEHRERE aufeinanderfolgende Byte-Transfers desselben ATA-PIO-
+//           Datenregisters (kein Adress-Fortschreiten wie bei generischer Byte-Synthese!) --
+//           genau das musste schon vor 5.17 in q9_cb030_read16/32/write16/32 speziell behandelt
+//           werden und wandert jetzt unveraendert hierher. Kein IRQ (poll/irq_pending bleiben
+//           NULL, wie im alten Board-Fallback: CF wurde nie vom Hauptschleifen-Poll abgefragt).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t cf_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    return cb030_cf_read((q9_cb030_t *)dev->state, addr - Q9_CB030_CF_BASE);
+}
+
+static void cf_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    cb030_cf_write((q9_cb030_t *)dev->state, addr - Q9_CB030_CF_BASE, val);
+}
+
+static uint16_t cf_dev_read16(q9_device_t *dev, uint32_t addr)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        uint16_t hi = cb030_cf_read(b, CF_REG_DATA);
+        uint16_t lo = cb030_cf_read(b, CF_REG_DATA);
+        return (uint16_t)((hi << 8) | lo);
+    }
+    {
+        uint16_t hi = cf_dev_read8(dev, addr);
+        uint16_t lo = cf_dev_read8(dev, addr + 1);
+        return (uint16_t)((hi << 8) | lo);
+    }
+}
+
+static void cf_dev_write16(q9_device_t *dev, uint32_t addr, uint16_t val)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
+        return;
+    }
+    cf_dev_write8(dev, addr,      (uint8_t)(val >> 8));
+    cf_dev_write8(dev, addr + 1u, (uint8_t)val);
+}
+
+static uint32_t cf_dev_read32(q9_device_t *dev, uint32_t addr)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        uint32_t b0 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b1 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b2 = cb030_cf_read(b, CF_REG_DATA);
+        uint32_t b3 = cb030_cf_read(b, CF_REG_DATA);
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+    }
+    {
+        uint32_t b0 = cf_dev_read8(dev, addr);
+        uint32_t b1 = cf_dev_read8(dev, addr + 1);
+        uint32_t b2 = cf_dev_read8(dev, addr + 2);
+        uint32_t b3 = cf_dev_read8(dev, addr + 3);
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+    }
+}
+
+static void cf_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr == Q9_CB030_CF_BASE) {
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 24));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 16));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)(val >> 8));
+        cb030_cf_write(b, CF_REG_DATA, (uint8_t)val);
+        return;
+    }
+    cf_dev_write8(dev, addr,      (uint8_t)(val >> 24));
+    cf_dev_write8(dev, addr + 1u, (uint8_t)(val >> 16));
+    cf_dev_write8(dev, addr + 2u, (uint8_t)(val >> 8));
+    cf_dev_write8(dev, addr + 3u, (uint8_t)val);
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: timer_dev_* / q9_devtype_timer_irq
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), drittes umgezogenes Geraet.
+//           TI_IRQ_ON/OFF sind reine Adress-Trigger (kein Datenwert, Lesen wie Schreiben loesen
+//           dieselbe Wirkung aus, s. cb030.h) -- read8/write8 fassen deshalb beide Fenster
+//           ($FFFF9000-$FFFF97FF OFF, $FFFF9800-$FFFF9FFF ON) in EINEM Geraet zusammen und
+//           unterscheiden per Adresse.
+//           poll()/irq_pending() bilden den bisherigen cb030run.c-Aufruf ab (q9_cb030_poll_timer
+//           liefert 1 GENAU IN DER RUNDE, in der ein Tick faellig ist): poll() ruft ihn auf und
+//           merkt sich das Ergebnis transient in b->timer_irq_pending; irq_pending() liest nur
+//           diesen Merker (kein erneuter Seiteneffekt). level_held=0 (s. devreg.h) haelt den
+//           Timer bewusst aus der IACK-/Reassert-Pruefschleife in m68krt.c heraus -- exakt wie
+//           vor 5.17 (Level 6 faellt beim IACK immer auf den Autovektor, reassert_pending_irq
+//           griff nie fuer den Timer).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t timer_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
+        b->timer_active = 1;
+        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
+    } else {
+        b->timer_active = 0;
+    }
+    return 0;
+}
+
+static void timer_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    (void)val;
+    (void)timer_dev_read8(dev, addr);
+}
+
+static void timer_dev_poll(q9_device_t *dev, uint32_t now_ms)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    b->timer_irq_pending = q9_cb030_poll_timer(b, now_ms);
+}
+
+static int timer_dev_irq_pending(q9_device_t *dev)
+{
+    return ((q9_cb030_t *)dev->state)->timer_irq_pending;
+}
+
+const q9_device_vtable_t q9_devtype_timer_irq = {
+    .read8         = timer_dev_read8,
+    .write8        = timer_dev_write8,
+    .read16        = NULL,
+    .write16       = NULL,
+    .read32        = NULL,
+    .write32       = NULL,
+    .poll          = timer_dev_poll,
+    .irq_pending   = timer_dev_irq_pending,
+    .reset         = NULL,
+    .irq_vector_fn = NULL,                            /* Level 6 faellt immer zum Autovektor     */
+};
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: rtc_dev_* / q9_devtype_rtc72421
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), viertes umgezogenes Geraet
+//           (LETZTES der vier board-internen Geraete -- damit kennt cb030_read_byte/cb030_write_byte
+//           danach nur noch REMAP-Trigger + RAM/ROM, s. ARBEITSPLAN 5.17). cb030_rtc_read bleibt
+//           unveraendert; Schreiben wird weiterhin komplett ignoriert (Host-Uhr ist die Wahrheit,
+//           s. cb030.h). Kein IRQ.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t rtc_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    return cb030_rtc_read((q9_cb030_t *)dev->state, addr - Q9_CB030_RTC_BASE);
+}
+
+static void rtc_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    (void)dev; (void)addr; (void)val;                 /* 5.6: Schreiben ignoriert (wie bisher)  */
+}
+
+const q9_device_vtable_t q9_devtype_rtc72421 = {
+    .read8         = rtc_dev_read8,
+    .write8        = rtc_dev_write8,
+    .read16        = NULL,
+    .write16       = NULL,
+    .read32        = NULL,
+    .write32       = NULL,
+    .poll          = NULL,
+    .irq_pending   = NULL,
+    .reset         = NULL,
+    .irq_vector_fn = NULL,
+};
+
+const q9_device_vtable_t q9_devtype_cf = {
+    .read8         = cf_dev_read8,
+    .write8        = cf_dev_write8,
+    .read16        = cf_dev_read16,                   /* eigener Pfad (s.o.), NICHT synthetisiert */
+    .write16       = cf_dev_write16,
+    .read32        = cf_dev_read32,
+    .write32       = cf_dev_write32,
+    .poll          = NULL,
+    .irq_pending   = NULL,                            /* CF hat keinen IRQ (wie vor 5.17)         */
+    .reset         = NULL,
+    .irq_vector_fn = NULL,
+};
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF cb030.c                                                                             Ver. 1.92
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   quicc.h                                                                         Ver. 1.00
+// File:   quicc.h                                                                         Ver. 1.30
 // Owner:  AF
 // Desc.:  5.11: QUICC-Ethernet-Emulation (MC68360, SCC1 im Ethernet-Modus) fuer den CB030-Runner —
 //         das Hardware-Gegenstueck zum originalen Microware-SPF-Treiber `sp360` (MWOS-SDK,
@@ -44,11 +44,13 @@
 // 26-07-12│ 1.00 │ 5.11: Erster Wurf — Registerfenster, BD-Ringe, IRQ, ARP/ICMP-Backend    │ CF
 // 26-07-13│ 1.10 │ 5.12: vmnet-Backend (--net vmnet) + MAC-Uebersetzung Gast<->vmnet       │ CF
 // 26-07-13│ 1.20 │ 5.13: bridge-Backend (--net bridge:<ifname>) per BPF, kein root noetig  │ CF
+// 26-07-14│ 1.30 │ 5.17: q9_devtype_quicc-Vtable fuer die Geraete-Registry exportiert       │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_QUICC_H
 #define Q9_QUICC_H
 
 #include <stdint.h>
+#include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_QUICC_BASE        0xFFFF2000u              /* QUICC-Basis ("MBAR"), 8K-aligned         */
@@ -108,7 +110,11 @@ void     q9_quicc_poll(q9_quicc_t *q);
    nicht aktiviert (GSMR ENR=0) oder kein leerer RX-BD bereitsteht (dann SCCE.BSY). */
 void     q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len);
 
+/* 5.17: Vtable fuer die Geraete-Registry (devreg.h) -- Instanz wird in m68krt.c angelegt,
+   dev->state zeigt auf das q9_quicc_t-Handle. */
+extern const q9_device_vtable_t q9_devtype_quicc;
+
 #endif /* Q9_QUICC_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF quicc.h                                                                             Ver. 1.00
+// EOF quicc.h                                                                             Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
