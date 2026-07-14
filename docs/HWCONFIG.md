@@ -249,6 +249,19 @@ erzeugen inkl. CRC (Modul-Format-Parser aus 5.15 existiert) — spart den
 Wine-Roundtrip, kostet einen eigenen Binär-Generator in der Pflege.
 Deployment ins Image bleibt wie gehabt (ToolShed + `attr -e -pe` + startup).
 
+**Offene Fragen für die nächste Planungsrunde (Stand 2026-07-14, mit Andreas
+zu klären, BEVOR 5.20 auf 🟢 geht):**
+1. Schnitt der Generierung: lose `systype.d`-FRAGMENTE zum manuellen Einfügen,
+   oder verwaltet der Generator einen markierten Block in Andreas' systype.d
+   (`; === Q9-GENERATED BEGIN/END ===`) — wiederholbar ohne Handarbeit, fasst
+   aber die bestehende Datei an?
+2. Auch das `init`-Modul? Mit `os9_color` wäre es konsequent, auch die
+   MemList-Einträge zu generieren — aber größerer Eingriff (init steckt im
+   Bootfile/ROM, s. ROM-Rebuild-Drift unter "Geparkt").
+3. Wann läuft der Generator? Tendenz: Handaufruf (`tools/q9desc.py
+   q9board.cfg`) + `make`-Warnung bei "Config neuer als Generat" — KEIN
+   Automatismus, der ungefragt ins MWOS-Verzeichnis schreibt.
+
 ## 5. Plattform-Strategie (5.21)
 
 - **Winsock2-Shim** für Windows (WSAStartup/closesocket/ioctlsocket) — betrifft
