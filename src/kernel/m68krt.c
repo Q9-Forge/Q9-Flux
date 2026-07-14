@@ -56,14 +56,14 @@ static int main_server_fd = -1;
    s. cb030.h. Jeder Kanal hat seinen EIGENEN Autovektor (70..77), der IACK-Zyklus liefert genau
    den Vektor des Kanals mit gesetztem RX-Ready-Bit (s. m68krt_board_int_ack). */
 static os9_uart_t channels[MAX_CHANNELS] = {
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X1_BASE, 4, 70}, // /x1
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X2_BASE, 4, 71}, // /x2
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X3_BASE, 4, 72}, // /x3
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X4_BASE, 4, 73}, // /x4
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X5_BASE, 4, 74}, // /x5
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X6_BASE, 4, 75}, // /x6
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X7_BASE, 4, 76}, // /x7
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X8_BASE, 4, 77}  // /x8
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X1_BASE, 4, 70, 0}, // /x1
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X2_BASE, 4, 71, 0}, // /x2
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X3_BASE, 4, 72, 0}, // /x3
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X4_BASE, 4, 73, 0}, // /x4
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X5_BASE, 4, 74, 0}, // /x5
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X6_BASE, 4, 75, 0}, // /x6
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X7_BASE, 4, 76, 0}, // /x7
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X8_BASE, 4, 77, 0}  // /x8
 };
 
 /* 5.10: Die IRQ-Leitung ist das ODER aller RX-Ready-Bits (level-getriggert). Nach jedem Verbrauch
@@ -112,6 +112,7 @@ static void update_network_terminals(void) {
         for (int i = 0; i < MAX_CHANNELS; i++) {
             if (channels[i].client_fd < 0) {
                 channels[i].client_fd = incoming;
+                channels[i].last_was_cr = 0;
                 printf("[OS-9 Net] Gast dynamisch an /x%d uebergeben.\n", i + 1);
                 assigned = 1;
                 break;
@@ -140,9 +141,19 @@ static void update_network_terminals(void) {
         if (!(channels[i].status & 0x01)) {
             n = read(channels[i].client_fd, &byte_in, 1);
             if (n == 1) {
-                channels[i].rx_data = byte_in;
-                channels[i].status |= 0x01;
-                m68k_set_irq((unsigned int)channels[i].irq_level);
+                if (byte_in == '\n' && channels[i].last_was_cr) {
+                    /* 5.16: Telnet-NVT-Normalisierung. Echte Telnet-Clients senden bei ENTER
+                       CR+LF, OS-9 kennt als klassisches serielles System nur ein einzelnes CR
+                       als Zeilenende. Ungefiltert landete das LF als erstes Byte im naechsten
+                       Login-Prompt und wurde dort als nicht druckbares Zeichen ('.') sichtbar
+                       und nicht mehr loeschbar (bestaetigt per Live-Test gegen Port 2000). */
+                    channels[i].last_was_cr = 0;
+                } else {
+                    channels[i].last_was_cr = (byte_in == '\r');
+                    channels[i].rx_data = byte_in;
+                    channels[i].status |= 0x01;
+                    m68k_set_irq((unsigned int)channels[i].irq_level);
+                }
             }
         } else {
             n = (int)recv(channels[i].client_fd, &byte_in, 1, MSG_PEEK);
@@ -151,6 +162,7 @@ static void update_network_terminals(void) {
             close(channels[i].client_fd);
             channels[i].client_fd = -1;
             channels[i].status &= ~0x01;
+            channels[i].last_was_cr = 0;
             printf("[OS-9 Net] Gast von /x%d getrennt.\n", i + 1);
         }
     }
