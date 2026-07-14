@@ -1063,3 +1063,48 @@ Telnet-Verbindungen, auf allen arbeiten.
 **Bedienung:** `telnet <mac> 2000` — der Host weist dynamisch den ersten freien
 Kanal zu (Meldung "Gast dynamisch an /xN uebergeben"), tsmon startet login.
 9. Verbindung: "OS-9: All lines busy."
+
+## 5.6 — RTC72421-Echtzeituhr (fertig 2026-07-14 nachts, autonome Session)
+
+**Auftrag (Andreas, 2026-07-14):** Clock-Driver + Emulation fuer den RTC72421
+(16 Byte, freien Adressbereich suchen), Lesen fragt direkt die Host-Uhr,
+Schreiben wird ignoriert.
+
+**Emulator (Q9-Repo, Release 1.66):**
+- `cb030.h/.c`: RTC72421-Fenster $FFFFD000–$FFFFD00F (kollisionsfrei; NET endet
+  $FFFF108F, QUICC $FFFF3FFF, REMAP ab $FFFF8000, CF ab $FFFFE000). 16 Nibble-
+  Register: 0..C = S1,S10,MI1,MI10,H1,H10,D1,D10,MO1,MO10,Y1,Y10,W als BCD aus
+  q9_hal_time (Wochentag nach Sakamoto, Jahr Basis 2000), D/E = 0 (nie BUSY),
+  F = $04 (24h-Bit). Schreibzugriffe im Dispatch verworfen. Atomaritaet: Lesen
+  von Register 0 (S1) latcht den kompletten Zeitstempel — der Treiber liest S1
+  zuerst und bekommt so einen rollover-freien Satz.
+- **Ur-Bug 1 (Timer-Level):** Der 100Hz-Timer lag seit 5.2d auf IRQ-Level 3/
+  Autovektor 27 — der MWOS-Q9-Port registriert tkq9 aber auf Vektor 30 =
+  Level 6 (_TckVect, "new CPLD"). Folge: Die OS-9-Uhr hat im Emulator NIE
+  getickt (date stand, "Module Directory at 00:00:00", sleep -s 3 = 25 s über
+  irgendeinen Umweg). Fix: Timer -> set_irq(6) (cb030run.c, als hoechster Level
+  zuletzt angelegt), IACK: DUART-IVR nur noch bei Level 3, Level 6 -> Autovektor.
+- **Ur-Bug 2 (Tick-Verlust):** poll_timer setzte timer_last_ms auf "jetzt"
+  (1 Tick pro Poll, Rest weg — im Idle-Betrieb stand die Uhr selbst mit
+  richtigem Level). Jetzt Nachholung: last_ms rueckt pro Tick eine Periode vor,
+  Deckel 30 s (kein Tick-Sturm nach Host-Schlaf); neues Feld timer_synced
+  startet die Epoche bei TI_IRQ_ON (Selbsttest-5.2d-Semantik unveraendert).
+
+**MWOS-Q9-Port (unversioniert):**
+- `SYSMODS/rtc72421.a` NEU (eigene Implementierung, Interface wie rtc_example/
+  rtccb030): Sbrtn-Modul, GetTime liest S1 ZUERST (Latch!), dann MI/H/D/MO/Y
+  als BCD-Paare (RDPAIR-Makro), Plausibilitaetscheck ueber Control F ($04 =
+  24h-Bit, sonst E$NoClk); SetTime = No-Op mit Erfolg (Baustein ignoriert
+  Schreiben, Host-Uhr ist die Wahrheit, aber setime kann die Systemzeit setzen).
+- Trick statt Bootfile-Chirurgie: l68 `-n=rtclock` + **Revision 1** — gewinnt
+  im Modulverzeichnis gegen das DS1302-rtclock (Rev 0) aus dem Bootfile;
+  tickgeneric linkt "rtclock" bei JEDEM Get/SetTime frisch, darum genuegt
+  `load /dd/rtc72421` + `setime -s`. `SYSMODS/rtc72421.make` + makefile-Eintrag.
+- Deployment: rtc72421 auf OS9SYS.hda (/rtc72421, attr -e -pe), /dd/SYS/startup
+  laedt es + `setime -s` direkt nach `chd /dd` (vor dem Netz-Block).
+
+**Verifiziert:** Boot Produktiv-Image -> date = Host-Zeit auf die Sekunde
+(inkl. korrektem Wochentag), sleep -s 3 = 3,0 s, Uhr tickt weiter (vorher 3x
+identischer Stempel), make test 6/6 PASS, 8/8 x-Terminal-Logins, QUICC-ping
+Produktiv-Image ok. Befund am Rande: `test_quicc_net.exp` + claudia-net-test-
+Image nutzen noch die 10.0.0.x-Adressen von vor 5.13 -> Testimage veraltet.
