@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 1.92
+# File:   HANDBUCH.md                                                                     Ver. 2.00
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -37,6 +37,9 @@
 # 26-07-10│ 1.92 │ 5.9: Idle-Drossel CB030-Runner — q9_hal_sleep_ms (Abschnitt 5.7),           │ CF
 #         │      │ q9_m68krt_is_stopped (Abschnitt 5.9), Boot-Runner-Beschreibung in           │
 #         │      │ Abschnitt 5.10 aktualisiert (Ctrl-] statt Ctrl-C, Idle-Drossel-Absatz)       │
+# 26-07-14│ 2.00 │ 5.17: Geraete-Registry (Entscheidung E14) — devreg.c/.h neu, Abschnitt 3     │ CF
+#         │      │ (Quellcode-Layout) um devreg.c/.h ergaenzt, neuer Abschnitt 5.12 (Konzept +  │
+#         │      │ alle sechs migrierten Geraete)                                              │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -223,12 +226,18 @@ Q9/
 │   │   │                       User-Mode-Mini-NAT-Backend (ARP/ICMP als Gegenstelle 192.168.200.1);
 │   │   │                       Gegenstueck zum originalen Microware-SPF-Treiber sp360 im
 │   │   │                       MWOS-Q9-Port
-│   │   └── cb030run.c/.h      CB030-Boot-Runner (Schritte 5.3/5.5a, NUR im nativen Build) —
-│   │                           Einstiegspunkt fuer `q9.exe --cb030 <rom-datei> [--cf <image>]`:
-│   │                           ROM laden, Board+Musashi verdrahten, CPU-Endlosschleife mit
-│   │                           Timer-Polling (das echte Microware-ROM bleibt lokal, NIE im
-│   │                           Repository); `--cf` waehlt optional ein eigenes CF-Backing-Image
-│   │                           statt des Default `cb030_cf.img`
+│   │   ├── cb030run.c/.h      CB030-Boot-Runner (Schritte 5.3/5.5a, NUR im nativen Build) —
+│   │   │                       Einstiegspunkt fuer `q9.exe --cb030 <rom-datei> [--cf <image>]`:
+│   │   │                       ROM laden, Board+Musashi verdrahten, CPU-Endlosschleife mit
+│   │   │                       Timer-Polling (das echte Microware-ROM bleibt lokal, NIE im
+│   │   │                       Repository); `--cf` waehlt optional ein eigenes CF-Backing-Image
+│   │   │                       statt des Default `cb030_cf.img`
+│   │   └── devreg.c/.h        Geraete-Interface + Registry (Schritt 5.17, NUR im nativen Build,
+│   │                           s. Abschnitt 5.12, Entscheidung E14) — q9_device_t/Vtable,
+│   │                           statische Instanz-Registry + Typ-Registry (Typname->Vtable, KEINE
+│   │                           Linker-Magie); loest die drei bis dahin hartkodierten Geraete-
+│   │                           ketten in m68krt.c/cb030run.c ab, alle sechs CB030-Bestandsgeraete
+│   │                           sind darueber angebunden
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
 │       ├── native/            Windows-HAL (conio.h) — Host-Loop (main) liegt hier
@@ -851,6 +860,101 @@ Installation), `ping 192.168.200.1` bekommt Antworten, `netstat -i` zeigt enet0
 mit 0 Fehlern. Testskript: `test_quicc_net.exp`. (Adressierung 2026-07-13 von
 10.0.0.0/24 auf 192.168.200.0/16 umgestellt, s. ARBEITSPLAN 5.13.)
 
+---
+
+### 5.12 Geräte-Registry (Schritt 5.17, `src/kernel/devreg.c/.h`, Entscheidung E14)
+
+Bis Schritt 5.17 waren die sechs CB030-Bestandsgeräte (68681-DUART,
+Compact-Flash, Timer/IRQ3, RTC72421, Netz-Terminals `/x1..x8`, QUICC-Ethernet)
+an drei Stellen hartkodiert verdrahtet: dem Speicher-Dispatch
+(`m68k_read/write_memory_*` in `m68krt.c`), dem Hauptschleifen-Poll
+(`q9_cb030_boot` in `cb030run.c`) und dem Interrupt-Acknowledge/Reassert
+(`m68krt_board_int_ack`/`m68krt_reassert_pending_irq` in `m68krt.c`). Jedes
+neue Gerät hätte an allen drei Stellen einen weiteren `if`/`switch`-Zweig
+gebraucht. `devreg.c/.h` löst das über ein generisches Geräte-Interface:
+
+```c
+// devreg.h — Kern des Interfaces
+typedef struct q9_device q9_device_t;
+
+typedef struct {
+    uint8_t  (*read8)(q9_device_t *dev, uint32_t addr);        // Pflicht
+    void     (*write8)(q9_device_t *dev, uint32_t addr, uint8_t val); // Pflicht
+    uint16_t (*read16)(q9_device_t *dev, uint32_t addr);       // optional
+    void     (*write16)(q9_device_t *dev, uint32_t addr, uint16_t val);
+    uint32_t (*read32)(q9_device_t *dev, uint32_t addr);
+    void     (*write32)(q9_device_t *dev, uint32_t addr, uint32_t val);
+    void     (*poll)(q9_device_t *dev, uint32_t now_ms);        // optional
+    int      (*irq_pending)(q9_device_t *dev);                  // optional
+    void     (*reset)(q9_device_t *dev);                        // optional
+    int      (*irq_vector_fn)(q9_device_t *dev);                // optional
+} q9_device_vtable_t;
+
+struct q9_device {
+    const char *type, *name;
+    uint32_t    base, size;
+    int         irq_level, irq_vector;   // -1 = Autovektor
+    int         level_held;              // 1 = IRQ-Leitung haelt an (IACK/Reassert)
+    const q9_device_vtable_t *vt;
+    void       *state;                   // statisch alloziert, kein malloc
+};
+```
+
+**read16/32/write16/32 = NULL** bedeutet: aus den Byte-Zugriffen big-endian
+synthetisiert (zwei bzw. vier `read8`/`write8`-Aufrufe) — der Normalfall.
+Zwei Geräte behalten eigene 16/32-Bit-Pfade: **Compact-Flash** (am
+ATA-Datenregister transferiert ein Wort-/Langwort-Zugriff mehrere
+aufeinanderfolgende Byte-Transfers desselben Registers, kein
+Adress-Fortschreiten) und **QUICC** (hatte schon vor 5.17 echte 16/32-Bit-
+Pfade). **`level_held`** unterscheidet level-gehaltene IRQ-Quellen (DUART,
+Netz-Terminals, QUICC — bleiben an, bis das Gerät selbst sie freigibt, nehmen
+an der IACK-/Reassert-Prüfschleife teil) von einmaligen Pulsen (Timer/IRQ3 —
+feuert genau einmal pro fälligem 10-ms-Tick, wird bewusst NICHT
+wiederangelegt, wie schon vor 5.17). **`irq_vector_fn`** deckt Geräte mit
+laufzeit- oder instanzabhängigem Vektor ab: die DUART, weil der OS-9-Treiber
+seinen Vektor selbst ins IVR-Register schreibt, und die Netz-Terminals (ein
+einziger Registry-Eintrag für alle acht Kanäle), weil jeder Kanal trotz
+gemeinsamem IRQ-Level 4 seinen eigenen Vektor (70–77) hat — der Hook liefert
+den Vektor des ersten Kanals mit gesetztem RX-Ready-Bit.
+
+**Zwei getrennte Registries:** die **Instanz-Registry** (`q9_devreg_add/get/
+count`, statisches Array, kein malloc) hält die tatsächlich angelegten
+Geräte — durchlaufen von den drei genannten Stellen, in
+Registrierungsreihenfolge (bewusst aufsteigend nach IRQ-Level: DUART 3,
+Netz-Terminals 4, QUICC 5, Timer 6 — wichtig, weil `q9_m68krt_set_irq()` nur
+eine kombinierte Leitung nachbildet und bei gleichzeitig anstehenden
+Interrupts der letzte Aufruf je Runde gewinnt). Die **Typ-Registry**
+(`q9_devtype_lookup`, `g_device_types[]` in `devreg.c`) bildet Typnamen
+("duart68681", "cf", "timer_irq", "rtc72421", "nettty", "quicc") auf ihre
+Vtable ab — eine explizite, statisch kompilierte Tabelle, **bewusst KEINE
+Linker-Magie wie `__attribute__((constructor))`** (portabel, wasm-tauglich,
+im Projektstil). Für 5.17 dient sie nur der Verzeichnung; die eigentliche
+Instanziierung über Typnamen kommt erst mit der Config-Datei (ARBEITSPLAN
+5.19).
+
+Die sechs Vtables selbst leben bei ihren jeweiligen Geräten (nicht in
+`devreg.c`): `q9_devtype_duart68681`/`q9_devtype_cf`/`q9_devtype_timer_irq`/
+`q9_devtype_rtc72421` in `cb030.c` (state zeigt auf das `q9_cb030_t`-Board —
+kein separater Zustand nötig, nur der Dispatch wandert), `q9_devtype_nettty`
+in `m68krt.c` (delegiert an die bestehenden `network_read8/write8`, die
+schon über alle acht Kanäle suchen) und `q9_devtype_quicc` in `quicc.c`
+(delegiert an die bestehende `q9_quicc_*`-API). `cb030_read_byte`/
+`cb030_write_byte` (cb030.c) kennen nach 5.17 nur noch den REMAP-Trigger und
+RAM/ROM — alle vier board-internen Geräte sind vollständig ausgezogen.
+
+**NICHT zu verwechseln** mit dem bestehenden `device.c`/`device.h`: das
+modelliert OS-9-**Pfad**-Geräte (`/term`, `/nil`, `/d0`) im wasm3-Kernelpfad
+(Abschnitt 5.3) — ein komplett anderes Konzept auf einer anderen
+Abstraktionsebene. `devreg.h` modelliert Board-**Hardware** im emulierten
+68k-Adressraum (CB030-Runner, Abschnitt 5.10).
+
+Migriert wurden alle sechs Geräte einzeln, mit je eigenem Boot-Test
+(`test_517_boot.exp` über die lokale DUART-Konsole, `test_517_nettty.py`
+über `/x1`/Port 2000, `test_517_quicc_ping.exp` für QUICC/`ping`) — Verhalten
+byte-identisch zum Stand vor 5.17. Grundlage für 5.18 (Binärsuche-Dispatch +
+Benchmark, RAM-Vergleich zuerst statt bis zu zehn Bereichsabfragen) und 5.19
+(Board-Konfigurationsdatei instanziert Geräte über die Typ-Registry).
+
 ## 6. Stand der Dinge
 
 Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARBEITSPLAN.md)
@@ -935,5 +1039,5 @@ vorausgesetzt werden:
 **Letzte Aktualisierung**: 2026-07-04 (Schritt 5.1: Musashi-Grundbaustein + Makefile-Integration + Rauchtest)
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF HANDBUCH.md                                                                          Ver. 1.50
+# EOF HANDBUCH.md                                                                          Ver. 2.00
 #─────────────────────────────────────────────────────────────────────────────────────────────────
