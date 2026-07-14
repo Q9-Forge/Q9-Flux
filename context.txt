@@ -175,3 +175,26 @@ vmnet_net.c/.h, test_quicc_net.exp sowie MWOS Q9-Port SPF/ETC/*.conf. Alle
 10.0.0.x-Erwaehnungen weiter oben in diesem Log spiegeln den historischen
 Stand vor dieser Umstellung. Rechner ist waehrend dieser Session abgestuerzt,
 working directory war komplett uncommitted, nichts verloren.
+
+## Session 2026-07-14 (Claudia, autonom): 5.17 Geraete-Registry — alle sechs Geraete umgezogen
+
+Groesster/riskantester ARBEITSPLAN-Punkt (5.17) komplett abgeschlossen, s.
+Releases 1.68-1.73. Neue Datei src/kernel/devreg.c/.h (Entscheidung E14):
+q9_device_t/Vtable (read8/write8 Pflicht, read16/32/write16/32 optional —
+NULL wird aus Byte-Zugriffen synthetisiert, CF+QUICC behalten eigene Pfade),
+level_held-Flag (level-gehaltene IRQ-Quellen vs. einmaliger Timer-Puls),
+irq_vector_fn-Hook (DUART/nettty haben laufzeit-/pro-Kanal-dynamische
+Vektoren). Statische Instanz-Registry + explizite Typ-Registry (KEINE
+__attribute__((constructor))-Magie). Alle sechs Bestandsgeraete (68681-DUART,
+Compact-Flash, Timer/IRQ3, RTC72421, Netz-Terminals /x1..x8, QUICC) einzeln
+umgezogen, je mit eigenem Commit + Boot-Test (Klon-Image
+local_images/OS9SYS.claudia-517-devreg.hda, lokale Konsole + Port 2000 +
+QUICC-Ping). cb030_read_byte/cb030_write_byte (cb030.c) kennen danach nur
+noch REMAP-Trigger + RAM/ROM. make test PASS nach jedem Schritt, make native
+durchgehend warnungsfrei. Zwei dokumentierte, bewusst in Kauf genommene
+Nebeneffekte ohne Funktionsverlust (Reassert-Tie-Break-Reihenfolge bei
+gleichzeitigen Interrupts, minimale Idle-Sleep-Fensteraenderung durch
+generische nettty-Abfrage im Hauptschleifen-Poll) — Details in ARBEITSPLAN.md
+5.17-Notiz. Doku: docs/HANDBUCH.md Abschnitt 5.12 (neu), PROJECT.md E14.
+Grundlage fuer 5.18 (Binaersuche-Dispatch + Benchmark, naechster geplanter
+Schritt, aktuell noch 💤 Idle bis Andreas freigibt).
