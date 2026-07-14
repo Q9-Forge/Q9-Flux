@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   quicc.c                                                                         Ver. 1.00
+// File:   quicc.c                                                                         Ver. 1.20
 // Owner:  AF
 // Desc.:  Implementierung der QUICC-Ethernet-Emulation, siehe quicc.h. Verhaltens-Referenz ist
 //         ausschliesslich der sp360-Treiber (MWOS SRC/DPIO/SPF/DRVR/SPQUICC, init.c/isr.c):
@@ -33,8 +33,12 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-12│ 1.00 │ 5.11: Erster Wurf — Registerfenster, BD-Ringe, IRQ, ARP/ICMP-Backend    │ CF
 // 26-07-13│ 1.10 │ 5.12: vmnet-Backend (--net vmnet) + MAC-Uebersetzung Gast<->vmnet       │ CF
+// 26-07-14│ 1.20 │ 5.17: q9_devtype_quicc-Vtable fuer die Geraete-Registry (sechstes/letztes │ CF
+//         │      │ umgezogenes Geraet, s. devreg.h) -- delegiert unveraendert an bestehende  │
+//         │      │ q9_quicc_*-API                                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "quicc.h"
+#include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -656,5 +660,69 @@ void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
     }
 }
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF quicc.c                                                                             Ver. 1.00
+// Function: quicc_dev_* / q9_devtype_quicc
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), sechstes und letztes
+//           umgezogenes Geraet. dev->state zeigt auf das q9_quicc_t-Handle; alle sechs Funktionen
+//           delegieren unveraendert an die bestehende q9_quicc_read/write8/16/32/poll/irq_pending
+//           API (die selbst schon eigene, ECHTE 16/32-Bit-Pfade hat -- KEINE Byte-Synthese noetig,
+//           anders als bei den meisten anderen Geraeten). Fester Vektor (Q9_QUICC_IRQ_VECTOR=254,
+//           s. quicc.h) -- kein irq_vector_fn noetig (anders als DUART/nettty mit laufzeit-
+//           programmiertem bzw. pro-Kanal-Vektor).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t quicc_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    return q9_quicc_read8((q9_quicc_t *)dev->state, addr);
+}
+
+static void quicc_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    q9_quicc_write8((q9_quicc_t *)dev->state, addr, val);
+}
+
+static uint16_t quicc_dev_read16(q9_device_t *dev, uint32_t addr)
+{
+    return q9_quicc_read16((q9_quicc_t *)dev->state, addr);
+}
+
+static void quicc_dev_write16(q9_device_t *dev, uint32_t addr, uint16_t val)
+{
+    q9_quicc_write16((q9_quicc_t *)dev->state, addr, val);
+}
+
+static uint32_t quicc_dev_read32(q9_device_t *dev, uint32_t addr)
+{
+    return q9_quicc_read32((q9_quicc_t *)dev->state, addr);
+}
+
+static void quicc_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
+{
+    q9_quicc_write32((q9_quicc_t *)dev->state, addr, val);
+}
+
+static void quicc_dev_poll(q9_device_t *dev, uint32_t now_ms)
+{
+    (void)now_ms;
+    q9_quicc_poll((q9_quicc_t *)dev->state);
+}
+
+static int quicc_dev_irq_pending(q9_device_t *dev)
+{
+    return q9_quicc_irq_pending((const q9_quicc_t *)dev->state);
+}
+
+const q9_device_vtable_t q9_devtype_quicc = {
+    .read8         = quicc_dev_read8,
+    .write8        = quicc_dev_write8,
+    .read16        = quicc_dev_read16,                /* eigener Pfad, keine Byte-Synthese      */
+    .write16       = quicc_dev_write16,
+    .read32        = quicc_dev_read32,
+    .write32       = quicc_dev_write32,
+    .poll          = quicc_dev_poll,
+    .irq_pending   = quicc_dev_irq_pending,
+    .reset         = NULL,
+    .irq_vector_fn = NULL,                            /* fester Vektor, s. dev->irq_vector       */
+};
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF quicc.c                                                                             Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

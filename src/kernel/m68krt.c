@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.35
+// File:   m68krt.c                                                                        Ver. 1.36
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -28,6 +28,11 @@
 // 26-07-14│ 1.35 │ 5.17: Netz-Terminals /x1../x8 umgezogen (q9_devtype_nettty, EIN Geraet    │ CF
 //         │      │ fuer alle acht Kanaele) -- channels[]-Fallback-Loops in IACK/Reassert       │
 //         │      │ entfernt, nur noch QUICC hartkodiert                                        │
+// 26-07-14│ 1.36 │ 5.17: QUICC umgezogen (q9_devtype_quicc, letztes von sechs Geraeten) --    │ CF
+//         │      │ alle g_quicc-Sonderpruefungen in den sechs m68k_read/write_memory_*-        │
+//         │      │ Funktionen sowie in IACK/Reassert entfernt; Timer/IRQ3 wird jetzt erst in   │
+//         │      │ attach_quicc (nach QUICC) registriert, damit die Registrierungsreihenfolge  │
+//         │      │ ueberall aufsteigend nach Level bleibt (3,4,5,6) -- s. dortige Kommentare    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "cb030.h"
@@ -301,9 +306,6 @@ unsigned int m68k_read_memory_8(unsigned int address)
 {
     q9_device_t *dev;
 
-    if (g_quicc && q9_quicc_hit(address)) {
-        return q9_quicc_read8(g_quicc, (uint32_t)address);
-    }
     if ((dev = devreg_hit(address)) != NULL) {
         return q9_device_read8(dev, (uint32_t)address);
     }
@@ -317,9 +319,6 @@ unsigned int m68k_read_memory_16(unsigned int address)
 {
     q9_device_t *dev;
 
-    if (g_quicc && q9_quicc_hit(address)) {
-        return q9_quicc_read16(g_quicc, (uint32_t)address);
-    }
     if ((dev = devreg_hit(address)) != NULL) {
         return q9_device_read16(dev, (uint32_t)address);
     }
@@ -336,9 +335,6 @@ unsigned int m68k_read_memory_32(unsigned int address)
 {
     q9_device_t *dev;
 
-    if (g_quicc && q9_quicc_hit(address)) {
-        return q9_quicc_read32(g_quicc, (uint32_t)address);
-    }
     if ((dev = devreg_hit(address)) != NULL) {
         return q9_device_read32(dev, (uint32_t)address);
     }
@@ -356,10 +352,6 @@ void m68k_write_memory_8(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
 
-    if (g_quicc && q9_quicc_hit(address)) {
-        q9_quicc_write8(g_quicc, (uint32_t)address, (uint8_t)value);
-        return;
-    }
     if ((dev = devreg_hit(address)) != NULL) {
         q9_device_write8(dev, (uint32_t)address, (uint8_t)value);
         return;
@@ -377,10 +369,6 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
 
-    if (g_quicc && q9_quicc_hit(address)) {
-        q9_quicc_write16(g_quicc, (uint32_t)address, (uint16_t)value);
-        return;
-    }
     if ((dev = devreg_hit(address)) != NULL) {
         q9_device_write16(dev, (uint32_t)address, (uint16_t)value);
         return;
@@ -400,10 +388,6 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
 
-    if (g_quicc && q9_quicc_hit(address)) {
-        q9_quicc_write32(g_quicc, (uint32_t)address, (uint32_t)value);
-        return;
-    }
     if ((dev = devreg_hit(address)) != NULL) {
         q9_device_write32(dev, (uint32_t)address, (uint32_t)value);
         return;
@@ -474,10 +458,6 @@ static void m68krt_reassert_pending_irq(void)
 {
     q9_device_t *dev;
 
-    if (g_quicc && q9_quicc_irq_pending(g_quicc)) {
-        m68k_set_irq(Q9_QUICC_IRQ_LEVEL);
-        return;
-    }
     if ((dev = devreg_pending_level_held(-1)) != NULL) {
         m68k_set_irq((unsigned int)dev->irq_level);
         return;
@@ -491,9 +471,7 @@ static int m68krt_board_int_ack(int int_level)
 
     g_ack_count++;
     m68k_set_irq(0);
-    if (g_quicc && int_level == Q9_QUICC_IRQ_LEVEL && q9_quicc_irq_pending(g_quicc)) {
-        vector = Q9_QUICC_IRQ_VECTOR;                  /* 5.11: SCC1-Ethernet, vektorisiert       */
-    } else if ((dev = devreg_pending_level_held(int_level)) != NULL) {
+    if ((dev = devreg_pending_level_held(int_level)) != NULL) {
         int v = q9_device_irq_vector(dev);
         vector = (v >= 0) ? v : M68K_INT_ACK_AUTOVECTOR;
     }
@@ -623,22 +601,9 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
         d.state      = board;
         q9_devreg_add(d);
 
-        /* 5.17: Timer/IRQ3-Adress-Trigger, drittes umgezogenes Geraet -- beide Fenster (OFF/ON)
-           in EINEM Geraet (Basis = OFF, Groesse deckt beide 2K-Fenster ab, s. cb030.c). Level 6,
-           Autovektor (irq_vector -1); level_held=0 -- s. cb030.c timer_dev_*-Kommentar. */
-        memset(&d, 0, sizeof(d));
-        d.type       = "timer_irq";
-        d.name       = "tirq0";
-        d.base       = Q9_CB030_TIRQ_OFF_BASE;
-        d.size       = Q9_CB030_TIRQ_ON_TOP - Q9_CB030_TIRQ_OFF_BASE + 1u;
-        d.irq_level  = 6;
-        d.irq_vector = -1;
-        d.level_held = 0;
-        d.vt         = &q9_devtype_timer_irq;
-        d.state      = board;
-        q9_devreg_add(d);
-
-        /* 5.17: RTC72421, viertes und letztes board-internes Geraet -- kein IRQ. */
+        /* 5.17: RTC72421, viertes board-internes Geraet -- kein IRQ. (Timer/IRQ3 wird bewusst
+           NICHT hier, sondern erst in q9_m68krt_attach_quicc registriert -- s. dort, Grund ist
+           Registrierungsreihenfolge/IRQ-Prioritaet, Level 6 muss NACH QUICC/Level 5 kommen.) */
         memset(&d, 0, sizeof(d));
         d.type       = "rtc72421";
         d.name       = "rtc0";
@@ -674,7 +639,46 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
 void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
 {
     g_quicc = quicc;                                  /* 5.11: ab jetzt dekodiert das QUICC-     */
-}                                                     /* Fenster $FFFF2000-$FFFF3FFF             */
+                                                       /* Fenster $FFFF2000-$FFFF3FFF             */
+
+    /* 5.17: QUICC, sechstes und letztes umgezogenes Geraet -- fester Vektor 254 (kein
+       irq_vector_fn noetig, anders als DUART/nettty). Registriert NACH den Netz-Terminals
+       (Level 4 vor Level 5) -- s. q9_devtype_quicc-Kommentar in quicc.c und die Reihenfolge-
+       Erklaerung in q9_m68krt_attach_board.
+       Timer/IRQ3 (Level 6, viertes 5.17-Geraet inhaltlich, aber ERST HIER registriert statt in
+       attach_board) folgt bewusst GANZ ZULETZT: Level 6 muss in der Registrierungsreihenfolge
+       NACH QUICC/Level 5 stehen, damit cb030run.c's Poll-Schleife (Level < 5 vor QUICC, Level
+       >= 5 danach) und m68krt_board_int_ack/reassert_pending_irq (durchlaufen die GESAMTE
+       Registry in Registrierungsreihenfolge) am Ende bei gleichzeitig anstehenden Interrupts
+       konsistent das hoechste Level uebrig lassen -- exakt das Verhalten, das vor 5.17 durch die
+       hartkodierte Aufrufreihenfolge (DUART 3, QUICC 5, Timer 6) in cb030run.c sichergestellt war. */
+    if (quicc && g_board) {
+        q9_device_t d;
+        memset(&d, 0, sizeof(d));
+        d.type       = "quicc";
+        d.name       = "enet0";
+        d.base       = Q9_QUICC_BASE;
+        d.size       = Q9_QUICC_TOP - Q9_QUICC_BASE + 1u;
+        d.irq_level  = Q9_QUICC_IRQ_LEVEL;
+        d.irq_vector = Q9_QUICC_IRQ_VECTOR;            /* fest, s. q9_devtype_quicc-Kommentar    */
+        d.level_held = 1;
+        d.vt         = &q9_devtype_quicc;
+        d.state      = quicc;
+        q9_devreg_add(d);
+
+        memset(&d, 0, sizeof(d));
+        d.type       = "timer_irq";
+        d.name       = "tirq0";
+        d.base       = Q9_CB030_TIRQ_OFF_BASE;
+        d.size       = Q9_CB030_TIRQ_ON_TOP - Q9_CB030_TIRQ_OFF_BASE + 1u;
+        d.irq_level  = 6;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.vt         = &q9_devtype_timer_irq;
+        d.state      = g_board;
+        q9_devreg_add(d);
+    }
+}
 
 void q9_m68krt_reset(q9_m68krt_t *rt)
 {
@@ -729,5 +733,5 @@ int q9_m68krt_is_stopped(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.c                                                                            Ver. 1.35
+// EOF m68krt.c                                                                            Ver. 1.36
 //────────────────────────────────────────────────────────────────────────────────────────────────
