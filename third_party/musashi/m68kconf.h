@@ -190,7 +190,12 @@
  * m68k_set_trap_instr_callback explicitly.
  */
 #ifndef M68K_TRAP_HAS_CALLBACK
-#define M68K_TRAP_HAS_CALLBACK  	M68K_OPT_OFF
+/* Q9 5.15/Option B (2026-07-14): ON statt OFF (M68K_OPT_ON, nicht
+ * SPECIFY_HANDLER) -- laufzeit-setzbarer Callback ueber
+ * m68k_set_trap_instr_callback(), genutzt fuer den optionalen
+ * Trap-Trace in m68krt.c (Env-Var Q9_TRAP_TRACE). Siehe
+ * docs/re_telnetdc/OPTION_B_STATUS.md. */
+#define M68K_TRAP_HAS_CALLBACK  	M68K_OPT_ON
 #define M68K_TRAP_CALLBACK(trap)	your_op_trap_handler_function(trap)
 #endif
 
