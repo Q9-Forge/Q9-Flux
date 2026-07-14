@@ -2046,17 +2046,24 @@ int q9_kernel_selftest(void)
            Integration, hier wird nur q9_cb030_poll_timer's Signal geprueft). */
         static uint8_t ram[64];
         q9_cb030_t     board;
+        q9_device_t    tirq_dev;
         int            ok;
 
         ok = (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
         q9_cb030_reset(&board);
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
 
+        tirq_dev.type = tirq_dev.name = 0;
+        tirq_dev.base = tirq_dev.size = 0;
+        tirq_dev.irq_level = tirq_dev.irq_vector = tirq_dev.level_held = 0;
+        tirq_dev.vt    = &q9_devtype_timer_irq;
+        tirq_dev.state = &board;
+
         /* Timer aus: kein Signal, egal wie viel Zeit "vergeht". */
         ok = ok && (q9_cb030_poll_timer(&board, 1000) == 0);
 
         /* TI_IRQ_ON: Timer an, erster Poll danach loest sofort aus (last_ms noch 0). */
-        (void)q9_cb030_read8(&board, Q9_CB030_TIRQ_ON_BASE);
+        (void)q9_device_read8(&tirq_dev, Q9_CB030_TIRQ_ON_BASE);
         ok = ok && (q9_cb030_poll_timer(&board, 1000) == 1);
 
         /* Innerhalb der Periode: kein erneutes Signal. Nach >= 10ms: wieder ausgeloest. */
@@ -2064,7 +2071,7 @@ int q9_kernel_selftest(void)
         ok = ok && (q9_cb030_poll_timer(&board, 1010) == 1);
 
         /* TI_IRQ_OFF: Timer aus, kein weiteres Signal mehr. */
-        (void)q9_cb030_read8(&board, Q9_CB030_TIRQ_OFF_BASE);
+        (void)q9_device_read8(&tirq_dev, Q9_CB030_TIRQ_OFF_BASE);
         ok = ok && (q9_cb030_poll_timer(&board, 2000) == 0);
 
         checks[nchecks].name = "5.2d: CB030 Timer/IRQ3 — kooperatives Polling (TI_IRQ_ON/OFF, 100Hz-Periode)";

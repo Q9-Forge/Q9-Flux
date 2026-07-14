@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 1.90
+// File:   cb030.c                                                                         Ver. 1.91
 // Owner:  AF
 // Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
 //
@@ -23,6 +23,9 @@
 // 26-07-14│ 1.80 │ 5.17: 68681-DUART aus dem hartkodierten Dispatch in cb030_read_byte/       │ CF
 //         │      │ cb030_write_byte in die Geraete-Registry verlegt (q9_devtype_duart68681,   │
 //         │      │ Instanz in m68krt.c) — Registerlogik selbst unveraendert                  │
+// 26-07-14│ 1.90 │ 5.17: Compact-Flash umgezogen (q9_devtype_cf, eigene 16/32-Bit-Pfade)      │ CF
+// 26-07-14│ 1.91 │ 5.17: Timer/IRQ3-Adress-Trigger umgezogen (q9_devtype_timer_irq, neues     │ CF
+//         │      │ Feld timer_irq_pending fuer den transienten Poll-Merker)                   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030.h"
 #include "../hal/q9_hal.h"
@@ -593,15 +596,6 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
         b->remapped = 1;
         return 0;
     }
-    if (addr >= Q9_CB030_TIRQ_OFF_BASE && addr <= Q9_CB030_TIRQ_OFF_TOP) {
-        b->timer_active = 0;
-        return 0;
-    }
-    if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
-        b->timer_active = 1;
-        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
-        return 0;
-    }
     if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
         return cb030_rtc_read(b, addr - Q9_CB030_RTC_BASE);
     }
@@ -639,15 +633,6 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
 {
     if (cb030_is_remap_reg(addr)) {
         b->remapped = 1;
-        return;
-    }
-    if (addr >= Q9_CB030_TIRQ_OFF_BASE && addr <= Q9_CB030_TIRQ_OFF_TOP) {
-        b->timer_active = 0;
-        return;
-    }
-    if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
-        b->timer_active = 1;
-        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
         return;
     }
     if (addr >= Q9_CB030_RTC_BASE && addr <= Q9_CB030_RTC_TOP) {
@@ -935,6 +920,63 @@ static void cf_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
     cf_dev_write8(dev, addr + 3u, (uint8_t)val);
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: timer_dev_* / q9_devtype_timer_irq
+// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), drittes umgezogenes Geraet.
+//           TI_IRQ_ON/OFF sind reine Adress-Trigger (kein Datenwert, Lesen wie Schreiben loesen
+//           dieselbe Wirkung aus, s. cb030.h) -- read8/write8 fassen deshalb beide Fenster
+//           ($FFFF9000-$FFFF97FF OFF, $FFFF9800-$FFFF9FFF ON) in EINEM Geraet zusammen und
+//           unterscheiden per Adresse.
+//           poll()/irq_pending() bilden den bisherigen cb030run.c-Aufruf ab (q9_cb030_poll_timer
+//           liefert 1 GENAU IN DER RUNDE, in der ein Tick faellig ist): poll() ruft ihn auf und
+//           merkt sich das Ergebnis transient in b->timer_irq_pending; irq_pending() liest nur
+//           diesen Merker (kein erneuter Seiteneffekt). level_held=0 (s. devreg.h) haelt den
+//           Timer bewusst aus der IACK-/Reassert-Pruefschleife in m68krt.c heraus -- exakt wie
+//           vor 5.17 (Level 6 faellt beim IACK immer auf den Autovektor, reassert_pending_irq
+//           griff nie fuer den Timer).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static uint8_t timer_dev_read8(q9_device_t *dev, uint32_t addr)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
+        b->timer_active = 1;
+        b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
+    } else {
+        b->timer_active = 0;
+    }
+    return 0;
+}
+
+static void timer_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+{
+    (void)val;
+    (void)timer_dev_read8(dev, addr);
+}
+
+static void timer_dev_poll(q9_device_t *dev, uint32_t now_ms)
+{
+    q9_cb030_t *b = (q9_cb030_t *)dev->state;
+    b->timer_irq_pending = q9_cb030_poll_timer(b, now_ms);
+}
+
+static int timer_dev_irq_pending(q9_device_t *dev)
+{
+    return ((q9_cb030_t *)dev->state)->timer_irq_pending;
+}
+
+const q9_device_vtable_t q9_devtype_timer_irq = {
+    .read8         = timer_dev_read8,
+    .write8        = timer_dev_write8,
+    .read16        = NULL,
+    .write16       = NULL,
+    .read32        = NULL,
+    .write32       = NULL,
+    .poll          = timer_dev_poll,
+    .irq_pending   = timer_dev_irq_pending,
+    .reset         = NULL,
+    .irq_vector_fn = NULL,                            /* Level 6 faellt immer zum Autovektor     */
+};
+
 const q9_device_vtable_t q9_devtype_cf = {
     .read8         = cf_dev_read8,
     .write8        = cf_dev_write8,
@@ -949,5 +991,5 @@ const q9_device_vtable_t q9_devtype_cf = {
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.c                                                                             Ver. 1.90
+// EOF cb030.c                                                                             Ver. 1.91
 //────────────────────────────────────────────────────────────────────────────────────────────────
