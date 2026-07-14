@@ -1843,16 +1843,20 @@ int q9_kernel_selftest(void)
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
         q9_cb030_cf_attach(&board, "cb030_cf_test.img");
 
+        q9_device_t cf_dev;
+        cf_dev.vt = &q9_devtype_cf;
+        cf_dev.state = &board;
+
         /* LBA 0, 1 Sektor, WRITE SECTOR(S): 512 Byte Testmuster (0x00..0xFF wiederholt) schreiben. */
-        q9_cb030_write8(&board, cf_base + 3, 0);            /* LBA0 */
-        q9_cb030_write8(&board, cf_base + 4, 0);            /* LBA1 */
-        q9_cb030_write8(&board, cf_base + 5, 0);            /* LBA2 */
-        q9_cb030_write8(&board, cf_base + 2, 1);            /* Sectcount */
-        q9_cb030_write8(&board, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
+        q9_device_write8(&cf_dev, cf_base + 3, 0);            /* LBA0 */
+        q9_device_write8(&cf_dev, cf_base + 4, 0);            /* LBA1 */
+        q9_device_write8(&cf_dev, cf_base + 5, 0);            /* LBA2 */
+        q9_device_write8(&cf_dev, cf_base + 2, 1);            /* Sectcount */
+        q9_device_write8(&cf_dev, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
         for (int i = 0; i < 512; i++) {
-            q9_cb030_write8(&board, cf_base + 0, (uint8_t)i);
+            q9_device_write8(&cf_dev, cf_base + 0, (uint8_t)i);
         }
-        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+        ok = ok && ((q9_device_read8(&cf_dev, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
 
         /* Frische Instanz (simuliert Neustart) liest denselben Sektor ueber READ SECTOR(S) zurueck. */
         {
@@ -1864,15 +1868,19 @@ int q9_kernel_selftest(void)
             (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
             q9_cb030_cf_attach(&board2, "cb030_cf_test.img");
 
-            q9_cb030_write8(&board2, cf_base + 3, 0);
-            q9_cb030_write8(&board2, cf_base + 4, 0);
-            q9_cb030_write8(&board2, cf_base + 5, 0);
-            q9_cb030_write8(&board2, cf_base + 2, 1);
-            q9_cb030_write8(&board2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+        q9_device_t cf_dev2;
+        cf_dev2.vt = &q9_devtype_cf;
+        cf_dev2.state = &board2;
 
-            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+            q9_device_write8(&cf_dev2, cf_base + 3, 0);
+            q9_device_write8(&cf_dev2, cf_base + 4, 0);
+            q9_device_write8(&cf_dev2, cf_base + 5, 0);
+            q9_device_write8(&cf_dev2, cf_base + 2, 1);
+            q9_device_write8(&cf_dev2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+
+            read_ok = read_ok && ((q9_device_read8(&cf_dev2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
             for (int i = 0; i < 512 && read_ok; i++) {
-                read_ok = (q9_cb030_read8(&board2, cf_base + 0) == (uint8_t)i);
+                read_ok = (q9_device_read8(&cf_dev2, cf_base + 0) == (uint8_t)i);
             }
             ok = ok && read_ok;
         }
@@ -1896,22 +1904,26 @@ int q9_kernel_selftest(void)
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
         q9_cb030_cf_attach(&board, "cb030_cf_multi_test.img");
 
+        q9_device_t cf_dev;
+        cf_dev.vt = &q9_devtype_cf;
+        cf_dev.state = &board;
+
         /* LBA 0, 2 Sektoren, WRITE SECTOR(S): 1024 Byte Testmuster (0x00..0xFF wiederholt)
            in einem Rutsch schreiben — kein zweites Kommando dazwischen. */
-        q9_cb030_write8(&board, cf_base + 3, 0);            /* LBA0 */
-        q9_cb030_write8(&board, cf_base + 4, 0);            /* LBA1 */
-        q9_cb030_write8(&board, cf_base + 5, 0);            /* LBA2 */
-        q9_cb030_write8(&board, cf_base + 2, 2);            /* Sectcount = 2 */
-        q9_cb030_write8(&board, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
-        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+        q9_device_write8(&cf_dev, cf_base + 3, 0);            /* LBA0 */
+        q9_device_write8(&cf_dev, cf_base + 4, 0);            /* LBA1 */
+        q9_device_write8(&cf_dev, cf_base + 5, 0);            /* LBA2 */
+        q9_device_write8(&cf_dev, cf_base + 2, 2);            /* Sectcount = 2 */
+        q9_device_write8(&cf_dev, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
+        ok = ok && ((q9_device_read8(&cf_dev, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
         for (int i = 0; i < 1024; i++) {
             /* DRQ muss nach dem ersten Sektor (i==511->512) noch gesetzt sein. */
             if (i == 512) {
-                ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+                ok = ok && ((q9_device_read8(&cf_dev, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
             }
-            q9_cb030_write8(&board, cf_base + 0, (uint8_t)i);
+            q9_device_write8(&cf_dev, cf_base + 0, (uint8_t)i);
         }
-        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+        ok = ok && ((q9_device_read8(&cf_dev, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
 
         /* Frische Instanz (simuliert Neustart) liest beide Sektoren ueber EIN READ SECTOR(S) zurueck. */
         {
@@ -1923,21 +1935,25 @@ int q9_kernel_selftest(void)
             (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
             q9_cb030_cf_attach(&board2, "cb030_cf_multi_test.img");
 
-            q9_cb030_write8(&board2, cf_base + 3, 0);
-            q9_cb030_write8(&board2, cf_base + 4, 0);
-            q9_cb030_write8(&board2, cf_base + 5, 0);
-            q9_cb030_write8(&board2, cf_base + 2, 2);       /* Sectcount = 2 */
-            q9_cb030_write8(&board2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+        q9_device_t cf_dev2;
+        cf_dev2.vt = &q9_devtype_cf;
+        cf_dev2.state = &board2;
 
-            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+            q9_device_write8(&cf_dev2, cf_base + 3, 0);
+            q9_device_write8(&cf_dev2, cf_base + 4, 0);
+            q9_device_write8(&cf_dev2, cf_base + 5, 0);
+            q9_device_write8(&cf_dev2, cf_base + 2, 2);       /* Sectcount = 2 */
+            q9_device_write8(&cf_dev2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+
+            read_ok = read_ok && ((q9_device_read8(&cf_dev2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
             for (int i = 0; i < 1024 && read_ok; i++) {
                 if (i == 512) {
                     read_ok = read_ok
-                        && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+                        && ((q9_device_read8(&cf_dev2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
                 }
-                read_ok = read_ok && (q9_cb030_read8(&board2, cf_base + 0) == (uint8_t)i);
+                read_ok = read_ok && (q9_device_read8(&cf_dev2, cf_base + 0) == (uint8_t)i);
             }
-            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+            read_ok = read_ok && ((q9_device_read8(&cf_dev2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
             ok = ok && read_ok;
         }
 
@@ -1978,16 +1994,20 @@ int q9_kernel_selftest(void)
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
         q9_cb030_cf_attach(&board, "cb030_cf_rbf256_test.img");
 
-        q9_cb030_write8(&board, cf_base + 3, 1);          /* LBA0 */
-        q9_cb030_write8(&board, cf_base + 4, 0);          /* LBA1 */
-        q9_cb030_write8(&board, cf_base + 5, 0);          /* LBA2 */
-        q9_cb030_write8(&board, cf_base + 2, 1);          /* Sectcount */
-        q9_cb030_write8(&board, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
-        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+        q9_device_t cf_dev;
+        cf_dev.vt = &q9_devtype_cf;
+        cf_dev.state = &board;
+
+        q9_device_write8(&cf_dev, cf_base + 3, 1);          /* LBA0 */
+        q9_device_write8(&cf_dev, cf_base + 4, 0);          /* LBA1 */
+        q9_device_write8(&cf_dev, cf_base + 5, 0);          /* LBA2 */
+        q9_device_write8(&cf_dev, cf_base + 2, 1);          /* Sectcount */
+        q9_device_write8(&cf_dev, cf_base + 7, Q9_CB030_CF_CMD_WRITE);
+        ok = ok && ((q9_device_read8(&cf_dev, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
         for (int i = 0; i < 256; i++) {
-            q9_cb030_write8(&board, cf_base + 0, (uint8_t)(0xA0u + (uint8_t)i));
+            q9_device_write8(&cf_dev, cf_base + 0, (uint8_t)(0xA0u + (uint8_t)i));
         }
-        ok = ok && ((q9_cb030_read8(&board, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+        ok = ok && ((q9_device_read8(&cf_dev, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
 
         {
             q9_cb030_t board2;
@@ -1998,17 +2018,21 @@ int q9_kernel_selftest(void)
             (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
             q9_cb030_cf_attach(&board2, "cb030_cf_rbf256_test.img");
 
-            q9_cb030_write8(&board2, cf_base + 3, 1);
-            q9_cb030_write8(&board2, cf_base + 4, 0);
-            q9_cb030_write8(&board2, cf_base + 5, 0);
-            q9_cb030_write8(&board2, cf_base + 2, 1);
-            q9_cb030_write8(&board2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+        q9_device_t cf_dev2;
+        cf_dev2.vt = &q9_devtype_cf;
+        cf_dev2.state = &board2;
 
-            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
+            q9_device_write8(&cf_dev2, cf_base + 3, 1);
+            q9_device_write8(&cf_dev2, cf_base + 4, 0);
+            q9_device_write8(&cf_dev2, cf_base + 5, 0);
+            q9_device_write8(&cf_dev2, cf_base + 2, 1);
+            q9_device_write8(&cf_dev2, cf_base + 7, Q9_CB030_CF_CMD_READ);
+
+            read_ok = read_ok && ((q9_device_read8(&cf_dev2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) != 0);
             for (int i = 0; i < 256 && read_ok; i++) {
-                read_ok = (q9_cb030_read8(&board2, cf_base + 0) == (uint8_t)(0xA0u + (uint8_t)i));
+                read_ok = (q9_device_read8(&cf_dev2, cf_base + 0) == (uint8_t)(0xA0u + (uint8_t)i));
             }
-            read_ok = read_ok && ((q9_cb030_read8(&board2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
+            read_ok = read_ok && ((q9_device_read8(&cf_dev2, cf_base + 7) & Q9_CB030_CF_STAT_DRQ) == 0);
             ok = ok && read_ok;
         }
 
