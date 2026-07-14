@@ -87,6 +87,7 @@ typedef struct {
     unsigned int base_addr;
     int irq_level;
     int irq_vector;
+    unsigned char last_was_cr;  // Telnet-NVT-Normalisierung: LF nach CR verwerfen (5.16)
 } os9_uart_t;
 
 /* Die Kanaltabelle selbst (channels[]) lebt seit 5.10 in m68krt.c — sie war hier als static im
