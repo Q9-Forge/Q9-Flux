@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.32
+// File:   m68krt.c                                                                        Ver. 1.33
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -22,6 +22,7 @@
 //         │      │ Geraet umgezogen (Dispatch + IACK/Reassert pruefen jetzt zuerst die       │
 //         │      │ Registry); Netz-Terminals/QUICC/CF/Timer/RTC folgen einzeln               │
 // 26-07-14│ 1.32 │ 5.17: Compact-Flash umgezogen (q9_devtype_cf, kein IRQ)                   │ CF
+// 26-07-14│ 1.33 │ 5.17: Timer/IRQ3-Adress-Trigger umgezogen (q9_devtype_timer_irq)          │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "cb030.h"
@@ -589,6 +590,21 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
         d.vt         = &q9_devtype_cf;
         d.state      = board;
         q9_devreg_add(d);
+
+        /* 5.17: Timer/IRQ3-Adress-Trigger, drittes umgezogenes Geraet -- beide Fenster (OFF/ON)
+           in EINEM Geraet (Basis = OFF, Groesse deckt beide 2K-Fenster ab, s. cb030.c). Level 6,
+           Autovektor (irq_vector -1); level_held=0 -- s. cb030.c timer_dev_*-Kommentar. */
+        memset(&d, 0, sizeof(d));
+        d.type       = "timer_irq";
+        d.name       = "tirq0";
+        d.base       = Q9_CB030_TIRQ_OFF_BASE;
+        d.size       = Q9_CB030_TIRQ_ON_TOP - Q9_CB030_TIRQ_OFF_BASE + 1u;
+        d.irq_level  = 6;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.vt         = &q9_devtype_timer_irq;
+        d.state      = board;
+        q9_devreg_add(d);
     }
 }
 
@@ -650,5 +666,5 @@ int q9_m68krt_is_stopped(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.c                                                                            Ver. 1.32
+// EOF m68krt.c                                                                            Ver. 1.33
 //────────────────────────────────────────────────────────────────────────────────────────────────
