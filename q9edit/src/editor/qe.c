@@ -873,6 +873,68 @@ void editorRefreshScreen(void) {
     abFree(&ab);
 }
 
+/* Fast path for the emulated serial console. Kilo's original full-screen
+ * redraw after every key is much too expensive there. */
+void editorRefreshCursor(void) {
+    erow *row;
+    int filerow;
+    int cx;
+    int j;
+    char sequence[32];
+
+    cx = 1;
+    filerow = E.rowoff + E.cy;
+    row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+    if (row) {
+        for (j = E.coloff; j < E.cx + E.coloff; j++) {
+            if (j < row->size && row->chars[j] == TAB) cx += 7 - (cx % 8);
+            cx++;
+        }
+    }
+    qe_snprintf(sequence, sizeof(sequence), "\x1b[%d;%dH\x1b[?25h",
+                E.cy + 1, cx);
+    qe_term_write(QE_STDOUT, sequence, strlen(sequence));
+}
+
+void editorRefreshCurrentLine(void) {
+    struct abuf ab = ABUF_INIT;
+    erow *row;
+    int filerow;
+    int length;
+    char sequence[32];
+
+    filerow = E.rowoff + E.cy;
+    row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+    qe_snprintf(sequence, sizeof(sequence), "\x1b[?25l\x1b[%d;1H\x1b[0m",
+                E.cy + 1);
+    abAppend(&ab, sequence, strlen(sequence));
+    if (row != NULL && E.coloff < row->rsize) {
+        length = row->rsize - E.coloff;
+        if (length > E.screencols) length = E.screencols;
+        abAppend(&ab, row->render + E.coloff, length);
+    }
+    abAppend(&ab, "\x1b[0K", 4);
+    qe_term_write(QE_STDOUT, ab.b, ab.len);
+    abFree(&ab);
+    editorRefreshCursor();
+}
+
+void editorRefreshMessage(void) {
+    struct abuf ab = ABUF_INIT;
+    char sequence[32];
+    int length;
+
+    qe_snprintf(sequence, sizeof(sequence), "\x1b[%d;1H\x1b[0K",
+                E.screenrows + 2);
+    abAppend(&ab, sequence, strlen(sequence));
+    length = strlen(E.statusmsg);
+    if (length > E.screencols) length = E.screencols;
+    abAppend(&ab, E.statusmsg, length);
+    qe_term_write(QE_STDOUT, ab.b, ab.len);
+    abFree(&ab);
+    editorRefreshCursor();
+}
+
 /* Set an editor status message for the second line of the status, at the
  * end of the screen. */
 void editorSetStatusMessage(const char *fmt, ...) {
@@ -1066,41 +1128,47 @@ void editorMoveCursor(int key) {
 /* Process events arriving from the standard input, which is, the user
  * is typing stuff on the terminal. */
 #define KILO_QUIT_TIMES 3
-void editorProcessKeypress(int fd) {
+#define REFRESH_CURSOR 0
+#define REFRESH_LINE 1
+#define REFRESH_FULL 2
+#define REFRESH_MESSAGE 3
+int editorProcessKeypress(int fd) {
     /* When the file is modified, requires Ctrl-q to be pressed N times
      * before actually quitting. */
     static int quit_times = KILO_QUIT_TIMES;
 
     int c = editorReadKey(fd);
+    int old_rowoff = E.rowoff;
+    int old_coloff = E.coloff;
     switch(c) {
     case ENTER:         /* Enter */
         editorInsertNewline();
-        break;
+        return REFRESH_FULL;
     case CTRL_C:        /* Ctrl-c */
         /* We ignore ctrl-c, it can't be so simple to lose the changes
          * to the edited file. */
-        break;
+        return REFRESH_CURSOR;
     case CTRL_Q:        /* Ctrl-q */
         /* Quit if the file was already saved. */
         if (E.dirty && quit_times) {
             editorSetStatusMessage("WARNING!!! File has unsaved changes. "
                 "Press Ctrl-Q %d more times to quit.", quit_times);
             quit_times--;
-            return;
+            return REFRESH_MESSAGE;
         }
         exit(0);
         break;
     case CTRL_S:        /* Ctrl-s */
         editorSave();
-        break;
+        return REFRESH_FULL;
     case CTRL_F:
         editorFind(fd);
-        break;
+        return REFRESH_FULL;
     case BACKSPACE:     /* Backspace */
     case CTRL_H:        /* Ctrl-h */
     case DEL_KEY:
         editorDelChar();
-        break;
+        return REFRESH_FULL;
     case PAGE_UP:
     case PAGE_DOWN:
         if (c == PAGE_UP && E.cy != 0)
@@ -1113,26 +1181,30 @@ void editorProcessKeypress(int fd) {
             editorMoveCursor(c == PAGE_UP ? ARROW_UP:
                                             ARROW_DOWN);
         }
-        break;
+        return REFRESH_FULL;
 
     case ARROW_UP:
     case ARROW_DOWN:
     case ARROW_LEFT:
     case ARROW_RIGHT:
         editorMoveCursor(c);
-        break;
+        if (old_rowoff != E.rowoff || old_coloff != E.coloff)
+            return REFRESH_FULL;
+        return REFRESH_CURSOR;
     case CTRL_L: /* ctrl+l, clear screen */
         /* Just refresht the line as side effect. */
-        break;
+        return REFRESH_FULL;
     case ESC:
         /* Nothing to do for ESC in this mode. */
-        break;
+        return REFRESH_CURSOR;
     default:
         editorInsertChar(c);
-        break;
+        quit_times = KILO_QUIT_TIMES;
+        return REFRESH_LINE;
     }
 
     quit_times = KILO_QUIT_TIMES; /* Reset it to the original value. */
+    return REFRESH_FULL;
 }
 
 int editorFileWasModified(void) {
@@ -1187,8 +1259,16 @@ int main(int argc, char **argv) {
     qe_term_write(QE_STDOUT,"\x1b[2J\x1b[H",7);
     editorSetStatusMessage(
         "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+    editorRefreshScreen();
     while(1) {
-        editorRefreshScreen();
-        editorProcessKeypress(QE_STDIN);
+        int refresh = editorProcessKeypress(QE_STDIN);
+        if (refresh == REFRESH_FULL)
+            editorRefreshScreen();
+        else if (refresh == REFRESH_LINE)
+            editorRefreshCurrentLine();
+        else if (refresh == REFRESH_MESSAGE)
+            editorRefreshMessage();
+        else
+            editorRefreshCursor();
     }
 }

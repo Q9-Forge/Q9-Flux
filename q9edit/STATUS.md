@@ -244,3 +244,10 @@ deshalb wie verlorene Eingabe oder ein falscher Cursor aus. Naechster
 Entwicklungsschritt ist zwingend eine differenzielle Ausgabe (nur geaenderte
 Zeile, Status und Cursor). Die Hilfezeile bleibt ab diesem Stand dauerhaft
 sichtbar statt nach Kilos urspruenglichen fuenf Sekunden zu verschwinden.
+
+Dieser schnelle Grundpfad ist inzwischen implementiert: normale Zeichen
+zeichnen nur die aktuelle Zeile, Pfeiltasten ohne Scrollen senden nur die neue
+Cursorposition, und die Ctrl-Q-Warnung aktualisiert nur die Meldungszeile. Ein
+voller Aufbau erfolgt weiterhin beim Start sowie bei strukturellen Aenderungen
+wie Enter, Scrollen oder Loeschen. Der Konsolentest zeigt unmittelbar `Q` am
+Dateianfang und danach Cursor Spalte 2; die geladene Datei bleibt sichtbar.
