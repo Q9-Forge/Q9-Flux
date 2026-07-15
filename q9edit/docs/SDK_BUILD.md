@@ -69,3 +69,24 @@ Probeversion soll:
 
 Diese Trennung lokalisiert Compiler-, Linker-, termcap- und Terminalprobleme,
 statt sie gleichzeitig im Editor zu vermischen.
+
+Der komplette Gasttest war am 2026-07-15 ebenfalls erfolgreich. Wichtigster
+Portierungsbefund: Der 2048-Byte-Termcap-Puffer darf wegen des kleinen
+OS-9-Programmstack nicht lokal angelegt werden. Als statischer Puffer liefen
+`tgetent("q9")`, `tgetnum("co") == 80`, `tgetnum("li") == 24` und ANSI-Farbe
+fehlerfrei.
+
+## Sicheres Deployment
+
+Nach erfolgreichem Build wird ein Modul ausschliesslich in ein explizites
+Entwicklungsimage kopiert:
+
+```sh
+q9edit/tools/deploy-os9.sh /absoluter/pfad/zu/einem-klon.hda
+```
+
+Das Skript verweigert `local_images/OS9SYS.hda` und Images, die ein laufender
+Q9-Prozess in seiner Kommandozeile verwendet. Es nutzt ToolShed `os9 copy`
+und setzt danach die OS-9-Ausfuehrungsattribute. Den Emulator vor jedem
+Schreibzugriff trotzdem bewusst beenden; die Pruefung ist eine zweite
+Sicherheitsbarriere, kein Ersatz fuer diesen Arbeitsablauf.

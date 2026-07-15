@@ -11,9 +11,12 @@
 
 #define QE_TERMCAP_BUFFER_SIZE 2048
 
+/* OS-9 program modules start with a small stack.  Large editor and termcap
+ * buffers must not be automatic variables. */
+static char termcap_buffer[QE_TERMCAP_BUFFER_SIZE];
+
 int main(int argc, char **argv)
 {
-    char termcap_buffer[QE_TERMCAP_BUFFER_SIZE];
     char *term_name;
     int term_status;
     int columns;

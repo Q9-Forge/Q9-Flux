@@ -1,0 +1,71 @@
+#!/usr/bin/expect -f
+
+# Boot the dedicated q9edit development image and execute qeprobe.  This test
+# uses the emulator console only for the first toolchain/termcap proof.  TERM
+# is set explicitly because this test login differs from the regular /x1
+# shells, where TERM is already configured.  Interactive editor tests use /x1
+# on TCP port 2000.
+
+set timeout 90
+set send_slow {1 .01}
+
+set q9_root /Volumes/SSD1TB/projects/Q9
+set rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN
+set image $q9_root/local_images/OS9SYS.q9edit-dev.hda
+set logfile $q9_root/q9edit/test/qeprobe_os9_result.txt
+
+log_file -noappend $logfile
+spawn $q9_root/build/native/q9.exe --cb030 $rom --cf $image --net nat
+
+proc stop_emulator {} {
+    send "\x1d"
+    expect eof
+}
+
+expect "devices online"
+set timeout 25
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 1; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 1; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+
+if {!$logged_in} {
+    send_log "\n<<<QEPROBE LOGIN FAILED>>>\n"
+    stop_emulator
+    exit 1
+}
+
+send -s "setenv TERM q9\r"
+expect -re {\$ ?$}
+send -s "qeprobe\r"
+expect {
+    -re {qeprobe: termcap 'q9', ([0-9]+) columns, ([0-9]+) lines} {
+        send_log "\n<<<QEPROBE TERMCAP PASS>>>\n"
+    }
+    timeout {
+        send_log "\n<<<QEPROBE TERMCAP TIMEOUT>>>\n"
+        stop_emulator
+        exit 1
+    }
+}
+
+expect {
+    "qeprobe: red ANSI color" {
+        send_log "\n<<<QEPROBE ANSI PASS>>>\n"
+    }
+    timeout {
+        send_log "\n<<<QEPROBE ANSI TIMEOUT>>>\n"
+        stop_emulator
+        exit 1
+    }
+}
+
+expect -re {\$ ?$}
+send_log "\n<<<QEPROBE OS9 PASS>>>\n"
+stop_emulator
