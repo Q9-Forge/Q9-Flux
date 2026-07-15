@@ -38,17 +38,29 @@ Quelle: `MWOS/OS9/68030/PORTS/Q9/makefile`.
 ## Termcap
 
 Der Header `MWOS/OS9/SRC/DEFS/termcap.h` ist ANSI-prototypisiert und stellt
-die klassische Termcap-API bereit. Der Header-Kommentar nennt `termlib.l` als
-Implementierungsbibliothek. Der genaue Linkparameter muss noch anhand der
-Make-Templates oder eines bestehenden Programms verifiziert werden.
+die klassische Termcap-API bereit. Die MWOS-Zieltemplates definieren:
+
+```text
+TERMLIB  = -l=$(MWOS_DFTCLIB)/termlib.l
+TERMLIBS = $(TERMLIB)
+```
+
+q9edit setzt deshalb `LIBS = $(TERMLIBS) $(MWOS_CSLLIBS)`.
 
 q9edit benutzt keine Funktionen aus `curses.h`. Das Vorhandensein dieses
 Headers im SDK bedeutet nicht, dass curses fuer q9edit gelinkt werden muss.
 
-## Noch zu erzeugender Minimal-Build
+## Minimal-Build
 
-Der erste Cross-Build soll bewusst noch nicht den Editor enthalten. Das Modul
-`qeprobe` soll:
+Der erste Cross-Build enthaelt bewusst noch nicht den Editor. Das Modul
+`qeprobe` wird mit folgendem Befehl gebaut:
+
+```sh
+make -C q9edit os9
+```
+
+Der reine xcc-/Linker-Test war am 2026-07-15 erfolgreich. Die folgende
+Probeversion soll:
 
 1. einen kurzen Text ausgeben,
 2. mit Erfolg enden,
@@ -57,4 +69,3 @@ Der erste Cross-Build soll bewusst noch nicht den Editor enthalten. Das Modul
 
 Diese Trennung lokalisiert Compiler-, Linker-, termcap- und Terminalprobleme,
 statt sie gleichzeitig im Editor zu vermischen.
-

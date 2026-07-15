@@ -15,7 +15,7 @@ weiterer Arbeit zusaetzlich `README.md` und `docs/PROJEKTZIELE.md` lesen.
 - curses ist keine Voraussetzung
 - vorgesehener Editor-Kern: antirez/kilo, BSD-2-Clause
 - noch kein Upstream-Code importiert
-- noch kein OS-9-Modul gebaut
+- erstes OS-9-Probeprogramm `qeprobe` mit xcc erfolgreich gebaut
 
 ## Verifizierte SDK-Fakten
 
@@ -48,7 +48,8 @@ MWOS/SRC/DEFS/curses.h
 ```
 
 `termcap.h` deklariert `tgetent`, `tgetflag`, `tgetnum`, `tgetstr`, `tgoto`
-und `tputs`. Laut SDK-Kommentar liegt die Implementierung in `termlib.l`.
+und `tputs`. `TERMLIBS` aus den MWOS-Templates bindet
+`OS9/68000/LIB/termlib.l` ein.
 
 Ein brauchbares xcc-Programm-Makefile-Muster ist:
 
@@ -61,22 +62,43 @@ mit `CSTART`, `xcc` und dem OS-9-Linker.
 
 ## Noch nicht geklaert
 
-1. Minimaler xcc-Aufruf fuer ein eigenstaendiges Programm ausserhalb des
-   MWOS-SDK-Baums.
-2. Genaue Bibliotheksvariable beziehungsweise Datei fuer `termlib.l`.
-3. OS-9-C-Aufrufe fuer `SS_Opt`, Einzelzeicheneingabe und Wiederherstellung
+1. OS-9-C-Aufrufe fuer `SS_Opt`, Einzelzeicheneingabe und Wiederherstellung
    der SCF-Optionen.
-4. Terminalgroessenabfrage; 80x24 ist der erlaubte erste Rueckfallwert.
-5. Verfuegbarkeit von `snprintf`, `ftruncate` und den benoetigten
+2. Terminalgroessenabfrage; termcap `co`/`li` ist der erste Weg, 80x24 der
+   erlaubte Rueckfallwert.
+3. Verfuegbarkeit von `snprintf`, `ftruncate` und den benoetigten
    Speicherfunktionen in der verwendeten C-Library.
 
 ## Naechste Schritte
 
-1. Kleinstes `hello`-Programm mit xcc als Modul `qeprobe` bauen.
-2. `termcap`-Linktest erstellen.
-3. SCF-Optionsstruktur und C-Library-Wrapper im SDK identifizieren.
-4. Terminalprobe mit Farbe und Pfeiltasten bauen und im Emulator testen.
-5. Erst danach Kilo mit fester Commit-ID und BSD-Lizenz importieren.
+1. `qeprobe` ins Testimage deployen und im Emulator ausfuehren.
+2. SCF-Optionsstruktur und C-Library-Wrapper im SDK identifizieren.
+3. Terminalprobe mit Farbe und Pfeiltasten im Emulator testen.
+4. Erst danach Kilo mit fester Commit-ID und BSD-Lizenz importieren.
+
+## Erfolgreicher Build 2026-07-15
+
+Aufruf:
+
+```text
+make -C q9edit os9
+```
+
+Ergebnis:
+
+```text
+q9edit/os9/CMDS/qeprobe
+```
+
+Der reale Ablauf war `qeprobe.c` -> `RELS/k68k/qeprobe.i` ->
+`RELS/k020/qeprobe.r` -> `CMDS/qeprobe`. Der erste Versuch deckte eine
+doppelte Pfadangabe bei `-eas` plus `-fd` auf; im funktionierenden Makefile
+lautet das Zwischenziel deshalb `-fd=qeprobe.r`, nicht der komplette RDIR-Pfad.
+
+Der anschliessende Build mit `#include <termcap.h>`, `tgetent`, `tgetnum` und
+`LIBS = $(TERMLIBS) $(MWOS_CSLLIBS)` war ebenfalls erfolgreich. Damit sind
+xcc-Kompilierung, Programmlink und Termcap-Link auf dem Host nachgewiesen;
+der Lauf im Gast steht noch aus.
 
 ## Sicherheits- und Repo-Regeln
 
@@ -89,4 +111,3 @@ mit `CSTART`, `xcc` und dem OS-9-Linker.
   ausdrueckliche Freigabe veraendern.
 - Bestehende untracked Testergebnisdateien im Q9-Root gehoeren zum laufenden
   Kernel-Arbeitsstand und bleiben unangetastet.
-

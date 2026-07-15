@@ -1,6 +1,8 @@
-.PHONY: help
+.PHONY: help os9
 
 help:
 	@echo "q9edit (OS-9 command: qe)"
-	@echo "Build targets follow after the MWOS compiler interface is verified."
+	@echo "make os9  - build the current xcc toolchain probe"
 
+os9:
+	./tools/build-os9.sh
