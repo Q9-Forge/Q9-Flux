@@ -1,6 +1,85 @@
-# Option B (telnetdc binär patchen) — Root Cause der Ev$Wait-Luecke behoben, ABER zweiter, tieferer Fehler in SS_Ready gefunden (Stand 2026-07-15)
+# Option B (telnetdc binär patchen) — Bug 2 jetzt auf spf_rx lokalisiert, NICHT pkdvr (Stand 2026-07-15 abends)
 
-**Zusammenfassung des Ermittlungswegs (fuer die naechste Session):**
+## Nachtrag 2026-07-15 abends: Bug 2 endgueltig auf `spf_rx` (SPF-Netzwerkstack) lokalisiert — fruehere "pkdvr dreifach geladen"-Theorie war ein Messfehler und ist WIDERLEGT
+
+**Ausgangslage:** Nach der `pkdvr`-Quellcode-Rekonstruktion (Codex/Claudia, Windows-Seite,
+bytegenau nachgebaut, s. "Angebrachter Patch"-Abschnitt weiter unten) wurde das Datenmodell von
+`pkdvr` (Puffer-/Event-Felder `$60/$6C/$70/$74/$78/$7C/$80/$84/$88/$8C`) sauber aus dem Quelltext
+rekonstruiert. Ein Live-Trace (`Q9_TRAP_TRACE`, erweitert um automatisches Mitschneiden der
+`F$Event`-Rueckgabewerte — s. `m68krt.c`) zeigte beim `dir -aer /dd`-Haenger scheinbar DREI
+unterschiedliche Ladeadressen fuer denselben `pkdvr`-Code (PC minus dem aus dem Quelltext
+bestaetigten `Ev$Wait`-Offset `0x10b8`).
+
+**Diese Theorie ist WIDERLEGT.** Direkter Gegencheck im laufenden Gast per `mdir -e` (liefert die
+ECHTE, vom Kernel selbst gefuehrte Ladeadresse jedes residenten Moduls) zeigt eindeutig: `pkdvr`
+existiert nur EINMAL (`00ee5116`, Link-Count 3 fuer die drei referenzierenden Deskriptoren/
+Einheiten), exakt wie es fuer ein wiedereintrittsfaehiges (`ReEnt`) Treibermodul sein soll. Jede
+neue Telnet-Session bekommt lediglich ihr eigenes frisches Geraete-Paar (`pkm01`/`pks01`,
+`pkm02`/`pks02`, `pkm03`/`pks03`, ...) mit eigenem Static Storage — voellig normal, keine
+Doppelladung des Treiber-CODEs.
+
+**Was tatsaechlich passiert war:** Von den drei per PC-Ruecksubtraktion berechneten "Basen" war
+NUR EINE echt `pkdvr` (`0xee5116` — bestaetigt durch `mdir -e`). Die beiden anderen
+(`0xee91ec`/`0xeea228`) lagen, wie ein Abgleich mit der vollstaendigen `mdir -e`-Adresstabelle
+zeigte, tatsaechlich innerhalb der Adressbereiche der Module `spf` (`00ee6420`–`00eeacbc`) und
+`spf_rx` (`00eeacbc`–`00eebb50`) — beide rufen intern EBENFALLS `Ev$Wait` auf (voellig plausibel,
+`F$Event`/`D1=4` ist eine generische Subfunktion, die im ganzen System genutzt wird), nur eben
+nicht bei Offset `0x10b8` wie `pkdvr`. Die "Basis"-Ruecksubtraktion mit `pkdvr`s Offset war fuer
+diese beiden Treffer schlicht bedeutungslos.
+
+**Der eigentliche, per Kreuzabgleich jetzt zweifelsfrei lokalisierte Befund:** Der PERMANENT
+blockierte `Ev$Wait`-Aufruf (der letzte Trap im gesamten 10-Minuten-Log, ohne jede Rueckkehr,
+Event-Handle `0x00040003`, `min=1, max=0x7fffffff`) liegt bei PC `0x00eeb2e0` — das ist exakt
+Offset `0x0624` innerhalb von `spf_rx` (`0x00eeb2e0 - 0x00eeacbc = 0x624`), bestaetigt durch einen
+gezielten Rohbyte-Scan von `spf_rx` (aus dem `netmods`-Merge extrahiert, 3732 Byte) auf
+`trap #0; dc.w $0053`-Muster: der ERSTE von sieben gefundenen `F$Event`-Aufrufen sitzt bei genau
+diesem Offset `0x0624`, mit `moveq #4,D1` (`Ev$Wait`) direkt davor.
+
+**Zusaetzlich bestaetigt:** Event-Handle `0x00040003` wird im GESAMTEN 10-Minuten-Trace (beide
+unabhaengigen Testlaeufe) KEIN EINZIGES MAL per `Ev$Set`/`Ev$SetR` signalisiert — der Prozess
+haengt also nicht "meistens", sondern absolut endgueltig fest, fuer den Rest der Beobachtung.
+
+**Warum das wichtiger ist als der urspruengliche pkdvr-Verdacht:** `spf_rx` ist laut `mdir -e` ein
+eigener `Prog`-Modul (kein `Driv`/`Fman`) — vermutlich ein beim SPF-Stack-Start (`load /dd/netmods`
++ `spf`-Init) abgespaltener EIGENER PROZESS, der fuer die Empfangsseite (eingehende Netzwerk-
+Frames/-Daten Richtung hoehere Protokollschichten) zustaendig ist. Ein dauerhaft blockierter
+`spf_rx` wuerde ERKLAEREN, warum die urspruengliche ARBEITSPLAN-5.15-Beobachtung ("OS-9 sendet nach
+~15 TCP-Segmenten (~2,4 KB) keine weiteren Daten mehr, obwohl der Host durchgehend offene ACKs
+zurueckschickt") nie eine SS_SEvent-Ursache im Sendepfad selbst hatte: wenn `spf_rx` die
+eingehenden ACKs/Fenster-Updates gar nicht mehr verarbeitet (weil er selbst seit dem Blockieren
+nichts mehr tut), sieht die SENDE-Seite (`sptcp`) niemals ein "Fenster wieder offen"-Signal — genau
+das Verhalten, das seit dem 5.15-Testlauf beobachtet wird. **Bug 2 sitzt damit hoechstwahrscheinlich
+NICHT in `pkdvr`/dem Pseudo-Terminal-Layer, sondern eine Ebene tiefer im SPF-Netzwerkstack selbst
+(`spf_rx`), und ist vermutlich derselbe Bug wie der urspruengliche 5.15-Sendeaussetzer.**
+
+**Naechste Schritte fuer eine Folgesession (bevorzugt: `spf_rx` in Ghidra importieren, analoge
+Methodik zu `pkdvr`):**
+1. `spf_rx` aus dem SDK/Image extrahieren (`OS9/68020/CMDS/BOOTOBJS/SPF/spf_rx`, im `netmods`-Merge
+   bei Offset `0x702c`, 3732 Byte — per `os9 copy "local_images/<image>,netmods" ...` + Merge-Parser
+   `/tmp/parse_merge2.py`-Methodik dieser Session extrahierbar, oder direkt aus dem SDK-Build).
+2. Ghidra-Import mit `FixEntry.java` (echten `exec`-Einsprungpunkt aus Modul-Header nutzen).
+3. Den Code rund um Offset `0x0624` (den blockierenden `Ev$Wait`) disassemblieren/rekonstruieren:
+   welches Event wird erwartet, woher kommt das Event-Handle, was sollte es normalerweise
+   signalisieren (vermutlich der QUICC-RX-Interrupt-Pfad oder `spip`/`spenet`, wenn ein neuer
+   Frame eintrifft)?
+4. Pruefen, ob derselbe `SS_SEvent`-Signalisierungsdefekt vorliegt wie bei `telnetdc` (Bug 1) —
+   falls ja, waere ein analoger `Ev$Wait`→`F$Sleep`-Poll-Patch (s. "Angebrachter Patch" unten)
+   der naheliegende Fix, diesmal aber in `spf_rx` statt `telnetdc`.
+5. Gegenprobe: nach einem moeglichen Fix pruefen, ob DAMIT ENDLICH auch das urspruengliche
+   5.15-Symptom (TCP-Sendeaussetzer nach ~15 Segmenten, unabhaengig von Telnet/pkdvr) verschwindet —
+   waere der endgueltige Beleg, dass es sich um denselben Bug handelt.
+
+**Diagnose-Infrastruktur (neu, in `main` committet, funktionsfaehig):** `m68krt.c` protokolliert
+jetzt zusaetzlich zu den bisherigen `F$Event`-Aufrufen automatisch deren Rueckgabewerte
+(`D0`/`D1`/`A0`-`A2`, ueber einen generischen "naechste Instruktion nach dem Trap"-Mechanismus,
+`g_event_return_pc`) sowie `F$Link`/`F$Load`-Aufrufe mit Modulnamen, die mit `pk` beginnen (Filter
+gegen Log-Flut). Fuer die `spf_rx`-Folgeuntersuchung ist dieselbe Infrastruktur direkt
+weiterverwendbar — ggf. den Namensfilter in `m68krt_trap_trace_callback` anpassen/erweitern.
+
+---
+
+**Zusammenfassung des Ermittlungswegs (fuer die naechste Session, Stand vormittags — teilweise
+durch den Nachtrag oben ueberholt, s. dort fuer den aktuellen Stand):**
 
 1. Der urspruengliche SS_SEvent-Root-Cause (ARBEITSPLAN 5.15: `telnetdc`
    wartet timeoutlos in `Ev$Wait`, weil das tty-Event nie signalisiert
