@@ -33,12 +33,23 @@ Plattform eigene, abweichende Werte erfindet.
 ## Implementierungen
 
 - `qe_platform_posix.c`: Hostentwicklung mit termios und TIOCGWINSZ
-- `qe_platform_os9.c`: noch zu implementieren; SCF `_gs_opt`/`_ss_opt`,
-  `_gs_rdy`, termcap und normale OS-9-Pfade
+- `qe_platform_os9.c`: SCF `_gs_opt`/`_ss_opt`, `_gs_rdy`, termcap und normale
+  OS-9-Pfade; auf Konsole und `/x1` getestet
+
+Die OS-9-Implementierung wartet nach `ESC` begrenzt auf weitere Bytes. Das ist
+notwendig, weil `/x1` die drei Bytes einer ANSI-Taste nicht zwingend im selben
+Scheduler-Durchlauf sichtbar macht. Das Fenster betraegt derzeit 20 Ticks:
+lang genug fuer Port 2000, aber endlich, damit eine einzelne Escape-Taste nicht
+dauerhaft blockiert.
+
+Verifizierte Tests:
+
+- `test/qetermprobe_os9.exp`: Raw-Modus und Wiederherstellung auf der Konsole
+- `test/qetermprobe_x1.exp`: ANSI-Pfeiltasten ueber `/x1` und TCP-Port 2000
+- `test/host_smoke.exp`: POSIX-Vollbildaufbau und Ctrl-Q
 
 ## Noch ausstehende API-Bereiche
 
 Dateilesen, sicheres Speichern und portable Formatierung sind noch nicht aus
 dem Editor-Kern herausgezogen. Sie werden erst nach der funktionierenden
 OS-9-Terminalschicht ergaenzt, damit jede Aenderung einzeln testbar bleibt.
-

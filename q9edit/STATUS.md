@@ -16,7 +16,9 @@ weiterer Arbeit zusaetzlich `README.md` und `docs/PROJEKTZIELE.md` lesen.
 - Editor-Kern: antirez/kilo, BSD-2-Clause
 - unveraenderter Upstream-Stand `323d93b29bd89a2cb446de90c4ed4fea1764176e`
   unter `vendor/kilo/` importiert und per SHA-256 dokumentiert
-- erstes OS-9-Probeprogramm `qeprobe` mit xcc erfolgreich gebaut
+- `qeprobe` und `qetermprobe` mit xcc erfolgreich gebaut und im Gast getestet
+- OS-9-Terminalschicht fuer SCF, termcap und ANSI-Tasten ist implementiert
+- Pfeiltasten sind ueber `/x1`/Port 2000 end-to-end nachgewiesen
 
 ## Verifizierte SDK-Fakten
 
@@ -63,19 +65,14 @@ mit `CSTART`, `xcc` und dem OS-9-Linker.
 
 ## Noch nicht geklaert
 
-1. OS-9-C-Aufrufe fuer `SS_Opt`, Einzelzeicheneingabe und Wiederherstellung
-   der SCF-Optionen.
-2. Terminalgroessenabfrage; termcap `co`/`li` ist der erste Weg, 80x24 der
-   erlaubte Rueckfallwert.
-3. Verfuegbarkeit von `snprintf`, `ftruncate` und den benoetigten
+1. Verfuegbarkeit von `snprintf`, `ftruncate` und den benoetigten
    Speicherfunktionen in der verwendeten C-Library.
 
 ## Naechste Schritte
 
-1. OS-9-Terminalimplementierung mit `_gs_opt`/`_ss_opt` und termcap bauen.
-2. Terminalprobe mit Pfeiltasten ueber `/x1` auf Port 2000 testen.
-3. `getline`, `ftruncate` und Formatfunktionen portabel ersetzen.
-4. Den kompletten Editor mit xcc linken.
+1. `getline`, `ftruncate` und Formatfunktionen portabel ersetzen.
+2. Den kompletten Editor mit xcc linken.
+3. Das echte `qe` ueber `/x1` testen und Speichern automatisiert pruefen.
 
 ## Terminal-Plattformgrenze
 
@@ -181,3 +178,28 @@ qeprobe: red ANSI color
 
 Damit sind xcc, OS-9-Modulstart, C-Library, `getenv`, `termlib.l`, der lokale
 `q9`-Termcap-Eintrag (80x24) und ANSI-Farbausgabe im echten Gast nachgewiesen.
+
+## OS-9-Terminalschicht und Port-2000-Test
+
+`src/platform/qe_platform_os9.c` verwendet die SDK-Aufrufe `_gs_opt`,
+`_ss_opt` und `_gs_rdy`. Der Raw-Modus folgt dem Microware-SCF-Muster und
+stellt die zuvor gesicherten Optionen nach dem Programmende wieder her.
+Fenstergroesse kommt aus termcap `co`/`li`, mit 80x24 als Rueckfallwert.
+
+`qetermprobe` wurde auf der emulierten Konsole erfolgreich getestet: Raw-Modus,
+ANSI-Ausgabe und Wiederherstellung der Shell-Eingabe funktionieren. Ein zweiter
+End-to-End-Test meldet sich ueber den echten TCP-Terminalpfad auf `/x1` an und
+sendet Pfeiltasten. Das Ergebnis im Gast lautet:
+
+```text
+qetermprobe: keys 1002 1003 1000 1001 113
+qetermprobe x1 keys: PASS
+```
+
+Wichtig fuer Fortsetzungen: `/x1` kann die Bytes einer einzelnen ANSI-
+Escape-Sequenz ueber mehrere Scheduler-Durchlaeufe bereitstellen. Drei Ticks
+Wartezeit waren zu kurz und zerlegten `ESC [ A`; 20 Ticks funktionieren auf
+dem realen Port-2000-Pfad und lassen eine einzelne Escape-Taste weiterhin mit
+begrenzter Wartezeit zu. Der Testclient spricht Telnet-IAC selbst; das
+macOS-`telnet`-Programm puffert bzw. verhandelt fuer diesen Rohdaten-Test
+ungeeignet.
