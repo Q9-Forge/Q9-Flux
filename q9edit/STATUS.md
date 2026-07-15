@@ -72,10 +72,25 @@ mit `CSTART`, `xcc` und dem OS-9-Linker.
 
 ## Naechste Schritte
 
-1. Kilo-Arbeitskopie unter `src/editor/` auf ANSI C89 umstellen.
+1. Plattform-API definieren und POSIX-Terminalcode aus dem Kern herausziehen.
 2. SCF-Optionsstruktur und C-Library-Wrapper im SDK identifizieren.
 3. Terminalprobe mit Pfeiltasten ueber `/x1` auf Port 2000 testen.
-4. Editor-Kern schrittweise hinter die Plattform-API verschieben.
+4. `getline`, `ftruncate` und Formatfunktionen portabel ersetzen.
+
+## ANSI-C89-Arbeitskopie
+
+`vendor/kilo/kilo.c` bleibt unveraendert. Die Arbeitskopie liegt jetzt unter
+`src/editor/qe.c`. Alle vom strengen Hostcompiler gefundenen C99-Sprachstellen
+wurden ohne beabsichtigte Verhaltensaenderung auf C89 umgestellt. Folgender
+Build ist warnungsfrei:
+
+```text
+make -C q9edit host
+```
+
+Die noch enthaltenen POSIX-Aufrufe sind in `docs/C89_PORT.md` aufgelistet und
+bilden den naechsten Arbeitsschritt; der C89-Hostbuild ist noch kein xcc-Build
+des Editors.
 
 ## Erfolgreicher Build 2026-07-15
 
