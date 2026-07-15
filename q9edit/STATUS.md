@@ -224,10 +224,10 @@ nicht anzukommen. Die Reproduktion hat zwei Ursachen getrennt:
 
 - `qe` sendete beim Start nur Cursor-Home, aber kein ANSI Clear-Screen. Es
   sendet jetzt `ESC [ 2 J` plus Home, bevor der erste Editorrahmen erscheint.
-- termcap beschreibt `q9term` statisch als 80x24. Im Raw-Modus fragt `qe` nun
-  zusaetzlich die echte ANSI-Cursorposition nach einer Bewegung zum rechten
-  unteren Rand ab und verwendet deren aktuelle Zeilen-/Spaltenzahl. Bleibt die
-  Antwort aus, gilt weiterhin der sichere termcap-/80x24-Rueckfallwert.
+- termcap beschreibt `q9term` statisch als 80x24. Eine versuchsweise Abfrage
+  per ANSI `CSI 6 n` wurde wieder entfernt: Auf der Konsole koennen deren
+  Antwortbytes im langsamen Eingabepfad liegenbleiben und den Editor stoeren.
+  Bis zu einer sauberen Emulator-/SCF-Groessenuebergabe gilt stabil 80x24.
 - Ein automatischer Roh-TCP-Test tippt `QeZ` in den kompletten Editor und sieht
   den Text auf dem neu gezeichneten Bildschirm: `qe x1 input: PASS`. Normale
   Zeicheneingabe in Editor und SCF funktioniert also. Beim klassischen
@@ -235,3 +235,12 @@ nicht anzukommen. Die Reproduktion hat zwei Ursachen getrennt:
   waehrend Pfeile und Ctrl-Q sofort ankommen. Fuer den manuellen Test muss der
   Client in den Zeichenmodus (`Ctrl-]`, dann `mode character`) geschaltet
   werden, bis der Emulator die Telnet-Aushandlung selbst uebernimmt.
+
+Der anschliessende echte Konsolentest hat `Q` korrekt eingefuegt und den Cursor
+von Spalte 1 auf Spalte 2 bewegt. Das sichtbare Problem ist die Geschwindigkeit:
+Der Kilo-Kern zeichnet nach jeder Taste alle 24 Zeilen neu. Ueber die emulierte
+serielle OS-9-Konsole dauert ein solcher Vollaufbau viele Sekunden und sieht
+deshalb wie verlorene Eingabe oder ein falscher Cursor aus. Naechster
+Entwicklungsschritt ist zwingend eine differenzielle Ausgabe (nur geaenderte
+Zeile, Status und Cursor). Die Hilfezeile bleibt ab diesem Stand dauerhaft
+sichtbar statt nach Kilos urspruenglichen fuenf Sekunden zu verschwinden.

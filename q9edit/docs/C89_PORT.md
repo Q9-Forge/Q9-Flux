@@ -42,3 +42,8 @@ gekapselt wurden:
 Noch nicht abgeschlossen ist der Lauf- und Speichertest des echten `qe` im
 Gast. Der einfache `fopen("w")`-Speicherweg ist portabel, aber noch nicht als
 absturzsichere/atomare Speicherroutine zu verstehen.
+
+Auf der emulierten seriellen Konsole ist Kilos kompletter Neuaufbau nach jeder
+Taste zu langsam. Funktional werden Zeichen korrekt gelesen und eingefuegt;
+vor weiterer Bedienungsarbeit muss die Ausgabe auf geaenderte Zeilen und
+Statusbereiche begrenzt werden.
