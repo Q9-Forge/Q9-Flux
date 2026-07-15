@@ -163,6 +163,9 @@ POSIX-Eigenschaften voraus. Fuer q9edit gelten deshalb:
   POSIX-Feature-Makros bleiben ausserhalb des Editor-Kerns.
 - Verfuegbarkeit und Semantik von `malloc`, `realloc`, `free`, Datei-I/O,
   `ctype` und Zeitfunktionen werden mit kleinen xcc-Proben verifiziert.
+- Grosse Puffer duerfen nicht als automatische lokale Variablen auf dem
+  kleinen OS-9-Programmstack liegen; sie werden statisch oder kontrolliert
+  dynamisch angelegt.
 - Warnungsfreier xcc-Build und ein lauffaehiges OS-9-Programm-Modul sind fuer
   jeden Meilenstein wichtiger als Komfort im Host-Build.
 
