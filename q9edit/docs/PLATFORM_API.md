@@ -46,10 +46,13 @@ Verifizierte Tests:
 
 - `test/qetermprobe_os9.exp`: Raw-Modus und Wiederherstellung auf der Konsole
 - `test/qetermprobe_x1.exp`: ANSI-Pfeiltasten ueber `/x1` und TCP-Port 2000
+- `test/qe_x1.exp`: kompletter Editor, Dateilesen, Vollbild und Ctrl-Q ueber
+  `/x1`
 - `test/host_smoke.exp`: POSIX-Vollbildaufbau und Ctrl-Q
 
 ## Noch ausstehende API-Bereiche
 
-Dateilesen, sicheres Speichern und portable Formatierung sind noch nicht aus
-dem Editor-Kern herausgezogen. Sie werden erst nach der funktionierenden
-OS-9-Terminalschicht ergaenzt, damit jede Aenderung einzeln testbar bleibt.
+Dateilesen und Speichern verwenden inzwischen portable C89-Streams direkt im
+Editor-Kern. `qe_format.c` kapselt die kleine benoetigte Teilmenge der
+Formatierung. Noch offen ist eine spaetere absturzsichere Speicherroutine; der
+erste Port verwendet bewusst den einfachen `fopen("w")`-/`fwrite`-Weg.

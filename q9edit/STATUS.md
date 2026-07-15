@@ -20,6 +20,8 @@ weiterer Arbeit zusaetzlich `README.md` und `docs/PROJEKTZIELE.md` lesen.
 - OS-9-Terminalschicht fuer SCF, termcap und ANSI-Tasten ist implementiert
 - Pfeiltasten sind ueber `/x1`/Port 2000 end-to-end nachgewiesen
 - der komplette Editor wird als `q9edit/os9/CMDS/qe` mit xcc gelinkt
+- `qe /dd/SYS/startup` baut auf `/x1` den Vollbildschirm auf und beendet sich
+  mit Ctrl-Q sauber zur OS-9-Shell
 
 ## Verifizierte SDK-Fakten
 
@@ -72,9 +74,9 @@ mit `CSTART`, `xcc` und dem OS-9-Linker.
 
 ## Naechste Schritte
 
-1. Das echte `qe` ueber `/x1` starten und interaktiv pruefen.
-2. Laden, Aendern und Speichern automatisiert im Entwicklungsimage pruefen.
-3. Dabei Speicherbedarf, lange Zeilen und OS-9-CR-Zeilenenden kontrollieren.
+1. Laden, Aendern und Speichern automatisiert im Entwicklungsimage pruefen.
+2. Dabei Speicherbedarf, lange Zeilen und OS-9-CR-Zeilenenden kontrollieren.
+3. Danach Bedienung und Syntaxfarben interaktiv verfeinern.
 
 ## Terminal-Plattformgrenze
 
@@ -205,3 +207,11 @@ dem realen Port-2000-Pfad und lassen eine einzelne Escape-Taste weiterhin mit
 begrenzter Wartezeit zu. Der Testclient spricht Telnet-IAC selbst; das
 macOS-`telnet`-Programm puffert bzw. verhandelt fuer diesen Rohdaten-Test
 ungeeignet.
+
+Der vollstaendige Editor wurde danach als `CMDS/qe` in dasselbe Entwicklungs-
+image kopiert. `test/qe_x1.exp` meldet sich ueber `/x1` an, startet
+`qe /dd/SYS/startup`, wartet auf den aufgebauten Hilfe-/Statusbereich, sendet
+Ctrl-Q und wartet wieder auf den Shell-Prompt. Ergebnis: `qe x1 launch: PASS`.
+Damit sind Modulstart, Dateilesen, Syntaxfarben, Vollbildausgabe, Raw-Modus und
+Terminalwiederherstellung im echten Gastpfad nachgewiesen. Der Schreibtest ist
+der naechste offene Abnahmeschritt.
