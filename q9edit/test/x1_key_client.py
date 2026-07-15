@@ -23,7 +23,6 @@ class TelnetStream:
         self.plain = bytearray()
         self.state = "data"
         self.command = 0
-        self.output_tail = bytearray()
 
     def close(self) -> None:
         self.sock.close()
@@ -47,11 +46,6 @@ class TelnetStream:
                     self.state = "iac"
                 else:
                     self.plain.append(value)
-                    self.output_tail.append(value)
-                    if len(self.output_tail) > 4:
-                        del self.output_tail[0]
-                    if self.output_tail == b"\x1b[6n":
-                        self.send(b"\x1b[24;80R")
             elif self.state == "iac":
                 if value == IAC:
                     self.plain.append(value)

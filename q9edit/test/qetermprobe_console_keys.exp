@@ -1,0 +1,32 @@
+#!/usr/bin/expect -f
+
+set timeout 90
+set send_slow {1 .15}
+set q9_root /Volumes/SSD1TB/projects/Q9
+set rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN
+set image $q9_root/local_images/OS9SYS.q9edit-dev.hda
+
+spawn $q9_root/build/native/q9.exe --cb030 $rom --cf $image --net nat
+proc stop_emulator {} { send "\x1d"; expect eof }
+expect "devices online"
+set timeout 25
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 1; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 1; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { stop_emulator; exit 1 }
+send -s "qetermprobe -k\r"
+expect "send up down left right q"
+sleep 1
+send -s "QeZxq"
+expect {
+    "qetermprobe: keys 81 101 90 120 113" {}
+    timeout { stop_emulator; exit 1 }
+}
+send_log "\n<<<QETERMPROBE CONSOLE KEYS PASS>>>\n"
+stop_emulator

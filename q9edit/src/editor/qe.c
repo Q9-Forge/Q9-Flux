@@ -851,7 +851,7 @@ void editorRefreshScreen(void) {
     /* Second row depends on E.statusmsg and the status message update time. */
     abAppend(&ab,"\x1b[0K",4);
     msglen = strlen(E.statusmsg);
-    if (msglen && time(NULL)-E.statusmsg_time < 5)
+    if (msglen)
         abAppend(&ab,E.statusmsg,msglen <= E.screencols ? msglen : E.screencols);
 
     /* Put cursor at its current position. Note that the horizontal position
@@ -1180,11 +1180,10 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    /* Raw input is also needed while querying the real ANSI window size. */
-    enableRawMode(QE_STDIN);
     initEditor();
     editorSelectSyntaxHighlight(argv[1]);
     editorOpen(argv[1]);
+    enableRawMode(QE_STDIN);
     qe_term_write(QE_STDOUT,"\x1b[2J\x1b[H",7);
     editorSetStatusMessage(
         "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
