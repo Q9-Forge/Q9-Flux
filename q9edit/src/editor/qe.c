@@ -765,15 +765,17 @@ void editorRefreshScreen(void) {
     struct abuf ab = ABUF_INIT;
 
     abAppend(&ab,"\x1b[?25l",6); /* Hide cursor. */
-    abAppend(&ab,"\x1b[H",3); /* Go home. */
     for (y = 0; y < E.screenrows; y++) {
         int filerow = E.rowoff+y;
+
+        qe_snprintf(buf,sizeof(buf),"\x1b[%d;1H",y+1);
+        abAppend(&ab,buf,strlen(buf));
 
         if (filerow >= E.numrows) {
             if (E.numrows == 0 && y == E.screenrows/3) {
                 char welcome[80];
                 int welcomelen = qe_snprintf(welcome,sizeof(welcome),
-                    "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION);
+                    "Kilo editor -- version %s", KILO_VERSION);
                 int padding = (E.screencols-welcomelen)/2;
                 if (padding) {
                     abAppend(&ab,"~",1);
@@ -781,8 +783,9 @@ void editorRefreshScreen(void) {
                 }
                 while(padding--) abAppend(&ab," ",1);
                 abAppend(&ab,welcome,welcomelen);
+                abAppend(&ab,"\x1b[0K",4);
             } else {
-                abAppend(&ab,"~\x1b[0K\r\n",7);
+                abAppend(&ab,"~\x1b[0K",5);
             }
             continue;
         }
@@ -825,10 +828,11 @@ void editorRefreshScreen(void) {
         }
         abAppend(&ab,"\x1b[39m",5);
         abAppend(&ab,"\x1b[0K",4);
-        abAppend(&ab,"\r\n",2);
     }
 
     /* Create a two rows status. First row: */
+    qe_snprintf(buf,sizeof(buf),"\x1b[%d;1H",E.screenrows+1);
+    abAppend(&ab,buf,strlen(buf));
     abAppend(&ab,"\x1b[0K",4);
     abAppend(&ab,"\x1b[7m",4);
     len = qe_snprintf(status, sizeof(status), "%.20s - %d lines %s",
@@ -846,9 +850,11 @@ void editorRefreshScreen(void) {
             len++;
         }
     }
-    abAppend(&ab,"\x1b[0m\r\n",6);
+    abAppend(&ab,"\x1b[0m",4);
 
     /* Second row depends on E.statusmsg and the status message update time. */
+    qe_snprintf(buf,sizeof(buf),"\x1b[%d;1H",E.screenrows+2);
+    abAppend(&ab,buf,strlen(buf));
     abAppend(&ab,"\x1b[0K",4);
     msglen = strlen(E.statusmsg);
     if (msglen)
