@@ -499,6 +499,12 @@ static int m68krt_board_int_ack(int int_level)
 static FILE   *g_trap_trace_fp  = NULL;
 static long    g_trap_trace_cap = 2000000;
 static long    g_trap_trace_n   = 0;
+static uint32_t g_watch_pc  = 0;
+static uint32_t g_watch_pc2 = 0;
+static int      g_telnetdc_base_known  = 0;
+static int      g_watch_manual         = 0;   /* per Q9_WATCH_PC/2 vorgegeben -- Autoerkennung bleibt aus */
+static uint32_t g_watch_candidate_base   = 0;
+static int      g_watch_candidate_streak = 0;
 
 /* Testlauf 3 (2026-07-14) zeigte: D0/D1 allein liefern keine brauchbare Filterung -- Grund
    (Ghidra-Nachanalyse): der eigentliche OS-9-Aufrufcode (F$Event = 0x53) steckt NICHT in einem
@@ -506,12 +512,20 @@ static long    g_trap_trace_n   = 0;
    Instruktion im Code (Kernel liest es beim Rueckkehren und ueberspringt es). Deshalb jetzt
    gezielt genau dieses Wort mitlesen (m68k_read_disassembler_16, seiteneffektfrei) und nur bei
    Treffer F$Event (0x53) loggen -- das ist system-weit selten genug fuer ein sauberes Signal. */
+/* Testlauf 7 (2026-07-15): die Ladeadresse von telnetdc variiert JE BOOT (nicht stabil, wie
+   zunaechst per manuellem "l telnetdc"/.r7-Test angenommen) -- ein vorab von aussen uebergebenes
+   Q9_WATCH_PC passt daher oft nicht mehr. Deshalb jetzt Autoerkennung: der ERSTE F$Sleep-Aufruf
+   (callcode=0x0a) im telnetdc-Adressraum verraet die Basis (PC - 0xf4e, statischer Offset unseres
+   eigenen Patches bei telnetdc-Offset 0xf4c/0xf4e), daraus werden die beiden GetStt-Watchpoints
+   (Erfolg 0x32a8, Fehler 0x32b2) automatisch abgeleitet -- kein manuelles Ausrechnen/Uebergeben
+   mehr noetig, funktioniert bootuebergreifend automatisch. */
+
 static int m68krt_trap_trace_callback(int trap)
 {
     if (trap == 0 && g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
         uint32_t pc = m68k_get_reg(NULL, M68K_REG_PPC);
         uint32_t callcode = m68k_read_memory_16(pc + 2);
-        if (callcode == 0x53) {
+        if (callcode == 0x53 || callcode == 0x0a || callcode == 0x8d) {
             fprintf(g_trap_trace_fp,
                     "trap0 pc=%08x callcode=%04x d0=%08x d1=%08x d2=%08x d3=%08x a0=%08x a1=%08x\n",
                     pc, callcode,
@@ -519,9 +533,54 @@ static int m68krt_trap_trace_callback(int trap)
                     m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_D3),
                     m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1));
             g_trap_trace_n++;
+            /* Testlauf 10 zeigte: ein simples "erste Instanz gewinnt" verriegelt sich auf eine
+               fruehe, irrelevante Instanz (z.B. vom Login-Prozess), waehrend die eigentlich
+               relevante (dominante, dauerhaft aktive) Instanz nie erfasst wird. Deshalb jetzt
+               "3x hintereinander dieselbe Basis" als Kriterium -- fegt kurzlebige Strays weg,
+               folgt aber zuverlaessig der aktuell aktiven Schleife (die F$Sleep sehr oft in
+               Folge aufruft), auch wenn diese erst spaeter im Boot/Verbindungsverlauf startet. */
+            if (callcode == 0x0a && !g_watch_manual) {
+                uint32_t base = pc - 0xf4e;
+                if (base == g_watch_candidate_base) {
+                    g_watch_candidate_streak++;
+                } else {
+                    g_watch_candidate_base   = base;
+                    g_watch_candidate_streak = 1;
+                }
+                if (g_watch_candidate_streak == 3 && g_watch_pc != base + 0x32a8) {
+                    g_watch_pc  = base + 0x32a8;
+                    g_watch_pc2 = base + 0x32b2;
+                    g_telnetdc_base_known = 1;
+                    fprintf(g_trap_trace_fp,
+                            "auto-base telnetdc=%08x watch1=%08x watch2=%08x\n",
+                            base, g_watch_pc, g_watch_pc2);
+                }
+            }
         }
     }
     return 0;                                         /* nicht behandelt -- normale Exception laeuft weiter */
+}
+
+/* Testlauf 4 (2026-07-15): der Trap#0-Callback feuert nur VOR dem Trap (Eingaberegister), nicht
+   beim Rueckkehren -- der Rueckgabewert von I$GetStt/SS_Ready (in D1, s. Disassemblierung des
+   Wrapers bei telnetdc-Offset 0x32a8) blieb dadurch unsichtbar. Deshalb zusaetzlich ein gezielter
+   PC-Watchpoint ueber M68K_INSTRUCTION_HOOK: feuert vor JEDER Instruktion (teuer, aber der
+   Vergleich selbst ist trivial und es wird nur bei echtem Treffer geloggt/geflusht -- anders als
+   der frueher verworfene ungefilterte Trap-Log-Versuch, der pro Zeile schrieb). Adresse kommt aus
+   Q9_WATCH_PC (Hex, ohne 0x-Praefix), da die Ladeadresse je Boot variiert. */
+
+static void m68krt_watch_pc_callback(unsigned int pc)
+{
+    if (g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap &&
+        ((g_watch_pc && pc == g_watch_pc) || (g_watch_pc2 && pc == g_watch_pc2))) {
+        fprintf(g_trap_trace_fp,
+                "watch pc=%08x d0=%08x d1=%08x d2=%08x d3=%08x a0=%08x a1=%08x\n",
+                pc,
+                m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_D3),
+                m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1));
+        g_trap_trace_n++;
+    }
 }
 
 int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
@@ -550,6 +609,16 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
                 setvbuf(g_trap_trace_fp, NULL, _IOFBF, 4 * 1024 * 1024);
                 m68k_set_trap_instr_callback(m68krt_trap_trace_callback);
             }
+        }
+        const char *watch_pc_str  = getenv("Q9_WATCH_PC");
+        const char *watch_pc2_str = getenv("Q9_WATCH_PC2");
+        if (watch_pc_str || watch_pc2_str) {
+            if (watch_pc_str)  g_watch_pc  = (uint32_t)strtoul(watch_pc_str, NULL, 16);
+            if (watch_pc2_str) g_watch_pc2 = (uint32_t)strtoul(watch_pc2_str, NULL, 16);
+            g_watch_manual = 1;                     /* manuell vorgegeben -- Autoerkennung bleibt komplett aus */
+        }
+        if (g_trap_trace_fp) {
+            m68k_set_instr_hook_callback(m68krt_watch_pc_callback);   /* auch ohne Vorgabe: Autoerkennung */
         }
     }
 

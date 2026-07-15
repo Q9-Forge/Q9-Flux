@@ -1,0 +1,73 @@
+#!/usr/bin/expect -f
+# Option-B/Bug-2-Diagnose (2026-07-15, s. docs/re_telnetdc/OPTION_B_STATUS.md):
+# reproduziert den TCP-Haenger bei langer Telnet-Ausgabe ueber eth0/telnetd
+# MIT ECHTEM telnet-Client (ein roher Socket-Test reicht NICHT -- verhandelt
+# keine Telnet-Optionen und triggert ein anderes Verhalten). Startet den
+# Emulator selbst (braucht passwortloses sudo fuer q9.exe, s.
+# /etc/sudoers.d/q9-emulator), verbindet, loggt sich ein, loest
+# "dir -aer /dd" aus und wartet bis zu 10 Minuten.
+#
+# Optional: Q9_TRAP_TRACE/Q9_WATCH_PC/Q9_WATCH_PC2 vor dem Aufruf setzen,
+# um den Live-Trace mit PC-Watchpoints zu aktivieren (s. Doku fuer die
+# Adressermittlung -- die Ladeadresse von telnetdc variiert je Boot, per
+# F$Sleep-Haeufung im Trace selbst bestimmbar, s. Kommentare in
+# src/kernel/m68krt.c bei m68krt_trap_trace_callback).
+#
+# Login: super / Al35uUbC (s. /dd/SYS/password im Image)
+
+set timeout 90
+log_file -noappend test_telnetdc_write_hang_result.txt
+
+set image local_images/OS9SYS.claudia-optionb-patchtest.hda
+
+set env_prefix ""
+if {[info exists ::env(Q9_TRAP_TRACE)]} {
+    append env_prefix "Q9_TRAP_TRACE=$::env(Q9_TRAP_TRACE) "
+}
+if {[info exists ::env(Q9_WATCH_PC)]} {
+    append env_prefix "Q9_WATCH_PC=$::env(Q9_WATCH_PC) "
+}
+if {[info exists ::env(Q9_WATCH_PC2)]} {
+    append env_prefix "Q9_WATCH_PC2=$::env(Q9_WATCH_PC2) "
+}
+
+eval spawn sudo -n $env_prefix ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image --net vmnet
+set emu_id $spawn_id
+
+set timeout 60
+expect {
+    -i $emu_id "devices online" {}
+    -i $emu_id timeout { send_log "\n<<<BOOT TIMEOUT>>>\n"; exit 1 }
+}
+
+# SYS/startup laeuft nach dem Boot-Marker weiter (netmods/ipstart/telnetd) --
+# etwas Zeit lassen, bis das Netzwerk im Gast wirklich steht.
+sleep 8
+
+spawn telnet 192.168.200.2
+set tn_id $spawn_id
+
+set timeout 20
+expect -i $tn_id "User name?:"
+send -i $tn_id "super\r"
+expect -i $tn_id -re {Password[^\r\n]*:}
+send -i $tn_id "Al35uUbC\r"
+expect -i $tn_id -re {\$}
+send_log "\n<<<LOGIN OK>>>\n"
+
+send -i $tn_id "dir -aer /dd\r"
+
+# Testlauf 2026-07-15 zeigte: falls es haengt, hilft laenger Warten NICHT --
+# es ist ein echter Dauerhaenger, kein langsamer Durchsatz. 10 Minuten reichen
+# reichlich als Beleg.
+set timeout 600
+expect {
+    -i $tn_id -re {\$\s*$} { send_log "\n<<<DIR FERTIG (kein Haenger)>>>\n" }
+    -i $tn_id timeout { send_log "\n<<<DIR HAENGT NACH 600s -- Dauerhaenger bestaetigt>>>\n" }
+}
+
+# Trace flushen: Strg-] beendet q9.exe sauber (exit(0)), auch ohne Trace harmlos.
+send -i $emu_id "\x1d"
+sleep 2
+
+send_log "\n<<<SCRIPT FERTIG>>>\n"

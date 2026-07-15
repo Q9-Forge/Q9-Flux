@@ -1,0 +1,76 @@
+#!/usr/bin/expect -f
+# Bug-2-Diagnose (2026-07-15, s. docs/re_telnetdc/OPTION_B_STATUS.md):
+# prueft, WER beim Telnet-Haenger tatsaechlich blockiert -- telnetdc beim
+# Lesen (SS_Ready) oder die Shell/dir beim Schreiben in den vollen
+# pty-Puffer. Startet den Emulator selbst (passwortloses sudo, s.
+# /etc/sudoers.d/q9-emulator), oeffnet Session A (loest den Haenger aus:
+# "dir -aer /dd"), oeffnet eine zweite Session B und nimmt dort im
+# 60-Sekunden-Abstand drei "procs -e"-Schnappschuesse.
+#
+# Auswertung: CPU-Zeit des "dir <>>>pksNN"-Prozesses aus Session A ueber die
+# drei Schnappschuesse vergleichen. Wenn sie NICHT waechst (Busy-Loop wuerde
+# wachsende Zeit zeigen), sitzt dir in einer echten Blockade -- Befund vom
+# 2026-07-15: CPU-Zeit blieb exakt konstant (0.13) ueber 120s, waehrend
+# telnetdc (Status a->s) sichtbar aktiv blieb. Das bestaetigt: die Shell
+# blockiert beim SCHREIBEN, nicht telnetdc beim Lesen -- die eigentliche
+# Wartelogik sitzt vermutlich im scf-Filemanager-Kernelmodul, nicht in
+# telnetdc selbst.
+#
+# Login: super / Al35uUbC (s. /dd/SYS/password im Image)
+
+set timeout 90
+log_file -noappend test_telnetdc_procs_check_result.txt
+
+set image local_images/OS9SYS.claudia-optionb-patchtest.hda
+
+spawn sudo -n ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image --net vmnet
+set emu_id $spawn_id
+
+set timeout 60
+expect -i $emu_id "devices online"
+sleep 8
+
+# --- Session A: loest den Haenger aus ---
+spawn telnet 192.168.200.2
+set tnA_id $spawn_id
+set timeout 20
+expect -i $tnA_id "User name?:"
+send -i $tnA_id "super\r"
+expect -i $tnA_id -re {Password[^\r\n]*:}
+send -i $tnA_id "Al35uUbC\r"
+expect -i $tnA_id -re {\$}
+send_log "\n<<<SESSION A LOGIN OK>>>\n"
+send -i $tnA_id "dir -aer /dd\r"
+sleep 15
+
+# --- Session B: Diagnose ---
+spawn telnet 192.168.200.2
+set tnB_id $spawn_id
+set timeout 20
+expect -i $tnB_id "User name?:"
+send -i $tnB_id "super\r"
+expect -i $tnB_id -re {Password[^\r\n]*:}
+send -i $tnB_id "Al35uUbC\r"
+expect -i $tnB_id -re {\$}
+send_log "\n<<<SESSION B LOGIN OK>>>\n"
+
+send -i $tnB_id "procs -e\r"
+expect -i $tnB_id -re {\$\s*$}
+send_log "\n<<<PROCS SNAPSHOT 1 (t=0)>>>\n"
+
+sleep 60
+send -i $tnB_id "procs -e\r"
+expect -i $tnB_id -re {\$\s*$}
+send_log "\n<<<PROCS SNAPSHOT 2 (t=60s)>>>\n"
+
+sleep 60
+send -i $tnB_id "procs -e\r"
+expect -i $tnB_id -re {\$\s*$}
+send_log "\n<<<PROCS SNAPSHOT 3 (t=120s)>>>\n"
+
+send -i $tnB_id "logout\r"
+sleep 2
+
+send -i $emu_id "\x1d"
+sleep 2
+send_log "\n<<<SCRIPT FERTIG>>>\n"
