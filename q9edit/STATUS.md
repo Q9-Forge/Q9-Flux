@@ -72,10 +72,20 @@ mit `CSTART`, `xcc` und dem OS-9-Linker.
 
 ## Naechste Schritte
 
-1. Plattform-API definieren und POSIX-Terminalcode aus dem Kern herausziehen.
-2. SCF-Optionsstruktur und C-Library-Wrapper im SDK identifizieren.
-3. Terminalprobe mit Pfeiltasten ueber `/x1` auf Port 2000 testen.
-4. `getline`, `ftruncate` und Formatfunktionen portabel ersetzen.
+1. OS-9-Terminalimplementierung mit `_gs_opt`/`_ss_opt` und termcap bauen.
+2. Terminalprobe mit Pfeiltasten ueber `/x1` auf Port 2000 testen.
+3. `getline`, `ftruncate` und Formatfunktionen portabel ersetzen.
+4. Den kompletten Editor mit xcc linken.
+
+## Terminal-Plattformgrenze
+
+Die API `src/platform/qe_platform.h` kapselt jetzt Raw-Modus, Tastendekodierung,
+Fenstergroesse und Bildschirmausgabe. Der bisherige POSIX-Code wurde aus
+`src/editor/qe.c` nach `qe_platform_posix.c` verschoben. Der strenge C89-Build
+bleibt warnungsfrei. `make -C q9edit test-host` startet den Editor in einem
+80x24-PTY, erkennt den farbig aufgebauten Bildschirm und beendet ihn mit
+Ctrl-Q; der Test ist PASS. Vertrag und weitere Arbeit stehen in
+`docs/PLATFORM_API.md`.
 
 ## ANSI-C89-Arbeitskopie
 

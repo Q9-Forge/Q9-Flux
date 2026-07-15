@@ -69,4 +69,5 @@ q9edit/
   Technikentscheidungen und Abnahmekriterien
 - [`STATUS.md`](STATUS.md) — kompakter, fortsetzbarer Arbeitsstand
 - [`docs/SDK_BUILD.md`](docs/SDK_BUILD.md) — verifizierte xcc-/SDK-Buildfakten
+- [`docs/PLATFORM_API.md`](docs/PLATFORM_API.md) — Betriebssystemgrenze
 - Dieses README — Einstieg, Verzeichnisstruktur und Entwicklungsweg
