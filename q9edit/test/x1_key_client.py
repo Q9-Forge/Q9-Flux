@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Exercise qetermprobe through the emulator's TCP terminal on port 2000."""
+
+import socket
+import sys
+import time
+
+IAC = 255
+DONT = 254
+DO = 253
+WONT = 252
+WILL = 251
+SB = 250
+SE = 240
+ECHO = 1
+SUPPRESS_GO_AHEAD = 3
+
+
+class TelnetStream:
+    def __init__(self, host: str, port: int) -> None:
+        self.sock = socket.create_connection((host, port), timeout=10)
+        self.sock.settimeout(1)
+        self.plain = bytearray()
+        self.state = "data"
+        self.command = 0
+
+    def close(self) -> None:
+        self.sock.close()
+
+    def send(self, data: bytes) -> None:
+        self.sock.sendall(data.replace(b"\xff", b"\xff\xff"))
+
+    def _reply_option(self, command: int, option: int) -> None:
+        if command == WILL:
+            reply = DO if option in (ECHO, SUPPRESS_GO_AHEAD) else DONT
+        elif command == DO:
+            reply = WILL if option == SUPPRESS_GO_AHEAD else WONT
+        else:
+            return
+        self.sock.sendall(bytes((IAC, reply, option)))
+
+    def _feed(self, data: bytes) -> None:
+        for value in data:
+            if self.state == "data":
+                if value == IAC:
+                    self.state = "iac"
+                else:
+                    self.plain.append(value)
+            elif self.state == "iac":
+                if value == IAC:
+                    self.plain.append(value)
+                    self.state = "data"
+                elif value in (DO, DONT, WILL, WONT):
+                    self.command = value
+                    self.state = "option"
+                elif value == SB:
+                    self.state = "subneg"
+                else:
+                    self.state = "data"
+            elif self.state == "option":
+                self._reply_option(self.command, value)
+                self.state = "data"
+            elif self.state == "subneg":
+                if value == IAC:
+                    self.state = "subneg_iac"
+            elif self.state == "subneg_iac":
+                self.state = "data" if value == SE else "subneg"
+
+    def wait_for(self, marker: bytes, timeout: float) -> bytes:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if marker in self.plain:
+                result = bytes(self.plain)
+                self.plain.clear()
+                return result
+            try:
+                data = self.sock.recv(4096)
+            except socket.timeout:
+                continue
+            if not data:
+                raise RuntimeError("terminal connection closed")
+            self._feed(data)
+        raise TimeoutError(f"timeout waiting for {marker!r}: {bytes(self.plain)!r}")
+
+
+def main() -> int:
+    stream = TelnetStream("127.0.0.1", 2000)
+    try:
+        try:
+            stream.wait_for(b"User name?:", 8)
+        except TimeoutError:
+            stream.send(b"\r")
+            stream.wait_for(b"User name?:", 8)
+        stream.send(b"super\r")
+        stream.wait_for(b"Password", 8)
+        stream.send(b"Al35uUbC\r")
+        stream.wait_for(b"$", 15)
+        stream.send(b"qetermprobe -k\r")
+        stream.wait_for(b"send up down left right q", 10)
+        for key in (b"\x1b[A", b"\x1b[B", b"\x1b[D", b"\x1b[C", b"q"):
+            stream.send(key)
+            time.sleep(0.15)
+        output = stream.wait_for(b"qetermprobe: keys 1002 1003 1000 1001 113", 10)
+        if b"terminal restored" not in output:
+            raise RuntimeError(f"terminal restore message missing: {output!r}")
+        print("qetermprobe x1 keys: PASS")
+        return 0
+    except Exception as error:
+        print(f"qetermprobe x1 keys: FAIL: {error}", file=sys.stderr)
+        return 1
+    finally:
+        stream.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

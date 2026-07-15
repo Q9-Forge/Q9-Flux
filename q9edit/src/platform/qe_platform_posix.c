@@ -130,6 +130,14 @@ int qe_term_get_size(int ifd, int ofd, int *rows, int *cols)
 
 int qe_term_write(int fd, const char *data, int length)
 {
-    return (int)write(fd, data, (size_t)length);
-}
+    int total;
+    int count;
 
+    total = 0;
+    while (total < length) {
+        count = (int)write(fd, data + total, (size_t)(length - total));
+        if (count <= 0) return -1;
+        total += count;
+    }
+    return total;
+}
