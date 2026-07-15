@@ -19,6 +19,7 @@ weiterer Arbeit zusaetzlich `README.md` und `docs/PROJEKTZIELE.md` lesen.
 - `qeprobe` und `qetermprobe` mit xcc erfolgreich gebaut und im Gast getestet
 - OS-9-Terminalschicht fuer SCF, termcap und ANSI-Tasten ist implementiert
 - Pfeiltasten sind ueber `/x1`/Port 2000 end-to-end nachgewiesen
+- der komplette Editor wird als `q9edit/os9/CMDS/qe` mit xcc gelinkt
 
 ## Verifizierte SDK-Fakten
 
@@ -65,14 +66,15 @@ mit `CSTART`, `xcc` und dem OS-9-Linker.
 
 ## Noch nicht geklaert
 
-1. Verfuegbarkeit von `snprintf`, `ftruncate` und den benoetigten
-   Speicherfunktionen in der verwendeten C-Library.
+1. Verhalten und Speicherbedarf des kompletten Editors im echten Gast.
+2. Sichere Speicherroutine fuer einen spaeteren Stand (der erste Port schreibt
+   bewusst einfach ueber C89-`fopen`/`fwrite`).
 
 ## Naechste Schritte
 
-1. `getline`, `ftruncate` und Formatfunktionen portabel ersetzen.
-2. Den kompletten Editor mit xcc linken.
-3. Das echte `qe` ueber `/x1` testen und Speichern automatisiert pruefen.
+1. Das echte `qe` ueber `/x1` starten und interaktiv pruefen.
+2. Laden, Aendern und Speichern automatisiert im Entwicklungsimage pruefen.
+3. Dabei Speicherbedarf, lange Zeilen und OS-9-CR-Zeilenenden kontrollieren.
 
 ## Terminal-Plattformgrenze
 

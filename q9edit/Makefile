@@ -1,7 +1,7 @@
 .PHONY: help host test-host os9
 
 HOST_CC ?= cc
-HOST_CFLAGS = -std=c89 -pedantic -Wall -Wextra -Werror
+HOST_CFLAGS = -std=c89 -pedantic -Wall -Wextra -Werror -DQE_HAVE_SIGWINCH
 HOST_BUILD = build/host
 
 help:
@@ -14,7 +14,8 @@ help:
 host:
 	@mkdir -p $(HOST_BUILD)
 	$(HOST_CC) $(HOST_CFLAGS) -Isrc/platform -o $(HOST_BUILD)/qe \
-		src/editor/qe.c src/platform/qe_platform_posix.c
+		src/editor/qe.c src/platform/qe_platform_posix.c \
+		src/platform/qe_format.c
 
 test-host: host
 	./test/host_smoke.exp

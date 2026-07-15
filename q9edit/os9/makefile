@@ -4,7 +4,7 @@
 # the official MWOS templates instead of duplicating compiler/linker flags.
 
 MWOS        = Z:/Volumes/SSD1TB/projects/MWOS
-TRGTS       = qeprobe qetermprobe
+TRGTS       = qeprobe qetermprobe qe
 MAKENAME    = makefile
 
 include $(MWOS)/MAKETMPL/make.com
@@ -18,6 +18,8 @@ BRELS       = $(CSTART) $(RDIR)/qeprobe.r
 BIRELS      = $(IDIR)/qeprobe.i
 TBRELS      = $(CSTART) $(RDIR)/qetermprobe.r
 TBIRELS     = $(IDIR)/qetermprobe.i $(IDIR)/qe_platform_os9.i
+QBRELS      = $(CSTART) $(RDIR)/qe.r
+QBIRELS     = $(IDIR)/qe.i $(IDIR)/qe_platform_os9.i $(IDIR)/qe_format.i
 DEFS        = $(MWOS_DEFS)
 LIBS        = $(TERMLIBS) $(MWOS_CSLLIBS)
 OPTMZ       =
@@ -30,6 +32,9 @@ qeprobe: $(IDIR) $(RDIR) $(ODIR) $(ODIR)/qeprobe
 	$(COMMENT)
 
 qetermprobe: $(IDIR) $(RDIR) $(ODIR) $(ODIR)/qetermprobe
+	$(COMMENT)
+
+qe: $(IDIR) $(RDIR) $(ODIR) $(ODIR)/qe
 	$(COMMENT)
 
 $(ODIR)/qeprobe: $(BRELS)
@@ -50,6 +55,15 @@ $(RDIR)/qetermprobe.r: $(TBIRELS)
 	-$(DEL) $@
 	$(ILINK) $(TBIRELS) -fd=qetermprobe.r
 
+$(ODIR)/qe: $(QBRELS)
+	-$(DEL) $@
+	$(LINK) $(QBRELS) -fd=$@ -oln=qe
+	$(ATTRE0) $@
+
+$(RDIR)/qe.r: $(QBIRELS)
+	-$(DEL) $@
+	$(ILINK) $(QBIRELS) -fd=qe.r
+
 $(IDIR)/qeprobe.i: $(SDIR)/qeprobe.c makefile
 	-$(DEL) $@
 	$(COMPILE) $(SDIR)/qeprobe.c
@@ -58,9 +72,17 @@ $(IDIR)/qetermprobe.i: $(SDIR)/qetermprobe.c makefile
 	-$(DEL) $@
 	$(COMPILE) -v=../src/platform $(SDIR)/qetermprobe.c
 
+$(IDIR)/qe.i: ../src/editor/qe.c ../src/platform/qe_platform.h makefile
+	-$(DEL) $@
+	$(COMPILE) -v=../src/platform ../src/editor/qe.c
+
 $(IDIR)/qe_platform_os9.i: ../src/platform/qe_platform_os9.c ../src/platform/qe_platform.h makefile
 	-$(DEL) $@
 	$(COMPILE) -v=../src/platform ../src/platform/qe_platform_os9.c
+
+$(IDIR)/qe_format.i: ../src/platform/qe_format.c ../src/platform/qe_platform.h makefile
+	-$(DEL) $@
+	$(COMPILE) -v=../src/platform ../src/platform/qe_format.c
 
 $(IDIR) $(RDIR) $(ODIR):
 	-$(MAKDIR) $@
@@ -70,3 +92,4 @@ clean: .
 	-$(DEL) $(RDIR)/*.r
 	-$(DEL) $(ODIR)/qeprobe
 	-$(DEL) $(ODIR)/qetermprobe
+	-$(DEL) $(ODIR)/qe
