@@ -47,3 +47,9 @@ Auf der emulierten seriellen Konsole ist Kilos kompletter Neuaufbau nach jeder
 Taste zu langsam. Funktional werden Zeichen korrekt gelesen und eingefuegt;
 vor weiterer Bedienungsarbeit muss die Ausgabe auf geaenderte Zeilen und
 Statusbereiche begrenzt werden.
+
+Der erste Differenzpfad steht jetzt: Zeicheneingabe aktualisiert eine Zeile,
+normale Cursorbewegung nur die ANSI-Cursorposition und Ctrl-Q nur die
+Meldungszeile. Syntaxfarben werden auf einer gerade editierten Zeile vorerst
+erst beim naechsten Vollaufbau wiederhergestellt; schnelle Grundbedienung hat
+hier bewusst Vorrang.
