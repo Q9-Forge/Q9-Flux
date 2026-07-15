@@ -53,3 +53,7 @@ normale Cursorbewegung nur die ANSI-Cursorposition und Ctrl-Q nur die
 Meldungszeile. Syntaxfarben werden auf einer gerade editierten Zeile vorerst
 erst beim naechsten Vollaufbau wiederhergestellt; schnelle Grundbedienung hat
 hier bewusst Vorrang.
+
+Der Vollaufbau positioniert jede Bildschirmzeile absolut (`CSI row;1 H`). Das
+vermeidet den doppelten Vorschub aus automatischem Umbruch an Spalte 80 plus
+explizitem CR/LF, der Status/Hilfe nach oben scrollen liess.

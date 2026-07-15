@@ -251,3 +251,11 @@ Cursorposition, und die Ctrl-Q-Warnung aktualisiert nur die Meldungszeile. Ein
 voller Aufbau erfolgt weiterhin beim Start sowie bei strukturellen Aenderungen
 wie Enter, Scrollen oder Loeschen. Der Konsolentest zeigt unmittelbar `Q` am
 Dateianfang und danach Cursor Spalte 2; die geladene Datei bleibt sichtbar.
+
+Der anschliessende manuelle Befund „Hilfe oben, Cursor in der Hilfe“ hatte noch
+eine eigene Ursache: Die 80 Zeichen breite Reverse-Statuszeile loeste bereits
+den automatischen Terminalumbruch aus, danach sendete Kilo zusaetzlich CR/LF.
+Der Bildschirm scrollte dadurch. Der Vollaufbau verwendet nun fuer jede
+Dateizeile sowie Status (Zeile 23) und Hilfe (Zeile 24) absolute ANSI-
+Positionen und keine CR/LF-Fortschaltung mehr. Der echte Konsolentest bestaetigt
+Datei in Zeile 1-11, `Q` sichtbar in Zeile 1 und Cursor `CSI 1;2 H`.
