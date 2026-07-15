@@ -40,12 +40,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <unistd.h>
 #include <stdarg.h>
-#include <fcntl.h>
+#ifdef QE_HAVE_SIGWINCH
 #include <signal.h>
+#endif
 
 #include "qe_platform.h"
 
@@ -648,7 +646,9 @@ int editorOpen(char *filename) {
     size_t fnlen;
     char *line;
     size_t linecap;
-    ssize_t linelen;
+    int linelen;
+    int character;
+    char *new_line;
 
     E.dirty = 0;
     free(E.filename);
@@ -665,11 +665,31 @@ int editorOpen(char *filename) {
         return 1;
     }
 
-    line = NULL;
-    linecap = 0;
-    while((linelen = getline(&line,&linecap,fp)) != -1) {
-        if (linelen && (line[linelen-1] == '\n' || line[linelen-1] == '\r'))
-            line[--linelen] = '\0';
+    linecap = 128;
+    line = malloc(linecap);
+    if (line == NULL) exit(1);
+    linelen = 0;
+    while ((character = fgetc(fp)) != EOF) {
+        if (character == '\n' || character == '\r') {
+            if (character == '\r') {
+                character = fgetc(fp);
+                if (character != '\n' && character != EOF) ungetc(character, fp);
+            }
+            line[linelen] = '\0';
+            editorInsertRow(E.numrows,line,linelen);
+            linelen = 0;
+            continue;
+        }
+        if ((size_t)(linelen + 1) >= linecap) {
+            linecap *= 2;
+            new_line = realloc(line, linecap);
+            if (new_line == NULL) exit(1);
+            line = new_line;
+        }
+        line[linelen++] = (char)character;
+    }
+    if (linelen != 0) {
+        line[linelen] = '\0';
         editorInsertRow(E.numrows,line,linelen);
     }
     free(line);
@@ -682,15 +702,16 @@ int editorOpen(char *filename) {
 int editorSave(void) {
     int len;
     char *buf = editorRowsToString(&len);
-    int fd = open(E.filename,O_RDWR|O_CREAT,0644);
-    if (fd == -1) goto writeerr;
+    FILE *fp = fopen(E.filename,"w");
+    if (fp == NULL) goto writeerr;
 
-    /* Use truncate + a single write(2) call in order to make saving
-     * a bit safer, under the limits of what we can do in a small editor. */
-    if (ftruncate(fd,len) == -1) goto writeerr;
-    if (write(fd,buf,len) != len) goto writeerr;
+    if ((int)fwrite(buf,1,(size_t)len,fp) != len) goto writeerr;
+    if (fclose(fp) == EOF) {
+        fp = NULL;
+        goto writeerr;
+    }
 
-    close(fd);
+    fp = NULL;
     free(buf);
     E.dirty = 0;
     editorSetStatusMessage("%d bytes written on disk", len);
@@ -698,7 +719,7 @@ int editorSave(void) {
 
 writeerr:
     free(buf);
-    if (fd != -1) close(fd);
+    if (fp != NULL) fclose(fp);
     editorSetStatusMessage("Can't save! I/O error: %s",strerror(errno));
     return 1;
 }
@@ -751,7 +772,7 @@ void editorRefreshScreen(void) {
         if (filerow >= E.numrows) {
             if (E.numrows == 0 && y == E.screenrows/3) {
                 char welcome[80];
-                int welcomelen = snprintf(welcome,sizeof(welcome),
+                int welcomelen = qe_snprintf(welcome,sizeof(welcome),
                     "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION);
                 int padding = (E.screencols-welcomelen)/2;
                 if (padding) {
@@ -794,7 +815,7 @@ void editorRefreshScreen(void) {
                     int color = editorSyntaxToColor(hl[j]);
                     if (color != current_color) {
                         char buf[16];
-                        int clen = snprintf(buf,sizeof(buf),"\x1b[%dm",color);
+                        int clen = qe_snprintf(buf,sizeof(buf),"\x1b[%dm",color);
                         current_color = color;
                         abAppend(&ab,buf,clen);
                     }
@@ -810,9 +831,9 @@ void editorRefreshScreen(void) {
     /* Create a two rows status. First row: */
     abAppend(&ab,"\x1b[0K",4);
     abAppend(&ab,"\x1b[7m",4);
-    len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+    len = qe_snprintf(status, sizeof(status), "%.20s - %d lines %s",
         E.filename, E.numrows, E.dirty ? "(modified)" : "");
-    rlen = snprintf(rstatus, sizeof(rstatus),
+    rlen = qe_snprintf(rstatus, sizeof(rstatus),
         "%d/%d",E.rowoff+E.cy+1,E.numrows);
     if (len > E.screencols) len = E.screencols;
     abAppend(&ab,status,len);
@@ -845,7 +866,7 @@ void editorRefreshScreen(void) {
             cx++;
         }
     }
-    snprintf(buf,sizeof(buf),"\x1b[%d;%dH",E.cy+1,cx);
+    qe_snprintf(buf,sizeof(buf),"\x1b[%d;%dH",E.cy+1,cx);
     abAppend(&ab,buf,strlen(buf));
     abAppend(&ab,"\x1b[?25h",6); /* Show cursor. */
     qe_term_write(QE_STDOUT,ab.b,ab.len);
@@ -857,7 +878,7 @@ void editorRefreshScreen(void) {
 void editorSetStatusMessage(const char *fmt, ...) {
     va_list ap;
     va_start(ap,fmt);
-    vsnprintf(E.statusmsg,sizeof(E.statusmsg),fmt,ap);
+    qe_vsnprintf(E.statusmsg,sizeof(E.statusmsg),fmt,ap);
     va_end(ap);
     E.statusmsg_time = time(NULL);
 }
@@ -1127,12 +1148,15 @@ void updateWindowSize(void) {
     E.screenrows -= 2; /* Get room for status bar. */
 }
 
-void handleSigWinCh(int unused __attribute__((unused))) {
+#ifdef QE_HAVE_SIGWINCH
+void handleSigWinCh(int unused) {
+    (void)unused;
     updateWindowSize();
     if (E.cy > E.screenrows) E.cy = E.screenrows - 1;
     if (E.cx > E.screencols) E.cx = E.screencols - 1;
     editorRefreshScreen();
 }
+#endif
 
 void initEditor(void) {
     E.cx = 0;
@@ -1145,7 +1169,9 @@ void initEditor(void) {
     E.filename = NULL;
     E.syntax = NULL;
     updateWindowSize();
+#ifdef QE_HAVE_SIGWINCH
     signal(SIGWINCH, handleSigWinCh);
+#endif
 }
 
 int main(int argc, char **argv) {
@@ -1164,5 +1190,4 @@ int main(int argc, char **argv) {
         editorRefreshScreen();
         editorProcessKeypress(QE_STDIN);
     }
-    return 0;
 }

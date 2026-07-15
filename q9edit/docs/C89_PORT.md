@@ -26,19 +26,19 @@ cc -std=c89 -pedantic -Wall -Wextra -Werror \
 
 Dieser Befehl laeuft am 2026-07-15 ohne Warnungen und Fehler durch.
 
-## Noch keine OS-9-Portierung
+## OS-9-Portierungsstand
 
-Die Arbeitskopie enthaelt weiterhin Unix-/POSIX-Aufrufe. Der erfolgreiche
-C89-Hostbuild bedeutet deshalb noch nicht, dass `qe.c` mit xcc baut.
-Insbesondere noch zu kapseln oder zu ersetzen:
+Der komplette Editor baut inzwischen mit xcc als `os9/CMDS/qe`. Ersetzt oder
+gekapselt wurden:
 
-- `termios` und Raw-Modus
-- `ioctl(TIOCGWINSZ)`
-- `getline` und `ssize_t`
-- `ftruncate`
-- `snprintf` und `vsnprintf`, falls xcc/clib sie nicht bereitstellt
-- Unix-Header und POSIX-Feature-Makros
+- `termios` und `ioctl` hinter `qe_platform_*`
+- `getline` durch einen dynamisch wachsenden C89-Zeilenleser
+- `ftruncate`/POSIX-Deskriptorzugriff durch `fopen`/`fwrite`
+- `snprintf`/`vsnprintf` durch den begrenzten, puffersicheren Formatter
+  `qe_format.c` (`%s`, `%.Ns`, `%d` und `%%`)
+- `SIGWINCH` nur noch im POSIX-Hostbuild; OS-9 nutzt termcap `co`/`li`
+- Unix-spezifische Header aus dem gemeinsamen Editor-Kern entfernt
 
-Diese Arbeiten erfolgen hinter einer Plattform-API. Keine OS-9-Sonderfaelle
-sollen ungeordnet im Editor-Kern verteilt werden.
-
+Noch nicht abgeschlossen ist der Lauf- und Speichertest des echten `qe` im
+Gast. Der einfache `fopen("w")`-Speicherweg ist portabel, aber noch nicht als
+absturzsichere/atomare Speicherroutine zu verstehen.

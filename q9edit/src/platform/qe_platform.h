@@ -1,6 +1,8 @@
 #ifndef QE_PLATFORM_H
 #define QE_PLATFORM_H
 
+#include <stdarg.h>
+
 /* Shared key codes. Printable bytes and control characters retain their
  * terminal byte value; special keys start outside the byte range. */
 enum qe_key_action {
@@ -36,6 +38,7 @@ void qe_term_disable_raw(int fd);
 int qe_term_read_key(int fd);
 int qe_term_get_size(int ifd, int ofd, int *rows, int *cols);
 int qe_term_write(int fd, const char *data, int length);
+int qe_snprintf(char *buffer, int size, const char *format, ...);
+int qe_vsnprintf(char *buffer, int size, const char *format, va_list arguments);
 
 #endif
-
