@@ -1,0 +1,39 @@
+#!/usr/bin/expect -f
+# Kurzer Check: liefert "mdir -e" (oder andere Optionen) die Ladeadresse von pkdvr direkt?
+set timeout 90
+log_file -noappend test_mdir_addr_result.txt
+set image local_images/OS9SYS.claudia-optionb-patchtest.hda
+
+spawn sudo -n ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image --net vmnet
+set emu_id $spawn_id
+set timeout 60
+expect -i $emu_id "devices online"
+sleep 8
+
+spawn telnet 192.168.200.2
+set tn_id $spawn_id
+set timeout 20
+expect -i $tn_id "User name?:"
+send -i $tn_id "super\r"
+expect -i $tn_id -re {Password[^\r\n]*:}
+send -i $tn_id "Al35uUbC\r"
+expect -i $tn_id -re {\$}
+send_log "\n<<<LOGIN OK>>>\n"
+
+send -i $tn_id "mdir -e\r"
+expect -i $tn_id -re {\$\s*$}
+send_log "\n<<<MDIR -E>>>\n"
+
+send -i $tn_id "mdir pkdvr\r"
+expect -i $tn_id -re {\$\s*$}
+send_log "\n<<<MDIR PKDVR>>>\n"
+
+send -i $tn_id "procs -m\r"
+expect -i $tn_id -re {\$\s*$}
+send_log "\n<<<PROCS -M>>>\n"
+
+send -i $tn_id "logout\r"
+sleep 1
+send -i $emu_id "\x1d"
+sleep 2
+send_log "\n<<<SCRIPT FERTIG>>>\n"

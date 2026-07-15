@@ -505,6 +505,10 @@ static int      g_telnetdc_base_known  = 0;
 static int      g_watch_manual         = 0;   /* per Q9_WATCH_PC/2 vorgegeben -- Autoerkennung bleibt aus */
 static uint32_t g_watch_candidate_base   = 0;
 static int      g_watch_candidate_streak = 0;
+static uint32_t g_event_return_pc = 0;    /* pkdvr-Diagnose (2026-07-15): naechste Instruktion nach
+   einem geloggten F$Event-Trap -- einzelner globaler Slot genuegt, da der Emulator nur einen
+   CPU-Kern hat und die Rueckkehr-Instruktion garantiert die naechste ausgefuehrte ist, bevor
+   irgendein anderer Trap dazwischenkommen kann. */
 
 /* Testlauf 3 (2026-07-14) zeigte: D0/D1 allein liefern keine brauchbare Filterung -- Grund
    (Ghidra-Nachanalyse): der eigentliche OS-9-Aufrufcode (F$Event = 0x53) steckt NICHT in einem
@@ -520,11 +524,44 @@ static int      g_watch_candidate_streak = 0;
    (Erfolg 0x32a8, Fehler 0x32b2) automatisch abgeleitet -- kein manuelles Ausrechnen/Uebergeben
    mehr noetig, funktioniert bootuebergreifend automatisch. */
 
+/* pkdvr-Diagnose (2026-07-15): Modulname am Zeiger `addr` OS-9-typisch lesen (letztes Zeichen
+   hat Bit 7 gesetzt, kein NUL-Terminator im Speicher) -- fuer F$Link/F$Load-Namen (A0). */
+static void m68krt_read_os9_name(uint32_t addr, char *out, int outsz)
+{
+    int i = 0;
+    while (i < outsz - 1) {
+        uint8_t b = (uint8_t)m68k_read_memory_8(addr + i);
+        char c = (char)(b & 0x7F);
+        if (c == 0) {
+            break;
+        }
+        out[i++] = c;
+        if (b & 0x80) {
+            break;
+        }
+    }
+    out[i] = '\0';
+}
+
 static int m68krt_trap_trace_callback(int trap)
 {
     if (trap == 0 && g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
         uint32_t pc = m68k_get_reg(NULL, M68K_REG_PPC);
         uint32_t callcode = m68k_read_memory_16(pc + 2);
+        /* pkdvr-Diagnose (2026-07-15): F$Link(0x00)/F$Load(0x01) zusaetzlich zu F$Event mit-
+           verfolgen -- Ziel: klaeren, ob "pkdvr" mehrfach separat gelinkt/geladen wird (Verdacht
+           nach der Basis-Analyse: mehrere gleichzeitig aktive Kopien im Speicher, s.
+           docs/re_telnetdc/OPTION_B_STATUS.md). A0 = Modulname bei beiden Aufrufen. */
+        if (callcode == 0x00 || callcode == 0x01) {
+            char name[16];
+            m68krt_read_os9_name(m68k_get_reg(NULL, M68K_REG_A0), name, sizeof(name));
+            if (name[0] == 'p' && name[1] == 'k') {
+                fprintf(g_trap_trace_fp, "linkname pc=%08x callcode=%04x name=%s\n", pc, callcode, name);
+                g_trap_trace_n++;
+                g_event_return_pc = pc + 4;    /* Rueckgabe (D0/D1/A0-A2) im Watch-Callback mitloggen */
+            }
+            return 0;
+        }
         if (callcode == 0x53 || callcode == 0x0a || callcode == 0x8d) {
             fprintf(g_trap_trace_fp,
                     "trap0 pc=%08x callcode=%04x d0=%08x d1=%08x d2=%08x d3=%08x a0=%08x a1=%08x\n",
@@ -533,6 +570,13 @@ static int m68krt_trap_trace_callback(int trap)
                     m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_D3),
                     m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1));
             g_trap_trace_n++;
+            if (callcode == 0x53) {
+                /* pkdvr-Diagnose (2026-07-15): Rueckgabewert (D0=Fehlercode, D1=Ergebnis/
+                   gelesener Event-Wert) mitschneiden -- noetig, um z.B. Ev$Read-Werte oder
+                   ob ein Ev$Wait ueberhaupt zurueckkehrt, im Log zu sehen. trap#0 + Inline-
+                   Wort sind zusammen 4 Byte lang, die Rueckkehradresse ist also PC+4. */
+                g_event_return_pc = pc + 4;
+            }
             /* Testlauf 10 zeigte: ein simples "erste Instanz gewinnt" verriegelt sich auf eine
                fruehe, irrelevante Instanz (z.B. vom Login-Prozess), waehrend die eigentlich
                relevante (dominante, dauerhaft aktive) Instanz nie erfasst wird. Deshalb jetzt
@@ -580,6 +624,23 @@ static void m68krt_watch_pc_callback(unsigned int pc)
                 m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_D3),
                 m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1));
         g_trap_trace_n++;
+    }
+    /* pkdvr-Diagnose (2026-07-15): Rueckkehrpunkt eines zuvor geloggten F$Event-Traps erreicht --
+       D0/D1 jetzt sind der Rueckgabewert (D0=0 Erfolg/sonst Fehlercode, D1=Ergebnis bei
+       Ev$Read/Ev$Wait-Erfolg). Sofort konsumieren (auf 0 setzen), damit kein spaeterer,
+       zufaelliger Treffer derselben Adresse (z.B. Schleifenrunde) faelschlich mitgeloggt wird. */
+    if (g_event_return_pc && pc == g_event_return_pc && g_trap_trace_fp &&
+        g_trap_trace_n < g_trap_trace_cap) {
+        /* A0-A2 mitgeloggt fuer die F$Link/F$Load-Diagnose (2026-07-15): bei Erfolg liefert
+           F$Link/F$Load die Modulbasis typischerweise in A2 -- damit laesst sich jeder Link-
+           Aufruf direkt der resultierenden Ladeadresse zuordnen. */
+        fprintf(g_trap_trace_fp,
+                "eventret pc=%08x d0=%08x d1=%08x a0=%08x a1=%08x a2=%08x\n",
+                pc, m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1),
+                m68k_get_reg(NULL, M68K_REG_A2));
+        g_trap_trace_n++;
+        g_event_return_pc = 0;
     }
 }
 
