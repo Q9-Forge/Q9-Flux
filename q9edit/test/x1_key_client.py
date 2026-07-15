@@ -23,6 +23,7 @@ class TelnetStream:
         self.plain = bytearray()
         self.state = "data"
         self.command = 0
+        self.output_tail = bytearray()
 
     def close(self) -> None:
         self.sock.close()
@@ -46,6 +47,11 @@ class TelnetStream:
                     self.state = "iac"
                 else:
                     self.plain.append(value)
+                    self.output_tail.append(value)
+                    if len(self.output_tail) > 4:
+                        del self.output_tail[0]
+                    if self.output_tail == b"\x1b[6n":
+                        self.send(b"\x1b[24;80R")
             elif self.state == "iac":
                 if value == IAC:
                     self.plain.append(value)
@@ -87,21 +93,35 @@ def main() -> int:
     editor_mode = len(sys.argv) == 2 and sys.argv[1] == "--editor"
     stream = TelnetStream("127.0.0.1", 2000)
     try:
+        logged_in = False
         try:
-            stream.wait_for(b"User name?:", 8)
+            stream.wait_for(b"User name?:", 4)
         except TimeoutError:
-            stream.send(b"\r")
-            stream.wait_for(b"User name?:", 8)
-        stream.send(b"super\r")
-        stream.wait_for(b"Password", 8)
-        stream.send(b"Al35uUbC\r")
-        stream.wait_for(b"$", 15)
+            if b"$" in stream.plain:
+                stream.plain.clear()
+                logged_in = True
+            else:
+                stream.send(b"\r")
+                try:
+                    stream.wait_for(b"User name?:", 4)
+                except TimeoutError:
+                    if b"$" not in stream.plain:
+                        raise
+                    stream.plain.clear()
+                    logged_in = True
+        if not logged_in:
+            stream.send(b"super\r")
+            stream.wait_for(b"Password", 8)
+            stream.send(b"Al35uUbC\r")
+            stream.wait_for(b"$", 15)
         if editor_mode:
             stream.send(b"qe /dd/SYS/startup\r")
             stream.wait_for(b"HELP: Ctrl-S = save | Ctrl-Q = quit", 15)
-            stream.send(b"\x11")
+            stream.send(b"QeZ")
+            stream.wait_for(b"QeZ", 10)
+            stream.send(b"\x11\x11\x11\x11")
             stream.wait_for(b"$", 10)
-            print("qe x1 launch: PASS")
+            print("qe x1 input: PASS")
             return 0
         stream.send(b"qetermprobe -k\r")
         stream.wait_for(b"send up down left right q", 10)

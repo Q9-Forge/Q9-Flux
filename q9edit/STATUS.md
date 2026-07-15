@@ -215,3 +215,23 @@ Ctrl-Q und wartet wieder auf den Shell-Prompt. Ergebnis: `qe x1 launch: PASS`.
 Damit sind Modulstart, Dateilesen, Syntaxfarben, Vollbildausgabe, Raw-Modus und
 Terminalwiederherstellung im echten Gastpfad nachgewiesen. Der Schreibtest ist
 der naechste offene Abnahmeschritt.
+
+## Erster manueller Test und Darstellungsfix
+
+Andreas' erster manueller Test zeigte drei Symptome: alter Bildschirminhalt
+blieb stehen, die nutzbare Zeilenzahl war falsch und normale Zeichen schienen
+nicht anzukommen. Die Reproduktion hat zwei Ursachen getrennt:
+
+- `qe` sendete beim Start nur Cursor-Home, aber kein ANSI Clear-Screen. Es
+  sendet jetzt `ESC [ 2 J` plus Home, bevor der erste Editorrahmen erscheint.
+- termcap beschreibt `q9term` statisch als 80x24. Im Raw-Modus fragt `qe` nun
+  zusaetzlich die echte ANSI-Cursorposition nach einer Bewegung zum rechten
+  unteren Rand ab und verwendet deren aktuelle Zeilen-/Spaltenzahl. Bleibt die
+  Antwort aus, gilt weiterhin der sichere termcap-/80x24-Rueckfallwert.
+- Ein automatischer Roh-TCP-Test tippt `QeZ` in den kompletten Editor und sieht
+  den Text auf dem neu gezeichneten Bildschirm: `qe x1 input: PASS`. Normale
+  Zeicheneingabe in Editor und SCF funktioniert also. Beim klassischen
+  `telnet`-Client werden druckbare Zeichen im lokalen Zeilenmodus gepuffert,
+  waehrend Pfeile und Ctrl-Q sofort ankommen. Fuer den manuellen Test muss der
+  Client in den Zeichenmodus (`Ctrl-]`, dann `mode character`) geschaltet
+  werden, bis der Emulator die Telnet-Aushandlung selbst uebernimmt.

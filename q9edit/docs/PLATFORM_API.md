@@ -42,6 +42,11 @@ Scheduler-Durchlauf sichtbar macht. Das Fenster betraegt derzeit 20 Ticks:
 lang genug fuer Port 2000, aber endlich, damit eine einzelne Escape-Taste nicht
 dauerhaft blockiert.
 
+Fuer die Groesse sind termcap `co`/`li` nur der Rueckfallwert. Wenn SCF bereits
+im Raw-Modus ist, bewegt die OS-9-Implementierung den Cursor per ANSI an den
+rechten unteren Rand und liest die Antwort auf `CSI 6 n`. Dadurch folgt `qe`
+der wirklichen Fenstergroesse statt dem statischen 80x24-Eintrag.
+
 Verifizierte Tests:
 
 - `test/qetermprobe_os9.exp`: Raw-Modus und Wiederherstellung auf der Konsole
