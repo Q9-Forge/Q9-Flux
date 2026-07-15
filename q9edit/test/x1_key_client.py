@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise qetermprobe through the emulator's TCP terminal on port 2000."""
+"""Exercise qetermprobe or qe through TCP terminal port 2000."""
 
 import socket
 import sys
@@ -84,6 +84,7 @@ class TelnetStream:
 
 
 def main() -> int:
+    editor_mode = len(sys.argv) == 2 and sys.argv[1] == "--editor"
     stream = TelnetStream("127.0.0.1", 2000)
     try:
         try:
@@ -95,6 +96,13 @@ def main() -> int:
         stream.wait_for(b"Password", 8)
         stream.send(b"Al35uUbC\r")
         stream.wait_for(b"$", 15)
+        if editor_mode:
+            stream.send(b"qe /dd/SYS/startup\r")
+            stream.wait_for(b"HELP: Ctrl-S = save | Ctrl-Q = quit", 15)
+            stream.send(b"\x11")
+            stream.wait_for(b"$", 10)
+            print("qe x1 launch: PASS")
+            return 0
         stream.send(b"qetermprobe -k\r")
         stream.wait_for(b"send up down left right q", 10)
         for key in (b"\x1b[A", b"\x1b[B", b"\x1b[D", b"\x1b[C", b"q"):
