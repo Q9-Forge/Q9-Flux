@@ -124,11 +124,14 @@ int qe_term_read_key(int fd)
 int qe_term_get_size(int ifd, int ofd, int *rows, int *cols)
 {
     char *term_name;
+    char reply[32];
     int status;
     int value;
+    int length;
+    int row_value;
+    int col_value;
+    int index;
 
-    (void)ifd;
-    (void)ofd;
     term_name = getenv("TERM");
     if (term_name == NULL || *term_name == '\0') term_name = "q9";
 
@@ -141,6 +144,33 @@ int qe_term_get_size(int ifd, int ofd, int *rows, int *cols)
     } else {
         *rows = 24;
         *cols = 80;
+    }
+
+    /* Ask the actual ANSI terminal as well. termcap describes the terminal
+       type, but q9term's co/li values cannot follow a resized host window. */
+    if (raw_enabled &&
+        qe_term_write(ofd, "\033[999C\033[999B\033[6n", 16) == 16) {
+        length = 0;
+        while (length < (int)sizeof(reply) - 1) {
+            if (read_optional_byte(ifd, reply + length) != 1) break;
+            if (reply[length++] == 'R') break;
+        }
+        reply[length] = '\0';
+        if (length >= 6 && reply[0] == ESC && reply[1] == '[') {
+            row_value = 0;
+            col_value = 0;
+            index = 2;
+            while (reply[index] >= '0' && reply[index] <= '9')
+                row_value = row_value * 10 + reply[index++] - '0';
+            if (reply[index++] == ';') {
+                while (reply[index] >= '0' && reply[index] <= '9')
+                    col_value = col_value * 10 + reply[index++] - '0';
+                if (reply[index] == 'R' && row_value > 0 && col_value > 0) {
+                    *rows = row_value;
+                    *cols = col_value;
+                }
+            }
+        }
     }
     return 0;
 }

@@ -1180,10 +1180,12 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
+    /* Raw input is also needed while querying the real ANSI window size. */
+    enableRawMode(QE_STDIN);
     initEditor();
     editorSelectSyntaxHighlight(argv[1]);
     editorOpen(argv[1]);
-    enableRawMode(QE_STDIN);
+    qe_term_write(QE_STDOUT,"\x1b[2J\x1b[H",7);
     editorSetStatusMessage(
         "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
     while(1) {

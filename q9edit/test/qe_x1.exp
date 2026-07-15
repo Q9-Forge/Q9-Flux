@@ -16,7 +16,7 @@ sleep 2
 spawn python3 $q9_root/q9edit/test/x1_key_client.py --editor
 set timeout 30
 expect {
-    "qe x1 launch: PASS" {}
+    "qe x1 input: PASS" {}
     eof {
         send_log "\n<<<QE X1 ENDED EARLY>>>\n"
         set spawn_id $emulator_spawn
