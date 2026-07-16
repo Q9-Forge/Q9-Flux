@@ -30,6 +30,13 @@ local_images/
 paste_burst_result.txt
 paste_paced_result.txt
 
+# Expect-/Diagnose-Testskript-Ausgaben (Ergebnis-Logs, keine Quellen)
+test_*_result.txt
+
+# 5.19a: Board-Config-Selbsttest-Artefakte (kernel.c schreibt+loescht sie im --selftest)
+q9boardcfg_test.q9
+q9boardcfg_bad.q9
+
 # Editor / OS
 .vscode/
 .idea/

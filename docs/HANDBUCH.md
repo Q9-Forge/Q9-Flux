@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBUCH.md                                                                     Ver. 2.00
+# File:   HANDBUCH.md                                                                     Ver. 2.10
 # Owner:  AF
 # Desc.:  Zentrales Handbuch: Werkzeuge, Quellcode-Layout, Build je Target, Software-Architektur,
 #         Referenzquellen samt Lizenzlage. Gedacht als Einstiegspunkt für jeden, der das Projekt
@@ -40,6 +40,9 @@
 # 26-07-14│ 2.00 │ 5.17: Geraete-Registry (Entscheidung E14) — devreg.c/.h neu, Abschnitt 3     │ CF
 #         │      │ (Quellcode-Layout) um devreg.c/.h ergaenzt, neuer Abschnitt 5.12 (Konzept +  │
 #         │      │ alle sechs migrierten Geraete)                                              │
+# 26-07-16│ 2.10 │ 5.19a: Board-Config-Datei (boardcfg.c/.h) — erster Positionsparameter =      │ CF
+#         │      │ Config (.q9), mehrere CF-Images rbf/pcf, RC2014-Zweitinterface; neuer        │
+#         │      │ Abschnitt 5.13                                                              │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9 — Handbuch
@@ -955,6 +958,66 @@ byte-identisch zum Stand vor 5.17. Grundlage für 5.18 (Binärsuche-Dispatch +
 Benchmark, RAM-Vergleich zuerst statt bis zu zehn Bereichsabfragen) und 5.19
 (Board-Konfigurationsdatei instanziert Geräte über die Typ-Registry).
 
+### 5.13 Board-Konfigurationsdatei (Schritt 5.19a, `src/kernel/boardcfg.c/.h`)
+
+Der Emulator nimmt seit 5.19a als **ersten Positionsparameter (ohne führendes
+`-`) eine Board-Config-Datei** an; fehlt die Extension, wird `.q9` angenommen:
+
+```sh
+./build/native/q9.exe mysystem            # lädt mysystem.q9
+./build/native/q9.exe mysystem.q9 --net vmnet
+```
+
+Die bestehenden Optionen bleiben unverändert und **überschreiben** die Config
+(Vorrang: eingebaute Defaults < Config-Datei < CLI). Ohne Config UND ohne
+`--cb030` läuft wie bisher der reine Q9-Kernel. Format (INI-artig, C99-Parser
+ohne Fremdbibliothek, Kommentare `;`/`#`, Pfade **relativ zur Config-Datei**):
+
+```ini
+[board]
+name = CB030-Q9
+rom  = roms/romimage.dev.running.BIN     ; Boot-ROM (statt --cb030)
+net  = nat                               ; nat | vmnet | bridge:<ifname>
+
+[cf0]                                     ; beliebig viele [cfN]-Abschnitte
+type  = rbf                              ; rbf (OS-9-RBF) | pcf (FAT12/16)
+bus   = onboard                          ; onboard ($FFFFE000) | rc2014 ($FFFFC010)
+unit  = master                          ; master | slave
+image = OS9SYS.hda
+
+[cf1]
+type  = pcf
+bus   = rc2014
+unit  = slave
+image = q9-fat16.img
+```
+
+Der entscheidende Emulator-seitige Umbau: die Compact-Flash-Emulation ist jetzt
+**mehrfach instanziierbar**. Der frühere, im `q9_cb030_t`-Board eingebettete
+CF-Zustand steckt in einem eigenständigen Typ `q9_cf_t` (mit zwei
+`q9_cf_unit_t`, Master/Slave). Damit gibt es zwei CF-**Interfaces**: die
+Onboard-CF (`$FFFFE000`, Descriptoren `c0..c3`) und das
+**RC2014-SC145-Zweitinterface** (`$FFFFC010`, Descriptoren `e0`/`f0`). Welche
+Einheit ein ATA-Kommando bedient, entscheidet — wie bei echter ATA-Hardware —
+das DEV-Bit (Bit 4) im LBA3-Register (`$E0` = Master, `$F0` = Slave, exakt die
+Werte der `e0`/`f0`-Descriptoren im MWOS-Q9-Port). Beide Interfaces nutzen
+dieselbe `q9_devtype_cf`-Vtable; der ATA-Registeroffset wird über `dev->base`
+berechnet, sodass ein einziger Adapter beide bedient. Das RC2014-Interface wird
+nur registriert, wenn die Config dort Images anhängt (`q9_m68krt_attach_cf2`) —
+ohne Config bleibt das Board byte-genau wie nach 5.17.
+
+Der `type`-Schlüssel steuert die Sektorgrößen-Heuristik: `rbf` (bzw. `auto`)
+erkennt alte 256-Byte-LSN-Images an LSN0, `pcf` **schaltet diese Heuristik ab**
+(sonst würde der FAT-Bootsektor als OS-9-LSN0 fehlgedeutet) und behandelt das
+Image als reine 512-Byte-Sektoren. Die Buffergröße ist durchgängig 512 Byte
+(`Q9_CB030_CF_SECTOR_SIZE`) — die Größe, die im produktiven Boot funktioniert.
+
+Test-Images erzeugt man mit ToolShed (RBF: `os9 format -bs512 -c32 …`) bzw. dem
+neuen `tools/make_fat_image.py` (FAT12/16-Superfloppy). Beispiel-Config:
+[`q9board.example.q9`](q9board.example.q9). **Offen** (Rest von 5.19, hängt an
+5.18): Speicher-/Geräte-Abschnitte, Instanziierung ALLER Gerätetypen über die
+Typ-Registry, Fensterüberlappungs-/Vektorkollisions-Validierung.
+
 ## 6. Stand der Dinge
 
 Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARBEITSPLAN.md)
@@ -1039,5 +1102,5 @@ vorausgesetzt werden:
 **Letzte Aktualisierung**: 2026-07-04 (Schritt 5.1: Musashi-Grundbaustein + Makefile-Integration + Rauchtest)
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF HANDBUCH.md                                                                          Ver. 2.00
+# EOF HANDBUCH.md                                                                          Ver. 2.10
 #─────────────────────────────────────────────────────────────────────────────────────────────────

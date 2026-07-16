@@ -21,9 +21,12 @@
 // 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (--cf <pfad>), NULL = Default "cb030_cf.img"    │ CF
 // 26-07-13│ 1.20 │ 5.12: net_mode-Parameter (--net nat|vmnet), NULL = "nat"                │ CF
 // 26-07-13│ 1.30 │ 5.13: net_mode "bridge:<ifname>" (BPF an physischer NIC)                │ CF
+// 26-07-16│ 1.40 │ 5.19: Board-Config-Datei (boardcfg.h) — cfg-Parameter, mehrere CF-Images  │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030RUN_H
 #define Q9_CB030RUN_H
+
+#include "boardcfg.h"
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_boot
@@ -38,9 +41,13 @@
 //           eingebautes Mini-NAT, "vmnet" = echtes Netz via vmnet.framework (macOS, sudo/
 //           Entitlement), "bridge:<ifname>" = echtes Netz via BPF an physischer NIC (macOS,
 //           kein root, s. bpf_net.h).
-// Call:     return q9_cb030_boot(argv[2], cf_path_or_NULL, net_mode_or_NULL);
+//           5.19: cfg (optional, NULL = keine Config-Datei) liefert ROM/Netz und — neu — MEHRERE
+//           CF-Images (rbf/pcf) auf Onboard- und RC2014-Interface. Vorrang: eingebaute Defaults
+//           < Config-Datei < explizite CLI-Argumente (rom_path/cf_path/net_mode, sofern gesetzt).
+// Call:     return q9_cb030_boot(argv[2], cf_path_or_NULL, net_mode_or_NULL, cfg_or_NULL);
 //════════════════════════════════════════════════════════════════════════════════════════════════
-int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode);
+int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode,
+                  const q9_board_cfg_t *cfg);
 
 #endif // Q9_CB030RUN_H
 

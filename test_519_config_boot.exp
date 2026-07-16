@@ -1,0 +1,43 @@
+#!/usr/bin/expect -f
+# 5.19: Boot+Login-Test ueber die Board-CONFIG-DATEI (statt --cb030/--cf). Prueft, dass der
+# config-gesteuerte Startweg ein echtes Systemimage bis zum Login bringt (Onboard-CF = bootendes
+# RBF-Image aus der Config) und ein zweites CF-Interface (RC2014) danebenlaeuft.
+# Aufruf: expect test_519_config_boot.exp <config-datei>
+
+set cfg [lindex $argv 0]
+
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend test_519_config_boot_result.txt
+
+spawn ./build/native/q9.exe $cfg
+
+set timeout 60
+expect "devices online"
+set timeout 20
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+
+sleep 1
+send -s "dir /dd\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "logout\r"
+expect {
+    -re {Logout after} { send_log "\n<<<LOGOUT OK>>>\n" }
+    timeout { send_log "\n<<<LOGOUT TIMEOUT>>>\n" }
+}
+
+send_log "\n<<<TEST ENDE>>>\n"
+send "\x1d"
+expect eof
