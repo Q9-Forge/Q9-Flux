@@ -1,4 +1,191 @@
-# Option B (telnetdc binär patchen) — Bug 2 jetzt auf spf_rx lokalisiert, NICHT pkdvr (Stand 2026-07-15 abends)
+# Option B (telnetdc binär patchen) — Bug 2 auf pkdvr-GetStat/SS_Ready eingegrenzt (Stand 2026-07-16)
+
+## Nachtrag 2026-07-16 (spaet): pkdvr statisch kartiert — Reader-Bug ist FALSCHE SS_Ready-Antwort im GetStat-Handler, nicht ein haengendes Ev$Wait
+
+**Kontext:** interaktive Session mit Andreas, reine STATISCHE Analyse (kein Emulator-Lauf).
+Ausgangspunkt: der vorherige Abschnitt lokalisierte den Reader/Writer-Deadlock im
+pk-Pseudoterminal (`dir` fuellt den Puffer, `telnetdc` leert ihn nie, weil `pkdvr`s
+`SS_Ready` „not ready" meldet). Diese Session grenzt das INNERHALB `pkdvr` weiter ein.
+
+### Werkzeug neu aufgebaut (die Artefakte der frueheren Session lagen im inzwischen geleerten Scratchpad)
+- `pkdvr` als eigenes Modul: `MWOS/OS9/68020/CMDS/BOOTOBJS/SPF/pkdvr` (4642 B, Typ `0e`
+  = Treiber, lang `01`, Name `pkdvr`, `M$Exec`=`0x3c`). Das ist die geladene Variante
+  (Q9-Port nutzt den 68020-SPF-Satz).
+- Lokaler Disassembler: Python + `capstone 5.0.7` (`CS_ARCH_M68K`, `CS_MODE_BIG_ENDIAN`).
+  OS-9-Syscalls = `trap #0` (`0x4E40`) + inline `dc.w <callcode>`; F$Event = `0x53`,
+  Unterfunktion in `d1` (4=Ev$Wait, 2=Creat, 3=Delet, 6=Read, 0xa=Set, 0xb=SetR, 1=UnLnk;
+  High-Bit `0x8000` = Flag). **WICHTIG:** `pkdvr` ist ein SPF-Treiber — die
+  SCF-Einsprungtabelle (Init/Read/Write/GetStat/PutStat/Term als `dc.w` ab `M$Exec`)
+  passt NICHT; der GetStat-Dispatch liegt anders (noch zu dekodieren, s.u.).
+
+### Vollstaendige Event-Maschinerie von pkdvr kartiert
+- **Ev$-Primitiv-Wrapper** (duenne Bibliothek, je 1 Unterfunktion), Cluster `0x10a4`–`0x11a8`:
+  `_ev_wait`@`0x10a4` (Ev$Wait/4, blockiert), `_ev_creat`@`0x10d0`, `_ev_delet`@`0x1100`,
+  `_ev_read`@`0x1120`, `_ev_set`@`0x1140` (Ev$Set/0xa, weckt/zaehlt hoch),
+  `_ev_setr`@`0x1170`, `_ev_unlnk`@`0x11a0`.
+- **Mittel-Wrapper:** WAIT-wrap@`0xd10`, SET-wrap@`0xd3e`, READ-wrap@`0xd80`, SETR-wrap@`0xcd0`.
+- **Aufrufer (= die eigentlichen Treiberpfade), Weck-ASYMMETRIE bestaetigt:**
+  - WAIT (blockiert): 4× @ `0x3ee`, `0x4c6`, `0x60e`, `0x784`
+  - SET (regulaeres Wecken): **nur 1×** @ `0x6b2`
+  - SETR (Wecken+Reset): 6× @ `0x348`, `0x45e`, `0x56c`, `0x69a`, `0x856`, `0xbf6`
+  - READ (nicht-blockierend pruefen): 5× @ `0x706`, `0x9c6`, `0xb28`, `0xb86`, `0xc40`
+
+### Entscheidender Abgleich mit dem Laufzeit-Trace — Diagnose praezisiert
+Der Trace zeigt `telnetdc` **`SS_Ready` POLLEN (`I$GetStt`), NICHT in `Ev$Wait` blockieren**.
+Daraus folgt: Der Reader benutzt pkdvrs blockierende Wait-Maschinerie gar nicht — die 4
+WAIT-Stellen sind die **Puffer-voll-Blockade der WRITE-Seite** (dort schlaeft `dir`). Der
+Bug zerfaellt damit in zwei getrennte, jetzt eng umrissene Fragen:
+1. **Reader-Bug (Hauptursache):** Warum meldet der GetStat/`SS_Ready`-Handler „not ready",
+   obwohl ~2,4 KB gepuffert sind? → Bedingung/Zaehler im GetStat-Dispatch, der beim
+   Slave-Write nicht aktualisiert wird. **NICHT** ein timeoutloses Ev$Wait wie Bug 1.
+2. **Writer-Wecken:** Wird die blockierte Write-Seite beim Leeren geweckt? Einziger
+   regulaerer SET-Weckpunkt ist `0x6b2` — Kandidat fuer eine fehlende/falsche Weckung.
+
+### Naechster konkreter Schritt (dedizierte Session)
+SPF-GetStat-Dispatch von `pkdvr` korrekt dekodieren (nicht ueber die SCF-Tabelle!), den
+`SS_Ready`-Zweig finden, die gepruefte Ready-Bedingung lesen → dort steht die Zaehler-/
+Flag-Variable, die der Slave-Write setzen muesste. Fix dann als Binaerpatch analog
+telnetdc/spf_rx (Rohbyte + `fixmod -u`/eigene OS-9-CRC), erst auf Klon, dann mit Backup.
+Billiger Bestaetigungstest vorab moeglich: pk-Paar rein LOKAL im Gast (Writer→`/pks`,
+Reader←`/pkm`), ohne Netzwerk — muss bei ~2,4 KB genauso haengen (beweist Netz-Unschuld
+endgueltig + schnelle Iterationsschleife ohne vmnet/sudo/telnet).
+
+---
+
+## Nachtrag 2026-07-16: Emulator-Ebene per Messung AUSGESCHLOSSEN, spf_rx-Poll-Patch als FALSCHER HEBEL bewiesen — Bug sitzt im Empfangs-Übergabepfad sp360→spf
+
+**Vorgehen dieser Session: erst messen, welche Ebene schuld ist, dann gezielt patchen — statt weiter zu raten.**
+
+### Neue Diagnose-Instrumentierung (im Working Tree, `make test` gruen)
+- `src/kernel/quicc.c`/`.h`: Zaehler `diag_rxf` (RX-Frame in Ring gelegt + RXF gesetzt), `diag_bsy`
+  (RX-Frame mangels leerem BD VERWORFEN — vorher voellig unsichtbar, kein Log!), `diag_txb`
+  (TX-Frame abgearbeitet). Plus `q9_quicc_rx_filled()` = Anzahl GEFUELLTER, vom Gast noch nicht
+  abgeholter RX-BDs.
+- `src/kernel/m68krt.c`/`.h`: `g_quicc_ack_count` / `q9_m68krt_quicc_acks()` = tatsaechlich an die
+  CPU zugestellte QUICC-Level-5-Interrupts.
+- `src/kernel/cb030run.c`: unter `Q9_CB030_DEBUG=1` alle 3 s eine `[quiccdiag rxf=.. bsy=.. txb=..
+  qack=.. rxfull=.. pending=.. scce=.. sccm=..]`-Zeile.
+
+### Messbefund (echter telnet-Client, `dir -aer /dd`, vmnet, Klon-Image)
+Symptom exakt reproduziert: Ausgabe stoppt nach **2478–2550 Byte** (= die „~2,4 KB" aus 5.15),
+`txb` friert bei **17–20** ein (= die „~15 Segmente"). Waehrend des Haengers:
+- `rxf` steigt weiter (ACKs treffen ein), `qack` steigt mit (Interrupt WIRD zugestellt, ISR laeuft),
+- `rxfull=0` durchgehend (Gast holt JEDEN Frame aus dem BD-Ring ab), `bsy=0` (nichts verworfen).
+
+**Folge: Die Emulator-Hardware-Ebene (RX, Interrupt-Zustellung, BD-Ring) arbeitet korrekt.** Damit
+sind ausgeschlossen: (a) Interrupt zu frueh zurueckgenommen / RX-Ring laeuft voll (User-Hypothese,
+`rxfull=0`/`bsy=0` widerlegen es), (b) verlorene Interrupts durch den IRQ-Merge (`qack` laeuft
+lueckenlos mit `rxf`). Der Reassert-Fix (`70c055b`) war also nie die Loesung, aber der IRQ-Merge
+war auch nie die Ursache.
+
+### spf_rx-Poll-Patch gebaut, deployed, per Trace als AKTIV bewiesen — behebt den Hang trotzdem NICHT
+Analog zum telnetdc-Fix (Bug 1): den timeoutlosen `Ev$Wait` der RX-Hauptschleife durch einen
+Kurzschlaf-Poll ersetzt. **Statische Analyse (capstone, `scratchpad/ghidra_spf_rx/`):** Der einzige
+`Ev$Wait` (Offset `0x624`) sitzt in einem Wrapper `0x610`, aufgerufen aus genau EINER Stelle
+`0x27A` in der RX-Hauptschleife (Bedingungspruefung `$58(a0)`/`$7e(a0)&1` bei `0x246`–`0x260`, sonst
+warten). **Patch (12 Byte @ spf_rx-Offset `0x27A`):** `adda.w #$c,a7` (Stack aufraeumen) ·
+`moveq #2,d0` · `trap #0`/`dc.w $000a` (F$Sleep 2 Ticks) · `bra.b $23e` (zurueck zum
+Bedingungs-Check). CRC selbst repariert (Python OS-9-CRC verifiziert: alt `583EA3`, neu `8E2C39`,
+`os9 ident` → „Good CRC").
+
+**Deployment:** `netmods` liegt im Image-ROOT (nicht /dd/CMDS). spf_rx im netmods-Merge bei Offset
+`0x702C`. Klon `local_images/OS9SYS.spf_rx-polltest.hda` (APFS-clonefile von `…optionb-patchtest`),
+`os9 copy` raus → patchen → `os9 del`+`os9 copy` rein → **`os9 attr -e -pe` (Executable-Bits gehen
+beim copy verloren!)**.
+
+**Trace-Beweis (`Q9_TRAP_TRACE`, Callback loggt auch F$Sleep 0x0a):** Der spf_rx-`Ev$Wait`
+(d1=4, Signatur max=`0x7fffffff`) taucht **0-mal** auf; stattdessen feuert **16285×** `F$Sleep d0=2`
+bei PC `00eeaf3c` = spf_rx-Basis `00eeacbc` + Offset `0x280` = exakt die Patch-Stelle. **Patch also
+zweifelsfrei aktiv — `txb` bleibt trotzdem bei 17.** (Der `procs -e`-Schnelltest war NICHT eindeutig:
+auch das gepatchte, pollende telnetdc zeigt nur 0.01 CPU — F$Sleep-Poll ist fast CPU-frei.)
+
+### Schlussfolgerung: Bug 2 sitzt im Empfangs-ÜBERGABEpfad sp360→spf, nicht im Warten von spf_rx
+spf_rx pollt jetzt, findet aber keine Daten → die empfangenen Pakete werden ihm gar nicht verfuegbar
+gemacht (weder als Wecksignal noch als pollbare `$58`/`$7e`-Struktur). Der Treiber `sp360` holt die
+Frames aus der Hardware ab (`rxfull=0`), reicht sie aber nicht in den Stack weiter. Das Event-System
+selbst funktioniert (im Trace 1083× `Ev$Signl` d1=`8008`, ~4800× `Ev$Pulse` d1=`800a`/`800b`) — es
+ist also kein generell kaputtes F$Event, sondern speziell die sp360-Empfangs-Uebergabe, die beim
+QUICC-Frame-Empfang ausbleibt. `sp360` selbst macht KEINE F$Event-Aufrufe (Trap-Scan: 0) — die
+Signalisierung laeuft ueber `spf` (Wrapper `Ev$Signl 0x44D0`, aufgerufen von `0x3400`/`0x3806`/
+`0x3890`; `Ev$Pulse 0x44A0` von `0x34DA`/`0x3700`/`0x3968`).
+
+### Schritt B (2026-07-16): sp360-Interrupt-Handler VOLLSTAENDIG rekonstruiert — RX-Zustellung funktioniert, Verdacht verschiebt sich auf die TX/Sende-Seite (sptcp)
+Ghidra-Headless-Disassemblierung von `sp360` (Java via `JAVA_HOME=/opt/homebrew/opt/openjdk@21`,
+Skripte MUESSEN in `~/ghidra_scripts` liegen — headless findet sie sonst nicht; Listing
+`scratchpad/ghidra_spf_rx/sp360_listing.txt`). Ergebnis:
+- **ISR-Kette:** `F$IRQ`-Install @`0x1F0` registriert Handler-Wrapper `0x19CC` → Kern `FUN_0000104c`.
+  Der liest CIPR (`0x1544`) auf SCC1-Bit `0x40000000`, quittiert CISR (`0x154c`), liest SCCE
+  (`0x1610`) & SCCM (`0x1614`); bei RX-Bits (`0xd`=RXF|BSY|RXB) → `FUN_000010e4` (RX), bei TX-Bits
+  (`0x12`=TXB|TXE) → `FUN_00001300` (TX); schreibt SCCE per W1C zurueck.
+- **RX-Handler `FUN_000010e4`:** durchlaeuft ab `0x12e4` die RX-BD-Kette (eigener Ringzeiger
+  `(0x90,A1)`), Abbruch bei BD mit R_E=1 (Bit 15 leer). Fuer jeden vollen BD: mbuf bauen
+  (Laenge `(0x2,A2)`, Puffer `(0x4,A2)`), Broadcast/Multicast-Flags setzen, dann **synchroner
+  Upcall in den SPF-Stack per indirektem `jsr ([0x10,A4],0x4)`** (`0x124e`/`0x125a`) — KEIN
+  Ev$Signl/F$Send an spf_rx! Danach BD wieder R_E|R_I setzen (`0x12c2`/`0x12c6`), Ringzeiger
+  weiter. Deckt `rxfull=0`/`bsy=0` exakt: der ISR leert den Ring komplett und reicht jeden Frame
+  synchron nach oben.
+- **Konsequenz:** Eingehende ACKs erreichen den TCP-Stack im Interrupt-Kontext. `spf_rx` ist am
+  RX-Interrupt-Zustellpfad GAR NICHT beteiligt (eigener Prozess fuer anderes) — erklaert
+  nachtraeglich, warum der spf_rx-Poll-Patch nichts aendern konnte.
+
+**Damit ist auch die RX-Seite als Ursache ausgeschlossen.** Der Hang ist ein TX/Sende-Stillstand:
+der Gast hat Daten + offenes Fenster (5.15-tcpdump), sendet aber nach ~17–20 Frames nichts mehr.
+Verbleibender Hauptverdacht: **`sptcp`-Sendepfad oder Sende-Puffer-/mbuf-Recycling** (TX-Completion
+`FUN_00001300` @`0x1300`). Auffaellig: der Stopp bei einer festen, kleinen Frame-Zahl passt zu einer
+erschoepften Sende-BD-/Puffer-Ressource, die nicht recycelt wird — ein moeglicher Emulator-TXB/
+TX-BD-Timing-Effekt (waere in UNSEREM Code fixbar und wuerde Andreas' „lief auf echter Hardware"
+erklaeren).
+
+### Schritt B, Fortsetzung (2026-07-16): Trace-Reanalyse entscheidet — der eth0/TX-Stopp ist nur SYMPTOM, die Ursache ist der pk-Pseudoterminal-Puffer (SS_Ready meldet dauerhaft „not ready")
+Statt eines neuen Laufs den vorhandenen `trace_clean.log` (61.058 Zeilen, gepatchtes Image, Hang
+ausgeloest) neu ausgewertet. Steady-State waehrend des Hangs (letzte 6000 Zeilen), heisse PCs:
+
+| PC | Aufrufe | Syscall | Prozess |
+|---|---|---|---|
+| `0xead892` | 1960 | I$GetStt **SS_Ready** (0x8d) | telnetdc (Reader) — pollt „ist pk lesbar?" |
+| `0xeeaf3c` | 981 | F$Sleep(2) | spf_rx (mein Poll-Patch) |
+| `0xee6240` | 981 | F$Event Ev$Read (d1=6) → 0 | spf |
+| `0xeab53e` | 981 | F$Sleep(2) | telnetdc-Schlafphase |
+| `0xeea908` | 58 | F$Event Ev$Signl (d1=8008) auf Event `0x00040003` | RX-Signal (feuert!) |
+
+**Entscheidende Beobachtungen:**
+1. **KEIN haengendes `Ev$Wait`** mehr (nur 4 im ganzen Trace, keins am Ende — 24.500 Zeilen danach).
+   Der Hang ist also KEIN „ewig unsignalisiertes Event" wie Bug 1, sondern eine **Poll-Livelock**.
+2. **NULL `I$Read` UND NULL `I$Write`** im Steady-State. `dir` (Writer) schreibt nicht mehr (blockiert
+   im vollen pk-Puffer, taucht gar nicht im Trace auf = echt schlafend); `telnetdc` (Reader) liest
+   nicht (pollt SS_Ready 1960×, bekommt immer „not ready", schlaeft, wiederholt).
+3. Deckt sich exakt mit dem frueheren Bug-2-Befund („SS_Ready liefert dauerhaft E$NotRdy,
+   60.025 Polls / 120.055 NotRdy / nur 18 Erfolge am Anfang").
+
+**Schlussfolgerung — Diagnose gedreht:** Der eth0-TX-Stopp (`txb` klemmt bei ~17–20) ist NUR
+DOWNSTREAM-SYMPTOM: `telnetd` hat nichts zu senden, weil es aus dem pk-Puffer nichts lesen kann. Der
+TCP/eth0-Pfad, `sptcp`, `spf_rx`, `sp360` sind ALLE in Ordnung (per Messung + RE bewiesen). Die
+eigentliche Ursache sitzt im **pk-Pseudoterminal-Puffer-Handoff**: `dir` schreibt ueber `scf`/`pks`
+in den Puffer, `telnetdc` soll ihn ueber `pkman`/`pkm` leeren — aber `pkdvr`s `SS_Ready` auf der
+Master-Seite meldet die vom Slave geschriebenen ~2,4 KB NICHT als lesbar. → telnetdc liest nie →
+Puffer leert nie → `dir` bleibt blockiert. Klassischer Reader/Writer-Deadlock im pk-Treiber.
+
+**Ist das Emulator- oder Gast-seitig?** `pkdvr` ist ein REINES Software-Pty-Paar (keine emulierte
+Hardware, nur Byte-Kopieren im Gast-RAM; `SS_Ready`/`F$Event` sind Gast-Kernel-Syscalls). → **Gast-
+seitiger Treiber-Bug, NICHT im Emulator.** Erklaert Andreas' „lief auf echter Hardware": echte
+Microware-Systeme lieferten pk/SCF-Treiber MIT funktionierender Ready-/Wake-Logik (bzw. mit dem im
+gesamten MWOS-SDK fehlenden `SS_SEvent`-Support, s. Bug-1-Root-Cause) — dieser SDK-Build hat die
+Luecke. Betrifft weiterhin NUR `telnetd`/eth0, nicht die `/x1-8`-Terminals (eigener Emulator-TCP-
+Server, kein pk/sptcp).
+
+**Damit sind spf_rx UND sptcp als Ursache endgueltig ausgeschlossen — zurueck zu `pkdvr`, aber jetzt
+praezise:** Ziel ist `pkdvr`s `SS_Ready`-Behandlung (I$GetStt) auf der pkm-Master-Seite: warum meldet
+sie „not ready", obwohl die pks-Slave-Seite Daten gepuffert hat? (Die frueher analysierten pkdvr-
+Funktionen `0x38a`/`0x5b6` mit den Ev$Wait-Paaren sind vermutlich genau die Read/Write-Sync-Pfade.)
+Der Fix waere ein `pkdvr`-Binaerpatch analog telnetdc/spf_rx — diesmal so, dass `SS_Ready`/der Reader
+die vom Writer eingestellten Daten wirklich sieht bzw. der Writer beim Leeren geweckt wird.
+
+Artefakte Schritt B: `scratchpad/ghidra_spf_rx/` (sp360.bin, spf.bin, spf_rx.bin, sp360_listing.txt,
+`diso9.py`=capstone-Disassembler mit OS-9-Inline-Callcode-Handling, `xref.py`=bsr/jsr-Xref,
+`netmods_patched.bin`). Trace-Setup: `scratchpad/trace_clean.exp` (startet Emulator selbst, loest
+Hang aus, beendet sauber per Ctrl-] → Trace-Flush, kein manueller root-Kill noetig).
+
+---
 
 ## Nachtrag 2026-07-15 abends: Bug 2 endgueltig auf `spf_rx` (SPF-Netzwerkstack) lokalisiert — fruehere "pkdvr dreifach geladen"-Theorie war ein Messfehler und ist WIDERLEGT
 
@@ -644,3 +831,16 @@ keine Netzwerk-Ladebefehle enthält).
   SS_SEvent, `trap #0` bei `0x2a12`), `FUN_00002b08` (I$SetStt-Wrapper für
   SS_SPF, `trap #0` bei `0x2b14`), `FUN_000030b6` (Idle-Alarm-Link-Aufruf),
   `FUN_00003072` (Event-Cleanup, `D1=0` = vermutlich `Ev$Delet`).
+
+## Nachtrag 2026-07-16: Aufweck-Test (Bug 2 ist ein Lost-Wakeup, kein toter Stack)
+
+Kontrollexperiment (Claudia, interaktiv mit Andreas): Haenger ueber die
+eth0-Route reproduziert (`dir -e /dd/CMDS/BOOTOBJS`, Stillstand nach 1410
+Bytes), dann fuenfmal je EIN CR ueber die stehende Telnet-Verbindung
+geschickt. **Ergebnis: Jedes eingehende Paket loest exakt ein weiteres
+Kontingent von ~1,4 KB aus, danach steht die Ausgabe wieder** (gemessen:
++1433/+1470/+1448/+1474/+1435 Bytes, deterministisch reproduzierbar):
+
+- Der Stack ist NICHT tot — klassisches **Lost-Wakeup-Muster**: Die
+  Sende-Pipeline kann pro Aufweckimpuls genau einen internen Puffer
+  (~1,
