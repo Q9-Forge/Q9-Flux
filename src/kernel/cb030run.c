@@ -127,6 +127,16 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
                 fprintf(stderr, "\n[dbg pc=%08x sr=%04x acks=%u imr=%02x rxfifo=%u rxovf=%u timer=%d]\n",
                         pc, sr, acks, board.uart_imr, board.uart_rx_count,
                         board.uart_rx_overflow, board.timer_active);
+                /* 5.15-TCP-Haenger-Diagnose: RXF steigt (ACKs treffen ein), aber qack friert ein
+                   -> Level-5-Interrupt wird nicht zugestellt (Emulator). qack steigt weiter, Gast
+                   haengt trotzdem -> Bug sitzt im geschlossenen Gast-Treiber. bsy>0 -> RX-Ring lief
+                   voll und Frames wurden STILL (ohne sonstiges Log) verworfen. */
+                fprintf(stderr, "[quiccdiag rxf=%u bsy=%u txb=%u qack=%u rxfull=%d pending=%d scce=%04x sccm=%04x]\n",
+                        quicc.diag_rxf, quicc.diag_bsy, quicc.diag_txb,
+                        q9_m68krt_quicc_acks(), q9_quicc_rx_filled(&quicc),
+                        q9_quicc_irq_pending(&quicc),
+                        q9_quicc_read16(&quicc, 0xFFFF2000u + 0x1610u),
+                        q9_quicc_read16(&quicc, 0xFFFF2000u + 0x1614u));
                 last_dbg_ms = now_ms;
             }
         }

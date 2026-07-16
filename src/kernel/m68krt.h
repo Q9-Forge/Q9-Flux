@@ -136,6 +136,16 @@ void q9_m68krt_attach_quicc(struct q9_quicc *quicc);
 void q9_m68krt_debug_state(uint32_t *pc, uint32_t *sr, uint32_t *acks);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_quicc_acks
+// Desc.:    5.15-Diagnose (TCP-Haenger): Anzahl der bisher tatsaechlich an die CPU zugestellten
+//           QUICC-Interrupts (Level 5). Waechst dieser Zaehler waehrend eines Haengers NICHT
+//           weiter, obwohl die QUICC-RXF-Zaehler (quicc.c diag_rxf) steigen, wird der Hardware-
+//           Interrupt nicht zugestellt -> Emulator-Bug. Waechst er weiter -> ISR laeuft, der
+//           Stillstand sitzt im (geschlossenen) Gast-Treiber.
+//════════════════════════════════════════════════════════════════════════════════════════════════
+uint32_t q9_m68krt_quicc_acks(void);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_is_stopped
 // Desc.:    5.9: Duenner Wrapper um Musashis m68k_is_stopped() (Vendor-Patch, s.
 //           third_party/musashi/Q9_VENDOR.md) — 1 wenn die CPU per STOP-Instruktion angehalten

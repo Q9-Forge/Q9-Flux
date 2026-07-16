@@ -416,6 +416,7 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 //           Autovektor Level 3).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint32_t g_ack_count;                          /* Diagnose: wie oft wurde IACK durchlaufen */
+static uint32_t g_quicc_ack_count;                    /* 5.15-Diagnose: davon QUICC (Level 5)     */
 
 /* 5.15-Befund: echte Hardware haelt pro Geraet eine EIGENE IRQ-Leitung; quittiert die CPU
    das Level eines Geraets, senken NUR dessen eigene Leitung, alle anderen gleichzeitig
@@ -470,6 +471,9 @@ static int m68krt_board_int_ack(int int_level)
     q9_device_t *dev;
 
     g_ack_count++;
+    if (int_level == Q9_QUICC_IRQ_LEVEL) {
+        g_quicc_ack_count++;                           /* 5.15-Diagnose: QUICC-ISR wurde zugestellt */
+    }
     m68k_set_irq(0);
     if ((dev = devreg_pending_level_held(int_level)) != NULL) {
         int v = q9_device_irq_vector(dev);
@@ -855,6 +859,11 @@ void q9_m68krt_debug_state(uint32_t *pc, uint32_t *sr, uint32_t *acks)
     *pc   = m68k_get_reg(NULL, M68K_REG_PC);
     *sr   = m68k_get_reg(NULL, M68K_REG_SR);
     *acks = g_ack_count;
+}
+
+uint32_t q9_m68krt_quicc_acks(void)
+{
+    return g_quicc_ack_count;
 }
 
 int q9_m68krt_is_stopped(void)

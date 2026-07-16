@@ -435,6 +435,7 @@ static void q_tx_run(q9_quicc_t *q)
 
         q_wr16(q, tbptr, (uint16_t)(status & ~QC_BD_TR_RE));
         q_event(q, QC_EV_TXB);
+        q->diag_txb++;
 
         q_wr16(q, QO_PRAM_TBPTR,
                (status & QC_BD_WRAP) ? q_rd16(q, QO_PRAM_TBASE)
@@ -598,6 +599,34 @@ int q9_quicc_irq_pending(const q9_quicc_t *q)
     return (q_rd32(q, QO_INTR_CIPR) & q_rd32(q, QO_INTR_CIMR) & QC_INTR_SCC1) != 0;
 }
 
+int q9_quicc_rx_filled(const q9_quicc_t *q)
+{
+    /* 5.15-Diagnose zur User-Hypothese "Interrupt erst zuruecknehmen, wenn der Buffer wirklich
+       leer ist": zaehlt die RX-BDs im Ring, die GEFUELLT sind (R_E/empty geloescht = vom Emulator
+       beschrieben, vom Gast-Treiber noch nicht abgeholt/zurueckgegeben). Bleibt dieser Wert
+       waehrend des Haengers > 0 stehen, holt der Gast eingegangene Frames NICHT ab -> Nachtriggern
+       des Interrupts koennte helfen. Ist er 0, ist der Ring leer und der Stillstand sitzt eine
+       Ebene hoeher (spf_rx reicht die schon abgeholten Frames nicht zum TCP-Stack). */
+    uint16_t off = q_rd16(q, QO_PRAM_RBASE);
+    int filled = 0, guard;
+
+    for (guard = 0; guard < 64; guard++) {
+        uint16_t status;
+        if (off + QC_BD_SIZE > Q9_QUICC_MEM_LEN) {
+            break;
+        }
+        status = q_rd16(q, off);
+        if ((status & QC_BD_TR_RE) == 0) {
+            filled++;                                 /* R_E=0 -> gefuellter, ungelesener Frame     */
+        }
+        if ((status & QC_BD_WRAP) != 0) {
+            break;                                    /* Ringende erreicht                          */
+        }
+        off = (uint16_t)(off + QC_BD_SIZE);
+    }
+    return filled;
+}
+
 void q9_quicc_poll(q9_quicc_t *q)
 {
     /* Sicherheitsnetz: haengengebliebene TX-BDs abraeumen (der Treiber kickt zwar bei jedem
@@ -635,6 +664,7 @@ void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
     status = q_rd16(q, rbptr);
     if ((status & QC_BD_TR_RE) == 0) {                /* kein leerer BD: Frame verwerfen wie die  */
         q_event(q, QC_EV_BSY);                        /* echte Hardware (busy condition)          */
+        q->diag_bsy++;                                /* 5.15-Diagnose: sonst voellig unsichtbar!  */
         return;
     }
 
@@ -642,6 +672,7 @@ void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
     buf   = q_rd32(q, rbptr + 4u);
     if (len + 4u > mrblr || buf >= q->ram_len || buf + len > q->ram_len) {
         q_event(q, QC_EV_BSY);
+        q->diag_bsy++;
         return;
     }
 
@@ -650,6 +681,7 @@ void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
     q_wr16(q, rbptr, (uint16_t)((status & (QC_BD_WRAP | QC_BD_IRQ)) |
                                 QC_BD_RX_FIRST | QC_BD_LAST));
     q_event(q, QC_EV_RXF);
+    q->diag_rxf++;
 
     q_wr16(q, QO_PRAM_RBPTR,
            (status & QC_BD_WRAP) ? q_rd16(q, QO_PRAM_RBASE)

@@ -78,6 +78,15 @@ typedef struct q9_quicc {
     int       net_backend;                            /* 5.13: Q9_NET_NAT/VMNET/BRIDGE            */
     uint8_t   guest_mac[6];                           /* 5.12: aus dem ersten TX-Frame gelernt    */
     int       guest_mac_ok;
+    /* 5.15-Diagnose (TCP-Haenger): trennt Emulator-Interrupt-Verlust vom Gast-Treiber-Bug.
+       rxf = wie oft ein RX-Frame in den Ring gelegt + RXF-Ereignis gesetzt wurde;
+       bsy = wie oft ein RX-Frame mangels leerem BD VERWORFEN wurde (BSY, sonst unsichtbar!);
+       txb = wie oft ein TX-Frame abgearbeitet + TXB gesetzt wurde. Vergleicht man rxf mit dem
+       QUICC-IACK-Zaehler (m68krt.c) waehrend eines Haengers, zeigt sich, ob der Level-5-Interrupt
+       ueberhaupt noch zugestellt wird (ISR laeuft -> Gast-Bug) oder ausbleibt (Emulator-Bug). */
+    uint32_t  diag_rxf;
+    uint32_t  diag_bsy;
+    uint32_t  diag_txb;
 } q9_quicc_t;
 
 //─── API ──────────────────────────────────────────────────────────────────────────────────────────
@@ -105,6 +114,9 @@ int      q9_quicc_irq_pending(const q9_quicc_t *q);
 
 /* Einmal pro Runner-Runde: Backend bedienen (eingehende Frames in den RX-Ring legen). */
 void     q9_quicc_poll(q9_quicc_t *q);
+
+/* 5.15-Diagnose: Anzahl GEFUELLTER (vom Gast noch nicht abgeholter) RX-BDs im Ring. */
+int      q9_quicc_rx_filled(const q9_quicc_t *q);
 
 /* Frame von aussen in den RX-Ring einspeisen (Backend/Test). Verworfen, wenn Empfaenger
    nicht aktiviert (GSMR ENR=0) oder kein leerer RX-BD bereitsteht (dann SCCE.BSY). */
