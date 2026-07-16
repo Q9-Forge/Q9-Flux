@@ -198,3 +198,43 @@ generische nettty-Abfrage im Hauptschleifen-Poll) — Details in ARBEITSPLAN.md
 5.17-Notiz. Doku: docs/HANDBUCH.md Abschnitt 5.12 (neu), PROJECT.md E14.
 Grundlage fuer 5.18 (Binaersuche-Dispatch + Benchmark, naechster geplanter
 Schritt, aktuell noch 💤 Idle bis Andreas freigibt).
+
+## Session 2026-07-16 (Claude + Andreas, interaktiv): 5.19a — Board-Config-Datei + mehrere CF-Images
+
+Andreas' Auftrag: erster Positionsparameter (ohne "-") = Config-Datei (Extension
+".q9" default), darin Emulator-Config MIT mehreren Imagedateien vom Typ rbf oder
+pcf (fat12/16); Optionen bleiben; weitere rbf/fat-Images erzeugen (funktionierende
+Buffergroesse = 512 B/Sektor).
+
+### Umgesetzt
+- src/kernel/boardcfg.c/.h NEU: INI-Parser (C99, kein Fremdmodul), [board]
+  name/rom/net + beliebig viele [cfN] (type=rbf|pcf, bus=onboard|rc2014,
+  unit=master|slave, image=). Pfade relativ zur Config-Datei. Extension-Regel
+  (.q9), Kollisionspruefung (zwei Images auf derselber Einheit -> Fehler).
+- CF-Emulation mehrfach instanziierbar (cb030.c/.h Ver. 2.00): CF-Zustand aus
+  q9_cb030_t in neuen Typ q9_cf_t/q9_cf_unit_t gezogen. Zwei Interfaces:
+  Onboard $FFFFE000 (c0..c3) + RC2014-SC145 $FFFFC010 (e0/f0), Master/Slave ueber
+  DEV-Bit (Bit 4) in LBA3 ($E0/$F0). Beide nutzen q9_devtype_cf; Registeroffset
+  ueber dev->base. type=pcf schaltet die RBF-256-Byte-Heuristik ab.
+- m68krt.c: q9_m68krt_attach_cf2() registriert das RC2014-Interface (nur wenn die
+  Config dort Images anhaengt). cb030run.c (Ver. 1.70): q9_cb030_boot() bekommt
+  cfg-Parameter, verteilt CF-Images, Vorrang Default<Config<CLI.
+- hal_posix.c/hal_native.c: neue main()-Argumentparser (erster Non-"-"-Param =
+  Config, .q9-Default), alte Optionen (--cb030/--cf/--net/--selftest) unveraendert.
+- tools/make_fat_image.py NEU: FAT12/16-Superfloppy-Generator (512 B/Sektor).
+  local_images/q9data-rbf.img (ToolShed os9 format -bs512 -c32), q9-fat12.img,
+  q9-fat16.img erzeugt (lokal, gitignored).
+- docs/q9board.example.q9 (Beispiel), docs/HANDBUCH.md Abschnitt 5.13 (neu, Ver.
+  2.10), ARBEITSPLAN 5.19 auf 🟡 (Teil 5.19a fertig, Rest 💤).
+
+### Verifiziert
+- make test PASS (neuer Selbsttest "5.19: Board-Config-Parser"), make native
+  warnungsfrei (nur bekannte Alignment-Warnung).
+- Config-gesteuerter Boot des echten OS9SYS-Klons bis Login (super) + dir /dd +
+  Logout (test_519_config_boot.exp, APFS-Klon, danach geloescht).
+- Alter CLI-Weg --cb030 <rom> --cf <img> byte-identisch (gegengetestet).
+
+### Offen (Rest von 5.19, weiter 💤, haengt an 5.18)
+Speicher-/Geraete-Abschnitte (type=ram|rom, [uart0]/[eth0]...), Instanziierung
+ALLER Gerraetetypen ueber die Typ-Registry, Fensterueberlappungs-/Vektor-
+kollisions-Validierung. Bis dahin Nicht-CF-Geraete hartkodiert wie in 5.17.

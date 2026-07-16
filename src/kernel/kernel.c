@@ -80,8 +80,10 @@
 #include "wasmrt.h"
 #endif
 #ifdef Q9_HAVE_M68K
+#include <string.h>                                     /* 5.19: strcmp im Board-Config-Selbsttest */
 #include "m68krt.h"
 #include "cb030.h"
+#include "boardcfg.h"
 #endif
 
 static void repl_step(void);                            /* 4.1: Step-Funktion von PID 1 (s.u.)     */
@@ -1844,8 +1846,9 @@ int q9_kernel_selftest(void)
         q9_cb030_cf_attach(&board, "cb030_cf_test.img");
 
         q9_device_t cf_dev;
+        cf_dev.base = cf_base;                        /* 5.19a: Adapter rechnet mit dev->base   */
         cf_dev.vt = &q9_devtype_cf;
-        cf_dev.state = &board;
+        cf_dev.state = &board.cf;
 
         /* LBA 0, 1 Sektor, WRITE SECTOR(S): 512 Byte Testmuster (0x00..0xFF wiederholt) schreiben. */
         q9_device_write8(&cf_dev, cf_base + 3, 0);            /* LBA0 */
@@ -1869,8 +1872,9 @@ int q9_kernel_selftest(void)
             q9_cb030_cf_attach(&board2, "cb030_cf_test.img");
 
         q9_device_t cf_dev2;
+        cf_dev2.base = cf_base;                       /* 5.19a: Adapter rechnet mit dev->base   */
         cf_dev2.vt = &q9_devtype_cf;
-        cf_dev2.state = &board2;
+        cf_dev2.state = &board2.cf;
 
             q9_device_write8(&cf_dev2, cf_base + 3, 0);
             q9_device_write8(&cf_dev2, cf_base + 4, 0);
@@ -1905,8 +1909,9 @@ int q9_kernel_selftest(void)
         q9_cb030_cf_attach(&board, "cb030_cf_multi_test.img");
 
         q9_device_t cf_dev;
+        cf_dev.base = cf_base;                        /* 5.19a: Adapter rechnet mit dev->base   */
         cf_dev.vt = &q9_devtype_cf;
-        cf_dev.state = &board;
+        cf_dev.state = &board.cf;
 
         /* LBA 0, 2 Sektoren, WRITE SECTOR(S): 1024 Byte Testmuster (0x00..0xFF wiederholt)
            in einem Rutsch schreiben — kein zweites Kommando dazwischen. */
@@ -1936,8 +1941,9 @@ int q9_kernel_selftest(void)
             q9_cb030_cf_attach(&board2, "cb030_cf_multi_test.img");
 
         q9_device_t cf_dev2;
+        cf_dev2.base = cf_base;                       /* 5.19a: Adapter rechnet mit dev->base   */
         cf_dev2.vt = &q9_devtype_cf;
-        cf_dev2.state = &board2;
+        cf_dev2.state = &board2.cf;
 
             q9_device_write8(&cf_dev2, cf_base + 3, 0);
             q9_device_write8(&cf_dev2, cf_base + 4, 0);
@@ -1995,8 +2001,9 @@ int q9_kernel_selftest(void)
         q9_cb030_cf_attach(&board, "cb030_cf_rbf256_test.img");
 
         q9_device_t cf_dev;
+        cf_dev.base = cf_base;                        /* 5.19a: Adapter rechnet mit dev->base   */
         cf_dev.vt = &q9_devtype_cf;
-        cf_dev.state = &board;
+        cf_dev.state = &board.cf;
 
         q9_device_write8(&cf_dev, cf_base + 3, 1);          /* LBA0 */
         q9_device_write8(&cf_dev, cf_base + 4, 0);          /* LBA1 */
@@ -2019,8 +2026,9 @@ int q9_kernel_selftest(void)
             q9_cb030_cf_attach(&board2, "cb030_cf_rbf256_test.img");
 
         q9_device_t cf_dev2;
+        cf_dev2.base = cf_base;                       /* 5.19a: Adapter rechnet mit dev->base   */
         cf_dev2.vt = &q9_devtype_cf;
-        cf_dev2.state = &board2;
+        cf_dev2.state = &board2.cf;
 
             q9_device_write8(&cf_dev2, cf_base + 3, 1);
             q9_device_write8(&cf_dev2, cf_base + 4, 0);
@@ -2112,6 +2120,71 @@ int q9_kernel_selftest(void)
         q9_m68krt_free(&rt);
 
         checks[nchecks].name = "5.3: Musashi bootet aus CB030-ROM (Vektoren, Sprung hoch, REMAP, RAM-Schreiben)";
+        checks[nchecks++].ok = ok;
+    }
+
+    {
+        /* 5.19: Board-Config-Parser (boardcfg.h) — Extension-Auto-Ergaenzung + eine kleine
+           Config-Datei mit zwei CF-Abschnitten (rbf onboard, pcf rc2014) einlesen und die
+           gefuellte Struktur pruefen. Schreibt eine lokale Testdatei (wie die CF-Tests). */
+        q9_board_cfg_t cfg;
+        char           err[256];
+        char           resolved[Q9_CFG_PATH_MAX];
+        int            ok = 1;
+        FILE          *f;
+
+        /* Extension-Regel: fehlt die Extension, wird ".q9" angehaengt; ein vorhandener Punkt bleibt. */
+        q9_board_cfg_resolve_path("mysys", resolved, sizeof(resolved));
+        ok = ok && (strcmp(resolved, "mysys.q9") == 0);
+        q9_board_cfg_resolve_path("mysys.cfg", resolved, sizeof(resolved));
+        ok = ok && (strcmp(resolved, "mysys.cfg") == 0);
+
+        f = fopen("q9boardcfg_test.q9", "wb");
+        if (f) {
+            fputs("; Testconfig 5.19\n", f);
+            fputs("[board]\n", f);
+            fputs("name = TestBoard\n", f);
+            fputs("net  = nat\n", f);
+            fputs("rom  = roms/test.BIN\n", f);
+            fputs("[cf0]\n", f);
+            fputs("type = rbf\n", f);
+            fputs("bus  = onboard\n", f);
+            fputs("image = a.hda\n", f);
+            fputs("[cf1]\n", f);
+            fputs("type = pcf\n", f);
+            fputs("bus  = rc2014\n", f);
+            fputs("unit = slave\n", f);
+            fputs("image = b.img\n", f);
+            fclose(f);
+        } else {
+            ok = 0;
+        }
+
+        ok = ok && (q9_board_cfg_load(&cfg, "q9boardcfg_test.q9", err, sizeof(err)) == 0);
+        ok = ok && (strcmp(cfg.name, "TestBoard") == 0);
+        ok = ok && (strcmp(cfg.net_mode, "nat") == 0);
+        /* rom-Pfad wird relativ zur Config aufgeloest (hier CWD -> unveraendert). */
+        ok = ok && (strcmp(cfg.rom_path, "roms/test.BIN") == 0);
+        ok = ok && (cfg.cf_count == 2);
+        ok = ok && (cfg.cf[0].format == Q9_CF_FMT_RBF);
+        ok = ok && (cfg.cf[0].bus == Q9_CFG_BUS_ONBOARD) && (cfg.cf[0].unit == 0);
+        ok = ok && (strcmp(cfg.cf[0].path, "a.hda") == 0);
+        ok = ok && (cfg.cf[1].format == Q9_CF_FMT_PCF);
+        ok = ok && (cfg.cf[1].bus == Q9_CFG_BUS_RC2014) && (cfg.cf[1].unit == 1);
+        ok = ok && (strcmp(cfg.cf[1].path, "b.img") == 0);
+
+        /* Fehlerfall: zwei Images auf derselben Einheit -> Ablehnung mit Meldung. */
+        f = fopen("q9boardcfg_bad.q9", "wb");
+        if (f) {
+            fputs("[cf0]\nbus=onboard\nimage=x\n[cf1]\nbus=onboard\nimage=y\n", f);
+            fclose(f);
+            ok = ok && (q9_board_cfg_load(&cfg, "q9boardcfg_bad.q9", err, sizeof(err)) != 0);
+        }
+
+        remove("q9boardcfg_test.q9");
+        remove("q9boardcfg_bad.q9");
+
+        checks[nchecks].name = "5.19: Board-Config-Parser (.q9-Extension, [board]+[cfN] rbf/pcf, Kollisionspruefung)";
         checks[nchecks++].ok = ok;
     }
 #endif

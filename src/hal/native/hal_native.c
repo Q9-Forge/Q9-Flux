@@ -26,6 +26,7 @@
 #include "../../kernel/kernel.h"
 #ifdef Q9_HAVE_M68K
 #include "../../kernel/cb030run.h"
+#include "../../kernel/boardcfg.h"
 #endif
 
 #define DISK_IMAGE "q9disk.img"
@@ -219,29 +220,55 @@ const char *q9_hal_target(void)
 // Function: main
 // Desc.:    Host-Loop: initialisiert HAL + Kernel und ruft q9_kernel_step() zyklisch auf.
 //           Mit --selftest: 100 Ticks laufen lassen, "SELFTEST PASS" ausgeben, Exit 0.
-//           Mit --cb030 <rom> [--cf <image>]: statt des Q9-Kernels das emulierte CB030-Board
-//           mit dem angegebenen Boot-ROM starten (5.3, s. cb030run.h), optional mit eigenem
-//           CF-Backing-Image statt "cb030_cf.img" (5.5a) und Ethernet-Backend --net nat|vmnet
-//           (5.12, Default nat; vmnet = echtes Netz, macOS + sudo) — Ende per Ctrl-C.
-// Call:     q9.exe [--selftest | --cb030 <rom-datei> [--cf <image>] [--net nat|vmnet]]
+//           5.19: Der ERSTE Parameter OHNE fuehrendes "-" gibt eine Board-Config-Datei an
+//           (Extension ".q9" wird angenommen, falls keine da ist, s. boardcfg.h). Darin stehen
+//           ROM, Netz-Backend und MEHRERE CF-Images (rbf/pcf); der Emulator startet dann direkt
+//           im CB030-Board-Modus. Die bestehenden Optionen bleiben und ueberschreiben die Config:
+//           --cb030 <rom>, --cf <image> (Onboard-CF-Master), --net nat|vmnet (5.12, Default nat).
+//           Ohne Config UND ohne --cb030 laeuft wie bisher der reine Q9-Kernel — Ende per Ctrl-C.
+// Call:     q9.exe [<config[.q9]>] [--cb030 <rom>] [--cf <image>] [--net nat|vmnet]
+//           q9.exe --selftest
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
-    int selftest = (argc > 1 && strcmp(argv[1], "--selftest") == 0);
+    int         selftest = 0;
+    const char *cfg_arg  = NULL;                       /* erster Positionsparameter (ohne '-')   */
+    const char *rom_path = NULL;                        /* --cb030                                */
+    const char *cf_path  = NULL;                        /* --cf                                   */
+    const char *net_mode = NULL;                        /* --net                                  */
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--selftest") == 0) {
+            selftest = 1;
+        } else if (strcmp(argv[i], "--cb030") == 0 && i + 1 < argc) {
+            rom_path = argv[++i];
+        } else if (strcmp(argv[i], "--cf") == 0 && i + 1 < argc) {
+            cf_path = argv[++i];
+        } else if (strcmp(argv[i], "--net") == 0 && i + 1 < argc) {
+            net_mode = argv[++i];
+        } else if (argv[i][0] != '-' && cfg_arg == NULL) {
+            cfg_arg = argv[i];                         /* 5.19: Board-Config-Datei               */
+        }
+    }
 
 #ifdef Q9_HAVE_M68K
-    if (argc > 2 && strcmp(argv[1], "--cb030") == 0) {
-        const char *cf_path  = NULL;
-        const char *net_mode = NULL;
-        for (int i = 3; i + 1 < argc; i += 2) {        /* --cf <img> und --net <nat|vmnet> (5.12) */
-            if (strcmp(argv[i], "--cf") == 0) {
-                cf_path = argv[i + 1];
-            } else if (strcmp(argv[i], "--net") == 0) {
-                net_mode = argv[i + 1];
+    if (cfg_arg != NULL || rom_path != NULL) {
+        q9_board_cfg_t  cfg;
+        q9_board_cfg_t *cfgp = NULL;
+
+        q9_board_cfg_default(&cfg);
+        if (cfg_arg != NULL) {
+            char path[Q9_CFG_PATH_MAX];
+            char err[256];
+            q9_board_cfg_resolve_path(cfg_arg, path, sizeof(path));
+            if (q9_board_cfg_load(&cfg, path, err, sizeof(err)) != 0) {
+                fprintf(stderr, "cb030: %s\n", err);
+                return 1;
             }
+            cfgp = &cfg;
         }
         q9_hal_init();
-        return q9_cb030_boot(argv[2], cf_path, net_mode);
+        return q9_cb030_boot(rom_path, cf_path, net_mode, cfgp);
     }
 #endif
 

@@ -1,0 +1,39 @@
+; ═══════════════════════════════════════════════════════════════════════════════════════════════
+; q9board.example.q9 — Beispiel-Board-Konfiguration fuer den Q9-Emulator (5.19)
+;
+; Aufruf:   q9.exe <diesedatei>            (Extension .q9 darf entfallen: q9.exe q9board.example)
+;           q9.exe <datei> --net vmnet     (CLI-Optionen ueberschreiben die Config)
+;
+; Kommentare mit ';' oder '#'. Pfade sind relativ zu DIESER Datei (nicht zum CWD).
+; Die bestehenden CLI-Optionen (--cb030 <rom>, --cf <image>, --net ...) bleiben und haben Vorrang.
+; ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[board]
+name = CB030-Q9 Beispiel
+; Boot-ROM (proprietaer, liegt nur lokal — Pfad hier anpassen):
+rom  = roms/romimage.dev.running.BIN
+; Ethernet-Backend: nat (Default) | vmnet | bridge:<ifname>
+net  = nat
+
+; ── CF-Images ─────────────────────────────────────────────────────────────────────────────────
+; Jeder [cfN]-Abschnitt haengt EIN Image an eine Einheit. type = rbf (OS-9-RBF) oder pcf (FAT12/16).
+; bus  = onboard (Onboard-CF $FFFFE000, Descriptoren c0..c3) | rc2014 (SC145 $FFFFC010, e0/f0).
+; unit = master | slave  (RC2014 kann beide; onboard nutzen die Descriptoren als Master).
+
+[cf0]
+type  = rbf
+bus   = onboard
+unit  = master
+image = OS9SYS.hda            ; das bootende Systemimage
+
+[cf1]
+type  = rbf
+bus   = rc2014
+unit  = master
+image = q9data-rbf.img        ; zweite RBF-Platte am RC2014-Kartenleser (e0)
+
+[cf2]
+type  = pcf
+bus   = rc2014
+unit  = slave
+image = q9-fat16.img          ; FAT16-Datentraeger am RC2014-Kartenleser (f0)

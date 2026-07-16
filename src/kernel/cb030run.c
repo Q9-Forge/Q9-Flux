@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030run.c                                                                      Ver. 1.60
+// File:   cb030run.c                                                                      Ver. 1.70
 // Owner:  AF
 // Desc.:  Implementierung des CB030-Boot-Runners, siehe cb030run.h.
 //
@@ -19,12 +19,15 @@
 //         │      │ 5.17-Schritt explizit verdrahtet                                          │
 // 26-07-14│ 1.60 │ 5.17: QUICC ebenfalls umgezogen -- Hauptschleifen-Poll ist jetzt EINE      │ CF
 //         │      │ einzige Schleife ueber die Geraete-Registry, keine Sonderfaelle mehr       │
+// 26-07-16│ 1.70 │ 5.19: Board-Config (cfg-Parameter) -- mehrere CF-Images (rbf/pcf) auf       │ CF
+//         │      │ Onboard-CF (Master/Slave) + RC2014-SC145-Zweitinterface verteilen           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
 #include "m68krt.h"
 #include "quicc.h"
 #include "devreg.h"
+#include "boardcfg.h"
 #include "../hal/q9_hal.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,15 +42,30 @@
 static uint8_t cb030_ram[CB030_RAM_BYTES];
 static uint8_t cb030_rom[CB030_ROM_MAX];
 
-int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode)
+int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode,
+                  const q9_board_cfg_t *cfg)
 {
     static q9_cb030_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
     static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
+    static q9_cf_t    cf2;                              /* 5.19a: RC2014-SC145-Zweitinterface     */
     q9_m68krt_t       rt;
     uint32_t          rom_len = 0;
+    int               cf2_used   = 0;
+    int               onboard_from_cfg = 0;
 
-    if (cf_path == NULL || cf_path[0] == '\0') {
-        cf_path = CB030_CF_IMAGE;                       /* Andreas' fertige Images bleiben unangetastet */
+    /* 5.19: Vorrang klaeren. ROM: CLI schlaegt Config; ohne beides Fehler (kein Default-ROM,
+       das echte Boot-ROM ist proprietaer, s. cb030run.h). */
+    if ((rom_path == NULL || rom_path[0] == '\0') && cfg && cfg->rom_path[0]) {
+        rom_path = cfg->rom_path;
+    }
+    if (rom_path == NULL || rom_path[0] == '\0') {
+        fprintf(stderr, "cb030: kein Boot-ROM angegeben (--cb030 <rom> oder [board] rom= in der Config)\n");
+        return 1;
+    }
+
+    /* Netz-Backend: CLI schlaegt Config schlaegt Default (nat, in q9_quicc_net_mode). */
+    if ((net_mode == NULL || net_mode[0] == '\0') && cfg && cfg->net_mode[0]) {
+        net_mode = cfg->net_mode;
     }
 
     if (q9_cb030_rom_load(rom_path, cb030_rom, sizeof(cb030_rom), &rom_len) != Q9_CB030_OK) {
@@ -56,15 +74,52 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
         return 1;
     }
 
-    printf("cb030: ROM '%s' geladen (%u Byte), %u MByte RAM, CF -> %s — Reset.\n",
-           rom_path, rom_len, CB030_RAM_BYTES / (1024u * 1024u), cf_path);
-    fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
+    if (cfg && cfg->name[0]) {
+        printf("cb030: Board-Config '%s'\n", cfg->name);
+    }
+    printf("cb030: ROM '%s' geladen (%u Byte), %u MByte RAM — Reset.\n",
+           rom_path, rom_len, CB030_RAM_BYTES / (1024u * 1024u));
 
     q9_cb030_init(&board, cb030_rom, rom_len, cb030_ram, sizeof(cb030_ram));
-    q9_cb030_cf_attach(&board, cf_path);
+
+    /* 5.19: CF-Images aus der Config verteilen — Onboard-CF (board.cf) und RC2014-Zweitinterface
+       (cf2), je Master/Slave. Danach setzt ein explizites --cf immer die Onboard-Master-Einheit
+       (CLI schlaegt Config, deckt den bisherigen Ein-Image-Weg ab). */
+    if (cfg) {
+        for (int i = 0; i < cfg->cf_count; i++) {
+            const q9_cfg_cf_t *e = &cfg->cf[i];
+            q9_cf_t *iface = (e->bus == Q9_CFG_BUS_RC2014) ? &cf2 : &board.cf;
+            if (e->bus == Q9_CFG_BUS_RC2014) {
+                cf2_used = 1;
+            } else {
+                onboard_from_cfg = 1;
+            }
+            q9_cf_attach(iface, e->unit, e->path, e->format);
+            printf("cb030: CF %s/%s <- %s (%s)\n",
+                   e->bus == Q9_CFG_BUS_RC2014 ? "rc2014" : "onboard",
+                   e->unit ? "slave" : "master", e->path,
+                   e->format == Q9_CF_FMT_PCF ? "pcf" :
+                   e->format == Q9_CF_FMT_RBF ? "rbf" : "auto");
+        }
+    }
+
+    /* CLI --cf: Onboard-Master. Ueberschreibt eine etwaige Config-Onboard-Master-Angabe; ohne
+       Config UND ohne --cf bleibt der bisherige Default (cb030_cf.img), damit Andreas' fertige
+       Startzeilen unveraendert funktionieren. */
+    if (cf_path && cf_path[0]) {
+        q9_cb030_cf_attach(&board, cf_path);
+        printf("cb030: CF onboard/master <- %s (auto)\n", cf_path);
+    } else if (!onboard_from_cfg) {
+        q9_cb030_cf_attach(&board, CB030_CF_IMAGE);
+    }
+
+    fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
 
     q9_m68krt_init(&rt, cb030_ram, sizeof(cb030_ram));
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
+    if (cf2_used) {
+        q9_m68krt_attach_cf2(&cf2);                    /* 5.19a: RC2014-Fenster $FFFFC010        */
+    }
     q9_quicc_init(&quicc, cb030_ram, sizeof(cb030_ram));
     if (q9_quicc_net_mode(&quicc, net_mode) != 0) {    /* 5.12: nat (Default) oder vmnet         */
         return 1;
@@ -144,5 +199,5 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030run.c                                                                          Ver. 1.60
+// EOF cb030run.c                                                                          Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────

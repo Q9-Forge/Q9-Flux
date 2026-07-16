@@ -127,6 +127,18 @@ struct q9_quicc;
 void q9_m68krt_attach_quicc(struct q9_quicc *quicc);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_attach_cf2
+// Desc.:    5.19a: Registriert ein ZWEITES Compact-Flash-Interface (RC2014-SC145-Kartenleser bei
+//           Q9_CB030_CF2_BASE, Descriptoren e0/f0 im MWOS-Q9-Port) in der Geraete-Registry. Nutzt
+//           dieselbe q9_devtype_cf-Vtable wie die Onboard-CF, nur mit eigener q9_cf_t-Instanz und
+//           eigener Basisadresse. Kein IRQ (wie die Onboard-CF). Nur aufrufen, wenn die Board-
+//           Config dort Images anhaengt — ohne Aufruf existiert das Fenster nicht (Board wie 5.17).
+//           cf2 muss die gesamte Lauf­zeit ueberleben (wird nur als Zeiger gehalten).
+// Call:     q9_m68krt_attach_cf2(&cf2);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_attach_cf2(q9_cf_t *cf2);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_debug_state
 // Desc.:    Diagnose (5.4): aktueller PC + SR der emulierten CPU und Anzahl der bisher
 //           durchlaufenen Interrupt-Acknowledge-Zyklen — fuer die Boot-Fehlersuche im Runner

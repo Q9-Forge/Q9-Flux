@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 1.92
+// File:   cb030.h                                                                         Ver. 2.00
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
@@ -41,6 +41,10 @@
 // 26-07-14│ 1.91 │ 5.17: q9_devtype_timer_irq exportiert, neues Feld timer_irq_pending         │ CF
 //         │      │ (drittes umgezogenes Geraet, s. cb030.c)                                    │
 // 26-07-14│ 1.92 │ 5.17: q9_devtype_rtc72421 exportiert (viertes/letztes board-internes Geraet)│ CF
+// 26-07-16│ 2.00 │ 5.19a: CF-Zustand aus q9_cb030_t in eigene, mehrfach instanziierbare        │ CF
+//         │      │ Struktur q9_cf_t gezogen (Onboard-CF + RC2014-SC145 bei $FFFFC010), zwei    │
+//         │      │ Einheiten je Interface (Master/Slave via DEV-Bit in LBA3), Image-Format     │
+//         │      │ rbf/pcf aus der Board-Config (s. boardcfg.h) steuert die Sektor-Heuristik   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
@@ -119,6 +123,13 @@ typedef struct {
 /* 5.2c: Compact-Flash-Interface (docs/CB030.md, Abschnitt "Compact-Flash-Interface"). */
 #define Q9_CB030_CF_BASE           0xFFFFE000u
 #define Q9_CB030_CF_TOP            0xFFFFE0FFu
+/* 5.19a: Zweites CF-Interface — SC145-CF-Kartenleser im RC2014-Erweiterungsslot, Adresse aus
+   dem MWOS-Q9-Port (systype.d: RC2014_CF_Base = Slot-Basis $FFFFC000 + Offset $10; Descriptoren
+   e0 = Master / f0 = Slave, beide DrvNum-gesteuert ueber das DEV-Bit in LBA3: $E0/$F0). Fenster
+   sind die 8 ATA-Register $FFFFC010–$FFFFC017. Wird NUR registriert, wenn die Board-Config
+   (boardcfg.h) dort Images anhaengt — ohne Config existiert das Fenster nicht (Board wie bisher). */
+#define Q9_CB030_CF2_BASE          0xFFFFC010u
+#define Q9_CB030_CF2_TOP           0xFFFFC017u
 #define Q9_CB030_CF_CMD_READ       0x20u              /* READ SECTOR(S)  */
 #define Q9_CB030_CF_CMD_WRITE      0x30u              /* WRITE SECTOR(S) */
 #define Q9_CB030_CF_CMD_SETFEAT    0xEFu              /* SET FEATURES (8-Bit-Mode etc.) */
@@ -136,6 +147,41 @@ typedef struct {
 #define Q9_CB030_UART_SRA    (Q9_CB030_UART_BASE + 0x02u)  /* Status A (lesen)                 */
 #define Q9_CB030_UART_THRA   (Q9_CB030_UART_BASE + 0x06u)  /* Tx-Holding (schreiben) = RHRA-Adr.*/
 #define Q9_CB030_UART_RX_FIFO_SIZE (4u * 1024u * 1024u)
+
+/* 5.19a: Image-Format eines angehaengten CF-Images (aus der Board-Config, s. boardcfg.h) —
+   steuert NUR die Host-seitige Sektorgroessen-Erkennung und die IDENTIFY-Sektorzahl, nicht das
+   ATA-Protokoll selbst:
+   AUTO/RBF = bisherige RBF-Heuristik (256-Byte-LSNs alter OS-9-Images erkennen, DD_TOT aus LSN0);
+   PCF      = FAT12/16-Image: immer 512-Byte-Sektoren, keine RBF-Heuristik (die FAT-Bootsektor-
+              Bytes wuerden sonst als LSN0 fehlgedeutet), IDENTIFY-Sektorzahl aus der Dateigroesse. */
+#define Q9_CF_FMT_AUTO 0
+#define Q9_CF_FMT_RBF  1
+#define Q9_CF_FMT_PCF  2
+
+/* 5.19a: Eine CF-EINHEIT (Master oder Slave) — Backing-Datei + erkannte Sektorgroesse. */
+typedef struct {
+    const char *path;                                  /* NULL = Einheit nicht bestueckt          */
+    FILE       *file;                                  /* lazy geoeffnet (Muster wie q9disk.img)  */
+    uint32_t    image_sector_size;                     /* 0 = noch unerkannt; 256/512             */
+    int         format;                                /* Q9_CF_FMT_*                             */
+} q9_cf_unit_t;
+
+/* 5.19a: Ein CF-INTERFACE (ATA-Registersatz + Sektorpuffer), mehrfach instanziierbar (Onboard-CF
+   $FFFFE000 + RC2014-SC145 $FFFFC010). Beide Einheiten teilen sich Registersatz und Puffer wie
+   bei echtem ATA — welche Einheit ein Kommando bedient, entscheidet das DEV-Bit (Bit 4) in LBA3
+   ($E0 = Master, $F0 = Slave, exakt die Werte der e0/f0-Descriptoren im MWOS-Q9-Port). */
+typedef struct {
+    q9_cf_unit_t unit[2];                              /* [0] = Master, [1] = Slave              */
+    uint32_t     lba;
+    uint8_t      lba3;                                 /* LBA bits 27..24 + DEV/LBA-Flags        */
+    uint8_t      sectcnt;
+    uint8_t      status;
+    uint8_t      sector[Q9_CB030_CF_SECTOR_SIZE];
+    uint32_t     pos;                                  /* Index in sector, 0..SECTOR_SIZE        */
+    uint32_t     transfer_size;                        /* 256 fuer alte RBF-Daten, IDENTIFY 512  */
+    int          write_pending;                        /* 1 waehrend WRITE-SECTOR-Datenphase     */
+    uint32_t     remaining;                            /* 5.5a: ausstehende Sektoren im Kommando */
+} q9_cf_t;
 
 typedef struct q9_cb030 {
     const uint8_t *rom;                               /* Boot-ROM-Inhalt, nur lesend            */
@@ -160,21 +206,9 @@ typedef struct q9_cb030 {
     uint8_t        uart_ivr;
     uint8_t        uart_imr;                           /* Interrupt-Mask-Latch (Schreiben 0x0A)  */
 
-    /* 5.2c: Compact-Flash — Backing Store lazy geoeffnet (Muster wie q9disk.img). */
-    const char    *cf_path;
-    FILE          *cf_file;
-    uint32_t       cf_image_sector_size;                 /* 256 fuer alte RBF-Images, sonst 512 */
-    uint32_t       cf_lba;
-    uint8_t        cf_lba3;                              /* LBA bits 27..24 + DEV/LBA flags      */
-    uint8_t        cf_sectcnt;
-    uint8_t        cf_status;
-    uint8_t        cf_sector[Q9_CB030_CF_SECTOR_SIZE];
-    uint32_t       cf_pos;                              /* Index in cf_sector, 0..SECTOR_SIZE   */
-    uint32_t       cf_transfer_size;                    /* 256 fuer alte RBF-Daten, IDENTIFY 512 */
-    int            cf_write_pending;                     /* 1 waehrend WRITE-SECTOR-Datenphase   */
-    uint32_t       cf_remaining;                          /* 5.5a: noch ausstehende Sektoren im  */
-                                                           /* laufenden Kommando (cf_sectcnt==0   */
-                                                           /* bedeutet 256, ATA-Konvention)        */
+    /* 5.2c/5.19a: Onboard-Compact-Flash — kompletter Interface-Zustand in q9_cf_t (s.o.), damit
+       das RC2014-Zweitinterface dieselbe Emulation als eigene Instanz nutzen kann. */
+    q9_cf_t        cf;
 
     /* 5.2d: Timer/IRQ3 — kooperativ per Host-Uhrzeit, s. q9_cb030_poll_timer.
        5.6: timer_synced=0 nach TI_IRQ_ON — der erste Poll loest sofort aus und startet
@@ -225,11 +259,20 @@ void q9_cb030_reset(q9_cb030_t *b);
 int q9_cb030_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t *out_len);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_cf_attach
+// Desc.:    5.19a: Haengt ein Backing-Image an EINE Einheit (0 = Master, 1 = Slave) eines
+//           CF-Interfaces — die Datei selbst wird lazy beim ersten Kommando geoeffnet/angelegt
+//           (Muster wie die native HAL bei q9disk.img). path muss die gesamte Lebensdauer von c
+//           ueberleben (wird nur als Zeiger gehalten, nicht kopiert). format = Q9_CF_FMT_*
+//           (s.o.). Setzt den Interface-Registersatz zurueck (wie ein Kartenwechsel).
+// Call:     q9_cf_attach(&b.cf, 0, "cb030_cf.img", Q9_CF_FMT_AUTO)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_cf_attach
-// Desc.:    Merkt sich den Dateipfad fuer die Compact-Flash-Karte (5.2c) — die Datei selbst wird
-//           lazy beim ersten Kommando geoeffnet/angelegt (Muster wie die native HAL bei q9disk.img,
-//           s. hal_native.c/hal_posix.c). path muss die gesamte Lebensdauer von b ueberleben
-//           (wird nur als Zeiger gehalten, nicht kopiert).
+// Desc.:    Bisheriger Einzel-Image-Weg (5.2c): Image an die Master-Einheit der Onboard-CF,
+//           Format-Autoerkennung — jetzt ein duenner Wrapper um q9_cf_attach (5.19a).
 // Call:     q9_cb030_cf_attach(&b, "cb030_cf.img")
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_cb030_cf_attach(q9_cb030_t *b, const char *path);
@@ -300,5 +343,5 @@ extern const q9_device_vtable_t q9_devtype_rtc72421;        /* 5.17: RTC72421-Ec
 #endif // Q9_CB030_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.h                                                                             Ver. 1.92
+// EOF cb030.h                                                                             Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────
