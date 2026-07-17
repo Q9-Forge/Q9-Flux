@@ -51,6 +51,28 @@ Wichtige Erkenntnisse:
 Dokumentiert in `docs/OS9SYS_BOOT.md`, `docs/CB030.md`,
 `Q9_CURRENT_STATUS.md`, `docs/HANDBUCH.md`.
 
+## Session 2026-07-17: CF-Partitionen, Offset-Fix und PCF/RBF-Teststand
+
+- Profil `emu.q9`: `c0` RBF eigenes Bootimage, `d0` PCF eigenes FAT16-Image,
+  `e0` PCF und `e1` RBF als getrennte Partitionen im gemeinsamen Image.
+- `d0`/`e0` beginnen bei Hostsektor 64; `e1` bei `0x200040` (1 GiB + 64).
+- Ursache des vorherigen Fehlers eindeutig: der CF-Treiber las/schrieb LSNs
+  ohne `PD_LSNOffs`. `tools/cfq9_format.a` wurde in `CF_Read`/`CF_Write`
+  korrigiert. `PD_PartSiz` wird weiterhin vom RBF/PCF-Manager anhand des
+  Descriptors begrenzt; der Treiber selbst meldet die maximale CF-Größe.
+- `cfidef` Edition 43 erfolgreich neu gebaut, CRC/parity gut, ins Testimage
+  kopiert. Emulator-Boot danach ohne Descriptor-/Attach-Fehler, `8 devices online`.
+- Nach Wiederherstellung des FAT-Anfangs aus `q9-e0-pcf-1gb.img` funktionieren
+  `dir /d0` und `dir /e0` inklusive `Q9DIR/INFO.TXT` und `README.TXT`.
+- `format /e1_fmt` hatte vor dem Offset-Fix am falschen Ort geschrieben; nicht
+  wiederholen, bevor der neue `cfidef` geladen ist. `pcformat -f=3 -np` wird von
+  `pcformat` formal abgewiesen, weil Fixed-Disk-Format 3 einen physischen
+  Formatpfad verlangt. `dcheck` gilt nur für RBF; PCF wird mit `dir`, `free` und
+  Schreib-/Lese-Roundtrip geprüft.
+- `dsave` kopiert rekursiv nach RBF (`e1`). PCF/FAT akzeptiert nicht alle langen
+  Namen/OS-9-Attribute; Einzeldateien lassen sich mit `copy` übertragen.
+- `make test` nach dem Treiber-/Image-Stand: alle sechs Tests PASS.
+
 Zuletzt bearbeitet: 2026-07-03 (dritte Session, Mac Mini, erste Session dort)
 PHASE 1.10 (POSIX-HAL) ABGESCHLOSSEN: src/hal/posix/hal_posix.c neu (termios
 raw+nonblocking statt conio, clock_gettime statt GetTickCount64, Rest wie
