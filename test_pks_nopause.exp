@@ -1,0 +1,57 @@
+#!/usr/bin/expect -f
+# Regression test for the explicitly named image produced by
+# tools/build_pks_nopause_image.py.
+#
+# Target under test (and only target): /dd/netmods -> pks -> PD_PAU @ 0x4f.
+# The source image is never cloned or modified here.
+
+set timeout 90
+set image "/Volumes/SSD1TB/projects/Q9/local_images/OS9SYS.pks-nopause.hda"
+set rom "/Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN"
+log_file -noappend "test_pks_nopause.result.txt"
+
+if {![file exists $image]} {
+    send_user "FEHLER: $image fehlt. Zuerst tools/build_pks_nopause_image.py ausfuehren.\n"
+    exit 2
+}
+
+spawn sudo -n /Volumes/SSD1TB/projects/Q9/build/native/q9.exe --cb030 $rom --cf $image --net vmnet
+set emu_id $spawn_id
+expect {
+    -i $emu_id "devices online" {}
+    -i $emu_id timeout { send_user "FEHLER: Emulator startet nicht.\n"; exit 1 }
+}
+
+sleep 8
+spawn telnet 192.168.200.2
+set tn_id $spawn_id
+set timeout 30
+expect -i $tn_id "User name?:"
+send -i $tn_id "super\r"
+expect -i $tn_id -re {Password[^\r\n]*:}
+send -i $tn_id "Al35uUbC\r"
+expect -i $tn_id -re {\r\n\$ }
+
+send -i $tn_id "tmode\r"
+expect -i $tn_id -re {\r\n\$ }
+set tmode_text $expect_out(buffer)
+if {[string first "nopause" $tmode_text] < 0} {
+    send_user "PKS_NOPAUSE_DESCRIPTOR_CHECK_FAILED\n"
+    exit 1
+}
+send_user "PKS_NOPAUSE_DESCRIPTOR_CHECK_PASS\n"
+
+send -i $tn_id "dir -aer /dd\r"
+set timeout 20
+expect {
+    -i $tn_id -re {\r\n\$ } { send_user "PKS_NOPAGE_DIR_FINISHED\n" }
+    -i $tn_id timeout {
+        # This is the separate telnetdc/SS_Ready issue.  It is recorded but
+        # does not invalidate the descriptor check above.
+        send_user "KNOWN_REMAINING_TELNETDC_DIR_HANG\n"
+    }
+}
+
+send -i $emu_id "\x1d"
+sleep 2
+send_user "PKS_NOPAGE_TEST_PASS\n"

@@ -115,7 +115,7 @@ static void init_network_terminals(void) {
 
     bind(main_server_fd, (struct sockaddr *)&addr, sizeof(addr));
     listen(main_server_fd, 5);
-    printf("[OS-9 Net] Multi-Terminal Server gestartet auf Mac-Port %d\n", MAIN_LISTEN_PORT);
+    printf("[OS-9 Net] Multi-Terminal Server gestartet auf Mac-Port %d\r\n", MAIN_LISTEN_PORT);
 }
 
 static void update_network_terminals(void) {
@@ -129,7 +129,7 @@ static void update_network_terminals(void) {
             if (channels[i].client_fd < 0) {
                 channels[i].client_fd = incoming;
                 channels[i].last_was_cr = 0;
-                printf("[OS-9 Net] Gast dynamisch an /x%d uebergeben.\n", i + 1);
+                printf("[OS-9 Net] Gast dynamisch an /x%d uebergeben.\r\n", i + 1);
                 assigned = 1;
                 break;
             }
@@ -179,7 +179,7 @@ static void update_network_terminals(void) {
             channels[i].client_fd = -1;
             channels[i].status &= ~0x01;
             channels[i].last_was_cr = 0;
-            printf("[OS-9 Net] Gast von /x%d getrennt.\n", i + 1);
+        printf("[OS-9 Net] Gast von /x%d getrennt.\r\n", i + 1);
         }
     }
 
@@ -509,11 +509,6 @@ static int      g_telnetdc_base_known  = 0;
 static int      g_watch_manual         = 0;   /* per Q9_WATCH_PC/2 vorgegeben -- Autoerkennung bleibt aus */
 static uint32_t g_watch_candidate_base   = 0;
 static int      g_watch_candidate_streak = 0;
-static unsigned int g_trace_pid = 0;
-static uint32_t g_trace_pid_desc = 0;
-static int g_trace_pid_event_dumped = 0;
-static uint32_t g_trace_arm_pc = 0;
-static int g_trace_arm_steps = 0;
 static uint32_t g_event_return_pc = 0;    /* pkdvr-Diagnose (2026-07-15): naechste Instruktion nach
    einem geloggten F$Event-Trap -- einzelner globaler Slot genuegt, da der Emulator nur einen
    CPU-Kern hat und die Rueckkehr-Instruktion garantiert die naechste ausgefuehrte ist, bevor
@@ -557,14 +552,6 @@ static int m68krt_trap_trace_callback(int trap)
     if (trap == 0 && g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
         uint32_t pc = m68k_get_reg(NULL, M68K_REG_PPC);
         uint32_t callcode = m68k_read_memory_16(pc + 2);
-        uint32_t proc_desc = m68k_get_reg(NULL, M68K_REG_A4);
-        unsigned int pid = m68k_read_memory_16(proc_desc);
-        if (g_trace_arm_pc && pc == g_trace_arm_pc) {
-            g_trace_arm_steps = 300;
-        }
-        if (g_trace_pid && pid == g_trace_pid) {
-            g_trace_pid_desc = proc_desc;
-        }
         /* pkdvr-Diagnose (2026-07-15): F$Link(0x00)/F$Load(0x01) zusaetzlich zu F$Event mit-
            verfolgen -- Ziel: klaeren, ob "pkdvr" mehrfach separat gelinkt/geladen wird (Verdacht
            nach der Basis-Analyse: mehrere gleichzeitig aktive Kopien im Speicher, s.
@@ -579,17 +566,14 @@ static int m68krt_trap_trace_callback(int trap)
             }
             return 0;
         }
-        if (callcode == 0x53 || callcode == 0x0a || callcode == 0x8a ||
-            callcode == 0x8c || callcode == 0x8d || (g_trace_pid && pid == g_trace_pid)) {
+        if (callcode == 0x53 || callcode == 0x0a || callcode == 0x8d) {
             fprintf(g_trap_trace_fp,
-                    "trap0 pc=%08x callcode=%04x pid=%u d0=%08x d1=%08x d2=%08x d3=%08x "
-                    "a0=%08x a1=%08x a4=%08x a6=%08x\n",
+                    "trap0 pc=%08x callcode=%04x d0=%08x d1=%08x d2=%08x d3=%08x "
+                    "a0=%08x a1=%08x\n",
                     pc, callcode,
-                    pid,
                     m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
                     m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_D3),
-                    m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1),
-                    m68k_get_reg(NULL, M68K_REG_A4), m68k_get_reg(NULL, M68K_REG_A6));
+                    m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1));
             g_trap_trace_n++;
             if (callcode == 0x53) {
                 /* pkdvr-Diagnose (2026-07-15): Rueckgabewert (D0=Fehlercode, D1=Ergebnis/
@@ -636,45 +620,6 @@ static int m68krt_trap_trace_callback(int trap)
 
 static void m68krt_watch_pc_callback(unsigned int pc)
 {
-    if (g_trace_arm_steps > 0 && g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
-        uint32_t a6 = m68k_get_reg(NULL, M68K_REG_A6);
-        uint32_t curproc = m68k_read_memory_32(a6 + 0x4c);
-        fprintf(g_trap_trace_fp,
-                "arm pc=%08x d0=%08x d1=%08x a0=%08x a1=%08x a4=%08x a6=%08x "
-                "curproc=%08x cpid=%04x cstate=%02x cqueue=%02x cscall=%02x\n",
-                pc, m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
-                m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1),
-                m68k_get_reg(NULL, M68K_REG_A4), a6, curproc,
-                m68k_read_memory_16(curproc), m68k_read_memory_8(curproc + 0x1c),
-                m68k_read_memory_8(curproc + 0x20), m68k_read_memory_8(curproc + 0x21));
-        g_trace_arm_steps--;
-        g_trap_trace_n++;
-    }
-    if (g_trace_pid_desc && !g_trace_pid_event_dumped &&
-        m68k_read_memory_8(g_trace_pid_desc + 0x20) == 'e' &&
-        g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
-        uint32_t sp = m68k_read_memory_32(g_trace_pid_desc + 0x08);
-        int i;
-        fprintf(g_trap_trace_fp,
-                "pid-event pc=%08x pid=%u desc=%08x sp=%08x state=%02x task=%04x "
-                "queue=%02x scall=%02x deadlk=%08x qnext=%08x qprev=%08x pmodul=%08x\n",
-                pc, g_trace_pid, g_trace_pid_desc, sp,
-                m68k_read_memory_8(g_trace_pid_desc + 0x1c),
-                m68k_read_memory_16(g_trace_pid_desc + 0x1e),
-                m68k_read_memory_8(g_trace_pid_desc + 0x20),
-                m68k_read_memory_8(g_trace_pid_desc + 0x21),
-                m68k_read_memory_32(g_trace_pid_desc + 0x24),
-                m68k_read_memory_32(g_trace_pid_desc + 0x30),
-                m68k_read_memory_32(g_trace_pid_desc + 0x34),
-                m68k_read_memory_32(g_trace_pid_desc + 0x38));
-        fprintf(g_trap_trace_fp, "pid-event-stack");
-        for (i = 0; i < 24; ++i) {
-            fprintf(g_trap_trace_fp, " %08x", m68k_read_memory_32(sp + (uint32_t)(i * 4)));
-        }
-        fputc('\n', g_trap_trace_fp);
-        g_trap_trace_n += 2;
-        g_trace_pid_event_dumped = 1;
-    }
     if (g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap &&
         ((g_watch_pc && pc == g_watch_pc) || (g_watch_pc2 && pc == g_watch_pc2))) {
         fprintf(g_trap_trace_fp,
@@ -683,21 +628,6 @@ static void m68krt_watch_pc_callback(unsigned int pc)
                 m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
                 m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_D3),
                 m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1));
-        {
-            uint32_t a0 = m68k_get_reg(NULL, M68K_REG_A0);
-            uint32_t a1 = m68k_get_reg(NULL, M68K_REG_A1);
-            fprintf(g_trap_trace_fp,
-                    "watchmem a0_80=%02x a1_60=%08x a1_64=%08x a1_6c=%08x a1_70=%08x "
-                    "a1_74=%08x a1_78=%08x a1_7c=%08x a1_80=%08x a1_84=%08x "
-                    "a1_88=%08x a1_8c=%08x\n",
-                    m68k_read_memory_8(a0 + 0x80),
-                    m68k_read_memory_32(a1 + 0x60), m68k_read_memory_32(a1 + 0x64),
-                    m68k_read_memory_32(a1 + 0x6c), m68k_read_memory_32(a1 + 0x70),
-                    m68k_read_memory_32(a1 + 0x74), m68k_read_memory_32(a1 + 0x78),
-                    m68k_read_memory_32(a1 + 0x7c), m68k_read_memory_32(a1 + 0x80),
-                    m68k_read_memory_32(a1 + 0x84), m68k_read_memory_32(a1 + 0x88),
-                    m68k_read_memory_32(a1 + 0x8c));
-        }
         g_trap_trace_n++;
     }
     /* pkdvr-Diagnose (2026-07-15): Rueckkehrpunkt eines zuvor geloggten F$Event-Traps erreicht --
@@ -748,14 +678,6 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
         }
         const char *watch_pc_str  = getenv("Q9_WATCH_PC");
         const char *watch_pc2_str = getenv("Q9_WATCH_PC2");
-        const char *trace_pid_str = getenv("Q9_TRACE_PID");
-        const char *trace_arm_pc_str = getenv("Q9_TRACE_ARM_PC");
-        if (trace_pid_str) {
-            g_trace_pid = (unsigned int)strtoul(trace_pid_str, NULL, 10);
-        }
-        if (trace_arm_pc_str) {
-            g_trace_arm_pc = (uint32_t)strtoul(trace_arm_pc_str, NULL, 16);
-        }
         if (watch_pc_str || watch_pc2_str) {
             if (watch_pc_str)  g_watch_pc  = (uint32_t)strtoul(watch_pc_str, NULL, 16);
             if (watch_pc2_str) g_watch_pc2 = (uint32_t)strtoul(watch_pc2_str, NULL, 16);
@@ -901,17 +823,24 @@ void q9_m68krt_attach_cf2(q9_cf_t *cf2)
        (q9_devtype_cf setzt nie irq_pending, s. cb030.c). Eigene Basisadresse: cf_dev_* rechnen
        den ATA-Registeroffset ueber dev->base aus, dieselbe Vtable bedient beide Interfaces. */
     if (cf2) {
+        q9_m68krt_attach_cf_at(cf2, Q9_CB030_CF2_BASE, "cf1");
+    }
+}
+
+void q9_m68krt_attach_cf_at(q9_cf_t *cf, uint32_t base, const char *name)
+{
+    if (cf) {
         q9_device_t d;
         memset(&d, 0, sizeof(d));
         d.type       = "cf";
-        d.name       = "cf1";
-        d.base       = Q9_CB030_CF2_BASE;
+        d.name       = name ? name : "cf";
+        d.base       = base;
         d.size       = Q9_CB030_CF2_TOP - Q9_CB030_CF2_BASE + 1u;
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
         d.vt         = &q9_devtype_cf;
-        d.state      = cf2;
+        d.state      = cf;
         q9_devreg_add(d);
     }
 }

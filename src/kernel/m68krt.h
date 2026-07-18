@@ -137,6 +137,7 @@ void q9_m68krt_attach_quicc(struct q9_quicc *quicc);
 // Call:     q9_m68krt_attach_cf2(&cf2);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_attach_cf2(q9_cf_t *cf2);
+void q9_m68krt_attach_cf_at(q9_cf_t *cf, uint32_t base, const char *name);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_debug_state

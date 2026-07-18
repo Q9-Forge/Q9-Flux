@@ -334,7 +334,7 @@ static int cb030_cf_ensure_open(q9_cf_t *c)
             long    cur;
 
             cur = ftell(u->file);
-            fseek(u->file, 0, SEEK_SET);
+            fseek(u->file, (long)u->start_sector * (long)Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
             n = fread(hdr, 1, sizeof(hdr), u->file);
             fseek(u->file, cur, SEEK_SET);
 
@@ -346,7 +346,17 @@ static int cb030_cf_ensure_open(q9_cf_t *c)
                                                 (uint16_t)hdr[RBF_DD_LSNSIZE + 1]);
                 if (lsn_size == 256u) {
                     u->image_sector_size = 256u;
+                } else if (lsn_size == 512u) {
+                    u->image_sector_size = 512u;          /* explizite 512er-LSN: vertrauen,
+                                                             KEINE 256-Heuristik (die kann sonst
+                                                             ein modernes 512er-Image faelschlich
+                                                             als 256er erkennen -- s.u.) */
                 } else if (root_lsn > 0) {
+                    /* DD.LSNSize weder 256 noch 512 (altes Image ohne verlaesslichen Wert):
+                       zusaetzliche Heuristik -- die FD des Root-Verzeichnisses steht bei 256er-
+                       Images an root_lsn*256 und traegt das Directory-Attribut (Bit 7). ACHTUNG:
+                       nur als LETZTER Ausweg, weil derselbe Byte-Offset in einem 512er-Image ein
+                       beliebiges Datenbyte trifft und dann falsch anschlaegt. */
                     uint8_t fd0 = 0;
                     fseek(u->file, (long)root_lsn * 256L, SEEK_SET);
                     if (fread(&fd0, 1, 1, u->file) == 1 && (fd0 & 0x80u)) {
@@ -377,7 +387,7 @@ static void cb030_cf_load_sector(q9_cf_t *c)
     if (cb030_cf_ensure_open(c)) {
         q9_cf_unit_t *u = cf_cur_unit(c);
         img_sec = u->image_sector_size ? u->image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
-        fseek(u->file, (long)c->lba * (long)img_sec, SEEK_SET);
+        fseek(u->file, (long)(u->start_sector + c->lba) * (long)img_sec, SEEK_SET);
         fread(c->sector, 1, img_sec, u->file);
     }
     if (c->lba == 0 || cb030_cf_trace_enabled()) {
@@ -396,10 +406,10 @@ static void cb030_cf_load_write_buffer(q9_cf_t *c)
     if (cb030_cf_ensure_open(c)) {
         q9_cf_unit_t *u = cf_cur_unit(c);
         img_sec = u->image_sector_size ? u->image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
-        fseek(u->file, (long)c->lba * (long)img_sec, SEEK_SET);
+        fseek(u->file, (long)(u->start_sector + c->lba) * (long)img_sec, SEEK_SET);
         fread(c->sector, 1, img_sec, u->file);
         if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
-            fseek(u->file, (long)(c->lba + 1u) * (long)img_sec, SEEK_SET);
+            fseek(u->file, (long)(u->start_sector + c->lba + 1u) * (long)img_sec, SEEK_SET);
             fread(c->sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, u->file);
         }
     }
@@ -415,12 +425,12 @@ static void cb030_cf_store_sector(q9_cf_t *c)
         if (written == 0 || written > Q9_CB030_CF_SECTOR_SIZE) {
             written = Q9_CB030_CF_SECTOR_SIZE;
         }
-        fseek(u->file, (long)c->lba * (long)img_sec, SEEK_SET);
+        fseek(u->file, (long)(u->start_sector + c->lba) * (long)img_sec, SEEK_SET);
 
         /* For 256-byte images: write TWO sectors (matching the read behavior in load_write_buffer) */
         if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
             fwrite(c->sector, 1, img_sec, u->file);
-            fseek(u->file, (long)(c->lba + 1u) * (long)img_sec, SEEK_SET);
+            fseek(u->file, (long)(u->start_sector + c->lba + 1u) * (long)img_sec, SEEK_SET);
             fwrite(c->sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, u->file);
         } else {
             fwrite(c->sector, 1, written < img_sec ? written : img_sec, u->file);
@@ -463,7 +473,8 @@ static void cb030_cf_identify(q9_cf_t *c)
         cur = ftell(u->file);
         if (sectors == 0 && cur > 0) {
             uint32_t img_sec = u->image_sector_size ? u->image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
-            sectors = (uint32_t)((unsigned long)cur / img_sec);
+            unsigned long skip = (unsigned long)u->start_sector * (unsigned long)img_sec;
+            sectors = cur > (long)skip ? (uint32_t)(((unsigned long)cur - skip) / img_sec) : 0;
         }
     }
 
@@ -711,6 +722,7 @@ void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format)
     u->path = path;
     u->file = NULL;
     u->image_sector_size = 0;
+    u->start_sector = 0;
     u->format = format;
 
     /* Registersatz zuruecksetzen wie bei einem Kartenwechsel (Verhalten wie das alte
@@ -723,6 +735,11 @@ void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format)
     c->write_pending = 0;
     c->remaining = 0;
     c->status = Q9_CB030_CF_STAT_RDY;
+}
+
+void q9_cf_set_start_sector(q9_cf_t *c, int unit, uint32_t start_sector)
+{
+    c->unit[unit & 1].start_sector = start_sector;
 }
 
 void q9_cb030_cf_attach(q9_cb030_t *b, const char *path)

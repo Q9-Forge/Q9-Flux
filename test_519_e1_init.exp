@@ -1,0 +1,21 @@
+#!/usr/bin/expect -f
+set timeout 90
+log_user 1
+spawn ./build/native/q9.exe emu.q9
+expect {
+  "User name?:" {}
+  "devices online" { send "\r"; exp_continue }
+}
+expect "User name?:"
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "load /dd/CMDS/BOOTOBJS/e1_fmt\r"
+expect -re {\$ ?$}
+send "iniz e1_fmt\r"
+expect -re {\$ ?$}
+send "devs\r"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

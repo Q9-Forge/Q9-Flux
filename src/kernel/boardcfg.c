@@ -16,6 +16,7 @@
 #include "cb030.h"                                     /* Q9_CF_FMT_*                            */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Kleine String-Helfer (kein strdup/keine dynamische Allokation — Q9-Grundsatz).
@@ -157,7 +158,8 @@ static int cfg_parse_format(const char *v)
 static int cfg_parse_bus(const char *v)
 {
     if (cfg_ieq(v, "onboard") || cfg_ieq(v, "cf"))     return Q9_CFG_BUS_ONBOARD;
-    if (cfg_ieq(v, "rc2014")  || cfg_ieq(v, "sc145"))  return Q9_CFG_BUS_RC2014;
+    if (cfg_ieq(v, "rc2014")  || cfg_ieq(v, "sc145") || cfg_ieq(v, "secondary"))
+        return Q9_CFG_BUS_RC2014;
     return -1;
 }
 
@@ -166,6 +168,15 @@ static int cfg_parse_unit(const char *v)
     if (cfg_ieq(v, "master") || cfg_ieq(v, "0")) return 0;
     if (cfg_ieq(v, "slave")  || cfg_ieq(v, "1")) return 1;
     return -1;
+}
+
+static int cfg_parse_u32(const char *v, uint32_t *out)
+{
+    char *end;
+    unsigned long n = strtoul(v, &end, 0);
+    if (end == v || *cfg_trim(end) != '\0' || n > 0xFFFFFFFFul) return -1;
+    *out = (uint32_t)n;
+    return 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -218,7 +229,12 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
             sec_name = cfg_trim(s + 1);
             if (cfg_ieq(sec_name, "board")) {
                 sec = SEC_BOARD;
-            } else if (strncmp(sec_name, "cf", 2) == 0 || strncmp(sec_name, "CF", 2) == 0) {
+            } else if ((strncmp(sec_name, "cf", 2) == 0 || strncmp(sec_name, "CF", 2) == 0 ||
+                        ((sec_name[0] == 'c' || sec_name[0] == 'C' ||
+                        sec_name[0] == 'd' || sec_name[0] == 'D' ||
+                        sec_name[0] == 'e' || sec_name[0] == 'E' ||
+                        sec_name[0] == 'f' || sec_name[0] == 'F') &&
+                       sec_name[1] >= '0' && sec_name[1] <= '9'))) {
                 if (cfg->cf_count >= Q9_CFG_MAX_CF) {
                     snprintf(err, err_max, "Zeile %d: mehr als %d CF-Abschnitte",
                              lineno, Q9_CFG_MAX_CF);
@@ -230,7 +246,12 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cur_cf->bus    = Q9_CFG_BUS_ONBOARD;
                 cur_cf->unit   = 0;
                 cur_cf->format = Q9_CF_FMT_AUTO;
+                cur_cf->base = 0;
+                cur_cf->start_sector = 0;
+                cur_cf->length_sectors = 0;
+                cur_cf->descriptor_lsn = 0;
                 cur_cf->path[0] = '\0';
+                cur_cf->descriptor[0] = '\0';
                 sec = SEC_CF;
             } else {
                 snprintf(err, err_max, "Zeile %d: unbekannter Abschnitt '[%s]'", lineno, sec_name);
@@ -266,6 +287,8 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
         } else if (sec == SEC_CF && cur_cf) {
             if (cfg_ieq(key, "image") || cfg_ieq(key, "file")) {
                 cfg_resolve_rel(dir, val, cur_cf->path, sizeof(cur_cf->path));
+            } else if (cfg_ieq(key, "descriptor")) {
+                cfg_resolve_rel(dir, val, cur_cf->descriptor, sizeof(cur_cf->descriptor));
             } else if (cfg_ieq(key, "type") || cfg_ieq(key, "format")) {
                 int fmt = cfg_parse_format(val);
                 if (fmt < 0) {
@@ -292,6 +315,30 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                     return -1;
                 }
                 cur_cf->unit = unit;
+            } else if (cfg_ieq(key, "base")) {
+                if (cfg_parse_u32(val, &cur_cf->base) != 0) {
+                    snprintf(err, err_max, "Zeile %d: ungueltige CF-Base '%s'", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+            } else if (cfg_ieq(key, "start_sector") || cfg_ieq(key, "offset_sector")) {
+                if (cfg_parse_u32(val, &cur_cf->start_sector) != 0) {
+                    snprintf(err, err_max, "Zeile %d: ungueltiger Startsektor '%s'", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+            } else if (cfg_ieq(key, "length_sectors") || cfg_ieq(key, "part_size")) {
+                if (cfg_parse_u32(val, &cur_cf->length_sectors) != 0) {
+                    snprintf(err, err_max, "Zeile %d: ungueltige Partitionslaenge '%s'", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+            } else if (cfg_ieq(key, "descriptor_lsn") || cfg_ieq(key, "lsn_offset")) {
+                if (cfg_parse_u32(val, &cur_cf->descriptor_lsn) != 0) {
+                    snprintf(err, err_max, "Zeile %d: ungueltiger Descriptor-LSN-Offset '%s'", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
             } else {
                 snprintf(err, err_max, "Zeile %d: unbekannter CF-Key '%s'", lineno, key);
                 fclose(f);
@@ -312,7 +359,12 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
             return -1;
         }
         for (int j = 0; j < i; j++) {
-            if (cfg->cf[j].bus == cfg->cf[i].bus && cfg->cf[j].unit == cfg->cf[i].unit) {
+            uint32_t bj = cfg->cf[j].base ? cfg->cf[j].base :
+                          (cfg->cf[j].bus == Q9_CFG_BUS_RC2014 ? 0xFFFFC010u : 0xFFFFE000u);
+            uint32_t bi = cfg->cf[i].base ? cfg->cf[i].base :
+                          (cfg->cf[i].bus == Q9_CFG_BUS_RC2014 ? 0xFFFFC010u : 0xFFFFE000u);
+            if (bj == bi && cfg->cf[j].unit == cfg->cf[i].unit &&
+                strcmp(cfg->cf[j].path, cfg->cf[i].path) != 0) {
                 snprintf(err, err_max,
                          "CF-Abschnitte #%d und #%d belegen dieselbe Einheit (bus/unit)",
                          j + 1, i + 1);

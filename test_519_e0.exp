@@ -1,0 +1,59 @@
+#!/usr/bin/expect -f
+# 5.19a: End-to-End-Test des ZWEITEN CF-Interfaces (RC2014-SC145 $FFFFC010) im Gast.
+# Bootet ueber die Config-Datei (Onboard = System, RC2014-Master = RBF-Datenimage), loggt ein
+# und versucht das RBF-Datenimage ueber den e0-Descriptor zu mounten: iniz /e0 + dir /e0.
+# Aufruf: expect test_519_e0.exp <config-datei>
+
+set cfg [lindex $argv 0]
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend test_519_e0_result.txt
+
+spawn ./build/native/q9.exe $cfg
+
+set timeout 60
+expect "devices online"
+set timeout 20
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+        -re {\$ ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+
+# e0-Descriptor ist per ToolShed aufs Image kopiert -> Execute-Attribut fehlt (Error 214 beim
+# load). Erst setzen, dann laden (der dokumentierte attr -e -pe-Schritt fuer kopierte Module).
+sleep 1
+send -s "attr -e -pe /dd/CMDS/BOOTOBJS/e0\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "load /dd/CMDS/BOOTOBJS/e0\r"
+expect -re {\$ ?$}
+
+# Zweites Interface initialisieren und Verzeichnis lesen (das RBF-Datenimage hat eine Datei README).
+sleep 1
+send -s "iniz /e0\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "dir /e0\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "list /e0/README\r"
+expect -re {\$ ?$}
+
+sleep 1
+send -s "logout\r"
+expect {
+    -re {Logout after} { send_log "\n<<<LOGOUT OK>>>\n" }
+    timeout { send_log "\n<<<LOGOUT TIMEOUT>>>\n" }
+}
+send_log "\n<<<TEST ENDE>>>\n"
+send "\x1d"
+expect eof
