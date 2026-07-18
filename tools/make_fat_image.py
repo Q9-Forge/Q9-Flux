@@ -96,8 +96,9 @@ def fat_set(fat, is_fat16, idx, val):
         fat[off + 1] = (cur >> 8) & 0xFF
 
 
-def build(out_path, size_mb, sec_per_clus, label):
-    total_sectors = (size_mb * 1024 * 1024) // SECTOR
+def build(out_path, size_mb, sec_per_clus, label, start_sector=0):
+    payload_sectors = (size_mb * 1024 * 1024) // SECTOR
+    total_sectors = payload_sectors
     root_sectors = ROOT_ENT_CNT * 32 // SECTOR
 
     # FAT-Groesse iterativ bestimmen: Datenbereich haengt von FAT-Groesse ab (Henne/Ei).
@@ -149,7 +150,14 @@ def build(out_path, size_mb, sec_per_clus, label):
     subdir[32:64] = make_dirent("..", 0x10, 0, 0)
     subdir[64:96] = make_dirent("INFO.TXT", 0x20, 4, len(info_b))
 
+    # FAT16-Obergrenze (65524 Cluster) pruefen — sonst waere das Image kein gueltiges FAT16.
+    if is_fat16 and clusters > 65524:
+        raise SystemExit("FAT16-Grenze ueberschritten (%d > 65524 Cluster) — --spc erhoehen "
+                         "oder --mb verkleinern" % clusters)
+
     with open(out_path, "wb") as f:
+        if start_sector:
+            f.seek(start_sector * SECTOR)
         f.write(make_boot_sector(total_sectors, sec_per_clus, fat_sectors, is_fat16, label))
         for _ in range(NUM_FATS):
             f.write(bytes(fat))
@@ -157,11 +165,9 @@ def build(out_path, size_mb, sec_per_clus, label):
         f.write(clusbuf(readme_b))                  # Cluster 2
         f.write(clusbuf(subdir))                    # Cluster 3
         f.write(clusbuf(info_b))                    # Cluster 4
-        # Rest bis zur vollen Groesse auffuellen
-        written = SECTOR * (RESERVED_SECS + NUM_FATS * fat_sectors + root_sectors) + 3 * clus_bytes
-        pad = total_sectors * SECTOR - written
-        if pad > 0:
-            f.write(b"\x00" * pad)
+        # Rest bis zur vollen Groesse SPARSE anlegen (truncate -> Loch, keine echten Nullbytes;
+        # wichtig bei GByte-Images, sonst 2 GB Nullen im RAM/auf der Platte).
+        f.truncate((start_sector + total_sectors) * SECTOR)
 
     print("%s: FAT%d, %d MB, %d Sektoren, %d Sektoren/Cluster, %d Cluster, FAT=%d Sektoren"
           % (out_path, 16 if is_fat16 else 12, size_mb, total_sectors, sec_per_clus,
@@ -174,8 +180,10 @@ def main():
     ap.add_argument("--mb", type=int, default=16, help="Groesse in MByte (Default 16)")
     ap.add_argument("--spc", type=int, default=4, help="Sektoren/Cluster (Default 4)")
     ap.add_argument("--label", default="Q9DATA", help="Datentraeger-Label (Default Q9DATA)")
+    ap.add_argument("--start-sector", type=int, default=0,
+                     help="Host-Startsektor fuer den FAT-Partitionanfang (Default 0)")
     args = ap.parse_args()
-    build(args.out, args.mb, args.spc, args.label)
+    build(args.out, args.mb, args.spc, args.label, args.start_sector)
     return 0
 
 

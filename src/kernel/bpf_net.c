@@ -162,7 +162,7 @@ int q9_bpf_start(const char *ifname)
     }
     pthread_detach(reader);
 
-    printf("[OS-9 Net] Bridge-Modus: BPF an '%s' gebunden (Puffer %u Byte, Promiscuous).\n",
+    printf("[OS-9 Net] Bridge-Modus: BPF an '%s' gebunden (Puffer %u Byte, Promiscuous).\r\n",
            ifname, qb.buflen);
     return 0;
 }

@@ -163,7 +163,7 @@ int q9_vmnet_start(void)
             qv_drain();
         });
 
-    printf("[OS-9 Net] vmnet Shared Mode: Gateway %s/24, Interface-MAC %s\n", QV_GATEWAY, qv_macs);
+    printf("[OS-9 Net] vmnet Shared Mode: Gateway %s/24, Interface-MAC %s\r\n", QV_GATEWAY, qv_macs);
     return 0;
 }
 

@@ -1,0 +1,74 @@
+* Q9 CF-Descriptorprofil 5.19b
+* Diese Datei dokumentiert die Parameter der aus SDK-Templates erzeugten Module.
+* Sie ist bewusst eine Q9-Konfigurationsvorlage; die lizenzierten MWOS-Makros
+* (rbfdesc.a/pcfdesc.a) werden nicht ins Q9-Repository kopiert.
+
+CF_BASE_C0  equ $FFFFE000
+CF_BASE_D0  equ CF_BASE_C0+$0100
+CF_BASE_E   equ CF_BASE_C0+$0200
+
+* ---------------- c0: Boot-RBF ----------------
+ nam c0 Device Descriptor
+ use defsfile
+ use <rbfdesc.a>
+Port        equ CF_BASE_C0
+DevDrv      dc.b "cfide",0
+DrvNum      set 0
+DiskKind    set Hard
+SectSize    set 512
+LSNOffset   set 0
+PartSize    set $00800000       * 4 GiB / 512
+ ends
+
+* Format-Descriptoren: identischer Aufbau, aber Control ohne FmtDsabl.
+* Module: c0_fmt (Vorlage), d0_fmt, e0_fmt, e1_fmt. Base, LSNOffset und PartSize
+* bleiben zum jeweiligen Daten-Descriptor identisch.
+
+* ---------------- d0: separates PCF ----------------
+ nam d0 Device Descriptor
+ use defsfile
+ use <pcfdesc.a>
+Port        equ CF_BASE_D0
+DevDrv      dc.b "cfide",0
+DrvNum      set 0
+SectSize    set 512
+LSNOffset   set 64              * FAT-Bootsektor liegt ab Hostsektor 64
+DiskKind    set Hard             * kein Disketten-Descriptor (pcdos380)
+Heads       set 255
+SectTrk     set 63
+SectTrk0    set 63
+Cylnders    set 261
+Control     set FmtDsabl+MultEnabl
+TotalCyls   set Cylnders
+ ends
+
+* ---------------- e0: PCF-Partition ----------------
+ nam e0 Device Descriptor
+ use defsfile
+ use <pcfdesc.a>
+Port        equ CF_BASE_E
+DevDrv      dc.b "cfide",0
+DrvNum      set 0
+SectSize    set 512
+LSNOffset   set 64
+DiskKind    set Hard
+Heads       set 255
+SectTrk     set 63
+SectTrk0    set 63
+Cylnders    set 131
+Control     set FmtDsabl+MultEnabl
+TotalCyls   set Cylnders
+ ends
+
+* ---------------- e1: RBF-Partition (gleiche Hardware/Base wie e0) ----------------
+ nam e1 Device Descriptor
+ use defsfile
+ use <rbfdesc.a>
+Port        equ CF_BASE_E
+DevDrv      dc.b "cfide",0
+DrvNum      set 0                * kein Master/Slave: gleicher physischer CF-Port
+DiskKind    set Hard
+SectSize    set 512
+LSNOffset   set $00200040       * 1 GiB + 64 Sektoren
+PartSize    set $00200000       * 1 GiB
+ ends

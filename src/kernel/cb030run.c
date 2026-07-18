@@ -31,6 +31,7 @@
 #include "../hal/q9_hal.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define CB030_RAM_BYTES   (16u * 1024u * 1024u)       /* 16 MByte SIM-Bestueckung (docs/CB030.md) */
 #define CB030_ROM_MAX     (512u * 1024u)              /* 29F040-Flash: 512 KByte                  */
@@ -47,7 +48,9 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 {
     static q9_cb030_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
     static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
-    static q9_cf_t    cf2;                              /* 5.19a: RC2014-SC145-Zweitinterface     */
+    static q9_cf_t    cf_extra[Q9_CFG_MAX_CF];
+    static uint32_t   cf_extra_base[Q9_CFG_MAX_CF];
+    static int        cf_extra_count;
     q9_m68krt_t       rt;
     uint32_t          rom_len = 0;
     int               cf2_used   = 0;
@@ -75,12 +78,13 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     }
 
     if (cfg && cfg->name[0]) {
-        printf("cb030: Board-Config '%s'\n", cfg->name);
+        printf("cb030: Board-Config '%s'\r\n", cfg->name);
     }
-    printf("cb030: ROM '%s' geladen (%u Byte), %u MByte RAM — Reset.\n",
+    printf("cb030: ROM '%s' geladen (%u Byte), %u MByte RAM — Reset.\r\n",
            rom_path, rom_len, CB030_RAM_BYTES / (1024u * 1024u));
 
     q9_cb030_init(&board, cb030_rom, rom_len, cb030_ram, sizeof(cb030_ram));
+    cf_extra_count = 0;
 
     /* 5.19: CF-Images aus der Config verteilen — Onboard-CF (board.cf) und RC2014-Zweitinterface
        (cf2), je Master/Slave. Danach setzt ein explizites --cf immer die Onboard-Master-Einheit
@@ -88,15 +92,41 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     if (cfg) {
         for (int i = 0; i < cfg->cf_count; i++) {
             const q9_cfg_cf_t *e = &cfg->cf[i];
-            q9_cf_t *iface = (e->bus == Q9_CFG_BUS_RC2014) ? &cf2 : &board.cf;
-            if (e->bus == Q9_CFG_BUS_RC2014) {
-                cf2_used = 1;
-            } else {
+            uint32_t base = e->base ? e->base :
+                            (e->bus == Q9_CFG_BUS_RC2014 ? Q9_CB030_CF2_BASE : Q9_CB030_CF_BASE);
+            q9_cf_t *iface = 0;
+            if (base == Q9_CB030_CF_BASE) {
+                iface = &board.cf;
                 onboard_from_cfg = 1;
+            } else {
+                for (int j = 0; j < cf_extra_count; j++)
+                    if (cf_extra_base[j] == base) iface = &cf_extra[j];
+                if (!iface && cf_extra_count < Q9_CFG_MAX_CF) {
+                    iface = &cf_extra[cf_extra_count];
+                    cf_extra_base[cf_extra_count++] = base;
+                }
+                cf2_used = 1;
             }
-            q9_cf_attach(iface, e->unit, e->path, e->format);
-            printf("cb030: CF %s/%s <- %s (%s)\n",
-                   e->bus == Q9_CFG_BUS_RC2014 ? "rc2014" : "onboard",
+            if (!iface) { fprintf(stderr, "cb030: zu viele CF-Bases in Config\n"); return 1; }
+            /* Mehrere Descriptoren dürfen dieselbe Hardware und dasselbe Backing-Image
+               beschreiben (Partitionen, z.B. e0/e1). Das Interface wird nur einmal bestückt;
+               die jeweilige PD_LSNOffs steht im OS-9-Descriptor. */
+            int duplicate = 0;
+            for (int j = 0; j < i; j++) {
+                const q9_cfg_cf_t *p = &cfg->cf[j];
+                uint32_t pb = p->base ? p->base :
+                              (p->bus == Q9_CFG_BUS_RC2014 ? Q9_CB030_CF2_BASE : Q9_CB030_CF_BASE);
+                if (pb == base && p->unit == e->unit && strcmp(p->path, e->path) == 0) {
+                    duplicate = 1;
+                    break;
+                }
+            }
+            if (!duplicate) {
+                q9_cf_attach(iface, e->unit, e->path, e->format);
+                q9_cf_set_start_sector(iface, e->unit, e->start_sector);
+            }
+            printf("cb030: CF %s/%s <- %s (%s)\r\n",
+                   e->bus == Q9_CFG_BUS_RC2014 ? "secondary" : "onboard",
                    e->unit ? "slave" : "master", e->path,
                    e->format == Q9_CF_FMT_PCF ? "pcf" :
                    e->format == Q9_CF_FMT_RBF ? "rbf" : "auto");
@@ -108,7 +138,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
        Startzeilen unveraendert funktionieren. */
     if (cf_path && cf_path[0]) {
         q9_cb030_cf_attach(&board, cf_path);
-        printf("cb030: CF onboard/master <- %s (auto)\n", cf_path);
+        printf("cb030: CF onboard/master <- %s (auto)\r\n", cf_path);
     } else if (!onboard_from_cfg) {
         q9_cb030_cf_attach(&board, CB030_CF_IMAGE);
     }
@@ -118,7 +148,8 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     q9_m68krt_init(&rt, cb030_ram, sizeof(cb030_ram));
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     if (cf2_used) {
-        q9_m68krt_attach_cf2(&cf2);                    /* 5.19a: RC2014-Fenster $FFFFC010        */
+        for (int i = 0; i < cf_extra_count; i++)
+            q9_m68krt_attach_cf_at(&cf_extra[i], cf_extra_base[i], "cf-secondary");
     }
     q9_quicc_init(&quicc, cb030_ram, sizeof(cb030_ram));
     if (q9_quicc_net_mode(&quicc, net_mode) != 0) {    /* 5.12: nat (Default) oder vmnet         */

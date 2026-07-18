@@ -24,8 +24,10 @@
 #ifndef Q9_BOARDCFG_H
 #define Q9_BOARDCFG_H
 
+#include <stdint.h>
+
 #define Q9_CFG_PATH_MAX 512
-#define Q9_CFG_MAX_CF   4                    /* Onboard M/S + RC2014 M/S = maximal 4 Einheiten     */
+#define Q9_CFG_MAX_CF   4
 
 /* CF-Bus: an welches der beiden emulierten CF-Interfaces das Image geht. */
 #define Q9_CFG_BUS_ONBOARD 0                 /* $FFFFE000, Descriptoren c0..c3 (DrvNum 0/Master)   */
@@ -33,9 +35,14 @@
 
 typedef struct {
     char path[Q9_CFG_PATH_MAX];              /* absoluter/relativer Image-Pfad (bereits aufgeloest) */
+    char descriptor[Q9_CFG_PATH_MAX];        /* optionaler OS-9-Descriptor fuer ROM-Generator       */
     int  bus;                                /* Q9_CFG_BUS_*                                        */
     int  unit;                               /* 0 = Master, 1 = Slave                              */
     int  format;                             /* Q9_CF_FMT_* (cb030.h): AUTO/RBF/PCF                 */
+    uint32_t base;                           /* ATA-Base; 0 = Standard-Base anhand bus             */
+    uint32_t start_sector;                   /* Host-Startsektor fuer Gast-LBA 0 (Default 0)       */
+    uint32_t length_sectors;                 /* logische Partitionslaenge fuer Descriptor/Pruefung  */
+    uint32_t descriptor_lsn;                 /* PD_LSNOffs im OS-9-Descriptor                   */
 } q9_cfg_cf_t;
 
 typedef struct {

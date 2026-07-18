@@ -163,6 +163,7 @@ typedef struct {
     const char *path;                                  /* NULL = Einheit nicht bestueckt          */
     FILE       *file;                                  /* lazy geoeffnet (Muster wie q9disk.img)  */
     uint32_t    image_sector_size;                     /* 0 = noch unerkannt; 256/512             */
+    uint32_t    start_sector;                          /* Host-LBA, auf den Gast-LBA 0 abgebildet wird */
     int         format;                                /* Q9_CF_FMT_*                             */
 } q9_cf_unit_t;
 
@@ -268,6 +269,7 @@ int q9_cb030_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t
 // Call:     q9_cf_attach(&b.cf, 0, "cb030_cf.img", Q9_CF_FMT_AUTO)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format);
+void q9_cf_set_start_sector(q9_cf_t *c, int unit, uint32_t start_sector);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_cf_attach
