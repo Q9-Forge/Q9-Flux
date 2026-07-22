@@ -1,9 +1,13 @@
-; Q9 reales CF-Testprofil 5.19b
+; Q9 reales CF-Profil (5.19b) — Standard-Arbeitskonfiguration
+; c0: Boot-RBF bei Sektor 0
+; d0: separates PCF-Image, Nutzdaten/Descriptor ab Sektor 64
+; e0/e1: gemeinsames 2-GB-Image, je 1 GB Partition
+; Die Descriptor-Dateien werden vom ROM/Bootfile-Generator verwendet.
 
 [board]
-name = CB030-Q9 real CF profile
-rom  = ../MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN
-net  = nat
+name = Q9 Emu
+rom  = local_images/roms/romimage.dev.running.BIN
+net  = vmnet
 
 [c0]
 type = rbf
@@ -14,7 +18,7 @@ start_sector = 0
 length_sectors = 0x800000
 descriptor_lsn = 0
 descriptor = local_images/c0
-image = local_images/OS9SYS.cf_profile_test.hda
+image = local_images/OS9SYS.hda
 
 [d0]
 type = pcf
