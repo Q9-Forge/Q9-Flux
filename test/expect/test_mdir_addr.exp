@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 # Kurzer Check: liefert "mdir -e" (oder andere Optionen) die Ladeadresse von pkdvr direkt?
 set timeout 90
-log_file -noappend test_mdir_addr_result.txt
+log_file -noappend test/expect/results/test_mdir_addr_result.txt
 set image local_images/OS9SYS.claudia-optionb-patchtest.hda
 
 spawn sudo -n ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image --net vmnet

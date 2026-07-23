@@ -34,7 +34,7 @@
 #include "../../kernel/boardcfg.h"
 #endif
 
-#define DISK_IMAGE "q9disk.img"
+#define DISK_IMAGE "local_images/q9disk.img"
 
 static FILE *disk = NULL;
 static struct termios orig_termios;

@@ -14,6 +14,11 @@ name = CB030-Q9 Beispiel
 rom  = roms/romimage.dev.running.BIN
 ; Ethernet-Backend: nat (Default) | vmnet | bridge:<ifname>
 net  = nat
+; vmnet Shared-Mode-Netz (wird nur bei net = vmnet verwendet)
+; vmnet_ip       = 192.168.200.2
+; vmnet_gateway  = 192.168.200.1
+; vmnet_netmask  = 255.255.255.0
+; vmnet_dhcp_end = 192.168.200.254
 
 ; ── CF-Images ─────────────────────────────────────────────────────────────────────────────────
 ; Jeder [cfN]-Abschnitt haengt EIN Image an eine Einheit. type = rbf (OS-9-RBF) oder pcf (FAT12/16).

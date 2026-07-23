@@ -8,7 +8,7 @@
 
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend idbgen_final_result.txt
+log_file -noappend test/expect/results/idbgen_final_result.txt
 
 set image local_images/OS9SYS.claudia-final-test.hda
 set mwos /Volumes/SSD1TB/projects/MWOS

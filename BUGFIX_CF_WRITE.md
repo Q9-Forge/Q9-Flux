@@ -53,7 +53,7 @@ static void cb030_cf_store_sector(q9_cb030_t *b) {
 
 Test-Image erstellen:
 ```bash
-./test_cf_write.sh
+./test/cf/test_cf_write.sh
 ```
 
 Mit CF-Tracing testen:

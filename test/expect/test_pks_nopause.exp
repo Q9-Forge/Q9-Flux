@@ -8,7 +8,7 @@
 set timeout 90
 set image "/Volumes/SSD1TB/projects/Q9/local_images/OS9SYS.pks-nopause.hda"
 set rom "/Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN"
-log_file -noappend "test_pks_nopause.result.txt"
+log_file -noappend "test/expect/results/test_pks_nopause.result.txt"
 
 if {![file exists $image]} {
     send_user "FEHLER: $image fehlt. Zuerst tools/build_pks_nopause_image.py ausfuehren.\n"

@@ -12,7 +12,7 @@ Testet den Fix für 256-Byte RBF-Images: RAM-Module werden ins CF-Image geschrie
 
 2. **Test-Image erstellen:**
    ```bash
-   ./test_save_modules.sh
+   ./test/cf/test_save_modules.sh
    ```
    
    Erstellt: `local_images/Q9-cb030-work-test.hda` (Kopie von Q9-cb030-work-max.hda)
@@ -22,7 +22,7 @@ Testet den Fix für 256-Byte RBF-Images: RAM-Module werden ins CF-Image geschrie
 ### Option A: Automatisch (mit ROM-Image)
 
 ```bash
-./save_ram_modules.exp /pfad/zum/rom-image.bin
+./test/expect/save_ram_modules.exp /pfad/zum/rom-image.bin
 ```
 
 Das Script:
@@ -56,7 +56,7 @@ $ [Ctrl-C zum Beenden]
 ## Verifikation
 
 ```bash
-./verify_cf_writes.sh
+./test/cf/verify_cf_writes.sh
 ```
 
 Prüft:
@@ -103,9 +103,9 @@ if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
 
 ## Dateien
 
-- `test_save_modules.sh` - Test-Image vorbereiten
-- `save_ram_modules.exp` - Automatisierter Test (expect)
-- `verify_cf_writes.sh` - Verifikation der Resultate
+- `test/cf/test_save_modules.sh` - Test-Image vorbereiten
+- `test/expect/save_ram_modules.exp` - Automatisierter Test (expect)
+- `test/cf/verify_cf_writes.sh` - Verifikation der Resultate
 - `BUGFIX_CF_WRITE.md` - Technische Bugfix-Dokumentation
 
 ## Troubleshooting

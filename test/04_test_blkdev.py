@@ -2,8 +2,8 @@
 # File:   04_test_blkdev.py                                                               Ver. 1.00
 # Owner:  AF
 # Desc.:  Block-Device-Test (Phase 3.1): prüft, dass /d0 über SS.BlkWr/SS.BlkRd Roundtrips
-#         gegen die HAL (q9disk.img) macht und Fehlerfälle (NULL-Puffer, unbekannter SS-Code)
-#         korrekt meldet. q9disk.img wird von jedem --selftest-Lauf (mit-)erzeugt und ist
+#         gegen die HAL (local_images/q9disk.img) macht und Fehlerfälle (NULL-Puffer, unbekannter SS-Code)
+#         korrekt meldet. local_images/q9disk.img wird von jedem --selftest-Lauf (mit-)erzeugt und ist
 #         .gitignore't — kein eigenes Aufräumen hier noetig.
 #
 # Call:   python test/04_test_blkdev.py   (aus dem Projekt-Root, nach "make native")

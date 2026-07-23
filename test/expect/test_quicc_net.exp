@@ -8,7 +8,7 @@
 
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend quicc_net_result.txt
+log_file -noappend test/expect/results/quicc_net_result.txt
 
 set image local_images/OS9SYS.claudia-net-test.hda
 

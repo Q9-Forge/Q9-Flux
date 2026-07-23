@@ -1,0 +1,30 @@
+#!/usr/bin/expect -f
+# Reproduziert den von Andreas gemeldeten "moded haengt"-Fall, mit kurzem Timeout statt
+# unbegrenztem Warten, damit der Testlauf sauber abbricht statt selbst zu haengen.
+set timeout 45
+log_file -noappend test/expect/results/test_moded_hang_repro.log
+spawn ./build/native/q9.exe test/cf/emu_format_test.q9
+expect {
+    "devices online" {}
+    timeout { puts "\nFEHLER: Boot haengt"; exit 1 }
+}
+sleep 2
+send "\r"
+expect {
+    -re {User name\?:} {}
+    timeout { puts "\nFEHLER: kein Login-Prompt"; exit 1 }
+}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "moded rbf\r"
+expect {
+    -re {moded:} { puts "\nMODED-PROMPT ERSCHIENEN -- kein Hang"; }
+    -re {\$ ?$}  { puts "\nMODED SOFORT BEENDET -- kein Hang"; }
+    timeout      { puts "\nBESTAETIGT: moded rbf HAENGT (kein Prompt nach 45s)"; }
+}
+send "\x04"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

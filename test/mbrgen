@@ -1,0 +1,37 @@
+#!/c0/bash/bash
+
+# Dynamischen Descriptor aus dem MBR erzeugen und testen.
+
+set -e
+
+echo "Alte Module vorsichtig entfernen ..."
+deiniz d0 >/nil 2>&1 || :
+unlink -f d0 >/nil 2>&1 || :
+deiniz d >/nil 2>&1 || :
+unlink -f d >/nil 2>&1 || :
+unlink -f mbr >/nil 2>&1 || :
+
+echo "Raw-Descriptor und MBR-Programm laden ..."
+attr -e -pe /dd/CMDS/BOOTOBJS/d
+attr -e -pe /dd/CMDS/mbr
+load /dd/CMDS/BOOTOBJS/d
+iniz d
+load /dd/CMDS/mbr
+
+echo "MBR lesen und d0 erzeugen ..."
+cd /dd/PROJECTS
+mbr /d@ /dd/PROJECTS/pcf.tmpl /dd/PROJECTS/rbf.tmpl
+
+echo "d0 pruefen und laden ..."
+deiniz d >/nil 2>&1 || :
+unlink -f d >/nil 2>&1 || :
+attr -e -pe /dd/PROJECTS/d0
+ident /dd/PROJECTS/d0
+load /dd/PROJECTS/d0
+iniz d0
+
+echo "Partition testen ..."
+dir -e /d0
+free /d0
+
+echo "mbrgen: erfolgreich"

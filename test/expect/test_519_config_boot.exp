@@ -8,7 +8,7 @@ set cfg [lindex $argv 0]
 
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend test_519_config_boot_result.txt
+log_file -noappend test/expect/results/test_519_config_boot_result.txt
 
 spawn ./build/native/q9.exe $cfg
 

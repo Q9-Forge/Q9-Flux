@@ -11,7 +11,7 @@
 
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend apply_idbgen_5_14_result.txt
+log_file -noappend test/expect/results/apply_idbgen_5_14_result.txt
 
 set image local_images/OS9SYS.hda
 set mwos /Volumes/SSD1TB/projects/MWOS
@@ -25,7 +25,7 @@ proc login {} {
         expect {
             "User name?:" { sleep 2; send -s "super\r"; exp_continue }
             -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
-            -re {\$ ?$} { set logged_in 1 }
+            -re {[#$] ?$} { set logged_in 1 }
             timeout { send "\r" }
         }
     }
@@ -36,7 +36,7 @@ proc paste_file {localpath remotename blankmarker} {
     send_log "\n<<<TRANSFER $remotename>>>\n"
     sleep 1
     send -s "del $remotename\r"
-    expect -re {\$ ?$}
+    expect -re {[#$] ?$}
     sleep 1
     send -s "build $remotename\r"
     expect -re {\? ?$}
@@ -50,7 +50,7 @@ proc paste_file {localpath remotename blankmarker} {
     append data "\r"
     send -s -- $data
     set timeout 60
-    expect -re {\$ ?$}
+    expect -re {[#$] ?$}
     set timeout 20
 }
 
@@ -60,53 +60,53 @@ login
 send_log "\n=== SCHRITT 1+2: Configs pasten, idbgen laufen lassen ===\n"
 sleep 1
 send -s "chd /dd/ETC\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 paste_file "$mwos/OS9/68030/PORTS/Q9/SPF/ETC/resolv.conf" "resolv.conf" "#"
 paste_file "$mwos/OS9/68030/PORTS/Q9/SPF/ETC/routes.conf" "routes.conf" "#"
 paste_file "$mwos/OS9/68030/PORTS/Q9/SPF/ETC/interfaces.conf" "interfaces.conf" "#"
 
 sleep 1
 send -s "makdir /dd/CMDS/BOOTOBJS/SPF\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 sleep 1
 send -s "chd /dd/CMDS/BOOTOBJS/SPF\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 sleep 1
 send -s "idbgen -d=/dd/ETC -d=/dd/MWOS/SRC/ETC inetdb\r"
 set timeout 30
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 
 sleep 1
 send -s "dir -e /dd/CMDS/BOOTOBJS/SPF\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 
 send_log "\n=== SCHRITT 3: attr -e -pe ===\n"
 sleep 1
 send -s "attr -e -pe /dd/CMDS/BOOTOBJS/SPF/inetdb\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 sleep 1
 send -s "attr -e -pe /dd/CMDS/BOOTOBJS/SPF/inetdb2\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 
 send_log "\n=== SCHRITT 4: SYS/loadidb, SYS/startup, SYS/startspf ===\n"
 sleep 1
 send -s "chd /dd/SYS\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 
 paste_file "$mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/BOOTFILES/loadidb" "loadidb" "*"
 sleep 1
 send -s "attr -e -pe /dd/SYS/loadidb\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 
 paste_file "$mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/BOOTFILES/startup" "startup" "*"
 sleep 1
 send -s "attr -e -pe /dd/SYS/startup\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 
 paste_file "$mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/BOOTFILES/startspf" "startspf" "*"
 sleep 1
 send -s "attr -e -pe /dd/SYS/startspf\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 
 send_log "\n<<<HOST-ESCAPE, EMULATOR BEENDEN>>>\n"
 send "\x1d"
@@ -118,25 +118,25 @@ login
 
 sleep 2
 send -s "ifconfig enet0\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 sleep 1
 send -s "ping 192.168.200.1\r"
 set timeout 30
 expect {
-    -re {\$ ?$} {}
+    -re {[#$] ?$} {}
     timeout { send_log "\n<<<PING TIMEOUT>>>\n" }
 }
 sleep 1
 send -s "hostname\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 sleep 1
 send -s "netstat -i\r"
-expect -re {\$ ?$}
+expect -re {[#$] ?$}
 sleep 1
 send -s "netstat -r\r"
 set timeout 15
 expect {
-    -re {\$ ?$} {}
+    -re {[#$] ?$} {}
     timeout { send_log "\n<<<netstat -r TIMEOUT (bekannt, DNS-Resolver ohne Netz)>>>\n" }
 }
 

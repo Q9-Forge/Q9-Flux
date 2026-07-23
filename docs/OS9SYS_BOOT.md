@@ -140,4 +140,4 @@ Emulator per expect gesteuert:
 - Automatisierungs-Hinweise: nach "1 devices online" erst ein CR senden,
   damit tsmon den Login-Prompt zeigt; Eingaben gebremst senden (expect
   `send -s`, ~50 ms/Zeichen), sonst gehen Zeichen verloren. Muster:
-  `test_paste_burst.exp`/`test_paste_paced.exp` im Repo-Root.
+  `test/expect/test_paste_burst.exp`/`test/expect/test_paste_paced.exp` im Testverzeichnis.

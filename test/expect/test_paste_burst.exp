@@ -22,7 +22,7 @@
 
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend paste_burst_result.txt
+log_file -noappend test/expect/results/paste_burst_result.txt
 
 set image local_images/OS9SYS.claudia-paste-test.hda
 exec cp -c local_images/OS9SYS.hda $image

@@ -19,7 +19,7 @@
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
-// 26-07-16│ 1.00 │ 5.19: Erster Wurf — [board] rom/net + [cfN] image/type/bus/unit          │ CF
+// 26-07-23│ 1.10 │ 5.19: vmnet_ip/gateway/netmask/dhcp_end in [board]                    │ AF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARDCFG_H
 #define Q9_BOARDCFG_H
@@ -49,6 +49,10 @@ typedef struct {
     char        name[64];                    /* [board] name = ... (Banner/Diagnose)               */
     char        rom_path[Q9_CFG_PATH_MAX];   /* [board] rom  = ... (leer = per CLI/Default)        */
     char        net_mode[32];                /* [board] net  = nat|vmnet|bridge:<if> (leer = nat)  */
+    char        vmnet_ip[32];                /* [board] vmnet_ip = Gast-IP (OS-9-seitig statisch)  */
+    char        vmnet_gateway[32];           /* [board] vmnet_gateway = vmnet Shared-Gateway      */
+    char        vmnet_netmask[32];           /* [board] vmnet_netmask = Netzmaske                */
+    char        vmnet_dhcp_end[32];          /* [board] vmnet_dhcp_end = DHCP-Bereichsende       */
     q9_cfg_cf_t cf[Q9_CFG_MAX_CF];
     int         cf_count;
 } q9_board_cfg_t;

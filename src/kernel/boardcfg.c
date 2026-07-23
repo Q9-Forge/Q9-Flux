@@ -116,6 +116,11 @@ static void cfg_resolve_rel(const char *dir, const char *value, char *out, unsig
 void q9_board_cfg_default(q9_board_cfg_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
+    /* Bestehende OS-9-Netzkonfiguration: nur die Config kann diese Werte ueberschreiben. */
+    cfg_copy(cfg->vmnet_ip,       sizeof(cfg->vmnet_ip),       "192.168.200.2");
+    cfg_copy(cfg->vmnet_gateway,  sizeof(cfg->vmnet_gateway),  "192.168.200.1");
+    cfg_copy(cfg->vmnet_netmask,  sizeof(cfg->vmnet_netmask),  "255.255.255.0");
+    cfg_copy(cfg->vmnet_dhcp_end, sizeof(cfg->vmnet_dhcp_end), "192.168.200.254");
 }
 
 void q9_board_cfg_resolve_path(const char *arg, char *out, unsigned out_max)
@@ -279,6 +284,14 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cfg_resolve_rel(dir, val, cfg->rom_path, sizeof(cfg->rom_path));
             } else if (cfg_ieq(key, "net")) {
                 cfg_copy(cfg->net_mode, sizeof(cfg->net_mode), val);
+            } else if (cfg_ieq(key, "vmnet_ip") || cfg_ieq(key, "vmnet_guest_ip")) {
+                cfg_copy(cfg->vmnet_ip, sizeof(cfg->vmnet_ip), val);
+            } else if (cfg_ieq(key, "vmnet_gateway")) {
+                cfg_copy(cfg->vmnet_gateway, sizeof(cfg->vmnet_gateway), val);
+            } else if (cfg_ieq(key, "vmnet_netmask")) {
+                cfg_copy(cfg->vmnet_netmask, sizeof(cfg->vmnet_netmask), val);
+            } else if (cfg_ieq(key, "vmnet_dhcp_end")) {
+                cfg_copy(cfg->vmnet_dhcp_end, sizeof(cfg->vmnet_dhcp_end), val);
             } else {
                 snprintf(err, err_max, "Zeile %d: unbekannter [board]-Key '%s'", lineno, key);
                 fclose(f);

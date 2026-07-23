@@ -12,7 +12,7 @@
 //
 // Call:   q9_cb030_t b; q9_cb030_init(&b, rom, rom_len, ram, ram_len);
 //         v = q9_cb030_read8(&b, addr); q9_cb030_write8(&b, addr, v); q9_cb030_reset(&b);
-//         q9_cb030_cf_attach(&b, "cb030_cf.img");
+//         q9_cb030_cf_attach(&b, "local_images/cb030_cf.img");
 //         if (q9_cb030_poll_timer(&b, q9_hal_ticks_ms())) q9_m68krt_set_irq(3);
 //
 // Edition History
@@ -266,7 +266,7 @@ int q9_cb030_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t
 //           (Muster wie die native HAL bei q9disk.img). path muss die gesamte Lebensdauer von c
 //           ueberleben (wird nur als Zeiger gehalten, nicht kopiert). format = Q9_CF_FMT_*
 //           (s.o.). Setzt den Interface-Registersatz zurueck (wie ein Kartenwechsel).
-// Call:     q9_cf_attach(&b.cf, 0, "cb030_cf.img", Q9_CF_FMT_AUTO)
+// Call:     q9_cf_attach(&b.cf, 0, "local_images/cb030_cf.img", Q9_CF_FMT_AUTO)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format);
 void q9_cf_set_start_sector(q9_cf_t *c, int unit, uint32_t start_sector);
@@ -275,7 +275,7 @@ void q9_cf_set_start_sector(q9_cf_t *c, int unit, uint32_t start_sector);
 // Function: q9_cb030_cf_attach
 // Desc.:    Bisheriger Einzel-Image-Weg (5.2c): Image an die Master-Einheit der Onboard-CF,
 //           Format-Autoerkennung — jetzt ein duenner Wrapper um q9_cf_attach (5.19a).
-// Call:     q9_cb030_cf_attach(&b, "cb030_cf.img")
+// Call:     q9_cb030_cf_attach(&b, "local_images/cb030_cf.img")
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_cb030_cf_attach(q9_cb030_t *b, const char *path);
 

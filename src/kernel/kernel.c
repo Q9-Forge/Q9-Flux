@@ -1843,7 +1843,7 @@ int q9_kernel_selftest(void)
         ok = (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
         q9_cb030_reset(&board);
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
-        q9_cb030_cf_attach(&board, "cb030_cf_test.img");
+        q9_cb030_cf_attach(&board, "local_images/cb030_cf_test.img");
 
         q9_device_t cf_dev;
         cf_dev.base = cf_base;                        /* 5.19a: Adapter rechnet mit dev->base   */
@@ -1869,7 +1869,7 @@ int q9_kernel_selftest(void)
             read_ok = (q9_cb030_init(&board2, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
             q9_cb030_reset(&board2);
             (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
-            q9_cb030_cf_attach(&board2, "cb030_cf_test.img");
+        q9_cb030_cf_attach(&board2, "local_images/cb030_cf_test.img");
 
         q9_device_t cf_dev2;
         cf_dev2.base = cf_base;                       /* 5.19a: Adapter rechnet mit dev->base   */
@@ -1906,7 +1906,7 @@ int q9_kernel_selftest(void)
         ok = (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
         q9_cb030_reset(&board);
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
-        q9_cb030_cf_attach(&board, "cb030_cf_multi_test.img");
+        q9_cb030_cf_attach(&board, "local_images/cb030_cf_multi_test.img");
 
         q9_device_t cf_dev;
         cf_dev.base = cf_base;                        /* 5.19a: Adapter rechnet mit dev->base   */
@@ -1938,7 +1938,7 @@ int q9_kernel_selftest(void)
             read_ok = (q9_cb030_init(&board2, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
             q9_cb030_reset(&board2);
             (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
-            q9_cb030_cf_attach(&board2, "cb030_cf_multi_test.img");
+        q9_cb030_cf_attach(&board2, "local_images/cb030_cf_multi_test.img");
 
         q9_device_t cf_dev2;
         cf_dev2.base = cf_base;                       /* 5.19a: Adapter rechnet mit dev->base   */
@@ -1977,7 +1977,7 @@ int q9_kernel_selftest(void)
         uint32_t       cf_base = Q9_CB030_CF_BASE;
         FILE          *f;
 
-        f = fopen("cb030_cf_rbf256_test.img", "wb");
+        f = fopen("local_images/cb030_cf_rbf256_test.img", "wb");
         if (f) {
             uint8_t lsn0[256] = {0};
             lsn0[0] = 0x00;                              /* DD.TOT = 2 */
@@ -1998,7 +1998,7 @@ int q9_kernel_selftest(void)
         ok = ok && (q9_cb030_init(&board, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
         q9_cb030_reset(&board);
         (void)q9_cb030_read8(&board, Q9_CB030_REMAP_REG_BASE);
-        q9_cb030_cf_attach(&board, "cb030_cf_rbf256_test.img");
+        q9_cb030_cf_attach(&board, "local_images/cb030_cf_rbf256_test.img");
 
         q9_device_t cf_dev;
         cf_dev.base = cf_base;                        /* 5.19a: Adapter rechnet mit dev->base   */
@@ -2023,7 +2023,7 @@ int q9_kernel_selftest(void)
             read_ok = (q9_cb030_init(&board2, 0, 0, ram, sizeof(ram)) == Q9_CB030_OK);
             q9_cb030_reset(&board2);
             (void)q9_cb030_read8(&board2, Q9_CB030_REMAP_REG_BASE);
-            q9_cb030_cf_attach(&board2, "cb030_cf_rbf256_test.img");
+        q9_cb030_cf_attach(&board2, "local_images/cb030_cf_rbf256_test.img");
 
         q9_device_t cf_dev2;
         cf_dev2.base = cf_base;                       /* 5.19a: Adapter rechnet mit dev->base   */
@@ -2145,6 +2145,10 @@ int q9_kernel_selftest(void)
             fputs("[board]\n", f);
             fputs("name = TestBoard\n", f);
             fputs("net  = nat\n", f);
+            fputs("vmnet_ip = 192.168.200.2\n", f);
+            fputs("vmnet_gateway = 192.168.200.1\n", f);
+            fputs("vmnet_netmask = 255.255.255.0\n", f);
+            fputs("vmnet_dhcp_end = 192.168.200.254\n", f);
             fputs("rom  = roms/test.BIN\n", f);
             fputs("[cf0]\n", f);
             fputs("type = rbf\n", f);
@@ -2163,6 +2167,8 @@ int q9_kernel_selftest(void)
         ok = ok && (q9_board_cfg_load(&cfg, "q9boardcfg_test.q9", err, sizeof(err)) == 0);
         ok = ok && (strcmp(cfg.name, "TestBoard") == 0);
         ok = ok && (strcmp(cfg.net_mode, "nat") == 0);
+        ok = ok && (strcmp(cfg.vmnet_ip, "192.168.200.2") == 0);
+        ok = ok && (strcmp(cfg.vmnet_gateway, "192.168.200.1") == 0);
         /* rom-Pfad wird relativ zur Config aufgeloest (hier CWD -> unveraendert). */
         ok = ok && (strcmp(cfg.rom_path, "roms/test.BIN") == 0);
         ok = ok && (cfg.cf_count == 2);

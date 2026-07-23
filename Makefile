@@ -136,6 +136,15 @@ ifeq ($(shell uname -s 2>/dev/null),Darwin)
 endif
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
+# host tools: portable C utilities (can later share their image-format core with Q9)
+#───────────────────────────────────────────────────────────────────────────────────────────────
+q9fat: $(BUILD)/tools/q9fat
+
+$(BUILD)/tools/q9fat: tools/q9fat.c
+	@mkdir -p $(BUILD)/tools
+	$(CC) $(CFLAGS) $< -o $@
+
+#───────────────────────────────────────────────────────────────────────────────────────────────
 # native: PC-Build (Windows w64devkit oder macOS/Linux, HAL wird automatisch gewaehlt)
 #───────────────────────────────────────────────────────────────────────────────────────────────
 native: $(BUILD)/native/q9.exe
@@ -163,7 +172,7 @@ $(BUILD)/wasm/q9.js: $(KSRC) src/hal/wasm/hal_wasm.c $(HDRS) web/index.html web/
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
 test: native
-	@rm -f q9disk.img cb030_cf_test.img cb030_cf_multi_test.img
+	@rm -f local_images/q9disk.img local_images/cb030_cf_test.img local_images/cb030_cf_multi_test.img
 	$(PYTHON) test/01_test_boot.py
 	$(PYTHON) test/02_test_syscalls.py
 	$(PYTHON) test/03_test_devices.py
@@ -171,10 +180,19 @@ test: native
 	$(PYTHON) test/05_test_vfs.py
 	$(PYTHON) test/06_test_fat16.py
 
+# 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (cb030.c) -- reines
+# ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber. Eigenes
+# Target statt Teil von "test", weil es nur cb030.c/devreg.c braucht (kein voller native-Build).
+test-cf-sector:
+	@mkdir -p $(BUILD)/native
+	$(CC) $(CFLAGS) test/07_test_cf_sector512.c test/07_hal_stub.c \
+	    src/kernel/cb030.c src/kernel/devreg.c -o $(BUILD)/native/test_cf_sector512
+	$(BUILD)/native/test_cf_sector512
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: native wasm test clean
+.PHONY: native wasm q9fat test test-cf-sector clean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 2.20

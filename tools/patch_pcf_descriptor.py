@@ -33,6 +33,19 @@ def c_string(data: bytearray, offset: int) -> str:
     return bytes(data[offset:end]).decode("ascii")
 
 
+def image_geometry(path: Path) -> tuple[int, int, int]:
+    """Derive classic PCF CHS geometry from a 512-byte image file."""
+    size = path.stat().st_size
+    if size == 0 or size % 512:
+        raise ValueError("image size must be a non-zero multiple of 512 bytes")
+    sectors = size // 512
+    heads, sectors_track = 255, 63
+    cylinders = (sectors + heads * sectors_track - 1) // (heads * sectors_track)
+    if cylinders > 0xFFFF:
+        raise ValueError("image is too large for the descriptor cylinder field")
+    return cylinders, heads, sectors_track
+
+
 def patch(path: Path, output_name: str, base: int, lsn: int, format_enabled: bool,
           hard_autosize: bool, driver_name: str, geometry: tuple[int, int, int] | None) -> None:
     data = bytearray(path.read_bytes())
@@ -40,8 +53,8 @@ def patch(path: Path, output_name: str, base: int, lsn: int, format_enabled: boo
     if size != len(data):
         raise ValueError("template size does not match module header")
     verify(data)
-    if module_name(data, 0) != "pcd0":
-        raise ValueError("expected a PCF pcd0 template")
+    if module_name(data, 0) not in {"pcd0", "d0"}:
+        raise ValueError("expected a PCF pcd0/d0 template")
     fm_off = struct.unpack_from(">H", data, 0x38)[0]
     drv_off = struct.unpack_from(">H", data, 0x3A)[0]
     con_off = struct.unpack_from(">H", data, 0x3C)[0]
@@ -76,11 +89,16 @@ def patch(path: Path, output_name: str, base: int, lsn: int, format_enabled: boo
         struct.pack_into(">H", data, 0x5E, control & ~0x0008)
     old_drv_end = data.index(0, drv_off)
     data[drv_off : old_drv_end + 1] = driver_name.encode("ascii") + b"\0" * (old_drv_end + 1 - drv_off - len(driver_name))
-    # MVME147's pcd0 carries DevCon="scsi147".  Q9's cfide driver has no
-    # board-specific constants module; its descriptor constant pointer is 0.
-    # Keep the field valid while replacing the stale board name.
-    if c_string(data, con_off) == "scsi147":
-        data[con_off : con_off + len("scsi147") + 1] = b"cfide\0\0\0"
+    # MVME pcd0 templates carry a board-specific SCSI DevCon string
+    # (scsi147/scsi167/...).  Q9's CF driver has no such constants module;
+    # keep the field valid while replacing the stale board name.
+    devcon = c_string(data, con_off)
+    if devcon.startswith("scsi"):
+        if len(driver_name) > len(devcon):
+            raise ValueError("driver name does not fit DevCon field")
+        data[con_off : con_off + len(devcon) + 1] = (
+            driver_name.encode("ascii") + b"\0" * (len(devcon) + 1 - len(driver_name))
+        )
     old_end = data.index(0, name_off)
     if len(output_name) <= old_end - name_off:
         data[name_off : old_end + 1] = output_name.encode("ascii") + b"\0" * (old_end - name_off + 1 - len(output_name))
@@ -114,6 +132,8 @@ def main() -> None:
                         help="Formatierung erlauben (FmtDsabl loeschen)")
     parser.add_argument("--hard-autosize", action="store_true",
                         help="Q9-CF: Hard-Disk-Typ und Geometrie per FAT-BPB")
+    parser.add_argument("--image", type=Path,
+                        help="Image-Datei: Geometrie aus ihrer 512-Byte-Sektorzahl ableiten")
     parser.add_argument("--driver", default="cfide",
                         help="Treibername im Descriptor (Default: cfide)")
     parser.add_argument("--geometry", metavar="CYL,HEADS,SPT",
@@ -121,6 +141,15 @@ def main() -> None:
     args = parser.parse_args()
     args.output.write_bytes(args.input.read_bytes())
     geometry = None
+    if args.image and args.geometry:
+        raise SystemExit("--image und --geometry schliessen sich aus")
+    if args.image and args.hard_autosize:
+        raise SystemExit("--image und --hard-autosize schliessen sich aus")
+    if args.image:
+        try:
+            geometry = image_geometry(args.image)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"--image: {exc}") from exc
     if args.geometry:
         try:
             geometry = tuple(int(part, 0) for part in args.geometry.split(","))

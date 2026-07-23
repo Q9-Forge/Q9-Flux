@@ -860,7 +860,7 @@ Verifiziert end-to-end (2026-07-12): OS-9 laedt den SPF-Stack zur Laufzeit
 (`load netmods` + `mbinstall` + `ipstart` — `sysmbuf` ist ein
 Coldstart-Systemmodul, beim Laufzeit-Weg uebernimmt `mbinstall` die
 Installation), `ping 192.168.200.1` bekommt Antworten, `netstat -i` zeigt enet0
-mit 0 Fehlern. Testskript: `test_quicc_net.exp`. (Adressierung 2026-07-13 von
+mit 0 Fehlern. Testskript: `test/expect/test_quicc_net.exp`. (Adressierung 2026-07-13 von
 10.0.0.0/24 auf 192.168.200.0/16 umgestellt, s. ARBEITSPLAN 5.13.)
 
 ---
@@ -952,8 +952,8 @@ Abstraktionsebene. `devreg.h` modelliert Board-**Hardware** im emulierten
 68k-Adressraum (CB030-Runner, Abschnitt 5.10).
 
 Migriert wurden alle sechs Geräte einzeln, mit je eigenem Boot-Test
-(`test_517_boot.exp` über die lokale DUART-Konsole, `test_517_nettty.py`
-über `/x1`/Port 2000, `test_517_quicc_ping.exp` für QUICC/`ping`) — Verhalten
+(`test/expect/test_517_boot.exp` über die lokale DUART-Konsole, `test/test_517_nettty.py`
+über `/x1`/Port 2000, `test/expect/test_517_quicc_ping.exp` für QUICC/`ping`) — Verhalten
 byte-identisch zum Stand vor 5.17. Grundlage für 5.18 (Binärsuche-Dispatch +
 Benchmark, RAM-Vergleich zuerst statt bis zu zehn Bereichsabfragen) und 5.19
 (Board-Konfigurationsdatei instanziert Geräte über die Typ-Registry).
@@ -978,6 +978,11 @@ ohne Fremdbibliothek, Kommentare `;`/`#`, Pfade **relativ zur Config-Datei**):
 name = CB030-Q9
 rom  = roms/romimage.dev.running.BIN     ; Boot-ROM (statt --cb030)
 net  = nat                               ; nat | vmnet | bridge:<ifname>
+; Nur fuer net = vmnet: zentrale Adressdaten des virtuellen Q9-Netzes
+vmnet_ip       = 192.168.200.2            ; statische Gast-IP in OS-9
+vmnet_gateway  = 192.168.200.1            ; Shared-Mode-Gateway
+vmnet_netmask  = 255.255.255.0
+vmnet_dhcp_end = 192.168.200.254
 
 [cf0]                                     ; beliebig viele [cfN]-Abschnitte
 type  = rbf                              ; rbf (OS-9-RBF) | pcf (FAT12/16)

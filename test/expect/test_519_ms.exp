@@ -1,16 +1,14 @@
 #!/usr/bin/expect -f
-# 5.19a: End-to-End-Test des ZWEITEN CF-Interfaces (RC2014-SC145 $FFFFC010) im Gast.
-# Bootet ueber die Config-Datei (Onboard = System, RC2014-Master = RBF-Datenimage), loggt ein
-# und versucht das RBF-Datenimage ueber den e0-Descriptor zu mounten: iniz /e0 + dir /e0.
-# Aufruf: expect test_519_e0.exp <config-datei>
+# 5.19a: Master/Slave-Test des RC2014-CF-Interfaces. Master (e0) und Slave (f0) haengen als zwei
+# getrennte RBF-Images an demselben Port ($FFFFC010), unterschieden nur durch das DEV-Bit ($E0/$F0).
+# Aufruf: expect test_519_ms.exp <config-datei>
 
 set cfg [lindex $argv 0]
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend test_519_e0_result.txt
+log_file -noappend test/expect/results/test_519_ms_result.txt
 
 spawn ./build/native/q9.exe $cfg
-
 set timeout 60
 expect "devices online"
 set timeout 20
@@ -26,26 +24,41 @@ for {set i 0} {$i < 10 && !$logged_in} {incr i} {
 }
 if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
 
-# e0-Descriptor ist per ToolShed aufs Image kopiert -> Execute-Attribut fehlt (Error 214 beim
-# load). Erst setzen, dann laden (der dokumentierte attr -e -pe-Schritt fuer kopierte Module).
+# PCF-Filemanager fuer das FAT12/16-Image laden. Der f0-Descriptor allein
+# haengt nur das Geraet an; ohne pcf kann /f0 nicht initialisiert werden.
 sleep 1
-send -s "attr -e -pe /dd/CMDS/BOOTOBJS/e0\r"
+send -s "attr -e -pe /dd/CMDS/BOOTOBJS/pcf\r"
 expect -re {\$ ?$}
 sleep 1
-send -s "load /dd/CMDS/BOOTOBJS/e0\r"
+send -s "load /dd/CMDS/BOOTOBJS/pcf\r"
 expect -re {\$ ?$}
 
-# Zweites Interface initialisieren und Verzeichnis lesen (das RBF-Datenimage hat eine Datei README).
+foreach d {e0 f0} {
+    sleep 1
+    send -s "attr -e -pe /dd/CMDS/BOOTOBJS/$d\r"
+    expect -re {\$ ?$}
+    sleep 1
+    send -s "load /dd/CMDS/BOOTOBJS/$d\r"
+    expect -re {\$ ?$}
+}
+
+# Master (e0) zuerst
 sleep 1
 send -s "iniz /e0\r"
 expect -re {\$ ?$}
-
 sleep 1
 send -s "dir /e0\r"
 expect -re {\$ ?$}
 
+# Slave (f0) — das ist der eigentliche Test
 sleep 1
-send -s "list /e0/README\r"
+send -s "iniz /f0\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "dir /f0\r"
+expect -re {\$ ?$}
+sleep 1
+send -s "list /f0/SLAVEDAT\r"
 expect -re {\$ ?$}
 
 sleep 1

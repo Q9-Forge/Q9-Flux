@@ -260,3 +260,20 @@ Buffergroesse = 512 B/Sektor).
 Speicher-/Geraete-Abschnitte (type=ram|rom, [uart0]/[eth0]...), Instanziierung
 ALLER Gerraetetypen ueber die Typ-Registry, Fensterueberlappungs-/Vektor-
 kollisions-Validierung. Bis dahin Nicht-CF-Geraete hartkodiert wie in 5.17.
+
+## Session 2026-07-23 (Codex + Andreas): vmnet-Remotezugriff / historischer Netzwerkstand
+
+### Ergebnis
+- Das aktuelle OS-9-Image zeigt nach Boot bereits korrekt `192.168.200.2 netmask 0xffffff00` (/24). Der Versuch, per `idbgen` erneut `inetdb/inetdb2` zu erzeugen, war nicht noetig und wurde zurueckgerollt: der Lauf erzeugte zwar Dateien, aber `fixmod` im Image war inkompatibel ("cannot execute binary file"), sodass `loadidb` danach die Module nicht laden konnte. Das Produktivimage wurde aus `local_images/OS9SYS.hda.backup-vor-netmask-20260723` wiederhergestellt.
+- Proxmox ohne Route versucht `192.168.200.2` direkt auf `vmbr0` per ARP zu finden; `arp` zeigte `192.168.200.2 (unvollstaendig)`. Die Mac-LAN-Adresse `192.168.123.152` war dagegen mit MAC bekannt. Die temporaere Route `ip route add 192.168.200.0/24 via 192.168.123.152 dev vmbr0` macht Ping und Telnet sofort funktionsfaehig. Der Telnet-Haenger ist davon getrennt und laut Andreas im aktuellen Image behoben.
+- Der alte `OS9SYS.claudia-net-test.hda`-Stand verwendet `10.0.0.1/24`; Mac-lokaler TCP-Test zu `10.0.0.1:23` war erfolgreich, ist aber fuer den Proxmox-Test nicht relevant. Ein aelterer `192.168.200.2`-Stand wurde ebenfalls ohne Route getestet: gleiche ARP-/Routing-Situation.
+
+### Wichtige neue Spur: Host-Endpunkt von vmnet
+- `bridge100` des Macs ist aktuell `192.168.200.1/24`, Mitglied `vmenet0`. Ein Versuch, vmnet temporaer mit Host-Endpunkt `192.168.200.2` zu starten, scheiterte mit Status 1009, weil das bestehende `bridge100` noch mit `.1` aktiv war. Das ist kein Gegenbeweis gegen den historischen `.2`-Aufbau; fuer einen echten Wechsel muss vmnet vollstaendig zurueckgesetzt werden.
+- Der interne Q9-Terminalserver `/x1..x8` ist ein Host-TCP-Server auf Port 2000 (`INADDR_ANY`), getrennt vom OS-9-QUICC/Telnetdienst auf Port 23. Andreas hat ihn historisch ueber `192.168.200.2:2000` angesprochen. Das deutet darauf hin, dass frueher der vmnet-Host-Endpunkt bzw. eine Host-Portweiterleitung anders war. Naechster gezielter Test: nach Beendigung der anderen Claude-Session und einem passenden Mac-/vmnet-Reset den Host-Endpunkt `.2` reproduzieren und `192.168.200.2:2000` vom Proxmox pruefen. Bis dahin keinen Mac-Neustart machen.
+
+### Aktueller Arbeitsstand
+- `emu.q9` zeigt derzeit auf den archivierten alten Stand `local_images/archive_2026-07-22/OS9SYS.pks_telnetdc___mit_patch_fuer_telnet_Blockade.hda`.
+- Fuer vmnet ist Root erforderlich; eine fehlende Passwortabfrage kann nur der macOS-`sudo`-Credential-Cache sein. Mit `sudo -k ...` laesst sich eine Abfrage erzwingen.
+- Neue `.q9`-Keys sind im Q9-Code umgesetzt: `vmnet_ip`, `vmnet_gateway`, `vmnet_netmask`, `vmnet_dhcp_end`. `vmnet_ip` dokumentiert/zeigt die Gast-IP; es aendert die OS-9-IP im Image nicht automatisch.
+- Keine weiteren Images anfassen. Kein Mac-Neustart, solange die andere Claude-Session laeuft. Fuer den naechsten Termin am privaten Windows-PC `ipconfig` und `route print` vergleichen.

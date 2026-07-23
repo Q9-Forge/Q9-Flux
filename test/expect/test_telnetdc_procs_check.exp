@@ -19,7 +19,7 @@
 # Login: super / Al35uUbC (s. /dd/SYS/password im Image)
 
 set timeout 90
-log_file -noappend test_telnetdc_procs_check_result.txt
+log_file -noappend test/expect/results/test_telnetdc_procs_check_result.txt
 
 set image local_images/OS9SYS.claudia-optionb-patchtest.hda
 
