@@ -4,7 +4,7 @@
 # hier nur einloggen und direkt pingen/ifconfig/netstat pruefen.
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend test_517_quicc_result.txt
+log_file -noappend test/expect/results/test_517_quicc_result.txt
 
 set rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN
 set image /Volumes/SSD1TB/projects/Q9/local_images/OS9SYS.claudia-517-devreg.hda

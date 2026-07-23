@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+# 5.19b: pcformat mit eigener Format-Tabelle (Fixed-Disk-Eintrag mit voller
+# Geometrie) gegen die Wegwerf-Kopie q9-d0-pcf-format-fresh.img.
+# Tabellenzeile (Layout aus dem pcformat-Binary reverse-engineert):
+# Tks ByS S/Clu Res FATs DirE Sects S/FAT S/Tk Heads Hidden CapK Name RotV TrkD Rate ID Code
+set timeout 300
+log_file -noappend test/expect/results/test_pcformat_custom.log
+spawn ./build/native/q9.exe test/cf/emu_format_test.q9
+expect "devices online"
+sleep 2
+send "\r"
+expect -re {User name\?:}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "del /dd/SYS/pcfmt.tbl\r"
+expect -re {\$ ?$}
+send "build /dd/SYS/pcfmt.tbl\r"
+expect -re {\? ?$}
+send "260 512 64 1 2 512 4176900 256 63 255 64 2088450 Q9FIX2G 300 135 5120 F8 3\r"
+expect -re {\? ?$}
+send "\r"
+expect -re {\$ ?$}
+send "list /dd/SYS/pcfmt.tbl\r"
+expect -re {\$ ?$}
+send "tmode -w=1 nopause\r"
+expect -re {\$ ?$}
+send "pcformat -t=/dd/SYS/pcfmt.tbl -f=15 -r -v=Q9D0 -nv /d0_fmt\r"
+expect {
+    -re {Enter alternate[^\r\n]*}        { puts "\nGEOMETRIE-NACHFRAGE"; send "260 63\r"; exp_continue }
+    -re {racks ?: ?$}                    { send "260\r"; exp_continue }
+    -re {ectors per track ?: ?$}         { send "63\r"; exp_continue }
+    -re {\(ynq\)[^\r\n]*}                { send "y\r"; exp_continue }
+    -re {\(y[^)]*n[^)]*\)[^\r\n]*}       { send "y\r"; exp_continue }
+    -re {\(o,c,q\)[^\r\n]*}              { send "c\r"; exp_continue }
+    -re {[Vv]olume name[^:]*: ?}         { send "Q9D0\r"; exp_continue }
+    -re {[Pp]hysical format is required} { puts "\nWEITERHIN VERWEIGERT"; exp_continue }
+    -re {Format error in line}           { puts "\nTABELLEN-SYNTAXFEHLER"; exp_continue }
+    -re {\$ ?$}                          { puts "\nPCFORMAT-LAUF BEENDET" }
+    timeout                              { puts "\nTIMEOUT im pcformat-Lauf" }
+}
+send "dir -e /d0\r"
+expect -re {\$ ?$}
+send "makdir /d0/NEU\r"
+expect -re {\$ ?$}
+send "copy /dd/SYS/motd /d0/NEU/MOTD.TXT\r"
+expect -re {\$ ?$}
+send "dir -e /d0/NEU\r"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

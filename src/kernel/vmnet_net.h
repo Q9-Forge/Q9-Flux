@@ -7,10 +7,8 @@
 //         echte Netz — das emulierte OS-9 kommt damit raus ins Internet, und der Mac erreicht
 //         es direkt unter seiner Gast-IP (rein UND raus).
 //
-//         Subnetz-Verordnung: vmnet bekommt beim Start das Subnetz 192.168.0.0/16 mit Gateway
-//         192.168.200.1 zugewiesen (vmnet_start_address_key) — exakt die Adresse, die bisher das
-//         Mini-NAT gespielt hat. Die OS-9-Konfiguration (inetdb2: enet0 = 192.168.200.2/16) bleibt
-//         dadurch unveraendert; nur die Gegenstelle ist jetzt echt.
+//         Subnetz-Verordnung: die Adressen kommen aus der .q9-Konfiguration; fehlen sie, werden
+//         die bisherigen Q9-Defaults 192.168.200.0/24 und 192.168.200.1 verwendet.
 //
 //         Voraussetzung: root (sudo) oder das Entitlement com.apple.vm.networking — ohne das
 //         schlaegt q9_vmnet_start() mit VMNET_FAILURE fehl (klare Fehlermeldung auf stderr).
@@ -30,9 +28,15 @@
 
 #include <stdint.h>
 
-/* Interface starten (Shared Mode, Subnetz 192.168.0.0/16, Gateway 192.168.200.1). 0 = ok, sonst ist
-   die Fehlermeldung (inkl. sudo-Hinweis) schon auf stderr ausgegeben. */
-int q9_vmnet_start(void);
+typedef struct q9_vmnet_config {
+    const char *guest_ip;                    /* Dokumentation/Logik fuer die statische Gast-IP */
+    const char *gateway;
+    const char *netmask;
+    const char *dhcp_end;
+} q9_vmnet_config_t;
+
+/* Interface im Shared Mode starten. NULL-Felder verwenden die bisherigen Q9-Defaults. */
+int q9_vmnet_start(const q9_vmnet_config_t *config);
 
 /* Die von vmnet zugewiesene Interface-MAC — der Gast MUSS mit dieser Absender-MAC senden,
    sonst verwirft vmnet die Frames; die Uebersetzung von/zur Gast-MAC macht quicc.c. */

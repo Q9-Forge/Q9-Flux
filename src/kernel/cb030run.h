@@ -31,7 +31,7 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_boot
 // Desc.:    Laedt die ROM-Datei (max. 512 KByte Flash, s. docs/CB030.md), initialisiert das Board
-//           (16 MByte RAM, CF-Backing-Datei cf_path bzw. Default "cb030_cf.img" lazy, falls
+//           (16 MByte RAM, CF-Backing-Datei cf_path bzw. Default "local_images/cb030_cf.img" lazy, falls
 //           cf_path NULL ist), verdrahtet Musashi und laesst die CPU in einer Endlosschleife
 //           laufen: Bloecke von CPU-Takten ausfuehren, dazwischen den 100Hz-Timer kooperativ
 //           pollen (q9_cb030_poll_timer -> q9_m68krt_set_irq(3), s. 5.2d). Kehrt nur bei

@@ -60,4 +60,4 @@ melden danach `Good CRC` und `Good parity`.
 - `tools/set_pks_edition.py` – setzt die OS-9-Edition und regeneriert Parität
   und CRC.
 - `tools/set_module_edition.py` – generisches Editions-Update für OS-9-Module.
-- `test_pks_nopause.exp` – automatisierter Gasttest gegen den Patch-Klon.
+- `test/expect/test_pks_nopause.exp` – automatisierter Gasttest gegen den Patch-Klon.

@@ -1,0 +1,34 @@
+#!/usr/bin/expect -f
+# moded-Anleitung: RBF-Descriptor aus partdgen als neue Datei p0 öffnen.
+set timeout 240
+log_file -noappend test/expect/results/test_moded_pcf.log
+spawn ./build/native/q9.exe test/cf/emu_mbr_raw_test.q9
+expect "devices online"
+sleep 2
+send "\r"
+expect -re {User name\?:}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "deiniz d0\r"
+expect -re {\$ ?$}
+send "unlink -f d0\r"
+expect -re {\$ ?$}
+send "chd /dd/PROJECTS\r"
+expect -re {\$ ?$}
+send "attr -e -r d0\r"
+expect -re {\$ ?$}
+send "load /dd/PROJECTS/d0\r"
+expect -re {\$ ?$}
+send "save d0 -f=p0\r"
+expect -re {\$ ?$}
+send "moded d0 -f=/dd/PROJECTS/p0\r"
+sleep 2
+send "?\r"
+sleep 1
+send "q\r"
+sleep 1
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

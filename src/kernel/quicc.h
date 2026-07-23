@@ -23,7 +23,7 @@
 //           vmnet  (5.12, macOS, braucht sudo ODER das von Apple gesperrte Entitlement
 //                  com.apple.vm.networking — Ad-hoc-Signierung reicht dafuer NICHT, macOS killt
 //                  den Prozess dann per SIGKILL, s. ARBEITSPLAN 5.13) Frames gehen roh an Apples
-//                  vmnet.framework (Shared Mode, Subnetz 192.168.0.0/16, Gateway 192.168.200.1 =
+//                  vmnet.framework (Shared Mode, Subnetz 192.168.200.0/24, Gateway 192.168.200.1 =
 //                  dieselbe Adresse): OS-9 kommt echt ins Netz (raus und rein). vmnet erzwingt
 //                  seine zugewiesene Absender-MAC, der spqe0-Descriptor hat aber eine feste —
 //                  deshalb uebersetzt das Backend die Gast-MAC in beiden Richtungen (inkl. der
@@ -51,6 +51,7 @@
 
 #include <stdint.h>
 #include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
+#include "vmnet_net.h"                                  /* vmnet-Konfiguration aus .q9            */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_QUICC_BASE        0xFFFF2000u              /* QUICC-Basis ("MBAR"), 8K-aligned         */
@@ -95,7 +96,8 @@ void     q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len);
 /* 5.13: Backend waehlen — mode NULL/"nat" = Mini-NAT (Default), "vmnet" = vmnet.framework (macOS,
    braucht sudo/Entitlement), "bridge:<ifname>" = BPF an physischer NIC (macOS, kein root, s.
    bpf_net.h). Rueckgabe 0 = ok; sonst ist die Fehlermeldung schon ausgegeben. */
-int      q9_quicc_net_mode(q9_quicc_t *q, const char *mode);
+int      q9_quicc_net_mode(q9_quicc_t *q, const char *mode,
+                           const q9_vmnet_config_t *vmnet_config);
 
 /* Trifft die Adresse das QUICC-Fenster? (fuer den Dispatch in m68krt.c) */
 int      q9_quicc_hit(uint32_t addr);

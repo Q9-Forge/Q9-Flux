@@ -1,0 +1,27 @@
+#!/usr/bin/expect -f
+# Format-Tabelle und Edition von pcformat im Gast anzeigen
+set timeout 120
+log_file -noappend test/expect/results/test_pcformat_table.log
+spawn ./build/native/q9.exe test/cf/emu_format_test.q9
+expect "devices online"
+sleep 2
+send "\r"
+expect -re {User name\?:}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "ident -q /dd/CMDS/pcformat\r"
+expect -re {\$ ?$}
+send "pcformat -?\r"
+expect -re {\$ ?$}
+send "pcformat\r"
+expect {
+    -re {\(ynq\)}    { send "q\r"; exp_continue }
+    -re {\(o,c,q\)}  { send "q\r"; exp_continue }
+    -re {: ?$}       { send "q\r"; exp_continue }
+    -re {\$ ?$}      {}
+    timeout { puts "\nTIMEOUT"; }
+}
+send "\x1d"
+expect eof

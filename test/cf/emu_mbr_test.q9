@@ -1,0 +1,28 @@
+; Q9 PCF-MBR-Testprofil — erzeugt mit tools/q9fat.c
+
+[board]
+name = CB030-Q9 PCF MBR test
+rom  = ../../local_images/roms/romimage.dev.running.BIN
+net  = nat
+
+[c0]
+type = rbf
+bus = onboard
+unit = master
+base = 0xFFFFE000
+start_sector = 0
+length_sectors = 0x800000
+descriptor_lsn = 0
+descriptor = ../../local_images/c0
+image = ../../local_images/OS9SYS.cf_profile_test.hda
+
+[d0]
+type = pcf
+bus = secondary
+unit = master
+base = 0xFFFFE100
+start_sector = 0
+length_sectors = 0x3FF800
+descriptor_lsn = 64
+descriptor = ../../local_images/d0
+image = ../../local_images/q9-d0-pcf-mbr-test.img

@@ -3,7 +3,7 @@
 # Owner:  AF
 # Desc.:  FAT16-Test (Phase 3.3/3.4/3.5): baut von Hand ein minimales FAT16-Superfloppy-Image
 #         (Boot-Sektor/BPB + 2 FAT-Kopien + Root-Directory + Datenregion) nach oeffentlich
-#         dokumentiertem Layout, schreibt es als q9disk.img und laesst Q9 im Selbsttest daraus
+#         dokumentiertem Layout, schreibt es als local_images/q9disk.img und laesst Q9 im Selbsttest daraus
 #         lesen: eine 8.3-Datei, eine Datei mit langem Namen (LFN-Eintraege), eine Datei in einem
 #         Unterverzeichnis, sowie I$Seek mitten in eine Datei. Reines Python-Stdlib, kein
 #         externes Tool (kein hdiutil/newfs_msdos noetig, damit der Test ueberall laeuft) —
@@ -44,7 +44,7 @@ import subprocess
 import sys
 
 EXE = os.path.join("build", "native", "q9.exe")
-IMG = "q9disk.img"
+IMG = "local_images/q9disk.img"
 
 SECTOR = 512
 SEC_PER_CLUS = 1                       # 1 Sektor/Cluster -> einfache Geometrie fuer den Test

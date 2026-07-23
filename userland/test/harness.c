@@ -34,7 +34,7 @@
 #include "../tools/q9touch.h"
 #include "../tools/q9stat.h"
 
-#define IMG_NAME       "q9disk.img"
+#define IMG_NAME       "local_images/q9disk.img"
 #define SECTOR         512u
 #define SEC_PER_CLUS   1u
 #define RESERVED_SECS  1u

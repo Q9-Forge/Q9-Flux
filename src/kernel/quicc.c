@@ -472,7 +472,8 @@ void q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len)
     q->ram_len = ram_len;
 }
 
-int q9_quicc_net_mode(q9_quicc_t *q, const char *mode)
+int q9_quicc_net_mode(q9_quicc_t *q, const char *mode,
+                      const q9_vmnet_config_t *vmnet_config)
 {
     if (mode == NULL || strcmp(mode, "nat") == 0) {
         q->net_backend = Q9_NET_NAT;                  /* Default: eingebautes Mini-NAT            */
@@ -480,7 +481,7 @@ int q9_quicc_net_mode(q9_quicc_t *q, const char *mode)
     }
     if (strcmp(mode, "vmnet") == 0) {
 #ifdef Q9_HAVE_VMNET
-        if (q9_vmnet_start() != 0) {
+        if (q9_vmnet_start(vmnet_config) != 0) {
             return 1;                                 /* Fehlermeldung kam aus q9_vmnet_start     */
         }
         q->net_backend = Q9_NET_VMNET;

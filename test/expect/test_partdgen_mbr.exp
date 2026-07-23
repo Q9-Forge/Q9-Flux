@@ -1,0 +1,21 @@
+#!/usr/bin/expect -f
+# partdgen gegen ein extern mit MBR erzeugtes PCF/FAT16-Image.
+set timeout 240
+log_file -noappend test/expect/results/test_partdgen_mbr.log
+spawn ./build/native/q9.exe test/cf/emu_mbr_test.q9
+expect "devices online"
+sleep 2
+send "\r"
+expect -re {User name\?:}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "partdgen -l d0@\r"
+expect -re {\$ ?$}
+send "partdgen -p -d d0@\r"
+expect -re {\$ ?$}
+send "partdgen -l /d0@\r"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

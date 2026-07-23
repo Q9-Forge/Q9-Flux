@@ -35,7 +35,7 @@
 
 #define CB030_RAM_BYTES   (16u * 1024u * 1024u)       /* 16 MByte SIM-Bestueckung (docs/CB030.md) */
 #define CB030_ROM_MAX     (512u * 1024u)              /* 29F040-Flash: 512 KByte                  */
-#define CB030_CF_IMAGE    "cb030_cf.img"              /* Backing-Datei, lazy angelegt (5.2c)      */
+#define CB030_CF_IMAGE    "local_images/cb030_cf.img" /* Backing-Datei, lazy angelegt (5.2c)      */
 #define CB030_SLICE_CYCLES 20000                       /* CPU-Takte je Runde zwischen Timer-Polls  */
 
 /* Statisch statt Host-malloc (Q9-Grundsatz, vgl. Fixed-Heap-Entscheidung 4.9) — native-only,
@@ -51,6 +51,8 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     static q9_cf_t    cf_extra[Q9_CFG_MAX_CF];
     static uint32_t   cf_extra_base[Q9_CFG_MAX_CF];
     static int        cf_extra_count;
+    q9_vmnet_config_t vmnet_config;
+    const q9_vmnet_config_t *vmnet_config_ptr = 0;
     q9_m68krt_t       rt;
     uint32_t          rom_len = 0;
     int               cf2_used   = 0;
@@ -69,6 +71,13 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     /* Netz-Backend: CLI schlaegt Config schlaegt Default (nat, in q9_quicc_net_mode). */
     if ((net_mode == NULL || net_mode[0] == '\0') && cfg && cfg->net_mode[0]) {
         net_mode = cfg->net_mode;
+    }
+    if (cfg) {
+        vmnet_config.guest_ip = cfg->vmnet_ip;
+        vmnet_config.gateway  = cfg->vmnet_gateway;
+        vmnet_config.netmask  = cfg->vmnet_netmask;
+        vmnet_config.dhcp_end = cfg->vmnet_dhcp_end;
+        vmnet_config_ptr = &vmnet_config;
     }
 
     if (q9_cb030_rom_load(rom_path, cb030_rom, sizeof(cb030_rom), &rom_len) != Q9_CB030_OK) {
@@ -152,7 +161,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
             q9_m68krt_attach_cf_at(&cf_extra[i], cf_extra_base[i], "cf-secondary");
     }
     q9_quicc_init(&quicc, cb030_ram, sizeof(cb030_ram));
-    if (q9_quicc_net_mode(&quicc, net_mode) != 0) {    /* 5.12: nat (Default) oder vmnet         */
+    if (q9_quicc_net_mode(&quicc, net_mode, vmnet_config_ptr) != 0) {
         return 1;
     }
     q9_m68krt_attach_quicc(&quicc);                    /* 5.11: Ethernet-Fenster $FFFF2000       */

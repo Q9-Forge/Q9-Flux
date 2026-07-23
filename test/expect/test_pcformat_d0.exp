@@ -1,0 +1,44 @@
+#!/usr/bin/expect -f
+# 5.19b: pcformat -f=3 (Fixed Disk) im Gast gegen cfidef mit SS_WTrk-Handler.
+# Laeuft ausschliesslich gegen die Wegwerf-Kopie q9-d0-pcf-format-fresh.img.
+# cfidef + Descriptoren laedt bereits das startup des c0-Testimages.
+set timeout 240
+log_file -noappend test/expect/results/test_pcformat_d0.log
+spawn ./build/native/q9.exe test/cf/emu_format_test.q9
+expect {
+    "devices online" {}
+    timeout { puts "\nFEHLER: Boot haengt"; exit 1 }
+}
+sleep 2
+send "\r"
+expect {
+    -re {User name\?:} {}
+    timeout { puts "\nFEHLER: kein Login-Prompt"; exit 1 }
+}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "pcformat -f=3 -nv /d0_fmt\r"
+expect {
+    -re {\(ynq\)}                 { send "y\r"; exp_continue }
+    -re {\(y[^)]*n[^)]*\)[^\r\n]*} { send "y\r"; exp_continue }
+    -re {[Vv]olume name[^:]*: ?}  { send "Q9D0\r"; exp_continue }
+    -re {Enter alternate[^\r\n]*} { puts "\nGEOMETRIE-PROMPT erschienen"; send "\r"; exp_continue }
+    -re {[Pp]hysical format is required} { puts "\nPCFORMAT VERWEIGERT WEITERHIN"; exp_continue }
+    -re {Error #[0-9:]+}          { puts "\nFEHLER im pcformat-Lauf"; exp_continue }
+    -re {\$ ?$}                   { puts "\nPCFORMAT-LAUF BEENDET" }
+    timeout { puts "\nTIMEOUT im pcformat-Lauf" }
+}
+send "dir -e /d0\r"
+expect -re {\$ ?$}
+send "makdir /d0/TESTDIR\r"
+expect -re {\$ ?$}
+send "copy /dd/SYS/motd /d0/TESTDIR/MOTD.TXT\r"
+expect -re {\$ ?$}
+send "list /d0/TESTDIR/MOTD.TXT\r"
+expect -re {\$ ?$}
+send "dir -e /d0/TESTDIR\r"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

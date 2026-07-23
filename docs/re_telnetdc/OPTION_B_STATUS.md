@@ -323,7 +323,7 @@ echte Telnet-Session). Die Nutzer-Gegenprobe mit zwei echten
 - Reproduktion ist jetzt VOLLSTAENDIG SELBSTSTAENDIG moeglich (kein
   manuelles Eingreifen mehr noetig): `/etc/sudoers.d/q9-emulator` erlaubt
   passwortloses `sudo` fuer `build/native/q9.exe`, Skripte
-  `test_telnetdc_write_hang.exp` und `test_telnetdc_procs_check.exp` im
+  `test/expect/test_telnetdc_write_hang.exp` und `test/expect/test_telnetdc_procs_check.exp` im
   Q9-Projekt-Root (per `expect` mit echtem `telnet`-Client) starten
   Emulator + Session + Hang-Trigger + sauberes Beenden komplett
   automatisiert.
@@ -331,7 +331,7 @@ echte Telnet-Session). Die Nutzer-Gegenprobe mit zwei echten
 ## Nachtrag 2026-07-15 (spaeter am Tag): Bug 2 lokalisiert — SCHREIBSEITE blockiert, nicht SS_Ready selbst
 
 **Neuer, prazisierter Befund per `procs -e`-Vergleich** (Skript
-`test_telnetdc_procs_check.exp`): waehrend eines aktiven Haengers wurden
+`test/expect/test_telnetdc_procs_check.exp`): waehrend eines aktiven Haengers wurden
 im laufenden Gast (zweite, parallele Telnet-Session) drei `procs -e`-
 Schnappschuesse im 60-Sekunden-Abstand genommen und die CPU-Zeit der
 beteiligten Prozesse verglichen:

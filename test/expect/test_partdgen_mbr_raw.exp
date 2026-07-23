@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+# Whole-disk-Descriptor d: partdgen muss den MBR bei LSN 0 sehen.
+set timeout 240
+log_file -noappend test/expect/results/test_partdgen_mbr_raw.log
+spawn ./build/native/q9.exe test/cf/emu_mbr_raw_test.q9
+expect "devices online"
+sleep 2
+send "\r"
+expect -re {User name\?:}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "load /dd/CMDS/BOOTOBJS/d\r"
+expect -re {\$ ?$}
+send "iniz d\r"
+expect -re {\$ ?$}
+send "partdgen -l d@\r"
+expect {
+    -re {Partition|partition|System ID:} { puts "PARTDGEN_RAW_RETURNED" }
+    timeout { puts "PARTDGEN_RAW_TIMEOUT" }
+}
+expect -re {\$ ?$}
+send "deiniz d0\r"
+expect -re {\$ ?$}
+send "unlink -f d0\r"
+expect -re {\$ ?$}
+send "chd /dd/PROJECTS\r"
+expect -re {\$ ?$}
+send "partdgen -g -n=0 d@\r"
+expect {
+    -re {Overwrite, continue, or quit: \(o,c,q\):} { send "o\r"; exp_continue }
+    -re {\$ ?$}
+}
+send "attr -e -r /dd/PROJECTS/d0\r"
+expect -re {\$ ?$}
+send "load /dd/PROJECTS/d0\r"
+expect -re {\$ ?$}
+send "iniz d0\r"
+expect -re {\$ ?$}
+send "dir -e /d0\r"
+expect -re {\$ ?$}
+send "free /d0\r"
+expect -re {\$ ?$}
+send "makdir /d0/RAWTEST\r"
+expect -re {\$ ?$}
+send "copy /dd/SYS/motd /d0/RAWTEST/MOTD.TXT\r"
+expect -re {\$ ?$}
+send "list /d0/RAWTEST/MOTD.TXT\r"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

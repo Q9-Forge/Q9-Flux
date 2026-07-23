@@ -31,4 +31,4 @@ Files changed:
 - src/kernel/cb030.c - Fix in cb030_cf_store_sector()
 - BUGFIX_CF_WRITE.md - Technical documentation
 - TEST_CF_WRITE.md - Test instructions
-- Test scripts: test_save_modules.sh, save_ram_modules.exp, verify_cf_writes.sh
+- Test scripts: test/cf/test_save_modules.sh, test/expect/save_ram_modules.exp, test/cf/verify_cf_writes.sh

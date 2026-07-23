@@ -13,7 +13,7 @@ if {[llength $argv] > 2} {
 
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend test_517_result.txt
+log_file -noappend test/expect/results/test_517_result.txt
 
 if {$net_mode eq ""} {
     spawn ./build/native/q9.exe --cb030 $rom --cf $image

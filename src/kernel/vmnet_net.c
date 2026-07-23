@@ -19,12 +19,9 @@
 #include <vmnet/vmnet.h>
 
 //─── Subnetz-Zuweisung (muss zur OS-9-Konfiguration im MWOS-Q9-Port passen) ──────────────────────
-#define QV_GATEWAY   "192.168.200.1"                  /* vmnet-Gateway = alte Mini-NAT-Adresse    */
+#define QV_GATEWAY   "192.168.200.1"                  /* vmnet-Gateway = bestehende Gastkonfiguration */
 #define QV_DHCP_END  "192.168.200.254"                /* DHCP-Bereich (Gast 192.168.200.2 ist statisch) */
-#define QV_NETMASK   "255.255.255.0"                  /* /24 statt /16 (5.15): die /16-Maske kollidierte
-                                                          mit privaten /16-Heimnetzen (z.B. WLAN-Router mit
-                                                          192.168.0.0/16) und schickte den gesamten Traffic
-                                                          am vmnet-Interface vorbei; IPs bleiben unveraendert */
+#define QV_NETMASK   "255.255.255.0"                  /* /24: bestehende Gastkonfiguration */
 
 //─── Ringpuffer fuer empfangene Frames (Dispatch-Queue -> Runner-Thread) ─────────────────────────
 #define QV_SLOT_LEN  2048u                            /* > max. Ethernet-Frame (1518)             */
@@ -110,7 +107,7 @@ static void qv_drain(void)
 // API-Implementierung
 //────────────────────────────────────────────────────────────────────────────────────────────────
 
-int q9_vmnet_start(void)
+int q9_vmnet_start(const q9_vmnet_config_t *config)
 {
     dispatch_queue_t     queue;
     dispatch_semaphore_t sem;
@@ -125,9 +122,14 @@ int q9_vmnet_start(void)
     sem   = dispatch_semaphore_create(0);
 
     xpc_dictionary_set_uint64(desc, vmnet_operation_mode_key, VMNET_SHARED_MODE);
-    xpc_dictionary_set_string(desc, vmnet_start_address_key, QV_GATEWAY);
-    xpc_dictionary_set_string(desc, vmnet_end_address_key,   QV_DHCP_END);
-    xpc_dictionary_set_string(desc, vmnet_subnet_mask_key,   QV_NETMASK);
+    const char *gateway  = (config && config->gateway)  ? config->gateway  : QV_GATEWAY;
+    const char *dhcp_end = (config && config->dhcp_end) ? config->dhcp_end : QV_DHCP_END;
+    const char *netmask  = (config && config->netmask)  ? config->netmask  : QV_NETMASK;
+    const char *guest_ip = (config && config->guest_ip) ? config->guest_ip : "192.168.200.2";
+
+    xpc_dictionary_set_string(desc, vmnet_start_address_key, gateway);
+    xpc_dictionary_set_string(desc, vmnet_end_address_key,   dhcp_end);
+    xpc_dictionary_set_string(desc, vmnet_subnet_mask_key,   netmask);
 
     qv.ifr = vmnet_start_interface(desc, queue,
         ^(vmnet_return_t st, xpc_object_t params) {
@@ -163,7 +165,8 @@ int q9_vmnet_start(void)
             qv_drain();
         });
 
-    printf("[OS-9 Net] vmnet Shared Mode: Gateway %s/24, Interface-MAC %s\r\n", QV_GATEWAY, qv_macs);
+    printf("[OS-9 Net] vmnet Shared Mode: Gast-IP %s, Gateway %s, Maske %s, Interface-MAC %s\r\n",
+           guest_ip, gateway, netmask, qv_macs);
     return 0;
 }
 

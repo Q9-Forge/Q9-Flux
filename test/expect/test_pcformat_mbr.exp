@@ -1,0 +1,32 @@
+#!/usr/bin/expect -f
+# PCF/FAT16-Image mit MBR testen. Das Image wird ausserhalb von OS-9 mit q9fat erzeugt.
+set timeout 240
+log_file -noappend test/expect/results/test_pcformat_mbr.log
+spawn ./build/native/q9.exe test/cf/emu_mbr_test.q9
+expect "devices online"
+sleep 2
+send "\r"
+expect -re {User name\?:}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "pcformat -f=3 -nv /d0_fmt\r"
+expect {
+    -re {[Pp]hysical format is required} { puts "PCFORMAT_PHYSICAL_REQUIRED" }
+    -re {Error #[0-9:]+}              { puts "PCFORMAT_ERROR" }
+    -re {\$ ?$}                      { puts "PCFORMAT_RETURNED" }
+    timeout                           { puts "PCFORMAT_TIMEOUT" }
+}
+send "dir -e /d0\r"
+expect -re {\$ ?$}
+send "free /d0\r"
+expect -re {\$ ?$}
+send "makdir /d0/MBRTEST\r"
+expect -re {\$ ?$}
+send "copy /dd/SYS/motd /d0/MBRTEST/MOTD.TXT\r"
+expect -re {\$ ?$}
+send "list /d0/MBRTEST/MOTD.TXT\r"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

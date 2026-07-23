@@ -1,0 +1,33 @@
+#!/usr/bin/expect -f
+set timeout 240
+log_file -noappend test/expect/results/test_mbr_os9.log
+spawn ./build/native/q9.exe test/cf/emu_mbr_raw_test.q9
+expect "devices online"
+sleep 2
+send "\r"
+expect -re {User name\?:}
+send "super\r"
+expect -re {Password[^:]*:}
+send "Al35uUbC\r"
+expect -re {\$ ?$}
+send "load /dd/CMDS/BOOTOBJS/d\r"
+expect -re {\$ ?$}
+send "iniz d\r"
+expect -re {\$ ?$}
+send "mdir mbr\r"
+expect -re {\$ ?$}
+send "load /dd/CMDS/mbr\r"
+expect -re {\$ ?$}
+send "chd /dd/PROJECTS\r"
+expect -re {\$ ?$}
+send "mbr /d@ /dd/PROJECTS/pcf.tmpl /dd/PROJECTS/rbf.tmpl\r"
+expect {
+    -re {Descriptor erzeugt:} { puts "MBR_DESCRIPTOR_GENERATED" }
+    -re {FAT direkt|RBF direkt|MBR:} { puts "MBR_MEDIA_DETECTED" }
+    timeout { puts "MBR_GENERATOR_TIMEOUT" }
+}
+expect -re {\$ ?$}
+send "list d0\r"
+expect -re {\$ ?$}
+send "\x1d"
+expect eof

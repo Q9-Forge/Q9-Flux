@@ -11,7 +11,7 @@ echo ""
 
 if [ ! -f "$CF_IMG" ]; then
     echo "ERROR: $CF_IMG not found"
-    echo "Run ./test_save_modules.sh first to create test image"
+    echo "Run ./test/cf/test_save_modules.sh first to create test image"
     exit 1
 fi
 
@@ -41,7 +41,7 @@ if $OS9 dir "$CF_IMG,CMDS/BOOTOBJS/RAMTEST" > /dev/null 2>&1; then
 else
     echo "   ✗ Directory not found"
     echo "   You need to run the emulator test first:"
-    echo "   ./save_ram_modules.exp <path-to-rom-image>"
+    echo "   ./test/expect/save_ram_modules.exp <path-to-rom-image>"
 fi
 
 echo ""
