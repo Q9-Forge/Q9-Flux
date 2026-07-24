@@ -135,6 +135,20 @@ uint pmmu_translate_addr(uint addr_in)
 		switch (tbmode)
 		{
 			case 0:	// invalid, should cause MMU exception
+				fprintf(stderr, "680x0 PMMU DEBUG: D0-D7 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+					REG_D[0], REG_D[1], REG_D[2], REG_D[3], REG_D[4], REG_D[5], REG_D[6], REG_D[7]);
+				fprintf(stderr, "680x0 PMMU DEBUG: A0-A7 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+					REG_A[0], REG_A[1], REG_A[2], REG_A[3], REG_A[4], REG_A[5], REG_A[6], REG_A[7]);
+				fprintf(stderr, "680x0 PMMU DEBUG: USP %08x SR %04x\n", REG_USP, m68ki_get_sr());
+				{
+					int dbgi;
+					fprintf(stderr, "680x0 PMMU DEBUG: bytes at PC-8..PC+15:");
+					for (dbgi = -8; dbgi < 16; dbgi++)
+					{
+						fprintf(stderr, "%s%02x", (dbgi == 0) ? " |" : " ", m68k_read_memory_8(REG_PC + dbgi));
+					}
+					fprintf(stderr, "\n");
+				}
 				fatalerror("680x0 PMMU: Unhandled Table B mode %d (addr_in %08x PC %x)\n", tbmode, addr_in, REG_PC);
 				break;
 
