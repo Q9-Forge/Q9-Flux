@@ -28,11 +28,8 @@
 #include <signal.h>
 
 #include "../q9_hal.h"
-#include "../../kernel/kernel.h"
-#ifdef Q9_HAVE_M68K
 #include "../../kernel/cb030run.h"
 #include "../../kernel/boardcfg.h"
-#endif
 
 #define DISK_IMAGE "local_images/q9disk.img"
 
@@ -280,16 +277,13 @@ const char *q9_hal_target(void)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
-    int         selftest = 0;
     const char *cfg_arg  = NULL;                       /* erster Positionsparameter (ohne '-')   */
     const char *rom_path = NULL;                        /* --cb030                                */
     const char *cf_path  = NULL;                        /* --cf                                   */
     const char *net_mode = NULL;                        /* --net                                  */
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--selftest") == 0) {
-            selftest = 1;
-        } else if (strcmp(argv[i], "--cb030") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--cb030") == 0 && i + 1 < argc) {
             rom_path = argv[++i];
         } else if (strcmp(argv[i], "--cf") == 0 && i + 1 < argc) {
             cf_path = argv[++i];
@@ -300,8 +294,14 @@ int main(int argc, char **argv)
         }
     }
 
-#ifdef Q9_HAVE_M68K
-    if (cfg_arg != NULL || rom_path != NULL) {
+    if (cfg_arg == NULL && rom_path == NULL) {
+        fprintf(stderr,
+                "usage: %s <config[.q9]> | --cb030 <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]\n",
+                argv[0]);
+        return 1;
+    }
+
+    {
         q9_board_cfg_t  cfg;
         q9_board_cfg_t *cfgp = NULL;
 
@@ -318,29 +318,6 @@ int main(int argc, char **argv)
         }
         q9_hal_init();                                 /* termios raw — die UART braucht das     */
         return q9_cb030_boot(rom_path, cf_path, net_mode, cfgp);
-    }
-#endif
-
-    q9_hal_init();
-    q9_kernel_init();
-
-    if (selftest) {
-        int fails = q9_kernel_selftest();
-        for (int i = 0; i < 100; i++) {
-            q9_kernel_step();
-        }
-        if (fails != 0) {
-            printf("\nSELFTEST FAIL (%d)\n", fails);
-            return 1;
-        }
-        printf("\nSELFTEST PASS\n");
-        return 0;
-    }
-
-    for (;;) {
-        q9_kernel_step();
-        q9_hal_con_flush();                                 /* 5.7: TX-Rest aus vorherigen Runden   */
-        usleep(1000);                                      /* don't burn a whole core               */
     }
 }
 
