@@ -2,12 +2,18 @@
  * mbr.c - MBR- und FAT-Partitionsinspektor fuer OS-9/68K.
  *
  * Aufruf:
- *     mbr <device-or-image>
+ *     mbr <device-or-image> [<pcf-templ>] [<rbf-templ>]
+ *     mbr -?                                    (Hilfe, OS-9-ueblich)
  *
  * Das Programm liest den ersten 512-Byte-Sektor, zeigt die vier MBR-
  * Partitionseintraege und - sofern vorhanden - den FAT-Bootsektor an.
  * Die ermittelten Werte sind zugleich die Eingabedaten fuer die PCF-/RBF-
  * Descriptor-Erzeugung, die als naechster Schritt in diese Datei kommt.
+ *
+ * GPT (GUID Partition Table) wird erkannt (Signatur "EFI PART" auf LSN 1),
+ * aber bewusst NICHT unterstuetzt - es wird nur eine entsprechende Meldung
+ * ausgegeben, mit der Empfehlung, ein MBR-partitioniertes Laufwerk/Abbild
+ * zu verwenden.
  *
  * Bewusst nur ANSI-C und OS-9-kompatible Standard-I/O-Funktionen: derselbe
  * Quelltext kann zuerst im Emulator mit /dd/CMDS/mbr und spaeter auf echter
@@ -85,7 +91,7 @@ static int module_string(unsigned long offset, char *out, unsigned max)
         out[i++] = (char)(module[offset++] & 0x7F);
     }
     out[i] = '\0';
-    return module[offset] == 0;
+    return offset < MODULE_MAX && module[offset] == 0;
 }
 
 static void os9_crc(const unsigned char *data, unsigned long length,
@@ -346,6 +352,23 @@ static int read_sector(FILE *f, unsigned long lsn, unsigned char *buf)
     return fread(buf, 1, (unsigned)SECTOR_SIZE, f) == (unsigned)SECTOR_SIZE;
 }
 
+/* GPT (GUID Partition Table) erkennen: massgeblich ist die Signatur
+   "EFI PART" am Anfang von LSN 1 (dem GPT-Header) - unabhaengig davon,
+   ob LSN 0 zufaellig als klassisches MBR durchgeht (der "Protective MBR"
+   einer GPT-Platte hat oft einen Eintrag vom Typ $EE, der in
+   known_partition_type() als bekannt gilt). Dieser Check muss daher VOR
+   looks_like_mbr() laufen, sonst wuerde die MBR-Partitionsschleife den
+   GPT-Header versehentlich als Bootsektor einer Partition $EE lesen. */
+static int looks_like_gpt(FILE *f)
+{
+    unsigned char sector[SECTOR_SIZE];
+
+    if (!read_sector(f, 1, sector)) {
+        return 0;
+    }
+    return memcmp(sector, "EFI PART", 8) == 0;
+}
+
 static void print_fat_info(const unsigned char *b, unsigned long lsn,
                            unsigned long part_sectors)
 {
@@ -426,6 +449,19 @@ static void print_partition(FILE *f, int number, const unsigned char *p)
     }
 }
 
+static void print_help(void)
+{
+    printf("Syntax:   mbr <device-or-image> [<pcf-templ>] [<rbf-templ>]\n");
+    printf("Function: MBR-/FAT-/RBF-Partitionen erkennen und daraus PCF-/RBF-\n");
+    printf("          Geraetedescriptoren erzeugen\n");
+    printf("Options:\n");
+    printf("     <device-or-image>  Geraet oder Abbilddatei, die untersucht wird\n");
+    printf("     <pcf-templ>        PCF-Descriptor-Vorlage fuer erkannte FAT-Partitionen\n");
+    printf("     <rbf-templ>        RBF-Descriptor-Vorlage fuer erkannte RBF-Partitionen\n");
+    printf("                        (ohne Angabe wird <pcf-templ> auch dafuer verwendet)\n");
+    printf("     -?                 diese Hilfe anzeigen\n");
+}
+
 int main(int argc, char **argv)
 {
     FILE *f;
@@ -435,8 +471,14 @@ int main(int argc, char **argv)
     char name[8];
     int i;
 
+    if (argc == 2 && strcmp(argv[1], "-?") == 0) {
+        print_help();
+        return 0;
+    }
+
     if (argc < 2 || argc > 4) {
         fprintf(stderr, "Aufruf: mbr <device-or-image> [pcf-template] [rbf-template]\n");
+        fprintf(stderr, "        mbr -?   (Hilfe)\n");
         return 2;
     }
     if (argc >= 3) pcf_template = argv[2];
@@ -453,6 +495,14 @@ int main(int argc, char **argv)
         fprintf(stderr, "mbr: LSN 0 nicht lesbar\n");
         fclose(f);
         return 1;
+    }
+
+    if (looks_like_gpt(f)) {
+        printf("GPT (GUID Partition Table) erkannt.\n");
+        printf("GPT wird von diesem Werkzeug derzeit nicht unterstuetzt.\n");
+        printf("Bitte ein Laufwerk/Abbild mit klassischer MBR-Partitionierung verwenden.\n");
+        fclose(f);
+        return 4;
     }
 
     if (!looks_like_mbr(mbr)) {
