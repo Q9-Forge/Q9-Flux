@@ -132,14 +132,27 @@ uint pmmu_translate_addr(uint addr_in)
 		tofs = (addr_in<<(is+abits+bbits))>>(32-cbits);
 		tptr = tbl_entry & 0xfffffff0;
 
-		switch (tbmode)
-		{
-			case 0:	// invalid, should cause MMU exception
+			switch (tbmode)
+			{
+				case 0:	// invalid, should cause MMU exception
+				fprintf(stderr,
+					"680x0 PMMU DEBUG: TC %08x SRP %08x/%08x CRP %08x/%08x "
+					"root_limit %08x root_aptr %08x tblB %08x tofs %08x tptr %08x\n",
+					m68ki_cpu.mmu_tc,
+					m68ki_cpu.mmu_srp_limit, m68ki_cpu.mmu_srp_aptr,
+					m68ki_cpu.mmu_crp_limit, m68ki_cpu.mmu_crp_aptr,
+					root_limit, root_aptr, tbl_entry, tofs, tptr);
 				fprintf(stderr, "680x0 PMMU DEBUG: D0-D7 %08x %08x %08x %08x %08x %08x %08x %08x\n",
 					REG_D[0], REG_D[1], REG_D[2], REG_D[3], REG_D[4], REG_D[5], REG_D[6], REG_D[7]);
 				fprintf(stderr, "680x0 PMMU DEBUG: A0-A7 %08x %08x %08x %08x %08x %08x %08x %08x\n",
 					REG_A[0], REG_A[1], REG_A[2], REG_A[3], REG_A[4], REG_A[5], REG_A[6], REG_A[7]);
 				fprintf(stderr, "680x0 PMMU DEBUG: USP %08x SR %04x\n", REG_USP, m68ki_get_sr());
+				fprintf(stderr, "680x0 PMMU DEBUG: fault instruction PPC=%08x PC=%08x IR=%04x\n",
+					REG_PPC, REG_PC, REG_IR);
+				fprintf(stderr, "680x0 PMMU DEBUG: access VA=%08x FC=%x %s size=%u instr_mode=%u\n",
+					q9_mmu_access_address, q9_mmu_access_fc,
+					(q9_mmu_access_rw == MODE_READ) ? "read" : "write",
+					q9_mmu_access_size, CPU_INSTR_MODE);
 				{
 					int dbgi;
 					fprintf(stderr, "680x0 PMMU DEBUG: bytes at PC-8..PC+15:");
@@ -149,8 +162,18 @@ uint pmmu_translate_addr(uint addr_in)
 					}
 					fprintf(stderr, "\n");
 				}
-				fatalerror("680x0 PMMU: Unhandled Table B mode %d (addr_in %08x PC %x)\n", tbmode, addr_in, REG_PC);
-				break;
+				/*
+				 * A mode-0 descriptor is a translation fault.  The old Q9
+				 * diagnostic deliberately stopped the whole emulator here, but
+				 * on a real 68030 this is delivered to the guest as a fault.
+				 * Use Musashi's existing exception path so OS-9 gets a chance to
+				 * handle it (or report it) instead of taking down Q9.
+				 */
+				/* Keep the fault contained in the CPU exception path.  Passing
+				 * the untranslated address through only creates cascading, bogus
+				 * page-table faults and corrupts the diagnostic run. */
+				m68ki_exception_bus_error();
+				return addr_in;
 
 			case 2: // 4-byte table C descriptor
 				tofs *= 4;
@@ -191,6 +214,12 @@ uint pmmu_translate_addr(uint addr_in)
 		switch (tcmode)
 		{
 			case 0:	// invalid, should cause MMU exception
+				fprintf(stderr, "680x0 PMMU DEBUG: Table C fault PPC=%08x PC=%08x IR=%04x\n",
+					REG_PPC, REG_PC, REG_IR);
+				fprintf(stderr, "680x0 PMMU DEBUG: access VA=%08x FC=%x %s size=%u instr_mode=%u\n",
+					q9_mmu_access_address, q9_mmu_access_fc,
+					(q9_mmu_access_rw == MODE_READ) ? "read" : "write",
+					q9_mmu_access_size, CPU_INSTR_MODE);
 				fatalerror("680x0 PMMU: Unhandled Table C mode %d (entry %08x addr_in %08x PC %x)\n", tcmode, tbl_entry, addr_in, REG_PC);
 				break;
 
@@ -411,4 +440,3 @@ void m68881_mmu_ops(void)
 		}
 	}
 }
-

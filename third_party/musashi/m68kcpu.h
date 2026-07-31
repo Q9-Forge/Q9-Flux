@@ -1050,6 +1050,19 @@ char* m68ki_disassemble_quick(unsigned int pc, unsigned int cpu_type);
 
 extern uint pmmu_translate_addr(uint addr_in);
 
+static uint q9_mmu_access_fc;
+static uint q9_mmu_access_rw;
+static uint q9_mmu_access_size;
+static uint q9_mmu_access_address;
+
+static inline void m68ki_set_mmu_access(uint address, uint fc, uint rw, uint size)
+{
+	q9_mmu_access_address = address;
+	q9_mmu_access_fc = fc;
+	q9_mmu_access_rw = rw;
+	q9_mmu_access_size = size;
+}
+
 /* Handles all immediate reads, does address error check, function code setting,
  * and prefetching if they are enabled in m68kconf.h
  */
@@ -1142,6 +1155,7 @@ static inline uint m68ki_read_8_fc(uint address, uint fc)
 {
 	(void)fc;
 	m68ki_set_fc(fc); /* auto-disable (see m68kcpu.h) */
+	m68ki_set_mmu_access(address, fc, MODE_READ, 1);
 
 #if M68K_EMULATE_PMMU
 	if (PMMU_ENABLED)
@@ -1154,6 +1168,7 @@ static inline uint m68ki_read_16_fc(uint address, uint fc)
 {
 	(void)fc;
 	m68ki_set_fc(fc); /* auto-disable (see m68kcpu.h) */
+	m68ki_set_mmu_access(address, fc, MODE_READ, 2);
 	m68ki_check_address_error_010_less(address, MODE_READ, fc); /* auto-disable (see m68kcpu.h) */
 
 #if M68K_EMULATE_PMMU
@@ -1167,6 +1182,7 @@ static inline uint m68ki_read_32_fc(uint address, uint fc)
 {
 	(void)fc;
 	m68ki_set_fc(fc); /* auto-disable (see m68kcpu.h) */
+	m68ki_set_mmu_access(address, fc, MODE_READ, 4);
 	m68ki_check_address_error_010_less(address, MODE_READ, fc); /* auto-disable (see m68kcpu.h) */
 
 #if M68K_EMULATE_PMMU
@@ -1181,6 +1197,7 @@ static inline void m68ki_write_8_fc(uint address, uint fc, uint value)
 {
 	(void)fc;
 	m68ki_set_fc(fc); /* auto-disable (see m68kcpu.h) */
+	m68ki_set_mmu_access(address, fc, MODE_WRITE, 1);
 
 #if M68K_EMULATE_PMMU
 	if (PMMU_ENABLED)
@@ -1193,6 +1210,7 @@ static inline void m68ki_write_16_fc(uint address, uint fc, uint value)
 {
 	(void)fc;
 	m68ki_set_fc(fc); /* auto-disable (see m68kcpu.h) */
+	m68ki_set_mmu_access(address, fc, MODE_WRITE, 2);
 	m68ki_check_address_error_010_less(address, MODE_WRITE, fc); /* auto-disable (see m68kcpu.h) */
 
 #if M68K_EMULATE_PMMU
@@ -1206,6 +1224,7 @@ static inline void m68ki_write_32_fc(uint address, uint fc, uint value)
 {
 	(void)fc;
 	m68ki_set_fc(fc); /* auto-disable (see m68kcpu.h) */
+	m68ki_set_mmu_access(address, fc, MODE_WRITE, 4);
 	m68ki_check_address_error_010_less(address, MODE_WRITE, fc); /* auto-disable (see m68kcpu.h) */
 
 #if M68K_EMULATE_PMMU
@@ -1959,8 +1978,14 @@ static inline void m68ki_exception_bus_error(void)
 
 	uint sr = m68ki_init_exception();
 
-	/* Note: This is implemented for 68010 only! */
-	m68ki_stack_frame_1000(REG_PPC, sr, EXCEPTION_BUS_ERROR);
+	/* 68020/030 use the long format-B bus/address-error frame.  The
+	 * format-8 frame below is only valid for the 68010; using it on a
+	 * 68030 leaves the guest's exception handler with the wrong stack
+	 * layout and can turn a single PMMU fault into a reset loop. */
+	if (CPU_TYPE_IS_020_PLUS(CPU_TYPE))
+		m68ki_stack_frame_1011(sr, EXCEPTION_BUS_ERROR, REG_PPC);
+	else
+		m68ki_stack_frame_1000(REG_PPC, sr, EXCEPTION_BUS_ERROR);
 
 	m68ki_jump_vector(EXCEPTION_BUS_ERROR);
 
