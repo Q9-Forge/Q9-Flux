@@ -109,6 +109,43 @@ static int qd_on(void)
     return qd_debug;
 }
 
+/* In bridge mode the physical NIC is promiscuous.  A full RX trace therefore
+ * includes unrelated LAN broadcasts and makes an FTP diagnosis unreadable.
+ * Q9_QUICC_DEBUG=ftp keeps ARP plus IPv4/TCP frames involving port 21. */
+static int qd_ftp_frame(const uint8_t *f, uint32_t len)
+{
+    uint32_t ihl;
+    uint16_t sport, dport;
+
+    static const uint8_t guest_a[] = {192, 168, 2, 3};
+    static const uint8_t guest_b[] = {192, 168, 200, 2};
+
+    #define QD_IP_AT(p) \
+        (memcmp((p), guest_a, 4) == 0 || memcmp((p), guest_b, 4) == 0)
+
+    if (len < 14u)
+        return 0;
+    if (f[12] == 0x08 && f[13] == 0x06) {     /* ARP for the guest */
+        return len >= 42u && (QD_IP_AT(f + 28) || QD_IP_AT(f + 38));
+    }
+    if (f[12] != 0x08 || f[13] != 0x00 || len < 34u || f[23] != 6)
+        return 0;
+    ihl = (uint32_t)(f[14] & 0x0fu) * 4u;
+    if (ihl < 20u || 14u + ihl + 4u > len)
+        return 0;
+    sport = (uint16_t)(((uint16_t)f[14 + ihl] << 8) | f[15 + ihl]);
+    dport = (uint16_t)(((uint16_t)f[16 + ihl] << 8) | f[17 + ihl]);
+    return sport == 21u || dport == 21u;
+
+    #undef QD_IP_AT
+}
+
+static int qd_should_trace_frame(const uint8_t *f, uint32_t len)
+{
+    const char *mode = getenv("Q9_QUICC_DEBUG");
+    return mode && strcmp(mode, "ftp") == 0 ? qd_ftp_frame(f, len) : qd_on();
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q_rd16/q_wr16/q_rd32/q_wr32
 // Desc.:    Big-Endian-Zugriffe auf das Fensterabbild (Offsets relativ zur QUICC-Basis).
@@ -688,7 +725,7 @@ void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
            (status & QC_BD_WRAP) ? q_rd16(q, QO_PRAM_RBASE)
                                  : (uint16_t)(rbptr + QC_BD_SIZE));
 
-    if (qd_on()) {
+    if (qd_should_trace_frame(frame, len)) {
         fprintf(stderr, "[quicc rx %u]\n", (unsigned)len);
     }
 }

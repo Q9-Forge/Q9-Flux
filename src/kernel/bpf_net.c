@@ -169,10 +169,18 @@ int q9_bpf_start(const char *ifname)
 
 void q9_bpf_send(const uint8_t *frame, uint32_t len)
 {
+    ssize_t written;
+
     if (qb.fd < 0 || len < 14u) {
         return;
     }
-    (void)write(qb.fd, frame, len);
+    written = write(qb.fd, frame, len);
+    if (written < 0) {
+        fprintf(stderr, "q9: BPF write fehlgeschlagen (%s)\n", strerror(errno));
+    } else if ((uint32_t)written != len) {
+        fprintf(stderr, "q9: BPF write unvollstaendig (%ld/%u Bytes)\n",
+                (long)written, (unsigned)len);
+    }
 }
 
 uint32_t q9_bpf_recv(uint8_t *buf, uint32_t maxlen)

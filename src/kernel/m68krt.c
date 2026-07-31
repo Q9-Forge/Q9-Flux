@@ -101,6 +101,15 @@ static void network_irq_resync(void) {
 static void init_network_terminals(void) {
     struct sockaddr_in addr;
     int opt = 1;
+    int listen_port = MAIN_LISTEN_PORT;
+    const char *port_env = getenv("Q9_NETTTY_PORT");
+
+    if (port_env != NULL && port_env[0] != '\0') {
+        int parsed = atoi(port_env);
+        if (parsed > 0 && parsed <= 65535) {
+            listen_port = parsed;
+        }
+    }
 
     main_server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (main_server_fd < 0) return;
@@ -111,11 +120,11 @@ static void init_network_terminals(void) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(MAIN_LISTEN_PORT);
+    addr.sin_port = htons((uint16_t)listen_port);
 
     bind(main_server_fd, (struct sockaddr *)&addr, sizeof(addr));
     listen(main_server_fd, 5);
-    printf("[OS-9 Net] Multi-Terminal Server gestartet auf Mac-Port %d\r\n", MAIN_LISTEN_PORT);
+    printf("[OS-9 Net] Multi-Terminal Server gestartet auf Mac-Port %d\r\n", listen_port);
 }
 
 static void update_network_terminals(void) {
@@ -503,6 +512,7 @@ static int m68krt_board_int_ack(int int_level)
 static FILE   *g_trap_trace_fp  = NULL;
 static long    g_trap_trace_cap = 2000000;
 static long    g_trap_trace_n   = 0;
+static int      g_trap_trace_all = 0;
 static uint32_t g_watch_pc  = 0;
 static uint32_t g_watch_pc2 = 0;
 static int      g_telnetdc_base_known  = 0;
@@ -513,6 +523,9 @@ static uint32_t g_event_return_pc = 0;    /* pkdvr-Diagnose (2026-07-15): naechs
    einem geloggten F$Event-Trap -- einzelner globaler Slot genuegt, da der Emulator nur einen
    CPU-Kern hat und die Rueckkehr-Instruktion garantiert die naechste ausgefuehrte ist, bevor
    irgendein anderer Trap dazwischenkommen kann. */
+static uint32_t g_syscall_return_pc = 0;  /* gezielter Rueckgabetrace fuer I$Open/I$Attach */
+static uint16_t g_syscall_return_code = 0;
+static uint32_t g_syscall_return_a0 = 0;
 
 /* Testlauf 3 (2026-07-14) zeigte: D0/D1 allein liefern keine brauchbare Filterung -- Grund
    (Ghidra-Nachanalyse): der eigentliche OS-9-Aufrufcode (F$Event = 0x53) steckt NICHT in einem
@@ -559,6 +572,14 @@ static int m68krt_trap_trace_callback(int trap)
         if (callcode == 0x00 || callcode == 0x01) {
             char name[16];
             m68krt_read_os9_name(m68k_get_reg(NULL, M68K_REG_A0), name, sizeof(name));
+            if (g_trap_trace_all &&
+                ((name[0] == 's' && name[1] == 'm' && name[2] == 'b') ||
+                 (name[0] == 's' && name[1] == 'o' && name[2] == 'c') ||
+                 (name[0] == 's' && name[1] == 'p' && name[2] == 'f'))) {
+                fprintf(g_trap_trace_fp, "modulecall pc=%08x callcode=%04x name=%s a0=%08x\n",
+                        pc, callcode, name, m68k_get_reg(NULL, M68K_REG_A0));
+                g_trap_trace_n++;
+            }
             if (name[0] == 'p' && name[1] == 'k') {
                 fprintf(g_trap_trace_fp, "linkname pc=%08x callcode=%04x name=%s\n", pc, callcode, name);
                 g_trap_trace_n++;
@@ -566,7 +587,20 @@ static int m68krt_trap_trace_callback(int trap)
             }
             return 0;
         }
-        if (callcode == 0x53 || callcode == 0x0a || callcode == 0x8d) {
+        if (g_trap_trace_all || callcode == 0x53 || callcode == 0x0a || callcode == 0x8d) {
+            if (g_trap_trace_all &&
+                (callcode == 0x80 || callcode == 0x83 || callcode == 0x84 ||
+                 callcode == 0x86 || callcode == 0x87)) {
+                char path[96];
+                m68krt_read_os9_name(m68k_get_reg(NULL, M68K_REG_A0), path, sizeof(path));
+                fprintf(g_trap_trace_fp, "path callcode=%04x a0=%08x path=%s\n",
+                        callcode, m68k_get_reg(NULL, M68K_REG_A0), path);
+                if (callcode == 0x80 || callcode == 0x84) {
+                    g_syscall_return_pc = pc + 4;
+                    g_syscall_return_code = (uint16_t)callcode;
+                    g_syscall_return_a0 = m68k_get_reg(NULL, M68K_REG_A0);
+                }
+            }
             fprintf(g_trap_trace_fp,
                     "trap0 pc=%08x callcode=%04x d0=%08x d1=%08x d2=%08x d3=%08x "
                     "a0=%08x a1=%08x\n",
@@ -620,6 +654,16 @@ static int m68krt_trap_trace_callback(int trap)
 
 static void m68krt_watch_pc_callback(unsigned int pc)
 {
+    if (g_syscall_return_pc && pc == g_syscall_return_pc && g_trap_trace_fp &&
+        g_trap_trace_n < g_trap_trace_cap) {
+        fprintf(g_trap_trace_fp,
+                "syscallret pc=%08x callcode=%04x a0=%08x d0=%08x d1=%08x a2=%08x\n",
+                pc, g_syscall_return_code, g_syscall_return_a0,
+                m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                m68k_get_reg(NULL, M68K_REG_A2));
+        g_trap_trace_n++;
+        g_syscall_return_pc = 0;
+    }
     if (g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap &&
         ((g_watch_pc && pc == g_watch_pc) || (g_watch_pc2 && pc == g_watch_pc2))) {
         fprintf(g_trap_trace_fp,
@@ -663,13 +707,21 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
     g_board     = 0;                                  /* RAM-Modus, bis attach_board (5.3) folgt */
     q9_devreg_clear();                                /* 5.17: frische Geraete-Registry je Boot  */
 
-    m68k_set_cpu_type(M68K_CPU_TYPE_68030);
+    /* Keep the real Q9/CB030 CPU as the default.  The EC030 switch is a
+     * diagnostic-only comparison run: it disables Musashi's PMMU so we can
+     * separate an OS-9/ftpdc failure from a PMMU-emulation failure. */
+    if (getenv("Q9_CPU") && strcmp(getenv("Q9_CPU"), "ec030") == 0) {
+        m68k_set_cpu_type(M68K_CPU_TYPE_68EC030);
+    } else {
+        m68k_set_cpu_type(M68K_CPU_TYPE_68030);
+    }
     m68k_init();
     m68k_set_int_ack_callback(0);
 
     {
         const char *trace_path = getenv("Q9_TRAP_TRACE");
         if (trace_path && !g_trap_trace_fp) {
+            g_trap_trace_all = getenv("Q9_TRAP_TRACE_ALL") != NULL;
             g_trap_trace_fp = fopen(trace_path, "w");
             if (g_trap_trace_fp) {
                 setvbuf(g_trap_trace_fp, NULL, _IOFBF, 4 * 1024 * 1024);
