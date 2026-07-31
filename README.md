@@ -1,11 +1,13 @@
 # Q9-Flux
 
-Q9-Flux is a CB030/68030 hardware emulator for genuine Microware OS-9,
-part of [Q9-Forge](https://github.com/Q9-Forge). It embeds the
-[Musashi](third_party/musashi/) 68000-family CPU core and emulates the
-CB030 board (RAM/ROM/remap, 68681 DUART, CompactFlash/RBF/PCF storage,
-QUICC Ethernet, real-time clock, board-config-driven CF profiles) closely
-enough to boot and run real, unmodified Microware OS-9/68K.
+Q9-Flux is a 68030 hardware emulator for genuine Microware OS-9, part of
+[Q9-Forge](https://github.com/Q9-Forge). It embeds the
+[Musashi](third_party/musashi/) 68000-family CPU core and emulates board
+hardware (RAM/ROM/remap, 68681 DUART, CompactFlash/RBF/PCF storage, QUICC
+Ethernet, real-time clock, board-config-driven CF profiles) closely enough
+to boot and run real, unmodified Microware OS-9/68K. The first fully
+supported board is the CB030; further boards (MC68000, Vinculum, ...) are
+planned, see [Q9-Forge's roadmap](https://github.com/Q9-Forge/.github/blob/main/ROADMAP.md).
 
 ## Usage
 
