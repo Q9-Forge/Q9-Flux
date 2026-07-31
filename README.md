@@ -1,26 +1,35 @@
-# Q9
+# Q9-Flux
 
-Q9 is a modular mini operating system in the tradition of Microware OS-9.
+Q9-Flux is a CB030/68030 hardware emulator for genuine Microware OS-9,
+part of [Q9-Forge](https://github.com/Q9-Forge). It embeds the
+[Musashi](third_party/musashi/) 68000-family CPU core and emulates the
+CB030 board (RAM/ROM/remap, 68681 DUART, CompactFlash/RBF/PCF storage,
+QUICC Ethernet, real-time clock, board-config-driven CF profiles) closely
+enough to boot and run real, unmodified Microware OS-9/68K.
 
-The portable C kernel runs on two targets from a single code base:
+## Usage
 
-- **WebAssembly / Browser** — boots in any modern browser with an
-  xterm.js console; instant testing, zero install
-- **M68k / Vinculum** (MC68EN360 SBC) — native build via vbcc (planned)
+```sh
+make native
+./build/native/q9.exe <config.q9>
+# or: ./build/native/q9.exe --cb030 <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]
+```
 
-Its OS-9-inspired module system tags every module with a language byte:
-WASM modules are instantiated natively, 68k modules transparently run on
-an embedded Musashi CPU emulator, and a future 6809 runtime aims at
-binary compatibility with original OS-9/6809 software.
+See [`docs/HANDBUCH.md`](docs/HANDBUCH.md) (German) for the full manual:
+tools, build instructions, source layout, architecture, and licensing
+notes for third-party reference material.
 
-## Status
+## History
 
-Kernel boots on native (Windows/macOS/Linux) and WebAssembly targets, with
-a working module system and a FAT16-backed filesystem. See
-[`docs/HANDBUCH.md`](docs/HANDBUCH.md) (German) for the full manual: tools,
-build instructions per target, source layout, architecture, and licensing
-notes for third-party reference material. `PROJECT.md` (German) has the
-vision, architecture decisions and roadmap.
+Q9 started as a from-scratch mini operating system in the tradition of
+Microware OS-9 (own kernel, module system, WASM-as-implementation-language
+for a browser target). That subsystem was untouched from 2026-07-04
+onward while all further work went into the CB030/Microware-OS-9
+emulator; it has been archived to
+[`Q9RESUME-Kernel`](https://github.com/foellmy51/Q9RESUME-Kernel) (full
+history preserved) should the original mini-OS idea be revisited.
+`docs/PROJECT_VISION_ARCHIV.md` keeps the original vision document for
+reference.
 
 ## License
 
