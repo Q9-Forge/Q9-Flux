@@ -1,16 +1,16 @@
 ; Q9 reales CF-Profil (5.19b) — Standard-Arbeitskonfiguration
 ; c0: Boot-RBF bei Sektor 0
-; d0: separates PCF-Image, Nutzdaten/Descriptor ab Sektor 64
-; e0/e1: gemeinsames 2-GB-Image, je 1 GB Partition
+; d0: eigenes RBF-Whole-Disk-Image (hd1.hda), kein MBR/FAT, Descriptor ab Sektor 0
+; e0: eigenes RBF-Whole-Disk-Image (hd2.hda), kein MBR/FAT, Descriptor ab Sektor 0
 ; Die Descriptor-Dateien werden vom ROM/Bootfile-Generator verwendet.
 
 [board]
 name = Q9 Emu
 rom  = local_images/roms/romimage.dev.running.BIN
-net  = vmnet
+net  = bridge:en8
 vmnet_ip       = 192.168.200.2
 vmnet_gateway  = 192.168.200.1
-vmnet_netmask  = 255.255.255.0
+vmnet_netmask  = 255.255.0.0
 vmnet_dhcp_end = 192.168.200.254
 
 [c0]
@@ -25,34 +25,23 @@ descriptor = local_images/c0
 image = local_images/OS9SYS.hda
 
 [d0]
-type = pcf
+type = rbf
 bus = secondary
 unit = master
 base = 0xFFFFE100
 start_sector = 0
-length_sectors = 0x3FF800
-descriptor_lsn = 64
+length_sectors = 0x6183c
+descriptor_lsn = 0
 descriptor = local_images/d0
-image = local_images/q9-d0-pcf-2gb.img
+image = local_images/hd1.hda
 
 [e0]
-type = pcf
-bus = secondary
-unit = master
-base = 0xFFFFE200
-start_sector = 0
-length_sectors = 0x200000
-descriptor_lsn = 64
-descriptor = local_images/e0-pcf
-image = local_images/q9-e-shared-2gb.img
-
-[e1]
 type = rbf
 bus = secondary
 unit = master
 base = 0xFFFFE200
 start_sector = 0
-length_sectors = 0x1FFFC0
-descriptor_lsn = 0x200040
-descriptor = local_images/e1
-image = local_images/q9-e-shared-2gb.img
+length_sectors = 0x800000
+descriptor_lsn = 0
+descriptor = local_images/e0
+image = local_images/hd2.hda
