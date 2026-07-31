@@ -66,13 +66,15 @@ Erkennung live in OS-9 zu versuchen.
 
 ### 1. Partitions-/Filesystem-Layout ermitteln
 
-`os9/mbr/mbr.c` ist bewusst reines ANSI-C und lässt sich auch nativ auf dem
-Host kompilieren (nützlich zum schnellen Prüfen, bevor überhaupt ein
-OS-9-Descriptor gebaut wird):
+`mbr.c` (seit 2026-07-31 im Schwester-Repo
+[`Q9-OS`](https://github.com/Q9-Forge/Q9-OS), `src/mbr.c`, mit voller
+Historie extrahiert) ist bewusst reines ANSI-C und lässt sich auch nativ auf
+dem Host kompilieren (nützlich zum schnellen Prüfen, bevor überhaupt ein
+OS-9-Descriptor gebaut wird). `Q9-OS` neben `Q9-Flux` auschecken und von dort
+gegen die Testimages hier laufen lassen:
 
 ```sh
-cd os9/mbr
-clang -Wall -Wextra -std=c89 -pedantic -o /tmp/mbr_hosttest mbr.c
+clang -Wall -Wextra -std=c89 -pedantic -o /tmp/mbr_hosttest ../Q9-OS/src/mbr.c
 /tmp/mbr_hosttest local_images/<image>.img
 ```
 
