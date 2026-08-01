@@ -92,5 +92,5 @@ case 0:	// invalid, should cause MMU exception
 - Table-C-Fault (siehe oben) noch nicht auf denselben Bus-Error-Pfad
   umgestellt.
 - Live-Verifikation im vollen Q9-Testlauf steht noch aus (der "mildere
-  PMMU-Fehler (A0=1)" aus dem Tiny-C-Vollport-Status war der Ausloeser fuer
+  PMMU-Fehler (A0=1)" aus dem QCC-Vollport-Status war der Ausloeser fuer
   diesen Fix).
