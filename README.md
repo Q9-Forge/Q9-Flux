@@ -35,4 +35,4 @@ reference.
 
 ## License
 
-TBD
+[MIT](LICENSE)
