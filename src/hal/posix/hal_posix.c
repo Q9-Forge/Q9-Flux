@@ -173,6 +173,10 @@ int q9_hal_con_get(void)
         fputs("\nq9: Host-Escape Ctrl-] — Emulator beendet.\n", stderr);
         exit(0);
     }
+    if (n == 1 && c == 0x1e) {                         /* Debug-Sondertaste: Ctrl-^ dumpt          */
+        q9_dbg_dump_requested = 1;                     /* physischen Kernel-Speicher (cb030run.c)  */
+        return -1;                                     /* schlucken, nicht an den Gast weiterreichen */
+    }
     if (n == 1 && c == 0x7f) {
         c = 0x08;                                      /* macOS Backspace (DEL) -> OS-9 BS       */
     }

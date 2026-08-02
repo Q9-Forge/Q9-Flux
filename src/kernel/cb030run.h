@@ -29,6 +29,17 @@
 #include "boardcfg.h"
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Var:      q9_dbg_dump_requested
+// Desc.:    Debug-Sondertaste (Ctrl-^, 0x1E) analog zum Ctrl-]-Host-Escape (hal_posix.c):
+//           q9_hal_con_get() setzt dieses Flag und schluckt die Taste, statt sie an den Gast
+//           weiterzureichen. Der CB030-Runner (cb030run.c) prueft es einmal pro Hauptschleifen-
+//           Durchlauf und dumpt bei Bedarf physischen RAM-Inhalt (direkt ueber q9_cb030_read32,
+//           OHNE MMU-Uebersetzung -- Debug-Werkzeug fuer die Q9-OS-Kernel-RE-Arbeit, s.
+//           Q9-OS/docs/REVERSE_ENGINEERING.md).
+//════════════════════════════════════════════════════════════════════════════════════════════════
+extern volatile int q9_dbg_dump_requested;
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cb030_boot
 // Desc.:    Laedt die ROM-Datei (max. 512 KByte Flash, s. docs/CB030.md), initialisiert das Board
 //           (16 MByte RAM, CF-Backing-Datei cf_path bzw. Default "local_images/cb030_cf.img" lazy, falls
