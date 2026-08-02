@@ -43,6 +43,152 @@
 static uint8_t cb030_ram[CB030_RAM_BYTES];
 static uint8_t cb030_rom[CB030_ROM_MAX];
 
+volatile int q9_dbg_dump_requested = 0;                /* s. cb030run.h */
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: dbg_dump_kernel_globals
+// Desc.:    Debug-Sondertaste-Handler (Ctrl-^): liest physischen RAM direkt ueber
+//           q9_cb030_read32, ohne MMU-Uebersetzung -- genau der Speicherbereich, den ein
+//           User-State-Debugger (OS-9 "debug") wegen Bus-Error nicht erreicht. Adresse 0
+//           enthaelt (falls VBR=0 nach Reset gilt) den System-Global-Zeiger (Q9-OS-RE-Fund:
+//           "movec VBR,A6 / movea.l (A6),A6"-Idiom); wirkt plausibel, wird automatisch auch
+//           D_ExcJmp (+0x68) und die beiden Syscall-Tabellen (+0x3a4/+0x3a8) mitgedumpt.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+#define DBG_DUMP_FILE "local_images/q9dbg_dump.txt"
+
+static void dbg_dump_kernel_globals(q9_cb030_t *b)
+{
+    /* In eine Datei statt nach stderr schreiben: bei groesseren Dumps (Syscall-Tabellen-Scan,
+       D_ExcJmp) geht sonst Text im PTY-Puffer verloren, wenn viele Zeilen ohne Interaktion in
+       einem Rutsch geschrieben werden (beobachtet 2026-08-02, s. Q9-OS-RE-Sitzung). Eine
+       Textdatei ist robust und lässt sich danach in Ruhe komplett lesen. */
+    FILE *f = fopen(DBG_DUMP_FILE, "w");
+    if (!f) {
+        fprintf(stderr, "\n[q9dbg] konnte %s nicht zum Schreiben oeffnen.\n", DBG_DUMP_FILE);
+        return;
+    }
+
+    uint32_t v0 = q9_cb030_read32(b, 0);
+
+    fprintf(f, "physisch @0x00000000 = %08x (Kandidat System-Global-Zeiger)\n", v0);
+    if (v0 == 0 || v0 >= CB030_RAM_BYTES) {
+        fprintf(f, "Wert ausserhalb 0..%uM RAM -- kein plausibler Zeiger, breche ab.\n",
+                CB030_RAM_BYTES / (1024u * 1024u));
+        fclose(f);
+        fprintf(stderr, "\n[q9dbg] Dump (abgebrochen) geschrieben nach %s\n", DBG_DUMP_FILE);
+        return;
+    }
+    uint32_t excjmp = q9_cb030_read32(b, v0 + 0x68);
+    uint32_t sysdis = q9_cb030_read32(b, v0 + 0x3a4);
+    uint32_t usrdis = q9_cb030_read32(b, v0 + 0x3a8);
+
+    fprintf(f, "D_ExcJmp   @+0x68  = %08x\n", excjmp);
+    fprintf(f, "D_SysDis   @+0x3a4 = %08x\n", sysdis);
+    fprintf(f, "D_UsrDis   @+0x3a8 = %08x\n", usrdis);
+    fprintf(f, "(0x8e4)    @+0x8e4 = %08x\n", q9_cb030_read32(b, v0 + 0x8e4));
+    fprintf(f, "32 Byte ab System-Global-Basis:\n ");
+    for (int i = 0; i < 32; i++) {
+        fprintf(f, "%02x ", q9_cb030_read8(b, v0 + (uint32_t)i));
+        if (i == 15) fprintf(f, "\n ");
+    }
+    fprintf(f, "\n");
+
+    /* Syscall-Tabellen scannen: 256 Eintraege x 4 Byte je Primaerarray (0x000-0x3FF ab sysdis/
+       usrdis). Slot 0 wird als Basiswert fuer "nicht registriert/Fehler-Stub" angenommen (laut
+       RE-Fund fast alle Eintraege identisch); nur Ausreisser (= tatsaechlich registrierte
+       Funktionsnummern) werden gedruckt, sonst waeren 256 Zeilen ueberwiegend Rauschen. */
+    for (int t = 0; t < 2; t++) {
+        uint32_t base = t == 0 ? sysdis : usrdis;
+        uint32_t baseline;
+        int      outliers = 0;
+
+        if (base == 0 || base >= CB030_RAM_BYTES) {
+            fprintf(f, "%s unplausibel, ueberspringe Scan.\n", t == 0 ? "D_SysDis" : "D_UsrDis");
+            continue;
+        }
+        baseline = q9_cb030_read32(b, base);
+        fprintf(f, "%s-Primaerarray Scan (Basiswert Slot0=%08x, nur Abweichungen):\n",
+                t == 0 ? "D_SysDis" : "D_UsrDis", baseline);
+        for (int i = 0; i < 256; i++) {
+            uint32_t v = q9_cb030_read32(b, base + (uint32_t)(i * 4));
+            if (v != baseline) {
+                fprintf(f, "  Slot %3d (0x%02x) = %08x\n", i, i, v);
+                outliers++;
+            }
+        }
+        if (outliers == 0) fprintf(f, "  (keine Abweichungen -- alle Slots = Basiswert)\n");
+    }
+
+    /* D_ExcJmp: 256 Eintraege x 10 Byte, Format bereits geklaert (Q9-OS-RE-Sitzung 2026-08-02):
+       PEA (vektor*4+8).W ; JMP.L <ziel> -- <ziel> ist die tatsaechliche Dispatcher-Adresse.
+       Kernel-Basis wird aus dem Fehler-Stub-Mehrheitswert der Syscall-Tabelle abgeleitet
+       (Fehler-Stub liegt bei Modul-Offset 0x1380, s. REVERSE_ENGINEERING.md), damit direkt
+       <ziel>-Kernel-Basis mit ausgegeben wird -- das laesst sich sofort gegen die bekannten
+       Q9_disp_*-Offsets (0x180/0x452/0x472/0x488/0x5d0/0x888/0x8d0/0xba4) abgleichen. Alle
+       Vektoren 2-63 (kompletter dokumentierter Bereich) plus ein paar Stichproben aus dem
+       User-Defined-Bereich (64-255). */
+    if (excjmp != 0 && excjmp < CB030_RAM_BYTES) {
+        /* Fehler-Stub-Mehrheitswert der Syscall-Tabelle als Kernel-Basis-Referenz (haeufigster
+           Wert im D_SysDis-Array, s. Scan oben -- hier zur Einfachheit erneut ermittelt statt
+           durchgereicht). */
+        uint32_t counts[256];
+        uint32_t vals[256];
+        int      n = 0;
+        for (int i = 0; i < 256; i++) {
+            uint32_t v = q9_cb030_read32(b, sysdis + (uint32_t)(i * 4));
+            int      found = 0;
+            for (int j = 0; j < n; j++) {
+                if (vals[j] == v) { counts[j]++; found = 1; break; }
+            }
+            if (!found && n < 256) { vals[n] = v; counts[n] = 1; n++; }
+        }
+        uint32_t stub = vals[0];
+        {
+            uint32_t best = 0;
+            for (int j = 0; j < n; j++) if (counts[j] > best) { best = counts[j]; stub = vals[j]; }
+        }
+        uint32_t kbase = stub - 0x1380;
+        fprintf(f, "Fehler-Stub-Mehrheitswert = %08x -> Kernel-Basis (angenommen -0x1380) = %08x\n",
+                stub, kbase);
+
+        /* WICHTIG: D_ExcJmp ist 0-indiziert ab Vektor 2 (Vektoren 0/1 = Reset-SSP/PC laufen nie
+           ueber diese Tabelle) -- Array-Index = Vektor-2. Frueherer Off-by-2-Fehler (Vektor direkt
+           als Index benutzt) durch Live-Vergleich mit den bekannten Q9_disp_*-Adressen gefunden
+           und hier korrigiert (Q9-OS-RE-Sitzung 2026-08-02). */
+        fprintf(f, "D_ExcJmp-Eintraege, Format PEA (v).W;JMP.L ziel, entschluesselt:\n");
+        for (int vec = 2; vec <= 63; vec++) {
+            uint32_t entry = excjmp + (uint32_t)((vec - 2) * 10);
+            uint8_t  raw[10];
+            for (int i = 0; i < 10; i++) raw[i] = q9_cb030_read8(b, entry + (uint32_t)i);
+            uint32_t pea_val = ((uint32_t)raw[2] << 8) | raw[3];
+            uint32_t target  = ((uint32_t)raw[6] << 24) | ((uint32_t)raw[7] << 16)
+                              | ((uint32_t)raw[8] << 8) | raw[9];
+            long     rel     = (long)target - (long)kbase;
+            fprintf(f, "  Vektor %3d: pea=%04x target=%08x target-kbase=%+06ld (0x%lx)\n",
+                    vec, pea_val, target, rel, rel);
+        }
+        fprintf(f, "Stichproben User-Defined-Bereich:\n");
+        {
+            static const int samples[] = { 64, 90, 128, 180, 200, 255 };
+            for (unsigned si = 0; si < sizeof(samples) / sizeof(samples[0]); si++) {
+                int      vec   = samples[si];
+                uint32_t entry = excjmp + (uint32_t)((vec - 2) * 10);
+                uint8_t  raw[10];
+                for (int i = 0; i < 10; i++) raw[i] = q9_cb030_read8(b, entry + (uint32_t)i);
+                uint32_t pea_val = ((uint32_t)raw[2] << 8) | raw[3];
+                uint32_t target  = ((uint32_t)raw[6] << 24) | ((uint32_t)raw[7] << 16)
+                                  | ((uint32_t)raw[8] << 8) | raw[9];
+                long     rel     = (long)target - (long)kbase;
+                fprintf(f, "  Vektor %3d: pea=%04x target=%08x target-kbase=%+06ld (0x%lx)\n",
+                        vec, pea_val, target, rel, rel);
+            }
+        }
+    }
+
+    fclose(f);
+    fprintf(stderr, "\n[q9dbg] Dump geschrieben nach %s\n", DBG_DUMP_FILE);
+}
+
 int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode,
                   const q9_board_cfg_t *cfg)
 {
@@ -179,6 +325,10 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 
             q9_m68krt_execute(&rt, CB030_SLICE_CYCLES);
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
+            if (q9_dbg_dump_requested) {                    /* Debug-Sondertaste, s. cb030run.h     */
+                q9_dbg_dump_requested = 0;
+                dbg_dump_kernel_globals(&board);
+            }
             now_ms = q9_hal_ticks_ms();
 
             /* 5.17: Hauptschleifen-Poll -- die frueher hier hartkodierten Bloecke (DUART/QUICC/
