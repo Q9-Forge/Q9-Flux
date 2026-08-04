@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.h                                                                        Ver. 1.20
+// File:   m68krt.h                                                                        Ver. 1.21
 // Owner:  AF
 // Desc.:  Schmaler Q9-Wrapper um die eingebettete Musashi-68000-Emulation (third_party/musashi,
 //         Entscheidung E12 in PROJECT.md). Native-Build-only — Grundbaustein fuer Phase 5 (Prozesse
@@ -28,12 +28,15 @@
 //         │      │ CB030-Adress-Dispatch (cb030.h) statt nacktem RAM-Block                 │
 // 26-07-10│ 1.30 │ 5.9: q9_m68krt_is_stopped — Wrapper um Musashis m68k_is_stopped()        │ CF
 //         │      │ (Vendor-Patch) fuer die CB030-Idle-Drossel                              │
+// 26-08-03│ 1.21 │ 5.26: q9_m68krt_attach_framebuf (framebuf.h, VRAM-Geraet)               │ Ada
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_M68KRT_H
 #define Q9_M68KRT_H
 
 #include <stdint.h>
 #include "cb030.h"
+#include "mc6845.h"                                    /* 5.24: q9_mc6845_t                       */
+#include "framebuf.h"                                  /* 5.26: q9_framebuf_t                     */
 
 #define Q9_M68KRT_OK        0
 #define Q9_M68KRT_ERR_RAM  -1                       /* RAM fehlt oder zu klein fuer Reset-Vektoren */
@@ -127,6 +130,24 @@ struct q9_quicc;
 void q9_m68krt_attach_quicc(struct q9_quicc *quicc);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_attach_mc6845
+// Desc.:    5.24: Haengt die MC6845-CRT-Controller-Emulation (mc6845.h) in die Geraete-Registry ein
+//           -- Fenster $FFFFA000-$FFFFA001 (Index/Datenregister). Kein IRQ. Aufruf NACH
+//           q9_m68krt_attach_board (analog QUICC/CF2). crtc muss die gesamte Laufzeit ueberleben.
+// Call:     q9_m68krt_attach_mc6845(&crtc);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_attach_mc6845(q9_mc6845_t *crtc);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_attach_framebuf
+// Desc.:    5.26: Haengt das VRAM-Geraet (framebuf.h) in die Geraete-Registry ein -- Fenster ab
+//           Q9_FRAMEBUF_BASE, Groesse kommt aus fb->size (q9_framebuf_size), also NACH
+//           q9_framebuf_init() aufrufen. Kein IRQ. fb muss die gesamte Laufzeit ueberleben.
+// Call:     q9_m68krt_attach_framebuf(&fb);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_attach_framebuf(q9_framebuf_t *fb);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_attach_cf2
 // Desc.:    5.19a: Registriert ein ZWEITES Compact-Flash-Interface (RC2014-SC145-Kartenleser bei
 //           Q9_CB030_CF2_BASE, Descriptoren e0/f0 im MWOS-Q9-Port) in der Geraete-Registry. Nutzt
@@ -172,5 +193,5 @@ int q9_m68krt_is_stopped(void);
 #endif // Q9_M68KRT_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.h                                                                            Ver. 1.20
+// EOF m68krt.h                                                                            Ver. 1.21
 //────────────────────────────────────────────────────────────────────────────────────────────────
