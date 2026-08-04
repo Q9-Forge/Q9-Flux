@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030run.c                                                                      Ver. 1.70
+// File:   cb030run.c                                                                      Ver. 1.72
 // Owner:  AF
 // Desc.:  Implementierung des CB030-Boot-Runners, siehe cb030run.h.
 //
@@ -21,11 +21,17 @@
 //         │      │ einzige Schleife ueber die Geraete-Registry, keine Sonderfaelle mehr       │
 // 26-07-16│ 1.70 │ 5.19: Board-Config (cfg-Parameter) -- mehrere CF-Images (rbf/pcf) auf       │ CF
 //         │      │ Onboard-CF (Master/Slave) + RC2014-SC145-Zweitinterface verteilen           │
+// 26-08-03│ 1.71 │ 5.24/5.26: MC6845 (crtc) + VRAM-Geraet (fb) nach attach_quicc verdrahtet    │ Ada
+// 26-08-03│ 1.72 │ 5.27: Host-Video-Bridge (videobridge) initialisiert + je Hauptschleifen-    │ Ada
+//         │      │ Runde gepollt                                                              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
 #include "m68krt.h"
 #include "quicc.h"
+#include "mc6845.h"                                    /* 5.24: MC6845-CRT-Controller             */
+#include "framebuf.h"                                  /* 5.26: VRAM-Geraet                       */
+#include "videobridge.h"                               /* 5.27: Host-Video-Bridge                  */
 #include "devreg.h"
 #include "boardcfg.h"
 #include "../hal/q9_hal.h"
@@ -42,6 +48,7 @@
    im BSS kostet das nichts, solange es unberuehrt bleibt. */
 static uint8_t cb030_ram[CB030_RAM_BYTES];
 static uint8_t cb030_rom[CB030_ROM_MAX];
+static uint8_t cb030_vram[Q9_FRAMEBUF_MAX_SIZE];       /* 5.26: VRAM-Backing, s. framebuf.h        */
 
 volatile int q9_dbg_dump_requested = 0;                /* s. cb030run.h */
 
@@ -194,6 +201,9 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 {
     static q9_cb030_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
     static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
+    static q9_mc6845_t crtc;                           /* 5.24: MC6845-CRT-Controller             */
+    static q9_framebuf_t fb;                            /* 5.26: VRAM-Geraet                       */
+    static q9_videobridge_t videobridge;                /* 5.27: Host-Video-Bridge                  */
     static q9_cf_t    cf_extra[Q9_CFG_MAX_CF];
     static uint32_t   cf_extra_base[Q9_CFG_MAX_CF];
     static int        cf_extra_count;
@@ -311,6 +321,25 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
         return 1;
     }
     q9_m68krt_attach_quicc(&quicc);                    /* 5.11: Ethernet-Fenster $FFFF2000       */
+    q9_mc6845_init(&crtc);                              /* 5.24: MC6845, Reset-Zustand = alle 0   */
+    q9_m68krt_attach_mc6845(&crtc);                     /* 5.24: CRTC-Fenster $FFFFA000           */
+    q9_framebuf_init(&fb, cb030_vram, sizeof(cb030_vram), Q9_FRAMEBUF_DEFAULT_SIZE, &crtc);
+    q9_m68krt_attach_framebuf(&fb);                     /* 5.26: VRAM-Fenster $FD000000           */
+    {
+        /* Optionaler Port-Override (5.29-Diagnose, Andreas' laufender Terminalserver belegt
+           sonst 2001/2000) -- Default bleibt unveraendert 2001/2000, analog Q9_NETTTY_PORT. */
+        unsigned vb_tcp_port = Q9_VIDEOBRIDGE_TCP_PORT;
+        unsigned vb_udp_port = Q9_VIDEOBRIDGE_UDP_PORT;
+        const char *vb_tcp_env = getenv("Q9_VIDEOBRIDGE_TCP_PORT");
+        const char *vb_udp_env = getenv("Q9_VIDEOBRIDGE_UDP_PORT");
+        if (vb_tcp_env && vb_tcp_env[0]) vb_tcp_port = (unsigned)atoi(vb_tcp_env);
+        if (vb_udp_env && vb_udp_env[0]) vb_udp_port = (unsigned)atoi(vb_udp_env);
+        if (q9_videobridge_init(&videobridge, &fb, &crtc, vb_tcp_port, vb_udp_port, "Q9Flux") != 0) {
+            fprintf(stderr, "cb030: Q9-Frame-Video-Bridge (TCP %u/UDP %u) konnte nicht gestartet werden -- "
+                             "Emulation laeuft trotzdem weiter (rein additiver Host-Dienst).\r\n",
+                    vb_tcp_port, vb_udp_port);
+        }
+    }
     q9_m68krt_reset(&rt);                              /* Reset-Vektoren kommen aus dem ROM      */
 
     {
@@ -356,6 +385,8 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
                 }
             }
 
+            q9_videobridge_poll(&videobridge, now_ms);      /* 5.27: nichtblockierend, s. videobridge.h */
+
             /* 5.9: OS-9 idlet per STOP -- m68k_execute() "verbrennt" dann sofort alle
                angeforderten Takte, ohne etwas zu tun (busy loop, 100% Host-CPU). Ohne anstehenden
                IRQ kann in dieser Zeit nichts passieren, bevor der naechste 10ms-Timer-Tick (oder
@@ -389,5 +420,5 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030run.c                                                                          Ver. 1.70
+// EOF cb030run.c                                                                          Ver. 1.72
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,125 @@
+#!/usr/bin/expect -f
+# 5.29 GDP-Treiber-Test auf lokalem, isoliertem Testklon
+# (local_images/OS9SYS.gdp-test-20260803.hda -- NICHT das produktive
+# OS9SYS.hda, um Claudias parallele QCC/Parsec-Arbeit nicht zu stoeren).
+#
+# Ablauf: Boot -> Login -> mc6845/crtc0/gdp/vram0 per "load" aktivieren ->
+# minimalen SS_xxx-C-Wrapper + Testprogramm per "build" reinpasten ->
+# nativ mit r68+cc uebersetzen -> ausfuehren -> Ausgabe pruefen.
+
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend test/expect/results/test_gdp_5_29_result.txt
+
+set image local_images/OS9SYS.gdp-test-20260803.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+set scratch /private/tmp/claude-501/-Users-afoe/7fe05dfb-d9b3-473b-b7ee-ad4616cd5884/scratchpad/gdp_test
+
+proc login {} {
+    set timeout 60
+    expect "devices online"
+    set timeout 20
+    set logged_in 0
+    for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+        expect {
+            "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+            -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+            -re {[#$] ?$} { set logged_in 1 }
+            timeout { send "\r" }
+        }
+    }
+    if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+}
+
+proc paste_file {localpath remotename blankmarker} {
+    send_log "\n<<<TRANSFER $remotename>>>\n"
+    sleep 1
+    send -s "del $remotename\r"
+    expect -re {[#$] ?$}
+    sleep 1
+    send -s "build $remotename\r"
+    expect -re {\? ?$}
+    set fp [open $localpath r]
+    set raw [read $fp]
+    close $fp
+    set data ""
+    foreach line [split $raw "\n"] {
+        if {[string trim $line] eq ""} { append data "$blankmarker\r" } else { append data "$line\r" }
+    }
+    append data "\r"
+    send -s -- $data
+    set timeout 60
+    expect -re {[#$] ?$}
+    set timeout 20
+}
+
+spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+login
+
+send_log "\n=== SCHRITT 1: Treiber/Descriptor per load aktivieren (voller Pfad, load sucht nicht in BOOTOBJS) ===\n"
+sleep 1
+send -s "load /dd/CMDS/BOOTOBJS/mc6845\r"
+expect -re {[#$] ?$}
+sleep 1
+send -s "load /dd/CMDS/BOOTOBJS/crtc0\r"
+expect -re {[#$] ?$}
+sleep 1
+send -s "load /dd/CMDS/BOOTOBJS/gdp\r"
+expect -re {[#$] ?$}
+sleep 1
+send -s "load /dd/CMDS/BOOTOBJS/vram0\r"
+expect -re {[#$] ?$}
+sleep 1
+send -s "mdir\r"
+expect -re {[#$] ?$}
+
+send_log "\n=== SCHRITT 2: Arbeitsverzeichnis + Compiler-Env (bash-Shell -> export, kein setenv) ===\n"
+sleep 1
+send -s "makdir /dd/gdptest\r"
+expect -re {[#$] ?$}
+sleep 1
+send -s "chd /dd/gdptest\r"
+expect -re {[#$] ?$}
+sleep 1
+send -s "export DEFS=/dd/DEFS\r"
+expect -re {[#$] ?$}
+sleep 1
+send -s "export LIB=/dd/LIB\r"
+expect -re {[#$] ?$}
+
+send_log "\n=== SCHRITT 3: Wrapper + Testprogramm pasten ===\n"
+paste_file "$scratch/ss_gdp_min.a" "ss_gdp_min.a" "*"
+paste_file "$scratch/vramtest.c" "vramtest.c" "/**/"
+
+send_log "\n=== SCHRITT 4: Wrapper assemblieren ===\n"
+sleep 1
+send -s "r68 ss_gdp_min.a -o=ss_gdp_min.r\r"
+set timeout 30
+expect -re {[#$] ?$}
+set timeout 20
+sleep 1
+send -s "dir\r"
+expect -re {[#$] ?$}
+
+send_log "\n=== SCHRITT 5: cc vramtest.c + ss_gdp_min.r (jetzt mit xdef in ss_gdp_min.a) ===\n"
+sleep 1
+send -s "cc vramtest.c ss_gdp_min.r -o=vramtest\r"
+set timeout 60
+expect -re {[#$] ?$}
+set timeout 20
+sleep 1
+send -s "dir\r"
+expect -re {[#$] ?$}
+
+send_log "\n=== SCHRITT 6: Testprogramm ausfuehren ===\n"
+sleep 1
+send -s "vramtest\r"
+set timeout 30
+expect -re {[#$] ?$}
+set timeout 20
+
+send_log "\n<<<HOST-ESCAPE, EMULATOR BEENDEN>>>\n"
+send "\x1d"
+expect eof
+
+send_log "\n<<<TEST ENDE>>>\n"

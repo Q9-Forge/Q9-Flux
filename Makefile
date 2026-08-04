@@ -74,9 +74,9 @@ $(BUILD)/native/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 # 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap, docs/CB030.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
 CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c src/kernel/quicc.c src/kernel/devreg.c \
-            src/kernel/boardcfg.c
+            src/kernel/boardcfg.c src/kernel/mc6845.c src/kernel/framebuf.c src/kernel/videobridge.c
 CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h src/kernel/devreg.h \
-            src/kernel/boardcfg.h
+            src/kernel/boardcfg.h src/kernel/mc6845.h src/kernel/framebuf.h src/kernel/videobridge.h
 
 # 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
 # 5.13: bridge-Ethernet-Backend (--net bridge:<ifname>), nur macOS: BPF (/dev/bpf*), kein Framework

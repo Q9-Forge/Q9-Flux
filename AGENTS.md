@@ -14,3 +14,9 @@ Arbeitsweise:
 - Grosse lokale Images und proprietaere OS-9-ROMs/Module nicht ins Repo aufnehmen oder weitergeben.
 - Vor groesseren Aenderungen Git-Status pruefen.
 - Nach Codeaenderungen passende Builds oder Tests aus `Makefile`/`docs/HANDBUCH.md` verwenden.
+# Projektübergreifender Kontext
+
+Vor Arbeiten am Teilprojekt zusätzlich den zentralen Kontext
+[Q9Forge/AI_CONTEXT.md](../Q9Forge/AI_CONTEXT.md) beachten. Er enthält die
+verbindlichen Namen und die Einordnung von Q9 Forge, Q9 Flux, Q9-OS, QCC und
+Parsec.

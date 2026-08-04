@@ -897,6 +897,52 @@ void q9_m68krt_attach_cf_at(q9_cf_t *cf, uint32_t base, const char *name)
     }
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q9_m68krt_attach_mc6845
+// Desc.:    5.24: MC6845-CRT-Controller in die Registry eintragen -- kein IRQ (level_held bleibt 0,
+//           s. mc6845.h). Reihenfolge egal (kein IRQ-Prioritaetskonflikt moeglich).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+void q9_m68krt_attach_mc6845(q9_mc6845_t *crtc)
+{
+    if (crtc) {
+        q9_device_t d;
+        memset(&d, 0, sizeof(d));
+        d.type       = "mc6845";
+        d.name       = "crtc0";
+        d.base       = Q9_MC6845_BASE;
+        d.size       = Q9_MC6845_TOP - Q9_MC6845_BASE + 1u;
+        d.irq_level  = 0;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.vt         = &q9_devtype_mc6845;
+        d.state      = crtc;
+        q9_devreg_add(d);
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q9_m68krt_attach_framebuf
+// Desc.:    5.26: VRAM-Geraet in die Registry eintragen -- kein IRQ. Fenstergroesse kommt aus
+//           fb->size (q9_framebuf_size), also erst NACH q9_framebuf_init() aufrufbar.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+void q9_m68krt_attach_framebuf(q9_framebuf_t *fb)
+{
+    if (fb) {
+        q9_device_t d;
+        memset(&d, 0, sizeof(d));
+        d.type       = "framebuf";
+        d.name       = "vram0";
+        d.base       = Q9_FRAMEBUF_BASE;
+        d.size       = q9_framebuf_size(fb);
+        d.irq_level  = 0;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.vt         = &q9_devtype_framebuf;
+        d.state      = fb;
+        q9_devreg_add(d);
+    }
+}
+
 void q9_m68krt_reset(q9_m68krt_t *rt)
 {
     (void)rt;

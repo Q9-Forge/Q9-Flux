@@ -1,5 +1,8 @@
 # Q9-Flux
 
+Der gemeinsame projektübergreifende Kontext und die verbindlichen Namen
+stehen in [Q9Forge/AI_CONTEXT.md](../Q9Forge/AI_CONTEXT.md).
+
 Q9-Flux is a 68030 hardware emulator for genuine Microware OS-9, part of
 [Q9-Forge](https://github.com/Q9-Forge). It embeds the
 [Musashi](third_party/musashi/) 68000-family CPU core and emulates board
