@@ -1,0 +1,46 @@
+; Private Arbeitskopie fuer Claude-Sitzung (2026-08-04): APFS-Klone von
+; OS9SYS.hda/hd1.hda/hd2.hda, damit parallel zur laufenden Hawk-Instanz
+; (emu.hawk.q9, tmux Fenster "Q9-FLUX") kein gemeinsames Image angefasst wird.
+; Basis: emu.q9 (Standard-Arbeitskonfiguration), nur Image-Pfade geaendert.
+
+[board]
+name = Q9 Emu (Claude-Arbeitskopie)
+rom  = local_images/roms/romimage.dev.running.BIN
+net  = bridge:en8
+vmnet_ip       = 192.168.200.2
+vmnet_gateway  = 192.168.200.1
+vmnet_netmask  = 255.255.0.0
+vmnet_dhcp_end = 192.168.200.254
+
+[c0]
+type = rbf
+bus = onboard
+unit = master
+base = 0xFFFFE000
+start_sector = 0
+length_sectors = 0x800000
+descriptor_lsn = 0
+descriptor = local_images/c0
+image = local_images/OS9SYS.claude-work.hda
+
+[d0]
+type = rbf
+bus = secondary
+unit = master
+base = 0xFFFFE100
+start_sector = 0
+length_sectors = 0x6183c
+descriptor_lsn = 0
+descriptor = local_images/d0
+image = local_images/hd1.claude-work.hda
+
+[e0]
+type = rbf
+bus = secondary
+unit = master
+base = 0xFFFFE200
+start_sector = 0
+length_sectors = 0x800000
+descriptor_lsn = 0
+descriptor = local_images/e0
+image = local_images/hd2.claude-work.hda
