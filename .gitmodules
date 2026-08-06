@@ -1,0 +1,3 @@
+[submodule "third_party/tvision"]
+	path = third_party/tvision
+	url = https://github.com/magiblot/tvision.git
