@@ -1,63 +1,49 @@
 # libslirp (+glib2) — Vendor-Notiz
 
-## 🔴 RESUME HERE — hostfwd-Debugging fortsetzen (Stand 2026-08-07 Nacht)
+## ✅ GELOEST (2026-08-07, Abend) — hostfwd-Absturz behoben, zwei eigene Bugs, kein libslirp-Bug
 
-**Ziel:** Host → OS-9-`telnetd` (192.168.200.2:23) erreichbar machen. Blockiert an
-einem Absturz in `slirp_add_hostfwd()`/`slirp_add_hostxfwd()` (Details weiter unten).
-Kernfunktion (OS-9 → Internet, ausgehend) laeuft bereits stabil, NICHT anfassen.
+Der RESUME-HERE-Plan von der Nacht-Session wurde befolgt und hat zum Ziel gefuehrt.
+MSYS2-Toolchain OHNE `pacman-key --init` installiert (Befund bestaetigt: Keyring war
+schon gueltig, das war die eigentliche Bremse beim letzten Anlauf) -- diesmal glatt
+durchgelaufen. `C:\msys64` ist jetzt dauerhaft mit vollstaendiger `mingw-w64-x86_64-
+toolchain` (gcc, gdb, meson, ninja, pkgconf, glib2, git) auf dieser Maschine vorhanden,
+der Installationsschritt entfaellt bei einem naechsten Debugging-Anlauf.
 
-**Reproducer fertig, liegt bereit:** `third_party/slirp/repro_hostfwd_crash.c` — baut
-gegen die vendorten Header/Libs (Befehl steht im Dateikopf), crasht zuverlaessig direkt
-nach `slirp_add_hostfwd()`. Kein Q9-Code noetig, isoliert den Bug.
+libslirp v4.9.3 (identische Version wie vendort) aus dem Quellcode mit `meson setup build
+--buildtype=debug && ninja -C build` gebaut, Reproducer dagegen gelinkt, unter
+`gdb -batch -ex run -ex bt` laufen lassen -- Absturz sofort mit vollem symbolisiertem
+Stacktrace reproduziert (kein Wechsel auf Upstream-Bugreport noetig).
 
-**MSYS2-Stand auf dieser Maschine** (`C:\msys64`, temporaer installiert, NICHT
-Projekt-Abhaengigkeit):
-- Basisinstallation fertig, `pacman` funktioniert.
-- **Wichtiger Fund:** Der GPG-Keyring hat BEREITS gueltigen Inhalt aus der Basis-
-  Installation (`pubring.gpg`/`trustdb.gpg` non-empty, Zeitstempel vom Install selbst) —
-  ein zusaetzlicher `pacman-key --init`-Lauf ist vermutlich **unnoetig** und war genau
-  der Schritt, der beim letzten Versuch haengen blieb (Entropie-Sammlung?). **Beim
-  naechsten Anlauf `pacman-key --init`/`--populate` einfach WEGLASSEN** und direkt mit
-  `pacman -S` starten.
-- **Noch NICHT installiert:** gcc/meson/ninja/pkg-config/git (kompletter
-  `mingw-w64-x86_64-toolchain` fehlt noch) — der Installationsversuch ist an
-  interaktiven Prompts haengengeblieben, BEVOR der Download lief.
+**BUG 1 -- Ursache des urspruenglich hier dokumentierten Absturzes (eigener Konfigfehler,
+KEIN libslirp-Bug):** `slirp_register_poll_socket()` (src/slirp.c) ruft
+`cb->register_poll_socket()` nur wenn `cfg_version >= 6` ist -- sonst faellt es in den
+deprecated `cb->register_poll_fd()`-Zweig, den wir absichtlich NULL gelassen hatten. Mit
+`cfg.version = 1` (Q9-Code seit 5.14 "Erster Wurf") griff also immer der NULL-Zeiger-Zweig
+-> Crash in `slirp_add_hostfwd()` -> `tcp_listen()` -> `tcpx_listen()` ->
+`slirp_register_poll_socket()`. **Fix:** `cfg.version = 6` (SLIRP_CONFIG_VERSION_MAX) in
+`src/kernel/slirp_net.c` (Ver. 1.03).
 
-**Bekannte pacman-Prompt-Tuecken** (falls `--noconfirm` wieder nicht greift — trat
-wiederholt auf, Ursache nicht abschliessend geklaert, evtl. stdin-Weiterleitung ueber
-die Git-Bash<->MSYS2-Prozessgrenze):
-- Gruppen-Auswahl-Prompt (`Geben Sie eine Auswahl ein (Voreinstellung=alle):`) will
-  eine LEERE Zeile (Enter) fuer "alle", NICHT "j"/"y".
-- Bestaetigungs-Prompt (`Installation fortsetzen? [J/n]`) will "j" (deutsches Gebietsschema).
-- Antworten per stdin-Datei zufuehren: Datei MUSS ueber MSYS2s EIGENE bash angelegt
-  werden (`/c/msys64/usr/bin/bash.exe -lc "printf '\nj\n' > /tmp/answers.txt"`), NICHT
-  ueber Git-Bash — beide haben unterschiedliche `/tmp`-Zuordnungen.
-- Stale Lock nach abgebrochenem Versuch: `rm -f /c/msys64/var/lib/pacman/db.lck`.
+**BUG 2 -- zweiter Absturz, nach Fix 1 per gdb neu aufgedeckt, echter Speicherfehler seit
+dem ersten Wurf latent:** `SlirpCb cb;` war eine LOKALE Stack-Variable in
+`q9_slirp_start()`. `slirp_new()` speichert davon aber nur den Zeiger
+(`slirp->cb = callbacks;`), keine Kopie -- nach Rueckkehr der Funktion dangling. Nie
+aufgefallen, weil `slirp_pollfds_poll()` (einziger Dereferenzierer aus dem Hauptloop) nur
+bei `g_pollfd_count > 0` laeuft, und ohne hostfwd/aktive Verbindung war das nie der Fall.
+Erst der durch Fix 1 aktivierte hostfwd-Listener-Socket machte `g_pollfd_count > 0` schon
+beim ersten Poll und liess `slirp->cb->clock_get_ns()` auf eine laengst wiederverwendete
+Stack-Adresse springen (Crash-Adresse 0x5fe3b8, kein Modul -- klassisches Dangling-
+Pointer-Symptom). **Fix:** `SlirpCb` als `static g_cb` (Datei-Lebensdauer, passt zum
+ohnehin Singleton-artigen `g_slirp`) in `src/kernel/slirp_net.c` (Ver. 1.04).
 
-**Naechster konkreter Schritt** (kopierbar):
-```bash
-# OHNE pacman-key-Schritt probieren:
-rm -f /c/msys64/var/lib/pacman/db.lck
-/c/msys64/usr/bin/bash.exe -lc "printf '\nj\n' > /tmp/answers.txt"
-/c/msys64/usr/bin/bash.exe -lc \
-  "pacman -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-meson mingw-w64-x86_64-ninja mingw-w64-x86_64-pkgconf mingw-w64-x86_64-glib2 git < /tmp/answers.txt" \
-  > /tmp/pacman_install.log 2>&1 &
-# Fortschritt pruefen: tail -40 /tmp/pacman_install.log
-# CPU-Check falls es haengt: PowerShell Get-Process -Id <pid> | Select CPU (0 ueber
-# mehrere Sekunden = haengt, dann Log-Ende auf neuen Prompt-Text pruefen)
-```
-Danach, sobald `gcc`/`meson`/`ninja`/`git` unter
-`/c/msys64/usr/bin/bash.exe -lc "export MSYSTEM=MINGW64; source /etc/profile; which gcc meson ninja git"`
-verfuegbar sind: `libslirp` klonen (gitlab.freedesktop.org/slirp/libslirp.git oder
-github.com/utmapp/libslirp als Fallback bei Anti-Bot-Sperren), `meson setup build
---buildtype=debug && ninja -C build`, den Reproducer GEGEN DIESEN Debug-Build linken,
-unter `gdb` (MSYS2s eigenes, aus derselben Toolchain — Symbole von w64devkit-`gdb`
-gegen MSYS2-`gcc`-Output koennten inkompatibel sein) laufen lassen: `gdb -batch -ex run
--ex bt ./repro.exe` fuer einen ENDLICH symbolisierten Stacktrace.
+**Verifiziert** (echter `q9.exe`, vendorte Windows-Release-Libs, nicht nur Debug-Build):
+kompletter OS-9-Boot bis "8 devices online" mit `net=slirp` + `net_hostfwd = tcp:2323:23`,
+`netstat` zeigt Port 2323 im LISTEN-Zustand, eingehende TCP-Verbindung crasht den Emulator
+nicht mehr (5+ Sekunden stabil). OS-9s `telnetd` selbst antwortete auf der Testverbindung
+noch nicht (kein Banner) -- das ist jetzt ein separates OS-9-Konfigurationsthema (Dienst
+evtl. nicht automatisch gestartet), KEIN slirp/hostfwd-Bug mehr. Details/Naechste-Schritte
+in context.txt, Session "2026-08-07 (Abend, Claudia)".
 
-**Falls das wieder an MSYS2/Windows-Automatisierung scheitert:** Ernsthaft den
-Upstream-Bugreport (Schritt 2 unten) in Erwaegung ziehen statt weiter selbst zu bauen —
-das war schon beim letzten Anlauf die vermutlich schnellere Option.
+Committet + gepusht als 610cca2 (github.com/Q9-Forge/Q9-Flux, main).
 
 ---
 
@@ -171,8 +157,15 @@ ARP/ICMP/DHCP-freier statischer IP, kann Verbindungen ins echte Internet aufbaue
 ## Vertiefte Untersuchung des hostfwd-Absturzes (2026-08-07, Nacht-Session)
 
 Weiterverfolgt, weil Andreas' eigentliches Ziel genau das war (Host -> OS-9-telnetd).
-Ergebnis: **echter Bug, keine Konfigurationssache** -- mit hoher Sicherheit isoliert,
-aber NICHT gefixt (Zeit-/Werkzeug-Grenze erreicht, s.u.).
+Damaliges (falsches) Ergebnis dieser Nacht-Session: "echter Bug, keine Konfigurationssache
+-- mit hoher Sicherheit isoliert, aber NICHT gefixt". **Korrektur (2026-08-07 Abend, s.
+"GELOEST" ganz oben):** Es WAR eine Konfigurationssache -- `cfg.version = 1` statt 6. Im
+Rueckblick erklaert das auch, warum alle Versuche unten wirkungslos blieben: keiner davon
+aenderte `cfg.version`, also griff in jedem Versuch weiterhin der falsche (deprecated)
+interne Codepfad. Die "ungueltiger Funktionszeiger aus grossem Struct-Offset"-Beobachtung
+weiter unten war vermutlich schon ein erster Blick auf denselben dangling-`cb`-Mechanismus
+wie BUG 2 oben -- nur ohne Debug-Symbole nicht als solcher erkennbar. Analyse unten bleibt
+als historischer Debugging-Pfad stehen, ist aber durch den finalen Fund oben ueberholt.
 
 ### Was probiert wurde (alles ohne Erfolg)
 
