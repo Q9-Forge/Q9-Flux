@@ -456,10 +456,8 @@ g_cb` (Datei-Lebensdauer, passt zum ohnehin Singleton-artigen `g_slirp`) in `sli
 - `netstat` zeigt Port 2323 wirklich im LISTEN-Zustand
 - Eingehende TCP-Verbindung von aussen auf Port 2323 crasht den Emulator NICHT mehr
   (lief 5+ Sekunden stabil weiter) -- Kernziel der Nacht-Session erreicht
-- OS-9s eigener `telnetd`-Dienst antwortete auf der Testverbindung noch nicht (kein
-  Banner) -- das ist jetzt ein OS-9-seitiges Konfigurationsthema (Dienst evtl. nicht
-  automatisch gestartet), KEIN slirp/hostfwd-Bug mehr. Naechster Schritt bei Bedarf:
-  pruefen, ob/wie `telnetd` in OS-9 (netmods/startspf) tatsaechlich gestartet wird.
+- OS-9s eigener `telnetd`-Dienst antwortete auf der ERSTEN Testverbindung noch nicht
+  (kein Banner) -- Ursache war ein DRITTER Bug, s. unten, inzwischen gefunden+behoben.
 
 `emu.q9`: `net_hostfwd = tcp:2323:23` wieder aktiviert (war auskommentiert).
 `third_party/slirp/repro_hostfwd_crash.c` bleibt im Repo (per Reproducer-Kommentar auf
@@ -472,11 +470,47 @@ gesamten Wochenend-Stand (Telnet/Perf/Host-Escape-Fixes der fruehen Session + sl
 github.com/Q9-Forge/Q9-Flux (main). `.gitignore`: `.q9-flux/` ergaenzt (mehrere GB grosse
 Boot-/Testimages, waren aus Versehen fast mitgestaged -- gehoeren nie ins Repository).
 
+## Session 2026-08-07 (spaeter Abend, Claudia + Andreas): DRITTER hostfwd-Bug -- jetzt wirklich fertig
+
+Andreas testete Bug 1+2 interaktiv (`telnet 127.0.0.1 2323`): Verbindung ging auf, aber
+Bildschirm blieb komplett dunkel -- kein einziges Byte, auch nach Tastendruck nicht. Erst
+vermutet: der alte, dokumentierte Juli-Bug (`telnetdc`/`spf_rx` haengt in `Ev$Wait`, s.
+ARBEITSPLAN.md 5.15, `docs/re_telnetdc/` existiert aber nicht in diesem Windows-Repo, war
+nur im Mac-Scratchpad). Systematisch eingegrenzt per Live-Login auf der (stabil laufenden)
+Multi-Terminal-Konsole (Port 2000, `super`/testweises PW): `ifconfig enet0` zeigt korrekte
+Gast-IP, `netstat -a` zeigt `telnetd` wirklich im `LISTEN`, aber `procs` zeigt bei offener
+2323-Verbindung KEINEN `telnetdc`-Kindprozess -- das SYN kam nie am Gast an. Damit klar:
+NEUER Bug auf der Paket-Ebene (slirp->QUICC), NICHT der alte Treiber-Bug.
+
+**BUG 3 gefunden per `Q9_QUICC_DEBUG=1`/temporaerem `Q9_SLIRP_DEBUG=1`-Logging:**
+`WSAPoll()` lieferte `-1` bei JEDEM Aufruf, sobald ein hostfwd-Listener registriert war.
+Ursache: `q_slirp_add_poll()`/`q_slirp_get_revents()` (slirp_net.c) reichten libslirps
+eigene, plattformneutrale `SLIRP_POLL_IN/OUT/PRI/ERR/HUP`-Flags (1/2/4/8/16, `libslirp.h`)
+1:1 als `WSAPOLLFD.events` durch. Auf POSIX klappte das nur zufaellig (gleiche Bit-Werte
+wie `poll()`), Windows' `WSAPOLLFD` nutzt aber VOELLIG andere Bits (`POLLRDNORM=0x100`,
+`POLLWRNORM=0x10`, ...) -- WSAPoll lehnte die ungueltige Flag-Kombination komplett ab.
+Nebenbei auch gefixt: `q_slirp_add_poll()` stutzte den 64-Bit-`SOCKET`-Handle unnoetig per
+`(int)`-Cast (Compiler-Warning deckte es auf) -- entfernt, direkte Zuweisung ist auf beiden
+Plattformen typkorrekt (`q9_pollfd_t.fd` ist Windows `SOCKET`, POSIX `int`).
+
+**Fix:** `_WIN32`-Uebersetzung `SLIRP_POLL_*` <-> `WSAPOLLFD`-Bits in beide Richtungen
+(`q_slirp_add_poll` fuer die angeforderten Events, `q_slirp_get_revents` fuer die
+Rueckmeldung), POSIX-Pfad unveraendert. `slirp_net.c` Ver. 1.05.
+
+**Verifiziert -- kompletter End-to-End-Erfolg:** `telnet 127.0.0.1 2323` liefert jetzt den
+echten OS-9-Login-Banner, Login mit `super`, `procs` zeigt danach `telnetdc <pks01` als
+Kindprozess mit eigener Bash-Shell drueber -- volle Funktion, nicht nur "kein Crash mehr".
+Der alte Juli-Bug (`telnetdc`/`spf_rx`-Ev$Wait-Hang) trat dabei NICHT auf -- entweder auf
+diesem Image nicht mehr vorhanden oder unter den getesteten Bedingungen nicht getriggert.
+`make native`/`make test` weiterhin sauber (0/30 Checks fehlgeschlagen).
+
 **Naechste Schritte:**
-- OS-9-telnetd-Start pruefen (netmods/startspf durchsehen, ob/wie der Dienst hochkommt)
 - `net=slirp` auf Mac/Linux weiterhin ungetestet (Code plattformneutral, System-libslirp
   ueber pkg-config unverifiziert)
 - third_party/slirp/windows_debug/ (temporaeres Debug-Vendoring fuer diese Session) wurde
   wieder geloescht, nicht committet -- bei Bedarf reproduzierbar per third_party/slirp/
   Q9_VENDOR.md "RESUME HERE"-Anleitung (MSYS2-Toolchain ist jetzt aber schon installiert,
   C:\msys64, dieser Schritt entfaellt beim naechsten Mal)
+- Falls der alte `telnetdc`/`spf_rx`-Bug (ARBEITSPLAN.md 5.15) doch mal wieder auftaucht
+  (laengere Sessions, mehr Ausgabe): Befund + Patch-Ansatz steht dort, RE-Infra war im
+  Mac-Scratchpad (`docs/re_telnetdc/OPTION_B_STATUS.md` fehlt in diesem Windows-Repo)

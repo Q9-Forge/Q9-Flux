@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   slirp_net.c                                                                     Ver. 1.04
+// File:   slirp_net.c                                                                     Ver. 1.05
 // Owner:  AF
 // Desc.:  5.14: Implementierung, s. slirp_net.h fuer Design/Architektur-Begruendung. libslirp
 //         braucht fuer den Betrieb: (1) einen monotonen Nanosekunden-Takt (clock_get_ns) --
@@ -35,6 +35,13 @@
 //         │      │ Kopie -- dangling nach Rueckkehr, seit 1.00 latent (nie dereferenziert ohne     │
 //         │      │ Poll-wuerdigen Socket). Erst der hostfwd-Listener (1.03) triggerte es scharf.   │
 //         │      │ Fix: SlirpCb als static g_cb (Datei-Lebensdauer)                                │
+// 26-08-07│ 1.05 │ DRITTER Bug (per Q9_SLIRP_DEBUG-Logging gefunden): WSAPoll() lieferte -1 bei     │ AF
+//         │      │ JEDEM Aufruf sobald ein hostfwd-Listener registriert war -- deshalb kam trotz    │
+//         │      │ Fix 1+2 nie ein SYN beim Gast an (kein Crash mehr, aber auch keine Funktion).    │
+//         │      │ Ursache: libslirps plattformneutrale SLIRP_POLL_*-Flags wurden 1:1 als           │
+//         │      │ WSAPOLLFD.events durchgereicht -- voellig andere Bit-Belegung als Windows'       │
+//         │      │ POLLRDNORM/POLLWRNORM, WSAPoll lehnte die ungueltige Kombination komplett ab.    │
+//         │      │ Fix: Uebersetzung SLIRP_POLL_* <-> WSAPOLLFD-Bits unter _WIN32, POSIX unveraendert │
 //═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 #include "slirp_net.h"
 #include "q9_sockcompat.h"
@@ -178,6 +185,18 @@ static void q_slirp_guest_error(const char *msg, void *opaque)
 // Desc.:    Callbacks fuer slirp_pollfds_fill_socket/_poll (s. q9_slirp_poll) -- sammeln die von
 //           Slirp gewuenschten Sockets in g_pollfds, liefern nach dem echten Q9_SOCK_POLL()-Aufruf
 //           die revents zum per Index zurueckgegebenen Slot.
+//
+//           ROOT CAUSE eines dritten Bugs (2026-08-07, per Q9_SLIRP_DEBUG-Logging gefunden: WSAPoll
+//           lieferte -1 bei JEDEM Aufruf, sobald ein hostfwd-Listener registriert war -- deshalb kam
+//           trotz Fix 1+2 nie ein SYN beim Gast an): libslirp uebergibt seine EIGENEN, plattform-
+//           neutralen Flags SLIRP_POLL_IN/OUT/PRI/ERR/HUP (1/2/4/8/16, libslirp.h) an diesen Callback
+//           -- kein POSIX pollfd.events und schon gar kein Windows WSAPOLLFD.events! Auf POSIX klappte
+//           die bisherige 1:1-Durchreichung nur zufaellig, weil POLLIN/POLLOUT/POLLERR/POLLHUP dort
+//           dieselben Bit-Werte haben. WSAPOLLFD nutzt VOELLIG andere Bits (POLLRDNORM=0x100,
+//           POLLWRNORM=0x10, POLLERR=0x1, POLLHUP=0x2, POLLNVAL=0x4) -- die rohen SLIRP_POLL_*-Werte
+//           sind fuer WSAPoll() eine ungueltige Flag-Kombination, die es komplett ablehnt (rc=-1,
+//           WSAGetLastError meist WSAEINVAL). Fix: unter Windows explizit uebersetzen, POSIX bleibt
+//           unveraendert (Passthrough weiterhin korrekt).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int q_slirp_add_poll(slirp_os_socket fd, int events, void *opaque)
 {
@@ -185,8 +204,25 @@ static int q_slirp_add_poll(slirp_os_socket fd, int events, void *opaque)
     if (g_pollfd_count >= Q9_SLIRP_MAX_POLLFDS) {
         return -1;                                     /* Slot voll -- dieser Socket faellt fuer   */
     }                                                   /* diese Runde aus, kein Absturz             */
-    g_pollfds[g_pollfd_count].fd      = (int)fd;
+    /* KEIN (int)-Cast auf fd: q9_pollfd_t.fd ist unter Windows SOCKET (64-Bit-Handle, WSAPOLLFD),
+       unter POSIX int (struct pollfd) -- ein (int)-Cast stutzte den Windows-Handle vor dem impliziten
+       Zurueckweiten in das 64-Bit-Feld sinnlos auf 32 Bit (Compiler-Warning deckte es auf, s.
+       Chat-Session 2026-08-07). Direkte Zuweisung ist auf beiden Plattformen typkorrekt. */
+    g_pollfds[g_pollfd_count].fd      = fd;
+#ifdef _WIN32
+    {
+        short wsa_events = 0;
+        if (events & SLIRP_POLL_IN)  wsa_events |= POLLRDNORM;
+        if (events & SLIRP_POLL_OUT) wsa_events |= POLLWRNORM;
+        if (events & SLIRP_POLL_PRI) wsa_events |= POLLRDBAND;
+        /* POLLERR/POLLHUP/POLLNVAL gehoeren unter WSAPoll NICHT ins events-Feld (werden wie bei
+           POSIX poll() immer automatisch in revents gemeldet, unabhaengig von den angeforderten
+           events) -- SLIRP_POLL_ERR/HUP hier bewusst NICHT uebernehmen. */
+        g_pollfds[g_pollfd_count].events = wsa_events;
+    }
+#else
     g_pollfds[g_pollfd_count].events  = (short)events;
+#endif
     g_pollfds[g_pollfd_count].revents = 0;
     return g_pollfd_count++;
 }
@@ -197,7 +233,20 @@ static int q_slirp_get_revents(int idx, void *opaque)
     if (idx < 0 || idx >= g_pollfd_count) {
         return 0;
     }
+#ifdef _WIN32
+    {
+        short w = g_pollfds[idx].revents;
+        int slirp_revents = 0;
+        if (w & (POLLRDNORM | POLLRDBAND)) slirp_revents |= SLIRP_POLL_IN;
+        if (w & POLLWRNORM)                slirp_revents |= SLIRP_POLL_OUT;
+        if (w & POLLRDBAND)                slirp_revents |= SLIRP_POLL_PRI;
+        if (w & (POLLERR | POLLNVAL))      slirp_revents |= SLIRP_POLL_ERR;
+        if (w & POLLHUP)                   slirp_revents |= SLIRP_POLL_HUP;
+        return slirp_revents;
+    }
+#else
     return g_pollfds[idx].revents;
+#endif
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -346,7 +395,20 @@ void q9_slirp_poll(void)
        Bug, ohne echte Funktionalitaet zu verlieren (slirp_pollfds_poll wird nur gebraucht, um echte
        Socket-Ereignisse zu verarbeiten; ohne Sockets kann keins vorliegen). */
     if (g_pollfd_count > 0) {
-        Q9_SOCK_POLL(g_pollfds, g_pollfd_count, 0);
+        int pollret = Q9_SOCK_POLL(g_pollfds, g_pollfd_count, 0);
+        /* Q9_SLIRP_DEBUG=1: Poll-Diagnose bei echten Ereignissen (bewusst NICHT jeden Tick -- sonst
+           Log-Flut, s. Q9_QUICC_DEBUG-Pendant in quicc.c fuer den Frame-Verkehr). War entscheidend
+           beim Aufspueren von Bug 3 (2026-08-07, s. Edition History): zeigte pollret=-1 bei jedem
+           Aufruf, sobald der falsche SLIRP_POLL_*->WSAPOLLFD.events-Bit-Mismatch (jetzt oben behoben)
+           WSAPoll() die Eingabe verweigern liess. */
+        if (pollret != 0 && getenv("Q9_SLIRP_DEBUG")) {
+            fprintf(stderr, "[slirp poll] count=%d pollret=%d", g_pollfd_count, pollret);
+            for (int qi = 0; qi < g_pollfd_count; qi++) {
+                fprintf(stderr, " [fd=%llu ev=%d rev=%d]",
+                        (unsigned long long)g_pollfds[qi].fd, g_pollfds[qi].events, g_pollfds[qi].revents);
+            }
+            fprintf(stderr, "\n");
+        }
         slirp_pollfds_poll(g_slirp, 0, q_slirp_get_revents, NULL);
     }
 }

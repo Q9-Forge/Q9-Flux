@@ -352,6 +352,9 @@ static void q_bridge_rx_poll(q9_quicc_t *q)
 static int q_slirp_rx_frame(const uint8_t *frame, uint32_t len, void *opaque)
 {
     q9_quicc_t *q = (q9_quicc_t *)opaque;
+    if (qd_on()) {
+        fprintf(stderr, "[quicc rx<slirp %u]\n", (unsigned)len);
+    }
     q9_quicc_rx_frame(q, frame, len);
     return (int)len;
 }
