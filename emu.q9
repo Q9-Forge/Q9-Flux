@@ -6,12 +6,24 @@
 
 [board]
 name = Q9 Emu
-rom  = local_images/roms/romimage.dev.running.BIN
-net  = bridge:en8
+rom  = .q9-flux/romimage.dev.running.BIN
+net  = slirp
+; slirp = libslirp (plattformuebergreifend, kein root/keine extra Netzwerkschnittstelle noetig),
+; Subnetz ueber dieselben vmnet_*-Keys wie das vmnet-Backend (wiederverwendet). Kernfunktion
+; (OS-9 -> Internet) verifiziert stabil; Port-Weiterleitung (net_hostfwd) war wegen eines
+; eigenen Konfigfehlers (cfg.version, s. Q9_VENDOR.md/slirp_net.c 1.03) deaktiviert -- jetzt behoben.
 vmnet_ip       = 192.168.200.2
 vmnet_gateway  = 192.168.200.1
-vmnet_netmask  = 255.255.0.0
+vmnet_netmask  = 255.255.255.0
 vmnet_dhcp_end = 192.168.200.254
+net_hostfwd    = tcp:2323:23   ; Host-Port 2323 -> Gast-telnetd auf Port 23
+
+; nat = eingebautes Mini-NAT (kein root, keine extra Netzwerkschnittstelle noetig), Gegenstelle
+; fest auf 192.168.200.1 (Host) / 192.168.200.2 (Gast) verdrahtet -- keine weiteren Keys dafuer.
+; net = nat
+
+; vmnet (nur macOS, braucht vmnet.framework) fuer den Mac-Test wieder aktivieren:
+; net = vmnet
 
 [c0]
 type = rbf
@@ -21,27 +33,6 @@ base = 0xFFFFE000
 start_sector = 0
 length_sectors = 0x800000
 descriptor_lsn = 0
-descriptor = local_images/c0
-image = local_images/OS9SYS.hda
+descriptor = .q9-flux/c0
+image = .q9-flux/OS9SYS.hda
 
-[d0]
-type = rbf
-bus = secondary
-unit = master
-base = 0xFFFFE100
-start_sector = 0
-length_sectors = 0x6183c
-descriptor_lsn = 0
-descriptor = local_images/d0
-image = local_images/hd1.hda
-
-[e0]
-type = rbf
-bus = secondary
-unit = master
-base = 0xFFFFE200
-start_sector = 0
-length_sectors = 0x800000
-descriptor_lsn = 0
-descriptor = local_images/e0
-image = local_images/hd2.hda

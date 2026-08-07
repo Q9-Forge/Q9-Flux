@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.c                                                                      Ver. 1.00
+// File:   boardcfg.c                                                                      Ver. 1.10
 // Owner:  AF
 // Desc.:  Implementierung des Board-Config-Parsers, siehe boardcfg.h. INI-artig, C99, ohne
 //         Fremdbibliothek. Bewusst schlank: nur die Abschnitte/Keys, die 5.19a heute braucht
@@ -11,6 +11,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-16│ 1.00 │ 5.19: Erster Wurf                                                        │ CF
+// 26-08-07│ 1.10 │ 5.14: net_hostfwd-Key (Host->Gast-Portweiterleitung fuer net=slirp)       │ AF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "boardcfg.h"
 #include "cb030.h"                                     /* Q9_CF_FMT_*                            */
@@ -292,6 +293,8 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cfg_copy(cfg->vmnet_netmask, sizeof(cfg->vmnet_netmask), val);
             } else if (cfg_ieq(key, "vmnet_dhcp_end")) {
                 cfg_copy(cfg->vmnet_dhcp_end, sizeof(cfg->vmnet_dhcp_end), val);
+            } else if (cfg_ieq(key, "net_hostfwd")) {
+                cfg_copy(cfg->net_hostfwd, sizeof(cfg->net_hostfwd), val);
             } else {
                 snprintf(err, err_max, "Zeile %d: unbekannter [board]-Key '%s'", lineno, key);
                 fclose(f);
@@ -389,5 +392,5 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.c                                                                          Ver. 1.00
+// EOF boardcfg.c                                                                          Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

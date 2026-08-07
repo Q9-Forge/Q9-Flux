@@ -302,7 +302,7 @@ publikationsfähigen Dokumente.
 Alles über das `Makefile` im Projekt-Root:
 
 ```bash
-make native   # -> build/native/q9.exe  (Windows: conio-HAL; macOS/Linux: POSIX-HAL, automatisch gewählt)
+make native   # -> build/<platform>/q9.exe  (Windows: conio-HAL; macOS/Linux: POSIX-HAL, automatisch gewählt)
 make wasm     # -> build/wasm/q9.js, q9.wasm, index.html, worker.js  (braucht aktivierte emsdk-Umgebung)
 make test     # baut native + führt alle Testskripte aus test/ aus
 make clean    # entfernt build/
@@ -312,12 +312,17 @@ Die Wahl zwischen Windows- und POSIX-HAL im `native`-Target passiert automatisch
 über die Make-Variable `$(OS)` (unter Windows von `cmd`/PowerShell gesetzt) —
 kein manuelles Umschalten nötig.
 
+Das Ausgabeverzeichnis ist plattform-spezifisch benannt (`build/windows/`,
+`build/macos/`, `build/linux/`) — baut man denselben Checkout (z.B. über eine
+Netzwerkfreigabe) auf mehreren Betriebssystemen, überschreiben sich die
+Objektdateien/Binaries so nicht gegenseitig.
+
 ### 4.1 Nativer Build ausprobieren
 
 ```bash
 make native
-./build/native/q9.exe            # interaktive REPL
-./build/native/q9.exe --selftest # Selbsttest, Exit-Code 0 = PASS
+./build/<platform>/q9.exe            # interaktive REPL
+./build/<platform>/q9.exe --selftest # Selbsttest, Exit-Code 0 = PASS
 ```
 
 Windows PowerShell auf dem lokalen AF-PC:
@@ -371,7 +376,7 @@ und der UI-Thread frei bleibt (Entscheidung E6 in PROJECT.md).
 ### 4.3 Tests
 
 `test/NN_test_*.py` sind eigenständige Python-Skripte (kein Test-Framework),
-jedes meldet `PASS`/`FAIL` und einen Exit-Code. Sie rufen `build/native/q9.exe
+jedes meldet `PASS`/`FAIL` und einen Exit-Code. Sie rufen `build/<platform>/q9.exe
 --selftest` auf und prüfen Banner-Text, Exit-Code sowie die im Kernel-Selbsttest
 mitlaufenden Prüf-Zähler. `make test` führt alle nacheinander aus.
 
@@ -661,7 +666,7 @@ MMU bleibt ungenutzt, damit der emulierte 68k-Code nicht versehentlich von
 Musashi hat einen **Zweistufen-Build**, anders als wasm3: das Host-Tool
 `m68kmake` liest `third_party/musashi/m68k_in.c` (518 handgeschriebene
 Opcode-Primitive) und generiert daraus `m68kops.c/.h` (1967 Opcode-Handler) —
-reine Build-Artefakte, landen zur Bauzeit unter `build/native/musashi_gen/`
+reine Build-Artefakte, landen zur Bauzeit unter `build/<platform>/musashi_gen/`
 und werden nicht versioniert (analog zu den `wasm3_*.o` aus Abschnitt 5.8).
 Musashis eigener Kern-Interpreter (`m68kcpu.c`, das intern bereits
 `m68kfpu.c` per `#include` einbindet — `m68kfpu.c` darf deshalb NICHT
@@ -788,7 +793,7 @@ erreichbar (die DUART wird vor dem Remap initialisiert). Der Boot-Runner
 (`cb030run.c`) macht daraus ein Kommando:
 
 ```
-./build/native/q9.exe --cb030 <pfad-zum-rom-image> [--cf <pfad-zum-cf-image>]
+./build/<platform>/q9.exe --cb030 <pfad-zum-rom-image> [--cf <pfad-zum-cf-image>]
 ```
 
 Lädt das ROM (max. 512 KByte, `q9_cb030_rom_load`), stellt 16 MByte
@@ -964,8 +969,8 @@ Der Emulator nimmt seit 5.19a als **ersten Positionsparameter (ohne führendes
 `-`) eine Board-Config-Datei** an; fehlt die Extension, wird `.q9` angenommen:
 
 ```sh
-./build/native/q9.exe mysystem            # lädt mysystem.q9
-./build/native/q9.exe mysystem.q9 --net vmnet
+./build/<platform>/q9.exe mysystem            # lädt mysystem.q9
+./build/<platform>/q9.exe mysystem.q9 --net vmnet
 ```
 
 Die bestehenden Optionen bleiben unverändert und **überschreiben** die Config
