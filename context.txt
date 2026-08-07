@@ -419,3 +419,64 @@ vermutlich unnoetig gewesen), bekannte pacman-Prompt-Tuecken (Gruppenauswahl wil
 Leerzeile, Bestaetigung will "j", Antwortdatei nur ueber MSYS2s eigene bash anlegen).
 Reproducer als third_party/slirp/repro_hostfwd_crash.c ins Repo gelegt (gebaut+verifiziert
 crasht wie dokumentiert) -- muss beim naechsten Anlauf nicht neu geschrieben werden.
+
+## Session 2026-08-07 (Abend, Claudia): hostfwd-Absturz GELOEST -- zwei eigene Bugs, kein libslirp-Bug
+
+Andreas' Freigabe: "mach da weiter wo du aufgehoert hast". RESUME-HERE-Plan aus der
+Nacht-Session befolgt -- MSYS2-Toolchain (gcc/gdb/meson/ninja/pkgconf/glib2/git) ohne
+`pacman-key --init` installiert, lief diesmal glatt durch (Befund von der Nacht-Session
+bestaetigt: Keyring war schon gueltig, der Init-Schritt war die eigentliche Bremse).
+libslirp v4.9.3 aus dem Quellcode mit `meson --buildtype=debug` gebaut (identische Version
+wie vendort, damit 1:1 vergleichbar), Reproducer dagegen gelinkt, unter `gdb -batch -ex run
+-ex bt` laufen lassen -- Absturz sofort mit vollem symbolisiertem Backtrace reproduziert.
+
+**BUG 1 (Ursache des seit der Nacht-Session dokumentierten Absturzes):** Eigener
+Konfigurationsfehler, kein libslirp-Bug. `slirp_register_poll_socket()` (src/slirp.c)
+ruft `cb->register_poll_socket()` nur wenn `cfg_version >= 6` ist -- sonst faellt es in
+den deprecated `cb->register_poll_fd()`-Zweig, den wir absichtlich NULL gelassen hatten
+(laut Header nur die neuere _socket-Variante noetig). Mit `cfg.version = 1` (Stand seit
+5.14 "Erster Wurf") griff also immer der falsche, NULL-Zeiger-Zweig. Fix: `cfg.version = 6`
+in `slirp_net.c` (Ver. 1.03).
+
+**BUG 2 (nach Fix 1 per gdb neu aufgedeckt, echter Speicherfehler seit 1.00 latent):**
+`SlirpCb cb;` war eine LOKALE Stack-Variable in `q9_slirp_start()`. `slirp_new()` speichert
+davon aber nur den Zeiger ("slirp->cb = callbacks;"), keine Kopie -- nach Rueckkehr der
+Funktion ist der Zeiger dangling. War nie aufgefallen, weil `slirp_pollfds_poll()`
+(einziger Dereferenzierer aus dem Hauptloop) nur bei `g_pollfd_count > 0` laeuft, und ohne
+hostfwd/aktive Verbindung war das nie der Fall -- der Bug also inert. Erst der durch Fix 1
+aktivierte hostfwd-Listener-Socket machte `g_pollfd_count > 0` schon beim ersten Poll und
+liess `slirp->cb->clock_get_ns()` auf eine laengst wiederverwendete Stack-Adresse springen
+(Crash-Adresse 0x5fe3b8, kein Modul -- klassisches Symptom). Fix: `SlirpCb` als `static
+g_cb` (Datei-Lebensdauer, passt zum ohnehin Singleton-artigen `g_slirp`) in `slirp_net.c`
+(Ver. 1.04).
+
+**Verifiziert (echter q9.exe, vendorte Windows-Libs, nicht nur Debug-Build):**
+- `make native` + `make test` sauber (0/30 Checks fehlgeschlagen)
+- Kompletter OS-9-Boot bis "8 devices online" mit `net=slirp`, hostfwd aktiv
+- `netstat` zeigt Port 2323 wirklich im LISTEN-Zustand
+- Eingehende TCP-Verbindung von aussen auf Port 2323 crasht den Emulator NICHT mehr
+  (lief 5+ Sekunden stabil weiter) -- Kernziel der Nacht-Session erreicht
+- OS-9s eigener `telnetd`-Dienst antwortete auf der Testverbindung noch nicht (kein
+  Banner) -- das ist jetzt ein OS-9-seitiges Konfigurationsthema (Dienst evtl. nicht
+  automatisch gestartet), KEIN slirp/hostfwd-Bug mehr. Naechster Schritt bei Bedarf:
+  pruefen, ob/wie `telnetd` in OS-9 (netmods/startspf) tatsaechlich gestartet wird.
+
+`emu.q9`: `net_hostfwd = tcp:2323:23` wieder aktiviert (war auskommentiert).
+`third_party/slirp/repro_hostfwd_crash.c` bleibt im Repo (per Reproducer-Kommentar auf
+`cfg.version = 6` korrigierbar/nachvollziehbar, urspruengliches Crash-Verhalten mit
+`cfg.version = 1` weiterhin als Gegentest reproduzierbar).
+
+**Commit:** 610cca2 "5.14: slirp-Netzwerk-Backend + Windows-Feinschliff" -- buendelt den
+gesamten Wochenend-Stand (Telnet/Perf/Host-Escape-Fixes der fruehen Session + slirp-Backend
++ beide hostfwd-Bugfixes), auf Andreas' Wunsch als EIN Commit, gepusht nach
+github.com/Q9-Forge/Q9-Flux (main). `.gitignore`: `.q9-flux/` ergaenzt (mehrere GB grosse
+Boot-/Testimages, waren aus Versehen fast mitgestaged -- gehoeren nie ins Repository).
+
+**Naechste Schritte:**
+- OS-9-telnetd-Start pruefen (netmods/startspf durchsehen, ob/wie der Dienst hochkommt)
+- `net=slirp` auf Mac/Linux weiterhin ungetestet (Code plattformneutral, System-libslirp
+  ueber pkg-config unverifiziert)
+- third_party/slirp/windows_debug/ (temporaeres Debug-Vendoring fuer diese Session) wurde
+  wieder geloescht, nicht committet -- bei Bedarf reproduzierbar per third_party/slirp/
+  Q9_VENDOR.md "RESUME HERE"-Anleitung (MSYS2-Toolchain ist jetzt aber schon installiert,
+  C:\msys64, dieser Schritt entfaellt beim naechsten Mal)
