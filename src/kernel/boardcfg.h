@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.h                                                                      Ver. 1.00
+// File:   boardcfg.h                                                                      Ver. 1.20
 // Owner:  AF
 // Desc.:  5.19: Board-Konfigurationsdatei fuer den Q9-Emulator (INI-artig, C99-Parser ohne
 //         Fremdbibliothek, s. docs/HWCONFIG.md Abschnitt 3). Erster Positionsparameter der
@@ -20,6 +20,9 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-23│ 1.10 │ 5.19: vmnet_ip/gateway/netmask/dhcp_end in [board]                    │ AF
+// 26-08-07│ 1.20 │ 5.14: net_hostfwd in [board] -- Host->Gast-Portweiterleitung fuer     │ AF
+//         │      │ net=slirp (vmnet_ip/_gateway/_netmask wiederverwendet, s. dortige      │
+//         │      │ Kommentare)                                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARDCFG_H
 #define Q9_BOARDCFG_H
@@ -53,6 +56,10 @@ typedef struct {
     char        vmnet_gateway[32];           /* [board] vmnet_gateway = vmnet Shared-Gateway      */
     char        vmnet_netmask[32];           /* [board] vmnet_netmask = Netzmaske                */
     char        vmnet_dhcp_end[32];          /* [board] vmnet_dhcp_end = DHCP-Bereichsende       */
+    char        net_hostfwd[256];            /* [board] net_hostfwd = tcp:2323:23,tcp:2000:2000 --
+                                                 5.14 (slirp): Host-Port -> Gast-Port, kommasepariert,
+                                                 gilt fuer net=slirp UND (wiederverwendet) vmnet_ip/
+                                                 _gateway/_netmask fuer slirp's Subnetz-Konfiguration */
     q9_cfg_cf_t cf[Q9_CFG_MAX_CF];
     int         cf_count;
 } q9_board_cfg_t;
@@ -84,5 +91,5 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
 
 #endif /* Q9_BOARDCFG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.h                                                                          Ver. 1.00
+// EOF boardcfg.h                                                                          Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

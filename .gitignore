@@ -24,6 +24,10 @@ cb030rom*.bin
 *.rom
 local_images/
 
+# .q9-flux/: lokale Test-/Boot-Artefakte (Disk-Images mehrere GB gross, ROM-Image proprietaer
+# wie lokal_images/ oben) -- via emu.q9 lazy erzeugt/gepflegt, gehoert nie ins Repository
+.q9-flux/
+
 # Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
 *.wasm.map
 

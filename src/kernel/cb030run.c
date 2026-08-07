@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030run.c                                                                      Ver. 1.72
+// File:   cb030run.c                                                                      Ver. 1.80
 // Owner:  AF
 // Desc.:  Implementierung des CB030-Boot-Runners, siehe cb030run.h.
 //
@@ -24,6 +24,8 @@
 // 26-08-03│ 1.71 │ 5.24/5.26: MC6845 (crtc) + VRAM-Geraet (fb) nach attach_quicc verdrahtet    │ Ada
 // 26-08-03│ 1.72 │ 5.27: Host-Video-Bridge (videobridge) initialisiert + je Hauptschleifen-    │ Ada
 //         │      │ Runde gepollt                                                              │
+// 26-08-07│ 1.80 │ 5.14: slirp_config/slirp_hostfwd an q9_quicc_net_mode -- net_hostfwd aus    │ AF
+//         │      │ der Config wird per q9_parse_hostfwd zerlegt                               │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "cb030run.h"
 #include "cb030.h"
@@ -43,6 +45,7 @@
 #define CB030_ROM_MAX     (512u * 1024u)              /* 29F040-Flash: 512 KByte                  */
 #define CB030_CF_IMAGE    "local_images/cb030_cf.img" /* Backing-Datei, lazy angelegt (5.2c)      */
 #define CB030_SLICE_CYCLES 20000                       /* CPU-Takte je Runde zwischen Timer-Polls  */
+#define Q9_MAX_HOSTFWD    8                             /* 5.14: Obergrenze net_hostfwd-Eintraege   */
 
 /* Statisch statt Host-malloc (Q9-Grundsatz, vgl. Fixed-Heap-Entscheidung 4.9) — native-only,
    im BSS kostet das nichts, solange es unberuehrt bleibt. */
@@ -196,6 +199,62 @@ static void dbg_dump_kernel_globals(q9_cb030_t *b)
     fprintf(stderr, "\n[q9dbg] Dump geschrieben nach %s\n", DBG_DUMP_FILE);
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q9_streq_ci
+// Desc.:    Kleiner Gross-/Kleinschreibungs-unabhaengiger String-Vergleich (kein strcasecmp -- das
+//           ist POSIX/BSD, nicht garantiert C99/ueberall verfuegbar) fuer q9_parse_hostfwd.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int q9_streq_ci(const char *a, const char *b)
+{
+    while (*a && *b) {
+        char ca = *a, cb = *b;
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
+        if (ca != cb) return 0;
+        a++; b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q9_parse_hostfwd
+// Desc.:    5.14: net_hostfwd aus der .q9-Config ("tcp:2323:23,udp:5000:5000", s. boardcfg.h) in
+//           ein q9_slirp_hostfwd_t-Array zerlegen. Fehlerhafte Eintraege werden einzeln auf stderr
+//           gemeldet und uebersprungen statt den ganzen Boot abzubrechen -- ein Tippfehler in EINER
+//           Portweiterleitung soll nicht den kompletten Emulator-Start verhindern.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int q9_parse_hostfwd(const char *s, q9_slirp_hostfwd_t *out, int max)
+{
+    char buf[256];
+    char *tok, *saveptr = NULL;
+    int   count = 0;
+
+    if (!s || !s[0]) {
+        return 0;
+    }
+    {
+        size_t n = strlen(s);
+        if (n >= sizeof(buf)) n = sizeof(buf) - 1u;
+        memcpy(buf, s, n);
+        buf[n] = '\0';
+    }
+    for (tok = strtok_r(buf, ",", &saveptr); tok && count < max; tok = strtok_r(NULL, ",", &saveptr)) {
+        char proto[8];
+        unsigned hp = 0, gp = 0;
+        if (sscanf(tok, "%7[a-zA-Z]:%u:%u", proto, &hp, &gp) == 3 && hp <= 65535u && gp <= 65535u &&
+            (q9_streq_ci(proto, "tcp") || q9_streq_ci(proto, "udp"))) {
+            out[count].is_udp     = q9_streq_ci(proto, "udp");
+            out[count].host_port  = (uint16_t)hp;
+            out[count].guest_port = (uint16_t)gp;
+            count++;
+        } else {
+            fprintf(stderr, "cb030: net_hostfwd-Eintrag ignoriert (Format tcp|udp:hostport:gastport): '%s'\n",
+                    tok);
+        }
+    }
+    return count;
+}
+
 int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode,
                   const q9_board_cfg_t *cfg)
 {
@@ -209,6 +268,10 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     static int        cf_extra_count;
     q9_vmnet_config_t vmnet_config;
     const q9_vmnet_config_t *vmnet_config_ptr = 0;
+    q9_slirp_config_t  slirp_config;
+    const q9_slirp_config_t *slirp_config_ptr = 0;
+    q9_slirp_hostfwd_t slirp_hostfwd[Q9_MAX_HOSTFWD];
+    int                 slirp_hostfwd_count = 0;
     q9_m68krt_t       rt;
     uint32_t          rom_len = 0;
     int               cf2_used   = 0;
@@ -234,6 +297,15 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
         vmnet_config.netmask  = cfg->vmnet_netmask;
         vmnet_config.dhcp_end = cfg->vmnet_dhcp_end;
         vmnet_config_ptr = &vmnet_config;
+
+        /* 5.14: slirp wiederverwendet dieselben vmnet_ip/_gateway/_netmask-Config-Keys (identisches
+           Subnetz-Modell, s. boardcfg.h) -- eigener Name (guest_ip statt vmnet_ip) nur, weil
+           q9_slirp_config_t bewusst kein vmnet_net.h inkludiert (s. slirp_net.h-Kopfkommentar). */
+        slirp_config.guest_ip = cfg->vmnet_ip;
+        slirp_config.gateway  = cfg->vmnet_gateway;
+        slirp_config.netmask  = cfg->vmnet_netmask;
+        slirp_config_ptr    = &slirp_config;
+        slirp_hostfwd_count = q9_parse_hostfwd(cfg->net_hostfwd, slirp_hostfwd, Q9_MAX_HOSTFWD);
     }
 
     if (q9_cb030_rom_load(rom_path, cb030_rom, sizeof(cb030_rom), &rom_len) != Q9_CB030_OK) {
@@ -317,7 +389,8 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
             q9_m68krt_attach_cf_at(&cf_extra[i], cf_extra_base[i], "cf-secondary");
     }
     q9_quicc_init(&quicc, cb030_ram, sizeof(cb030_ram));
-    if (q9_quicc_net_mode(&quicc, net_mode, vmnet_config_ptr) != 0) {
+    if (q9_quicc_net_mode(&quicc, net_mode, vmnet_config_ptr,
+                          slirp_config_ptr, slirp_hostfwd, slirp_hostfwd_count) != 0) {
         return 1;
     }
     q9_m68krt_attach_quicc(&quicc);                    /* 5.11: Ethernet-Fenster $FFFF2000       */
@@ -420,5 +493,5 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030run.c                                                                          Ver. 1.72
+// EOF cb030run.c                                                                          Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────

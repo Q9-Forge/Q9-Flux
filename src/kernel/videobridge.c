@@ -10,16 +10,9 @@
 // 26-08-03│ 1.00 │ 5.27: Erster Wurf                                                       │ Ada
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "videobridge.h"
+#include "q9_sockcompat.h"    /* Windows-Build: Windows/Winsock-Portabilitaet fuer den Netzwerk-Teil */
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <signal.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Wire-Format: spiegelt Q9-Frame `src/protocol.h` + `src/framebuffer.h` 1:1 (identisches Byte-
@@ -87,7 +80,7 @@ static void build_grayscale_clut(struct Q9ClutEntryWire *clut, int bpp)
 static void disconnect_client(q9_videobridge_t *vb)
 {
     if (vb->client_fd >= 0) {
-        close(vb->client_fd);
+        Q9_SOCK_CLOSE(vb->client_fd);
     }
     vb->client_fd        = -1;
     vb->handshake_have   = 0;
@@ -114,20 +107,21 @@ int q9_videobridge_init(q9_videobridge_t *vb, q9_framebuf_t *fb, const q9_mc6845
     vb->seq       = 2;                     /* 1 ist implizit die HELLO-Sequence des Clients */
     strncpy(vb->name, (name && name[0]) ? name : "Q9Flux", sizeof(vb->name) - 1);
 
-    signal(SIGPIPE, SIG_IGN);              /* getrennter Client waehrend send() darf den Emulator */
+    q9_sock_startup();                     /* Windows-Build: WSAStartup unter Windows, no-op auf POSIX */
+    Q9_SOCK_IGNORE_SIGPIPE();              /* getrennter Client waehrend send() darf den Emulator */
                                             /* nicht per Default-SIGPIPE-Handler beenden           */
 
     vb->udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (vb->udp_fd < 0) {
         return -1;
     }
-    fcntl(vb->udp_fd, F_SETFL, O_NONBLOCK);
+    Q9_SOCK_NONBLOCK(vb->udp_fd);
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(udp_port);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(vb->udp_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        perror("q9_videobridge: bind udp");
+        q9_sock_perror("q9_videobridge: bind udp");
         return -1;
     }
 
@@ -135,18 +129,18 @@ int q9_videobridge_init(q9_videobridge_t *vb, q9_framebuf_t *fb, const q9_mc6845
     if (vb->tcp_fd < 0) {
         return -1;
     }
-    setsockopt(vb->tcp_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    fcntl(vb->tcp_fd, F_SETFL, O_NONBLOCK);
+    setsockopt(vb->tcp_fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse));
+    Q9_SOCK_NONBLOCK(vb->tcp_fd);
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(tcp_port);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(vb->tcp_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        perror("q9_videobridge: bind tcp");
+        q9_sock_perror("q9_videobridge: bind tcp");
         return -1;
     }
     if (listen(vb->tcp_fd, 1) != 0) {
-        perror("q9_videobridge: listen tcp");
+        q9_sock_perror("q9_videobridge: listen tcp");
         return -1;
     }
 
@@ -187,13 +181,13 @@ static void poll_accept(q9_videobridge_t *vb)
     }
     if (vb->client_fd >= 0) {
         /* Kein Multi-Client (s. videobridge.h) -- Verbindung sofort wieder schliessen. */
-        close(incoming);
+        Q9_SOCK_CLOSE(incoming);
         return;
     }
-    fcntl(incoming, F_SETFL, O_NONBLOCK);
+    Q9_SOCK_NONBLOCK(incoming);
     {
         int one = 1;
-        setsockopt(incoming, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        setsockopt(incoming, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof(one));
     }
     vb->client_fd      = incoming;
     vb->handshake_have = 0;
@@ -212,13 +206,13 @@ static void try_recv_hello(q9_videobridge_t *vb)
 {
     uint8_t scratch[HELLO_SIZE];
     int need = HELLO_SIZE - vb->handshake_have;
-    ssize_t n = recv(vb->client_fd, scratch, (size_t)need, 0);
+    ssize_t n = recv(vb->client_fd, (char *)scratch, (size_t)need, 0);
 
     if (n > 0) {
         vb->handshake_have += (int)n;
         return;
     }
-    if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+    if (n == 0 || (n < 0 && !Q9_SOCK_WOULDBLOCK())) {
         disconnect_client(vb);
     }
 }
@@ -367,7 +361,7 @@ static void build_dirty_update(q9_videobridge_t *vb)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static void drain_output(q9_videobridge_t *vb)
 {
-    ssize_t n = send(vb->client_fd, vb->out_buf + vb->out_sent, vb->out_len - vb->out_sent, 0);
+    ssize_t n = send(vb->client_fd, (const char *)(vb->out_buf + vb->out_sent), vb->out_len - vb->out_sent, 0);
 
     if (n > 0) {
         vb->out_sent += (uint32_t)n;
@@ -377,7 +371,7 @@ static void drain_output(q9_videobridge_t *vb)
         }
         return;
     }
-    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    if (n < 0 && Q9_SOCK_WOULDBLOCK()) {
         return;
     }
     disconnect_client(vb);

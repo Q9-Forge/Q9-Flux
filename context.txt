@@ -277,3 +277,145 @@ kollisions-Validierung. Bis dahin Nicht-CF-Geraete hartkodiert wie in 5.17.
 - Fuer vmnet ist Root erforderlich; eine fehlende Passwortabfrage kann nur der macOS-`sudo`-Credential-Cache sein. Mit `sudo -k ...` laesst sich eine Abfrage erzwingen.
 - Neue `.q9`-Keys sind im Q9-Code umgesetzt: `vmnet_ip`, `vmnet_gateway`, `vmnet_netmask`, `vmnet_dhcp_end`. `vmnet_ip` dokumentiert/zeigt die Gast-IP; es aendert die OS-9-IP im Image nicht automatisch.
 - Keine weiteren Images anfassen. Kein Mac-Neustart, solange die andere Claude-Session laeuft. Fuer den naechsten Termin am privaten Windows-PC `ipconfig` und `route print` vergleichen.
+
+## Session 2026-08-06 (Claudia + Andreas): nativer Windows-Build (`make native`)
+
+### Ausgangslage
+Repo frisch von Q9-Forge/Q9-Flux geklont (`C:\projects\Q9-Forge\Q9-Flux`), w64devkit
+bereits lokal unter `C:\Users\foell\w64devkit` vorhanden. Makefile hatte die
+Windows/POSIX-HAL-Weiche fuer `NATIVE_HAL_SRC` schon (`$(OS)`-Check), aber
+`make native` brach in m68krt.c/videobridge.c beim Compile ab: `sys/socket.h` &
+co. sind POSIX-only, unter Windows gibt's stattdessen Winsock2.
+
+### Aenderung
+- NEU `src/kernel/q9_sockcompat.h`: duenner Portabilitaets-Shim (nur Makros +
+  `q9_sock_startup()`/`q9_sock_cleanup()`) -- Windows-Zweig bindet winsock2.h/
+  ws2tcpip.h ein und mapped `Q9_SOCK_CLOSE`->closesocket, `Q9_SOCK_NONBLOCK`->
+  ioctlsocket(FIONBIO), `Q9_SOCK_WOULDBLOCK`->WSAGetLastError()==WSAEWOULDBLOCK,
+  `Q9_SOCK_IGNORE_SIGPIPE`->no-op (Windows kennt kein SIGPIPE fuer Sockets).
+  POSIX-Zweig mappt 1:1 auf close/fcntl/errno/signal wie vorher.
+- m68krt.c (OS-9-Netz-Terminals /x1../x8, Port 2000) und videobridge.c
+  (Framebuffer-Streaming) benutzen jetzt diese Makros statt direkter POSIX-Calls;
+  `write()`/`read()` auf Socket-fds durch `send()`/`recv()` ersetzt (unter Windows
+  funktionieren CRT-`read`/`write` nicht auf SOCKET-Handles); `setsockopt()`-
+  Aufrufe auf `(const char *)`-Casts umgestellt (Winsock-Signatur, auf POSIX
+  unschaedlich).
+- Makefile: neue Variable `NATIVE_NET_LIBS` (`-lws2_32` nur unter
+  `$(OS)==Windows_NT`), ans `native`-Link-Kommando angehaengt.
+
+### Verifiziert (lokal, w64devkit x86_64-w64-mingw32, gcc 16.1.0)
+- `make native` baut warnungsfrei durch (nur zwei bereits vorher bestehende,
+  Windows-unabhaengige Warnings in m68krt.c/quicc.c).
+- `make test` (Sektor-Roundtrip-Selbsttest) PASS, 0/30 Checks fehlgeschlagen.
+- `q9.exe --cb030 <synth. 4-Byte-Test-ROM>` bootet, `[OS-9 Net]`-Server oeffnet
+  TCP+UDP 0.0.0.0:2000 wirklich (per `netstat` und per echtem `/dev/tcp`-Connect
+  gegenverifiziert -- `accept()`/`recv()`/`send()` laufen sauber gegen Winsock).
+- `q9.exe.exe` ist ein PE32+ x86_64-Windows-Executable.
+
+### Offen / naechste Schritte
+- vmnet/bridge-Ethernet-Backends bleiben macOS-only (Makefile-Guard
+  `uname -s == Darwin`) -- unter Windows meldet `--net vmnet|bridge:<if>` sich
+  sauber ab, kein Portierungsversuch unternommen (bewusst ausserhalb des
+  aktuellen Auftrags).
+- Kein `--net nat`-Backend unter Windows getestet (kein Board-Boot mit echtem
+  ROM zur Hand in dieser Session, nur Ping des Terminal-Servers).
+
+## Session 2026-08-07 (Claudia + Andreas): Windows-Feinschliff + slirp-Netzwerk-Backend
+
+### Bugfixes (alle ausgeloest durch Andreas' interaktives Testen)
+- **Doppel-Echo in Telnet** (m68krt.c 1.38): Server verhandelte gar kein Telnet --
+  IAC WILL ECHO/SUPPRESS-GA bei Connect + telnet_filter_byte() filtert IAC-Antworten
+  des Clients raus.
+- **Performance** (hal_native.c 1.21): `timeBeginPeriod(1)` gegen Windows' 15.6ms-
+  Timer-Aufloesung, die den CPU-Idle-Pfad (`q9_hal_sleep_ms(1)`) effektiv 15x
+  langsamer machte als auf macOS/Linux.
+- **Host-Escape** (hal_native.c 1.23): Ctrl-] ging auf Andreas' DE-Tastatur nicht
+  (AltGr-Kollision), F10 kollidierte mit einem Snip-Tool, F1-F10 kamen generell nicht
+  an -- jetzt Ctrl-Q (Default) + F10/F9 als Alternativen, alle per Env-Var
+  (Q9_QUIT_CTRL/Q9_QUIT_SCAN/Q9_DEBUGDUMP_SCAN) konfigurierbar.
+- **Telnet-Session einzeln trennen** (m68krt.c 1.39): Ctrl-Q (Default, Q9_NET_DISCONNECT_CTRL)
+  trennt nur die eigene Verbindung, nicht den ganzen Emulator -- Pendant zum lokalen
+  Host-Escape mit Kanal- statt Prozess-Reichweite.
+- **Ctrl-C-Reset-Bug** (NICHT gefixt, zurueckgestellt): rohes Ctrl-C (0x03) an OS-9
+  fuehrt zu "system state exception" + automatischem System-Reset, der anschliessende
+  Reboot haengt (CF-Treiber-Init kommt nicht durch). Pure CB030/OS-9-Emulationslogik,
+  nicht Windows-spezifisch, nicht angefasst.
+
+### Neu: slirp-Netzwerk-Backend (`net = slirp`, plattformuebergreifend)
+Andreas' Wunsch nach echter IP-Verbindung ohne physische Netzwerkschnittstelle
+(vmnet ist macOS-only). Gewaehlte Loesung: `libslirp` (dieselbe Bibliothek wie
+QEMU/VirtualBox "User-Mode-Networking") -- neues Backend `src/kernel/slirp_net.c`/`.h`,
+Dispatch in `quicc.c`/`quicc.h` (`Q9_NET_SLIRP`), Config-Key `net_hostfwd` in
+`boardcfg.h`/`.c` (aktuell geparst, aber s.u. nicht angewendet).
+
+**Windows-Vendoring** (`third_party/slirp/windows/`, s. dortige `Q9_VENDOR.md`):
+libslirp+glib2 (+3 Transitiv-DLLs) direkt aus den MSYS2-Mirror-Paketen als rohe
+`.pkg.tar.zst`-Downloads extrahiert (python `zstandard`-Modul zum Entpacken, kein
+zstd-Tool noetig) -- explizit KEIN MSYS2/Cygwin als Build-Voraussetzung (Andreas:
+"andere wollen das Projekt auch mal bauen"), w64devkit allein reicht. Per `objdump`
+verifiziert: nur 5 DLLs tatsaechlich noetig (~3.8 MB), nicht die von den Paket-
+Metadaten grosszuegig deklarierte volle Kette (kein libffi/zlib/gcc-libs/winpthread).
+macOS/Linux: kein Vendoring, `Q9_HAVE_SLIRP` ueber System-`libslirp` per pkg-config.
+
+**Zwei Absturz-Bugs in dieser libslirp/glib2-Kombination gefunden + umschifft**
+(beide per `gdb` isoliert, Makefile `Ver. 3.30`, `slirp_net.c` `Ver. 1.02`):
+1. `slirp_add_hostfwd()` stuerzt IMMER ab (reproduziert auch in einem Standalone-Test
+   ohne jeden Q9-Code) -- hostfwd deshalb vorerst deaktiviert (nur Warnung, kein Call).
+2. `slirp_pollfds_poll()` stuerzt ab bei 0 registrierten Sockets -- NUR im echten
+   q9.exe reproduzierbar, nicht in Standalone-Tests (uninitialisierter Speicher?).
+   Fix: Aufruf nur noch bei `g_pollfd_count > 0`.
+
+**Status:** Kernfunktion (ausgehende Verbindungen, OS-9 -> Internet) stabil
+verifiziert -- kompletter OS-9-Boot bis "8 devices online" mit `net=slirp` aktiv,
+`make test` PASS. Port-Weiterleitung (`net_hostfwd`, fuer eingehenden Zugriff z.B.
+auf OS-9s telnetd von aussen) funktioniert NICHT, braucht weitere Untersuchung
+(andere libslirp-Version? Upstream-Bug?) -- s. Q9_VENDOR.md fuer Details.
+
+### Offen / naechste Schritte
+- hostfwd-Bug in libslirp weiter untersuchen (evtl. andere Version testen, oder
+  Upstream-Issue melden).
+- `net=slirp` auf Mac/Linux noch nicht getestet (Code ist plattformneutral, aber
+  System-libslirp-Pfad ueber pkg-config unverifiziert).
+- emu.q9 steht inzwischen auf `net=slirp` (Andreas' Wunsch, spaeter am selben Abend) --
+  nat/vmnet bleiben als Kommentare erreichbar.
+
+## Session 2026-08-07 (Nacht, Claudia autonom): hostfwd-Absturz tiefer untersucht -- nicht geloest
+
+Andreas bat um Weiterverfolgung, bis Telnet zu OS-9s echtem `telnetd` (192.168.200.2:23)
+klappt, dann Feierabend ("bau dir gerne eine Loop"). Ergebnis: **hostfwd bleibt kaputt**,
+trotz mehrstuendiger vertiefter Untersuchung. Alle Details in
+`third_party/slirp/Q9_VENDOR.md` (Abschnitt "Vertiefte Untersuchung"), Kurzfassung:
+
+- `slirp_add_hostxfwd()` (Alternativ-API) crasht am IDENTISCHEN Codepunkt wie
+  `slirp_add_hostfwd()` -- kein Umweg moeglich.
+- Andere libslirp-Version (4.8.0) laedt gar nicht gegen die vorhandene glib2-Version
+  (ABI-Drift zwischen unabhaengigen MSYS2-Paketversionen).
+- Quellcode-Nachverfolgung (tcp_listen/socreate/tcp_newtcpcb) zeigt KEINE
+  Callback-Aufrufe im fraglichen Codepfad -- die Disassemblierung zeigt trotzdem einen
+  Sprung durch einen ungueltigen Funktionszeiger, der eher nach GLibs EIGENER
+  Windows-Fehlerbehandlung (Vectored Exception Handler, `G_VEH_CATCH`) aussieht als
+  nach einem simplen NULL-Callback.
+- Versuch, mit einem selbst gebauten Debug-Build (echte Symbole) einen sauberen
+  Stacktrace zu bekommen: MSYS2 nur TEMPORAER installiert (nicht Projekt-Abhaengigkeit),
+  scheiterte an Windows-GPG/pacman-Automatisierung (`pacman-key --init` haengte fest,
+  `--noconfirm` reagierte nicht zuverlaessig auf gepipte Eingaben ueber die
+  Git-Bash<->MSYS2-Grenze) -- abgebrochen, BEVOR der eigentliche Debug-Build begann.
+  `C:\msys64` liegt noch auf der Maschine (unvollstaendig/kaputter Keyring), kann
+  aufgeraeumt oder fuer einen saubereren zweiten Anlauf wiederverwendet werden.
+
+**Empfehlung fuer naechsten Anlauf:** Upstream-Bugreport bei libslirp (haben echte
+Debug-Symbole, kennen den Code) ist vermutlich schneller als ein eigener Debug-Build.
+Alternativ: hand-rolled TCP-Relay in Q9 selbst (kein libslirp-hostfwd) -- machbar, aber
+vom Umfang vergleichbar mit dem, was tcp_listen() intern selbst tut.
+
+**Kernfunktion (ausgehende Verbindungen) bleibt unangetastet und stabil** -- kein
+Regressionsrisiko durch diese Nacht-Session, nur weitere Diagnose ohne Code-Aenderung
+an slirp_net.c (der Fix von vorhin -- g_pollfd_count>0-Guard -- bleibt unveraendert).
+
+**2026-08-07, spaeter (auf Andreas' Bitte "dokumentiere alles"):** third_party/slirp/
+Q9_VENDOR.md um einen "🔴 RESUME HERE"-Abschnitt ganz oben ergaenzt -- konkrete
+naechste Kommandos, korrigierter Befund (Keyring war schon gueltig, pacman-key --init
+vermutlich unnoetig gewesen), bekannte pacman-Prompt-Tuecken (Gruppenauswahl will
+Leerzeile, Bestaetigung will "j", Antwortdatei nur ueber MSYS2s eigene bash anlegen).
+Reproducer als third_party/slirp/repro_hostfwd_crash.c ins Repo gelegt (gebaut+verifiziert
+crasht wie dokumentiert) -- muss beim naechsten Anlauf nicht neu geschrieben werden.

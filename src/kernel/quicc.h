@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   quicc.h                                                                         Ver. 1.30
+// File:   quicc.h                                                                         Ver. 1.40
 // Owner:  AF
 // Desc.:  5.11: QUICC-Ethernet-Emulation (MC68360, SCC1 im Ethernet-Modus) fuer den CB030-Runner —
 //         das Hardware-Gegenstueck zum originalen Microware-SPF-Treiber `sp360` (MWOS-SDK,
@@ -36,6 +36,12 @@
 //                  eine dedizierte Kabel-Ethernet-Schnittstelle (WLAN laesst sich meist nicht
 //                  bridgen). Status 2026-07-13: Code vorbereitet, mangels zweiter physischer
 //                  Schnittstelle noch NICHT end-to-end getestet (s. bpf_net.h).
+//           slirp  (5.14, PLATTFORMUEBERGREIFEND -- Mac/Linux/Windows gleich, anders als vmnet/
+//                  bridge) libslirp (dieselbe Bibliothek wie QEMU/VirtualBox "User-Mode-Networking"):
+//                  simuliert NAT+DHCP komplett in-process, kein root, kein Kernel-Treiber, keine
+//                  physische Netzwerkschnittstelle noetig -- UND kann Host-Ports gezielt zu
+//                  Gast-Ports durchreichen (net_hostfwd in der .q9-Config, s. slirp_net.h). Braucht
+//                  third_party/slirp (vendorte libslirp+glib2, Q9_HAVE_SLIRP), s. dortige Q9_VENDOR.md.
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -45,6 +51,9 @@
 // 26-07-13│ 1.10 │ 5.12: vmnet-Backend (--net vmnet) + MAC-Uebersetzung Gast<->vmnet       │ CF
 // 26-07-13│ 1.20 │ 5.13: bridge-Backend (--net bridge:<ifname>) per BPF, kein root noetig  │ CF
 // 26-07-14│ 1.30 │ 5.17: q9_devtype_quicc-Vtable fuer die Geraete-Registry exportiert       │ CF
+// 26-08-07│ 1.40 │ 5.14: slirp-Backend (--net slirp), plattformuebergreifend, mit Host->    │ AF
+//         │      │ Gast-Portweiterleitung (Andreas' Wunsch nach echter IP-Verbindung ohne   │
+//         │      │ physische Netzwerkschnittstelle)                                         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_QUICC_H
 #define Q9_QUICC_H
@@ -52,6 +61,7 @@
 #include <stdint.h>
 #include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
 #include "vmnet_net.h"                                  /* vmnet-Konfiguration aus .q9            */
+#include "slirp_net.h"                                  /* 5.14: slirp-Konfiguration aus .q9      */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_QUICC_BASE        0xFFFF2000u              /* QUICC-Basis ("MBAR"), 8K-aligned         */
@@ -66,6 +76,7 @@
 #define Q9_NET_NAT     0                                  /* Mini-NAT (Default), kein root          */
 #define Q9_NET_VMNET   1                                  /* vmnet.framework, macOS, braucht sudo    */
 #define Q9_NET_BRIDGE  2                                  /* 5.13: BPF an physischer NIC, kein root  */
+#define Q9_NET_SLIRP   3                                  /* 5.14: libslirp, plattformuebergreifend  */
 
 //─── Zustand ──────────────────────────────────────────────────────────────────────────────────────
 /* Gesamter QUICC-Zustand. mem[] haelt das Fenster byteweise in Big-Endian-Sicht (wie der 68k es
@@ -93,11 +104,15 @@ typedef struct q9_quicc {
 //─── API ──────────────────────────────────────────────────────────────────────────────────────────
 void     q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len);
 
-/* 5.13: Backend waehlen — mode NULL/"nat" = Mini-NAT (Default), "vmnet" = vmnet.framework (macOS,
+/* 5.14: Backend waehlen — mode NULL/"nat" = Mini-NAT (Default), "vmnet" = vmnet.framework (macOS,
    braucht sudo/Entitlement), "bridge:<ifname>" = BPF an physischer NIC (macOS, kein root, s.
-   bpf_net.h). Rueckgabe 0 = ok; sonst ist die Fehlermeldung schon ausgegeben. */
+   bpf_net.h), "slirp" = libslirp (plattformuebergreifend, s. slirp_net.h) -- slirp_config/hostfwd
+   werden nur fuer mode="slirp" ausgewertet, sonst duerfen sie NULL/0 sein. Rueckgabe 0 = ok; sonst
+   ist die Fehlermeldung schon ausgegeben. */
 int      q9_quicc_net_mode(q9_quicc_t *q, const char *mode,
-                           const q9_vmnet_config_t *vmnet_config);
+                           const q9_vmnet_config_t *vmnet_config,
+                           const q9_slirp_config_t *slirp_config,
+                           const q9_slirp_hostfwd_t *slirp_hostfwd, int slirp_hostfwd_count);
 
 /* Trifft die Adresse das QUICC-Fenster? (fuer den Dispatch in m68krt.c) */
 int      q9_quicc_hit(uint32_t addr);
@@ -130,5 +145,5 @@ extern const q9_device_vtable_t q9_devtype_quicc;
 
 #endif /* Q9_QUICC_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF quicc.h                                                                             Ver. 1.30
+// EOF quicc.h                                                                             Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

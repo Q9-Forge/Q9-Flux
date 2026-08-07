@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.36
+// File:   m68krt.c                                                                        Ver. 1.39
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -33,22 +33,28 @@
 //         │      │ Funktionen sowie in IACK/Reassert entfernt; Timer/IRQ3 wird jetzt erst in   │
 //         │      │ attach_quicc (nach QUICC) registriert, damit die Registrierungsreihenfolge  │
 //         │      │ ueberall aufsteigend nach Level bleibt (3,4,5,6) -- s. dortige Kommentare    │
+// 26-08-06│ 1.37 │ Nativer Windows-Build: init/update_network_terminals auf q9_sockcompat.h    │ AF
+//         │      │ umgestellt (Winsock2 statt BSD-Sockets), write()/read() auf Socket-Fds durch │
+//         │      │ send()/recv() ersetzt (auf Windows funktionieren CRT-read/write nicht auf    │
+//         │      │ SOCKET-Handles)                                                              │
+// 26-08-06│ 1.38 │ Doppel-Echo-Bugfix (Andreas' Report): Server verhandelte bisher gar kein     │ AF
+//         │      │ Telnet -- IAC WILL ECHO/SUPPRESS-GA bei Connect + telnet_filter_byte()       │
+//         │      │ filtert die IAC-Antwortsequenzen des Clients aus dem RX-Bytestrom            │
+// 26-08-07│ 1.39 │ Ctrl-Q (konfigurierbar, Q9_NET_DISCONNECT_CTRL) trennt nur die eigene       │ AF
+//         │      │ Telnet-Verbindung sauber -- Andreas' Wunsch nach einem Pendant zum lokalen   │
+//         │      │ Ctrl-Q-Host-Escape (hal_native.c/hal_posix.c), aber mit Kanal- statt          │
+//         │      │ Prozess-Reichweite                                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "cb030.h"
 #include "quicc.h"
 #include "devreg.h"
 #include "m68k.h"
+#include "q9_sockcompat.h"    /* Windows-Build: Windows/Winsock-Portabilitaet fuer die Netz-Terminals */
+#include <ctype.h>
 #include <string.h>
-#include <unistd.h>  
-
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <fcntl.h>
-#include <errno.h>
 
 
 /* Musashi haelt seinen CPU-Zustand in eigenen globalen Variablen und ruft m68k_read/write_memory_*
@@ -72,14 +78,14 @@ static int main_server_fd = -1;
    s. cb030.h. Jeder Kanal hat seinen EIGENEN Autovektor (70..77), der IACK-Zyklus liefert genau
    den Vektor des Kanals mit gesetztem RX-Ready-Bit (s. m68krt_board_int_ack). */
 static os9_uart_t channels[MAX_CHANNELS] = {
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X1_BASE, 4, 70, 0}, // /x1
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X2_BASE, 4, 71, 0}, // /x2
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X3_BASE, 4, 72, 0}, // /x3
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X4_BASE, 4, 73, 0}, // /x4
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X5_BASE, 4, 74, 0}, // /x5
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X6_BASE, 4, 75, 0}, // /x6
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X7_BASE, 4, 76, 0}, // /x7
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X8_BASE, 4, 77, 0}  // /x8
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X1_BASE, 4, 70, 0, 0}, // /x1
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X2_BASE, 4, 71, 0, 0}, // /x2
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X3_BASE, 4, 72, 0, 0}, // /x3
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X4_BASE, 4, 73, 0, 0}, // /x4
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X5_BASE, 4, 74, 0, 0}, // /x5
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X6_BASE, 4, 75, 0, 0}, // /x6
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X7_BASE, 4, 76, 0, 0}, // /x7
+    {-1, 0, 0, 0x02, Q9_CB030_NET_X8_BASE, 4, 77, 0, 0}  // /x8
 };
 
 /* 5.10: Die IRQ-Leitung ist das ODER aller RX-Ready-Bits (level-getriggert). Nach jedem Verbrauch
@@ -98,6 +104,80 @@ static void network_irq_resync(void) {
 }
 
 
+/* 5.20 (Andreas' Doppel-Echo-Bugreport): der Server hat bisher gar keine Telnet-Optionsverhandlung
+   gemacht -- reines Raw-TCP. Ein echter Telnet-Client (Windows telnet.exe, PuTTY) faengt deshalb
+   OHNE Gegensignal an, selbst lokal zu echoen (NVT-Default), UND der OS-9-Treiber echoet jedes
+   eingegangene Zeichen wie ein echtes serielles Terminal -- macht "dir" zu "ddiirr". Fix in zwei
+   Teilen: (1) bei Verbindungsaufbau IAC WILL ECHO + IAC WILL SUPPRESS-GO-AHEAD schicken, damit sich
+   ein RFC854-konformer Client selbst abschaltet; (2) die IAC-Antwortsequenzen, die der Client
+   daraufhin zurückschickt (z.B. IAC DO ECHO), aus dem eingehenden Bytestrom rausfiltern statt sie
+   als Tippzeichen an OS-9 durchzureichen -- sonst landet z.B. ein rohes 0xFF im Login-Prompt. */
+#define Q9_TELNET_IAC   0xFF
+#define Q9_TELNET_WILL  0xFB
+#define Q9_TELNET_WONT  0xFC
+#define Q9_TELNET_DO    0xFD
+#define Q9_TELNET_DONT  0xFE
+#define Q9_TELNET_SB    0xFA
+#define Q9_TELNET_SE    0xF0
+#define Q9_TELNET_ECHO           0x01
+#define Q9_TELNET_SUPPRESS_GA    0x03
+
+static const unsigned char g_telnet_negotiate[] = {
+    Q9_TELNET_IAC, Q9_TELNET_WILL, Q9_TELNET_ECHO,
+    Q9_TELNET_IAC, Q9_TELNET_WILL, Q9_TELNET_SUPPRESS_GA
+};
+
+/* Andreas' Wunsch (2026-08-07): ein Strg-Zeichen soll NUR die eigene Telnet-Verbindung sauber
+   trennen (wie ein Logout), ohne den Rest des Emulators anzufassen -- anders als der lokale
+   Ctrl-Q-Host-Escape (hal_native.c/hal_posix.c), der den GANZEN Prozess beendet. Gleicher Buchstabe
+   (Ctrl-Q) als Default wie dort, bewusst: Andreas hatte instinktiv genau das in einer Telnet-Session
+   probiert, "mein Exit-Reflex" soll ueberall gleich funktionieren (nur die Reichweite unterscheidet
+   sich: lokal = ganzer Prozess, hier = nur die eine Verbindung). Per Env-Var
+   Q9_NET_DISCONNECT_CTRL (ein Buchstabe A-Z) uebersteuerbar, falls Ctrl-Q in einer Session gebraucht
+   wird (z.B. als XON fuer ein OS-9-Programm mit eigener Flow-Control). */
+static int g_net_disconnect_ctrl = 0x11;               /* Ctrl-Q (Default) */
+
+static int q9_net_ctrl_from_env(const char *var, int fallback) {
+    const char *s = getenv(var);
+    char        c;
+    if (!s || !s[0] || s[1] != '\0') return fallback;
+    c = (char)toupper((unsigned char)s[0]);
+    return (c >= 'A' && c <= 'Z') ? (c - 'A' + 1) : fallback;
+}
+
+/* Rueckgabe 1: byte_in ist echtes Nutzdatum (an OS-9 weiterreichen). Rueckgabe 0: Teil einer
+   IAC-Sequenz, verschluckt -- naechstes Byte kommt im naechsten Poll-Durchlauf (recv liest ohnehin
+   nur je 1 Byte pro Aufruf, s. update_network_terminals). */
+static int telnet_filter_byte(os9_uart_t *ch, unsigned char byte_in) {
+    switch (ch->telnet_state) {
+    case 0:                                            /* ST_DATA */
+        if (byte_in == Q9_TELNET_IAC) { ch->telnet_state = 1; return 0; }
+        return 1;
+    case 1:                                            /* ST_IAC: Kommandobyte erwartet */
+        if (byte_in == Q9_TELNET_IAC) { ch->telnet_state = 0; return 1; }  /* IAC IAC = 0xFF-Nutzdatum */
+        if (byte_in == Q9_TELNET_SB)  { ch->telnet_state = 3; return 0; }
+        if (byte_in == Q9_TELNET_WILL || byte_in == Q9_TELNET_WONT ||
+            byte_in == Q9_TELNET_DO   || byte_in == Q9_TELNET_DONT) {
+            ch->telnet_state = 2;
+            return 0;
+        }
+        ch->telnet_state = 0;                          /* 1-Byte-Kommando (NOP, GA, ...) */
+        return 0;
+    case 2:                                             /* ST_OPT: Optionsbyte von WILL/WONT/DO/DONT */
+        ch->telnet_state = 0;
+        return 0;
+    case 3:                                             /* ST_SB: Subnegotiation, bis IAC ueberlesen */
+        if (byte_in == Q9_TELNET_IAC) ch->telnet_state = 4;
+        return 0;
+    case 4:                                             /* ST_SB_IAC: IAC innerhalb SB gesehen */
+        ch->telnet_state = (byte_in == Q9_TELNET_SE) ? 0 : 3;
+        return 0;
+    default:
+        ch->telnet_state = 0;
+        return 1;
+    }
+}
+
 static void init_network_terminals(void) {
     struct sockaddr_in addr;
     int opt = 1;
@@ -111,11 +191,13 @@ static void init_network_terminals(void) {
         }
     }
 
+    g_net_disconnect_ctrl = q9_net_ctrl_from_env("Q9_NET_DISCONNECT_CTRL", 0x11);
+
     main_server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (main_server_fd < 0) return;
 
-    setsockopt(main_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    fcntl(main_server_fd, F_SETFL, O_NONBLOCK);
+    setsockopt(main_server_fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof(opt));
+    Q9_SOCK_NONBLOCK(main_server_fd);
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -132,20 +214,22 @@ static void update_network_terminals(void) {
 
     int incoming = accept(main_server_fd, NULL, NULL);
     if (incoming >= 0) {
-        fcntl(incoming, F_SETFL, O_NONBLOCK);
+        Q9_SOCK_NONBLOCK(incoming);
         int assigned = 0;
         for (int i = 0; i < MAX_CHANNELS; i++) {
             if (channels[i].client_fd < 0) {
                 channels[i].client_fd = incoming;
                 channels[i].last_was_cr = 0;
+                channels[i].telnet_state = 0;
+                send(incoming, (const char *)g_telnet_negotiate, (int)sizeof(g_telnet_negotiate), 0);
                 printf("[OS-9 Net] Gast dynamisch an /x%d uebergeben.\r\n", i + 1);
                 assigned = 1;
                 break;
             }
         }
         if (!assigned) {
-            write(incoming, "OS-9: All lines busy.\r\n", 23);
-            close(incoming);
+            send(incoming, "OS-9: All lines busy.\r\n", 23, 0);
+            Q9_SOCK_CLOSE(incoming);
         }
     }
 
@@ -164,8 +248,21 @@ static void update_network_terminals(void) {
         unsigned char byte_in;
         int n;
         if (!(channels[i].status & 0x01)) {
-            n = read(channels[i].client_fd, &byte_in, 1);
-            if (n == 1) {
+            n = (int)recv(channels[i].client_fd, (char *)&byte_in, 1, 0);
+            if (n == 1 && telnet_filter_byte(&channels[i], byte_in)) {
+                if (byte_in == (unsigned char)g_net_disconnect_ctrl) {
+                    /* Selbst-Trennen der eigenen Verbindung (Andreas' Wunsch, s. Kommentar bei
+                       g_net_disconnect_ctrl oben) -- NUR dieser eine Kanal, Rest des Emulators
+                       laeuft unbeeindruckt weiter. Verschluckt, landet nie bei OS-9. */
+                    printf("[OS-9 Net] Gast von /x%d hat sich selbst getrennt (Ctrl-%c).\r\n",
+                           i + 1, (char)('A' + g_net_disconnect_ctrl - 1));
+                    Q9_SOCK_CLOSE(channels[i].client_fd);
+                    channels[i].client_fd    = -1;
+                    channels[i].status      &= ~0x01;
+                    channels[i].last_was_cr  = 0;
+                    channels[i].telnet_state = 0;
+                    continue;
+                }
                 if (byte_in == '\n' && channels[i].last_was_cr) {
                     /* 5.16: Telnet-NVT-Normalisierung. Echte Telnet-Clients senden bei ENTER
                        CR+LF, OS-9 kennt als klassisches serielles System nur ein einzelnes CR
@@ -180,11 +277,14 @@ static void update_network_terminals(void) {
                     m68k_set_irq((unsigned int)channels[i].irq_level);
                 }
             }
+            /* n==1, aber telnet_filter_byte() hat 0 zurueckgegeben: Byte war Teil einer
+               IAC-Sequenz, verschluckt -- n bleibt 1, loest den Disconnect-Check unten NICHT
+               aus (der reagiert nur auf n==0/EOF oder n<0 mit echtem Socket-Fehler). */
         } else {
-            n = (int)recv(channels[i].client_fd, &byte_in, 1, MSG_PEEK);
+            n = (int)recv(channels[i].client_fd, (char *)&byte_in, 1, MSG_PEEK);
         }
-        if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-            close(channels[i].client_fd);
+        if (n == 0 || (n < 0 && !Q9_SOCK_WOULDBLOCK())) {
+            Q9_SOCK_CLOSE(channels[i].client_fd);
             channels[i].client_fd = -1;
             channels[i].status &= ~0x01;
             channels[i].last_was_cr = 0;
@@ -225,7 +325,7 @@ static void network_write8(unsigned int address, unsigned char value) {
         if (address == channels[i].base_addr + 4) {
             channels[i].tx_data = value;
             if (channels[i].client_fd >= 0) {
-                write(channels[i].client_fd, &channels[i].tx_data, 1);
+                send(channels[i].client_fd, (const char *)&channels[i].tx_data, 1, 0);
             }
             channels[i].status |= 0x02; // TX wieder leer/bereit
             break;
@@ -741,6 +841,7 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
     }
 
     // === NEU: Netzwerk-Server beim Start hochfahren ===
+    q9_sock_startup();          /* Windows-Build: WSAStartup unter Windows, no-op auf POSIX */
     init_network_terminals();
 
     return Q9_M68KRT_OK;
@@ -966,10 +1067,11 @@ void q9_m68krt_free(q9_m68krt_t *rt)
 {
     
     for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (channels[i].client_fd >= 0) close(channels[i].client_fd);
+        if (channels[i].client_fd >= 0) Q9_SOCK_CLOSE(channels[i].client_fd);
     }
-    if (main_server_fd >= 0) close(main_server_fd);
-    
+    if (main_server_fd >= 0) Q9_SOCK_CLOSE(main_server_fd);
+    q9_sock_cleanup();          /* Windows-Build: WSACleanup unter Windows, no-op auf POSIX */
+
     g_ram     = NULL;
     g_ram_len = 0;
     g_board   = NULL;
@@ -1001,5 +1103,5 @@ int q9_m68krt_is_stopped(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.c                                                                            Ver. 1.36
+// EOF m68krt.c                                                                            Ver. 1.39
 //────────────────────────────────────────────────────────────────────────────────────────────────

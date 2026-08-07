@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   quicc.c                                                                         Ver. 1.20
+// File:   quicc.c                                                                         Ver. 1.30
 // Owner:  AF
 // Desc.:  Implementierung der QUICC-Ethernet-Emulation, siehe quicc.h. Verhaltens-Referenz ist
 //         ausschliesslich der sp360-Treiber (MWOS SRC/DPIO/SPF/DRVR/SPQUICC, init.c/isr.c):
@@ -36,6 +36,9 @@
 // 26-07-14│ 1.20 │ 5.17: q9_devtype_quicc-Vtable fuer die Geraete-Registry (sechstes/letztes │ CF
 //         │      │ umgezogenes Geraet, s. devreg.h) -- delegiert unveraendert an bestehende  │
 //         │      │ q9_quicc_*-API                                                            │
+// 26-08-07│ 1.30 │ 5.14: slirp-Backend (--net slirp) -- q_slirp_tx/q_slirp_rx_frame, kein     │ AF
+//         │      │ MAC-Mapping noetig (libslirp lernt die Gast-MAC selbst), q9_slirp_poll()   │
+//         │      │ aus q9_quicc_poll()                                                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "quicc.h"
 #include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
@@ -49,6 +52,9 @@
 #endif
 #ifdef Q9_HAVE_BPF
 #include "bpf_net.h"                                  /* 5.13: bridge-Backend (nur macOS)         */
+#endif
+#ifdef Q9_HAVE_SLIRP
+#include "slirp_net.h"                                /* 5.14: slirp-Backend (plattformuebergreifend) */
 #endif
 
 //─── Register-/PRAM-Offsets (per offsetof aus Motorolas quicc.h verifiziert, 2026-07-12) ─────────
@@ -336,6 +342,27 @@ static void q_bridge_rx_poll(q9_quicc_t *q)
 #endif /* Q9_HAVE_BPF */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q_slirp_tx / q_slirp_rx_frame
+// Desc.:    5.14: KEINE MAC-Uebersetzung noetig (anders als vmnet) -- libslirp lernt die Gast-MAC
+//           selbst aus dem Frame, genau wie ein virtueller Switch. q_slirp_rx_frame ist der
+//           send_packet-Callback aus slirp_net.c's Sicht (opaque = dieses q9_quicc_t), liefert
+//           SYNCHRON waehrend q9_slirp_poll()/q9_slirp_input() -- kein Ringpuffer noetig.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+#ifdef Q9_HAVE_SLIRP
+static int q_slirp_rx_frame(const uint8_t *frame, uint32_t len, void *opaque)
+{
+    q9_quicc_t *q = (q9_quicc_t *)opaque;
+    q9_quicc_rx_frame(q, frame, len);
+    return (int)len;
+}
+
+static void q_slirp_tx(const uint8_t *f, uint32_t len)
+{
+    q9_slirp_input(f, len);
+}
+#endif /* Q9_HAVE_SLIRP */
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q_backend_tx
 // Desc.:    Ein kompletter Frame aus dem TX-Ring — je nach Backend (5.13): im vmnet-/bridge-Modus
 //           roh (vmnet mit MAC-Uebersetzung, bridge unveraendert) ans echte Netz, sonst Mini-NAT:
@@ -363,6 +390,15 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
             fprintf(stderr, "[quicc tx>bridge %u]\n", (unsigned)len);
         }
         q_bridge_tx(q, f, len);
+        return;
+    }
+#endif
+#ifdef Q9_HAVE_SLIRP
+    if (q->net_backend == Q9_NET_SLIRP) {
+        if (qd_on()) {
+            fprintf(stderr, "[quicc tx>slirp %u]\n", (unsigned)len);
+        }
+        q_slirp_tx(f, len);
         return;
     }
 #endif
@@ -510,7 +546,9 @@ void q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len)
 }
 
 int q9_quicc_net_mode(q9_quicc_t *q, const char *mode,
-                      const q9_vmnet_config_t *vmnet_config)
+                      const q9_vmnet_config_t *vmnet_config,
+                      const q9_slirp_config_t *slirp_config,
+                      const q9_slirp_hostfwd_t *slirp_hostfwd, int slirp_hostfwd_count)
 {
     if (mode == NULL || strcmp(mode, "nat") == 0) {
         q->net_backend = Q9_NET_NAT;                  /* Default: eingebautes Mini-NAT            */
@@ -545,7 +583,21 @@ int q9_quicc_net_mode(q9_quicc_t *q, const char *mode,
         return 1;
 #endif
     }
-    fprintf(stderr, "q9: unbekannter Netzwerk-Modus '%s' (--net nat|vmnet|bridge:<ifname>).\n", mode);
+    if (strcmp(mode, "slirp") == 0) {
+#ifdef Q9_HAVE_SLIRP
+        if (q9_slirp_start(slirp_config, slirp_hostfwd, slirp_hostfwd_count,
+                            q_slirp_rx_frame, q) != 0) {
+            return 1;                                 /* Fehlermeldung kam aus q9_slirp_start     */
+        }
+        q->net_backend = Q9_NET_SLIRP;
+        return 0;
+#else
+        fprintf(stderr, "q9: --net slirp braucht third_party/slirp "
+                        "(vendorte libslirp+glib2, s. dortige Q9_VENDOR.md).\n");
+        return 1;
+#endif
+    }
+    fprintf(stderr, "q9: unbekannter Netzwerk-Modus '%s' (--net nat|vmnet|bridge:<ifname>|slirp).\n", mode);
     return 1;
 }
 
@@ -682,6 +734,12 @@ void q9_quicc_poll(q9_quicc_t *q)
         q_bridge_rx_poll(q);                          /* 5.13: eingegangene echte Frames zustellen */
     }
 #endif
+#ifdef Q9_HAVE_SLIRP
+    if (q->net_backend == Q9_NET_SLIRP) {
+        q9_slirp_poll();                              /* 5.14: pollt Slirps eigene Sockets, liefert
+                                                            eingegangene Frames synchron per Callback */
+    }
+#endif
 }
 
 void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
@@ -794,5 +852,5 @@ const q9_device_vtable_t q9_devtype_quicc = {
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF quicc.c                                                                             Ver. 1.20
+// EOF quicc.c                                                                             Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

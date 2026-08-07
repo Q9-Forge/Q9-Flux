@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.h                                                                         Ver. 2.00
+// File:   cb030.h                                                                         Ver. 2.10
 // Owner:  AF
 // Desc.:  CB030-Board-Emulation (Schritt 5.2, docs/CB030.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit dem originalen, proprietaeren Microware-OS-9-Boot-
@@ -45,6 +45,7 @@
 //         │      │ Struktur q9_cf_t gezogen (Onboard-CF + RC2014-SC145 bei $FFFFC010), zwei    │
 //         │      │ Einheiten je Interface (Master/Slave via DEV-Bit in LBA3), Image-Format     │
 //         │      │ rbf/pcf aus der Board-Config (s. boardcfg.h) steuert die Sektor-Heuristik   │
+// 26-08-06│ 2.10 │ os9_uart_t: neues Feld telnet_state (Doppel-Echo-Bugfix, s. m68krt.c 1.38)  │ AF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_CB030_H
 #define Q9_CB030_H
@@ -98,6 +99,8 @@ typedef struct {
     int irq_level;
     int irq_vector;
     unsigned char last_was_cr;  // Telnet-NVT-Normalisierung: LF nach CR verwerfen (5.16)
+    unsigned char telnet_state; // IAC-Optionsverhandlung rausfiltern statt an OS-9 durchzureichen
+                                 // (0=Daten, 1=nach IAC, 2=nach WILL/WONT/DO/DONT, 3=in SB, 4=in SB nach IAC)
 } os9_uart_t;
 
 /* Die Kanaltabelle selbst (channels[]) lebt seit 5.10 in m68krt.c — sie war hier als static im
@@ -345,5 +348,5 @@ extern const q9_device_vtable_t q9_devtype_rtc72421;        /* 5.17: RTC72421-Ec
 #endif // Q9_CB030_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.h                                                                             Ver. 2.00
+// EOF cb030.h                                                                             Ver. 2.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

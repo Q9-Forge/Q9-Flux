@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_native.c                                                                    Ver. 1.11
+// File:   hal_native.c                                                                    Ver. 1.23
 // Owner:  AF
 // Desc.:  HAL-Implementierung für den nativen PC-Build (Windows, w64devkit/gcc).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
@@ -14,13 +14,32 @@
 // 26-07-03│ 1.10 │ 1.9: q9_hal_time via localtime                                         │ CF
 // 26-07-10│ 1.11 │ 5.7/5.9: HAL-Interface-Erfuellung (con_flush/tx_ready/tx_empty trivial, │ CF
 //         │      │ q9_hal_sleep_ms via Sleep()) -- kein echter TX-Puffer auf diesem Target │
+// 26-08-06│ 1.20 │ Ctrl-]-Host-Escape + Ctrl-^-Debug-Dump (5.8) nachgezogen -- war bisher   │ AF
+//         │      │ nur im POSIX-HAL (hal_posix.c) implementiert, unter Windows liess sich   │
+//         │      │ der Emulator per Sondertaste gar nicht beenden (Andreas' Bugreport)      │
+// 26-08-06│ 1.21 │ timeBeginPeriod(1) gegen Windows' grobe 15.6ms-Timer-Aufloesung (machte   │ AF
+//         │      │ q9_hal_sleep_ms(1) im Idle-Pfad effektiv 15x langsamer, Performance-      │
+//         │      │ Bugreport); F10/F9 als Layout-unabhaengige Alternative zu Ctrl-]/Ctrl-^   │
+//         │      │ (auf DE-Tastaturen liegt ']' auf AltGr+9 = technisch bereits Strg+Alt,    │
+//         │      │ Ctrl-] ist so nicht sauber erzeugbar)                                     │
+// 26-08-07│ 1.22 │ F10 kollidierte auf Andreas' Rechner mit einem systemweiten Snip-Tool-     │ AF
+//         │      │ Hotkey (kam nie bei q9.exe an) -- Host-Escape/Debug-Taste jetzt per         │
+//         │      │ Q9_QUIT_SCAN/Q9_DEBUGDUMP_SCAN (Hex-Scancode) konfigurierbar, Default        │
+//         │      │ bleibt F10/F9                                                               │
+// 26-08-07│ 1.23 │ F1..F10 kommen bei Andreas offenbar generell nie bei _getch() an (F11/F12    │ AF
+//         │      │ hardwareseitig auf Home/End gemappt) -- zusaetzlich Strg+<Buchstabe> als     │
+//         │      │ Host-Escape (Q9_QUIT_CTRL, Default Ctrl-Q), layoutunabhaengig da Buchstaben   │
+//         │      │ (anders als ']') auf jeder Tastatur ohne AltGr erreichbar sind                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
+#include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <conio.h>
 #include <windows.h>
+#include <mmsystem.h>                                   /* timeBeginPeriod/timeEndPeriod, -lwinmm */
 
 #include "../q9_hal.h"
 #include "../../kernel/cb030run.h"
@@ -32,6 +51,42 @@ static FILE *disk = NULL;
 static unsigned char keybuf[8];
 static int keybuf_head = 0;
 static int keybuf_tail = 0;
+static int quit_scan      = 0x44;                      /* F10 (Default), s. q9_scan_from_env  */
+static int debugdump_scan = 0x43;                      /* F9  (Default)                       */
+static int quit_ctrl      = 0x11;                      /* Ctrl-Q (Default), s. q9_ctrl_from_env */
+
+static void q9_timer_resolution_restore(void) { timeEndPeriod(1); }
+
+/* Andreas' Bugreports (2026-08-06/07): F10 wird auf seinem Rechner von einem Snip/Screenshot-Tool
+   systemweit als globaler Hotkey abgefangen, kommt bei q9.exe gar nicht erst an -- und F1..F10
+   generell scheinen dort (Windows Terminal/Laptop-Fn-Belegung?) nie bei _getch() anzukommen, F11/F12
+   sind hardwareseitig auf Home/End gemappt. Tastenbelegungen fuer sowas kollidieren erfahrungsgemaess
+   unvorhersehbar von Maschine zu Maschine -- deshalb ALLES per Env-Var konfigurierbar statt eine feste
+   Taste zu raten: Q9_QUIT_SCAN/Q9_DEBUGDUMP_SCAN nehmen den _getch()-Scan-Code (hex) einer Extended-
+   Taste (Default F10/F9); Q9_QUIT_CTRL nimmt einen Buchstaben A-Z fuer Strg+<Buchstabe> (Default Q --
+   Ctrl-C selbst bewusst NICHT als Default, weil Andreas' Ctrl-C-Testlauf bereits belegt, dass OS-9
+   das als normales Zeichen sieht und mit einem System-Reset reagiert). Strg+Buchstabe ist plattform-/
+   layoutunabhaengig, da Buchstaben (anders als Satzzeichen wie ']') auf JEDER Tastaturbelegung ohne
+   AltGr erreichbar sind -- und kommt nachweislich bei _getch() an (Andreas' Ctrl-C ist ja
+   durchgeschlagen). */
+static int q9_scan_from_env(const char *var, int fallback)
+{
+    const char *s = getenv(var);
+    long        v;
+    char       *end;
+    if (!s || !s[0]) return fallback;
+    v = strtol(s, &end, 16);
+    return (*end == '\0' && v > 0 && v < 256) ? (int)v : fallback;
+}
+
+static int q9_ctrl_from_env(const char *var, int fallback)
+{
+    const char *s = getenv(var);
+    char        c;
+    if (!s || !s[0] || s[1] != '\0') return fallback;
+    c = (char)toupper((unsigned char)s[0]);
+    return (c >= 'A' && c <= 'Z') ? (c - 'A' + 1) : fallback;
+}
 
 static BOOL WINAPI q9_console_ctrl_handler(DWORD event)
 {
@@ -85,6 +140,19 @@ void q9_hal_init(void)
     HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
     DWORD  mode;
 
+    /* Andreas' Performance-Report (2026-08-06): Windows' System-Timer laeuft per Default mit
+       15.6ms-Aufloesung -- q9_hal_sleep_ms(1) im CPU-Idle-Pfad (cb030run.c, 5.9) schlaeft dadurch
+       oft ~15ms statt 1ms, macht das ganze Idle-Verhalten bis zu 15x langsamer als auf macOS/Linux
+       (dort ist usleep/nanosleep von Haus aus fein genug). timeBeginPeriod(1) hebt die System-weite
+       Timer-Aufloesung fuer die Laufzeit dieses Prozesses auf 1ms an (Standard-Fix, s. MSDN
+       "Timer-Queue Timers"/timeBeginPeriod) -- braucht winmm.lib (-lwinmm im Makefile). */
+    timeBeginPeriod(1);
+    atexit(q9_timer_resolution_restore);               /* auch exit(0) im Ctrl-]-Pfad rueckt es sauber gerade */
+
+    quit_scan      = q9_scan_from_env("Q9_QUIT_SCAN",      0x44);  /* F10 */
+    debugdump_scan = q9_scan_from_env("Q9_DEBUGDUMP_SCAN",  0x43); /* F9  */
+    quit_ctrl      = q9_ctrl_from_env("Q9_QUIT_CTRL",       0x11); /* Ctrl-Q */
+
     SetConsoleOutputCP(CP_UTF8);                       /* kernel output is a UTF-8 byte stream   */
     SetConsoleCtrlHandler(q9_console_ctrl_handler, TRUE);
 
@@ -116,8 +184,35 @@ int q9_hal_con_get(void)
 
     if (_kbhit()) {
         int c = _getch();
+        if (c == 0x1d) {                                /* Host-Escape: Ctrl-] beendet den Emulator
+                                                              (5.8, bisher nur im POSIX-HAL portiert) */
+            fputs("\nq9: Host-Escape Ctrl-] - Emulator beendet.\n", stderr);
+            exit(0);
+        }
+        if (c == 0x1e) {                                /* Debug-Sondertaste: Ctrl-^ dumpt physischen */
+            q9_dbg_dump_requested = 1;                  /* Kernel-Speicher (cb030run.c)                */
+            return -1;                                  /* schlucken, nicht an den Gast weiterreichen  */
+        }
+        if (c != 0 && c == quit_ctrl) {                 /* Konfigurierbarer Strg-Buchstabe (Default
+                                                              Ctrl-Q), layoutunabhaengige Alternative
+                                                              zu Ctrl-], s. q9_ctrl_from_env oben */
+            fprintf(stderr, "\nq9: Host-Escape (Ctrl-%c) - Emulator beendet.\n",
+                    (char)('A' + quit_ctrl - 1));
+            exit(0);
+        }
         if (c == 0 || c == 0xe0) {
             int scan = _getch();
+            /* Konfigurierbare Host-Escape/Debug-Taste (Default F10/F9, s. q9_scan_from_env) --
+               eigene ifs statt switch-case, weil quit_scan/debugdump_scan zur Laufzeit aus der
+               Umgebung kommen und damit keine Compile-Zeit-Konstanten fuer ein case-Label sind. */
+            if (scan == quit_scan) {
+                fprintf(stderr, "\nq9: Host-Escape (Scan-Code %#04x) - Emulator beendet.\n", scan);
+                exit(0);
+            }
+            if (scan == debugdump_scan) {
+                q9_dbg_dump_requested = 1;
+                return -1;
+            }
             switch (scan) {
             case 0x48: keybuf_push_csi('A'); break;     /* Up       */
             case 0x50: keybuf_push_csi('B'); break;     /* Down     */
@@ -273,5 +368,5 @@ int main(int argc, char **argv)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF hal_native.c                                                                        Ver. 1.10
+// EOF hal_native.c                                                                        Ver. 1.23
 //────────────────────────────────────────────────────────────────────────────────────────────────
