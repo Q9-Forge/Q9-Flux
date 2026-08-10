@@ -672,16 +672,22 @@ static int m68krt_trap_trace_callback(int trap)
         if (callcode == 0x00 || callcode == 0x01) {
             char name[16];
             m68krt_read_os9_name(m68k_get_reg(NULL, M68K_REG_A0), name, sizeof(name));
-            if (g_trap_trace_all &&
-                ((name[0] == 's' && name[1] == 'm' && name[2] == 'b') ||
-                 (name[0] == 's' && name[1] == 'o' && name[2] == 'c') ||
-                 (name[0] == 's' && name[1] == 'p' && name[2] == 'f'))) {
+            /* 2026-08-10 (Claude, dynamic-load-Untersuchung Kernel/IOMan): Namensfilter fuer
+               "modulecall" aufgeweitet -- vorher nur smb/soc/spf-Praefix (pkdvr-Diagnose-Kontext),
+               jetzt JEDER Modulname, sobald Q9_TRAP_TRACE_ALL gesetzt ist. Alte pk*-"linkname"-
+               Zeile (inkl. g_event_return_pc-Seiteneffekt fuer die pkdvr-Untersuchung) bleibt
+               unveraendert erhalten. Zusaetzlich fflush() an beiden Stellen, weil der 4-MiB-
+               Puffer sonst nie voll wird und die Datei bis zum (hier nicht vorhandenen) sauberen
+               Prozessende leer bleibt. */
+            if (g_trap_trace_all) {
                 fprintf(g_trap_trace_fp, "modulecall pc=%08x callcode=%04x name=%s a0=%08x\n",
                         pc, callcode, name, m68k_get_reg(NULL, M68K_REG_A0));
+                fflush(g_trap_trace_fp);
                 g_trap_trace_n++;
             }
             if (name[0] == 'p' && name[1] == 'k') {
                 fprintf(g_trap_trace_fp, "linkname pc=%08x callcode=%04x name=%s\n", pc, callcode, name);
+                fflush(g_trap_trace_fp);
                 g_trap_trace_n++;
                 g_event_return_pc = pc + 4;    /* Rueckgabe (D0/D1/A0-A2) im Watch-Callback mitloggen */
             }
@@ -1040,6 +1046,28 @@ void q9_m68krt_attach_framebuf(q9_framebuf_t *fb)
         d.level_held = 0;
         d.vt         = &q9_devtype_framebuf;
         d.state      = fb;
+        q9_devreg_add(d);
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q9_m68krt_attach_clut
+// Desc.:    5.29-Nachtrag: CLUT-Geraet in die Registry eintragen -- kein IRQ.
+//────────────────────────────────────────────────────────────────────────────────────────────────
+void q9_m68krt_attach_clut(q9_clut_t *clut)
+{
+    if (clut) {
+        q9_device_t d;
+        memset(&d, 0, sizeof(d));
+        d.type       = "clut";
+        d.name       = "clut0";
+        d.base       = Q9_CLUT_BASE;
+        d.size       = Q9_CLUT_TOP - Q9_CLUT_BASE + 1u;
+        d.irq_level  = 0;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.vt         = &q9_devtype_clut;
+        d.state      = clut;
         q9_devreg_add(d);
     }
 }

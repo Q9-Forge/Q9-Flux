@@ -94,7 +94,8 @@ static void disconnect_client(q9_videobridge_t *vb)
 // Function: q9_videobridge_init
 //────────────────────────────────────────────────────────────────────────────────────────────────
 int q9_videobridge_init(q9_videobridge_t *vb, q9_framebuf_t *fb, const q9_mc6845_t *crtc,
-                         uint16_t tcp_port, uint16_t udp_port, const char *name)
+                         const q9_clut_t *clut, uint16_t tcp_port, uint16_t udp_port,
+                         const char *name)
 {
     struct sockaddr_in addr;
     int reuse = 1;
@@ -103,6 +104,7 @@ int q9_videobridge_init(q9_videobridge_t *vb, q9_framebuf_t *fb, const q9_mc6845
     vb->client_fd = -1;
     vb->fb        = fb;
     vb->crtc      = crtc;
+    vb->clut      = clut;
     vb->tcp_port  = tcp_port;
     vb->seq       = 2;                     /* 1 ist implizit die HELLO-Sequence des Clients */
     strncpy(vb->name, (name && name[0]) ? name : "Q9Flux", sizeof(vb->name) - 1);
@@ -266,7 +268,20 @@ static void build_full_setup(q9_videobridge_t *vb)
     if (mode >= Q9_MC6845_MODE_INDEXED1 && mode <= Q9_MC6845_MODE_INDEXED8) {
         struct Q9ClutEntryWire clut[Q9_CLUT_ENTRIES];
         memset(clut, 0, sizeof(clut));
-        build_grayscale_clut(clut, bpp);
+        if (vb->clut) {
+            /* 5.29-Nachtrag: echte, vom Gast per SS_clut/SS_clutall programmierte CLUT (clut.h) --
+               vorher gab es hier nur die feste Graustufen-Platzhalterpalette (s. build_grayscale_
+               clut-Kommentar). */
+            int i;
+            for (i = 0; i < Q9_CLUT_ENTRIES; i++) {
+                clut[i].r = vb->clut->r[i];
+                clut[i].g = vb->clut->g[i];
+                clut[i].b = vb->clut->b[i];
+            }
+            vb->adv_clut_gen = vb->clut->generation;
+        } else {
+            build_grayscale_clut(clut, bpp);
+        }
         memcpy(h.magic, Q9_MAGIC, 4);
         h.version = htons(Q9_PROTO_VERSION_WIRE);
         h.type = htons(Q9_PALETTE);
@@ -379,9 +394,19 @@ static void drain_output(q9_videobridge_t *vb)
 
 static int geometry_changed(const q9_videobridge_t *vb)
 {
+    int mode = q9_mc6845_mode(vb->crtc);
+    int clut_changed = 0;
+    /* 5.29-Nachtrag: eine per SS_clut/SS_clutall geaenderte Palette braucht ebenfalls ein neues
+       PALETTE-Telegramm -- nur relevant fuer indizierte Modi (dort wird ueberhaupt eine CLUT
+       gesendet, s. build_handshake), sonst wuerde ein Gast, der die CLUT-Register in einem RGB-
+       Modus anfasst (ungewoehnlich, aber nicht verboten), unnoetige Re-Handshakes ausloesen. */
+    if (vb->clut && mode >= Q9_MC6845_MODE_INDEXED1 && mode <= Q9_MC6845_MODE_INDEXED8) {
+        clut_changed = (vb->clut->generation != vb->adv_clut_gen);
+    }
     return q9_mc6845_stride(vb->crtc) != vb->adv_stride ||
            q9_mc6845_height(vb->crtc) != vb->adv_height ||
-           q9_mc6845_mode(vb->crtc)   != vb->adv_mode;
+           mode                       != vb->adv_mode    ||
+           clut_changed;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
