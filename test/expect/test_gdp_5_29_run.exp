@@ -1,5 +1,13 @@
 #!/usr/bin/expect -f
 # 5.29 GDP-Treiber-Test: Treiber laden + vorgebautes vramtest ausfuehren.
+#
+# VORAUSSETZUNG: mc6845/crtc0/vramtest muessen VORHER per
+# test/expect/deploy_gdp_5_29.sh (oder gleichwertig manuell inkl.
+# `os9 attr -e` je Modul!) auf das unten gesetzte Image kopiert sein --
+# `os9 copy -r` allein setzt das RBF-Owner-Execute-Bit NICHT, wodurch
+# `load` sonst mit einer voellig unauffaelligen, fehlertextlosen Meldung
+# scheitert (s. ARBEITSPLAN.md "Nachtrag ... Checkpoint-8-Regression
+# aufgeklaert", 2026-08-10). Sieht wie ein Treiberbug aus, ist keiner.
 
 set timeout 90
 set send_slow {1 .003}
