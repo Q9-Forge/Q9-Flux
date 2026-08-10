@@ -262,6 +262,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
     static q9_mc6845_t crtc;                           /* 5.24: MC6845-CRT-Controller             */
     static q9_framebuf_t fb;                            /* 5.26: VRAM-Geraet                       */
+    static q9_clut_t  clut;                             /* 5.29-Nachtrag: CLUT-Geraet               */
     static q9_videobridge_t videobridge;                /* 5.27: Host-Video-Bridge                  */
     static q9_cf_t    cf_extra[Q9_CFG_MAX_CF];
     static uint32_t   cf_extra_base[Q9_CFG_MAX_CF];
@@ -398,6 +399,8 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     q9_m68krt_attach_mc6845(&crtc);                     /* 5.24: CRTC-Fenster $FFFFA000           */
     q9_framebuf_init(&fb, cb030_vram, sizeof(cb030_vram), Q9_FRAMEBUF_DEFAULT_SIZE, &crtc);
     q9_m68krt_attach_framebuf(&fb);                     /* 5.26: VRAM-Fenster $FD000000           */
+    q9_clut_init(&clut);                                /* 5.29-Nachtrag: CLUT, Identitaets-Graustufe */
+    q9_m68krt_attach_clut(&clut);                       /* 5.29-Nachtrag: CLUT-Fenster $FFFFA010  */
     {
         /* Optionaler Port-Override (5.29-Diagnose, Andreas' laufender Terminalserver belegt
            sonst 2001/2000) -- Default bleibt unveraendert 2001/2000, analog Q9_NETTTY_PORT. */
@@ -407,7 +410,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
         const char *vb_udp_env = getenv("Q9_VIDEOBRIDGE_UDP_PORT");
         if (vb_tcp_env && vb_tcp_env[0]) vb_tcp_port = (unsigned)atoi(vb_tcp_env);
         if (vb_udp_env && vb_udp_env[0]) vb_udp_port = (unsigned)atoi(vb_udp_env);
-        if (q9_videobridge_init(&videobridge, &fb, &crtc, vb_tcp_port, vb_udp_port, "Q9Flux") != 0) {
+        if (q9_videobridge_init(&videobridge, &fb, &crtc, &clut, vb_tcp_port, vb_udp_port, "Q9Flux") != 0) {
             fprintf(stderr, "cb030: Q9-Frame-Video-Bridge (TCP %u/UDP %u) konnte nicht gestartet werden -- "
                              "Emulation laeuft trotzdem weiter (rein additiver Host-Dienst).\r\n",
                     vb_tcp_port, vb_udp_port);
