@@ -104,7 +104,8 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 # 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap, docs/CB030.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
 CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c src/kernel/quicc.c src/kernel/devreg.c \
-            src/kernel/boardcfg.c src/kernel/mc6845.c src/kernel/framebuf.c src/kernel/videobridge.c
+            src/kernel/boardcfg.c src/kernel/mc6845.c src/kernel/framebuf.c src/kernel/clut.c \
+            src/kernel/videobridge.c
 CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h src/kernel/devreg.h \
             src/kernel/boardcfg.h src/kernel/mc6845.h src/kernel/framebuf.h src/kernel/videobridge.h
 
@@ -136,7 +137,14 @@ ifeq ($(PLATFORM),windows)
     endif
 else
     ifeq ($(shell pkg-config --exists slirp 2>/dev/null && echo yes),yes)
-        SLIRP_FLAGS = -DQ9_HAVE_SLIRP $(shell pkg-config --cflags slirp)
+        # 26-08-10: Homebrews libslirp.pc liefert nur "-I<includedir>/slirp" (fuer #include
+        # <libslirp.h>), unser slirp_net.c schreibt aber #include <slirp/libslirp.h> -- deshalb
+        # zusaetzlich den PARENT-Include-Pfad (<includedir> selbst) mitgeben, damit beide
+        # Schreibweisen funktionieren, ohne slirp_net.c anzufassen (Debian/Fedora-libslirp-Pakete
+        # liefern ueblicherweise direkt "-I<includedir>" und brauchen diesen Zusatz nicht, schadet
+        # dort aber auch nicht).
+        SLIRP_FLAGS = -DQ9_HAVE_SLIRP $(shell pkg-config --cflags slirp) \
+                      -I$(shell pkg-config --variable=includedir slirp)
         SLIRP_LIBS  = $(shell pkg-config --libs slirp)
     endif
 endif
