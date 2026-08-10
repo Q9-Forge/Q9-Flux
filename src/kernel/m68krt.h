@@ -37,6 +37,7 @@
 #include "cb030.h"
 #include "mc6845.h"                                    /* 5.24: q9_mc6845_t                       */
 #include "framebuf.h"                                  /* 5.26: q9_framebuf_t                     */
+#include "clut.h"                                      /* 5.29-Nachtrag: q9_clut_t                 */
 
 #define Q9_M68KRT_OK        0
 #define Q9_M68KRT_ERR_RAM  -1                       /* RAM fehlt oder zu klein fuer Reset-Vektoren */
@@ -146,6 +147,15 @@ void q9_m68krt_attach_mc6845(q9_mc6845_t *crtc);
 // Call:     q9_m68krt_attach_framebuf(&fb);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_attach_framebuf(q9_framebuf_t *fb);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_attach_clut
+// Desc.:    5.29-Nachtrag: Haengt das CLUT-Geraet (clut.h) in die Geraete-Registry ein -- Fenster
+//           $FFFFA010-$FFFFA013 (Index + R/G/B). Kein IRQ. Aufruf NACH q9_m68krt_attach_board.
+//           clut muss die gesamte Laufzeit ueberleben.
+// Call:     q9_m68krt_attach_clut(&clut);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_attach_clut(q9_clut_t *clut);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_attach_cf2
