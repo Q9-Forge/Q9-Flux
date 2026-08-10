@@ -627,6 +627,39 @@ static uint32_t g_syscall_return_pc = 0;  /* gezielter Rueckgabetrace fuer I$Ope
 static uint16_t g_syscall_return_code = 0;
 static uint32_t g_syscall_return_a0 = 0;
 
+/* 2026-08-10 (Claude, Modul-Klassifizierung Kernel/IOMan/SysCache/SSM): live pruefen, welches
+   Modul einen F$/I$-Aufruf tatsaechlich bearbeitet -- als Gegenprobe zu den dokumentierten
+   Tabellen D-1..D-4 im Technical Reference Manual. Adressbereiche stammen aus einem echten
+   "mdir -e" auf genau diesem Boot-Image (mdir zeigt die Basisadressen NACH Relokation, die je
+   Boot/ROM identisch sind, solange sich die Modulreihenfolge im Bootvorgang nicht aendert):
+     kernel   7100-e03c   ioman  e03c-f658
+     syscache f7a6-f93c   ssm    f93c-100b0
+   (init f658-f7a6 liegt dazwischen, ist aber keines der vier Faelle und wird als "other" gezaehlt.)
+   Methode: bei JEDEM trap#0 (wenn Q9_TRAP_TRACE_ALL) wird ein Klassifizierungs-Fenster geoeffnet
+   (Rueckkehr-PC = pc+4, wie auch sonst im Trace verwendet); der bereits vorhandene Instruction-
+   Hook markiert dann jede besuchte Adresse per Bitmaske, bis die Rueckkehr-Adresse erreicht wird
+   -- dann wird das Ergebnis als eine Zeile geloggt. Vereinfachung: verschachtelte Traps (ein
+   Syscall-Handler ruft selbst wieder trap#0) wuerden das Fenster ueberschreiben -- fuer diese
+   Untersuchung akzeptiert, da OS-9-Syscall-Handler laut Doku nicht rekursiv ueber trap#0 arbeiten. */
+#define Q9_CLASSIFY_KERNEL_LO   0x00007100u
+#define Q9_CLASSIFY_KERNEL_HI   0x0000e03cu
+#define Q9_CLASSIFY_IOMAN_LO    0x0000e03cu
+#define Q9_CLASSIFY_IOMAN_HI    0x0000f658u
+#define Q9_CLASSIFY_SYSCACHE_LO 0x0000f7a6u
+#define Q9_CLASSIFY_SYSCACHE_HI 0x0000f93cu
+#define Q9_CLASSIFY_SSM_LO      0x0000f93cu
+#define Q9_CLASSIFY_SSM_HI      0x000100b0u
+#define Q9_CLASSIFY_BIT_KERNEL   0x01
+#define Q9_CLASSIFY_BIT_IOMAN    0x02
+#define Q9_CLASSIFY_BIT_SYSCACHE 0x04
+#define Q9_CLASSIFY_BIT_SSM      0x08
+#define Q9_CLASSIFY_BIT_OTHER    0x10
+static int      g_classify_active     = 0;
+static uint32_t g_classify_return_pc  = 0;
+static uint32_t g_classify_call_pc    = 0;
+static uint16_t g_classify_callcode   = 0;
+static unsigned g_classify_seen_mask  = 0;
+
 /* Testlauf 3 (2026-07-14) zeigte: D0/D1 allein liefern keine brauchbare Filterung -- Grund
    (Ghidra-Nachanalyse): der eigentliche OS-9-Aufrufcode (F$Event = 0x53) steckt NICHT in einem
    Register, sondern klassisch OS-9-typisch als INLINE-DATENWORT direkt hinter der trap#0-
@@ -694,6 +727,15 @@ static int m68krt_trap_trace_callback(int trap)
             return 0;
         }
         if (g_trap_trace_all || callcode == 0x53 || callcode == 0x0a || callcode == 0x8d) {
+            if (g_trap_trace_all) {
+                /* Klassifizierungs-Fenster fuer DIESEN Aufruf oeffnen -- Auswertung/Log erfolgt
+                   im Instruction-Hook, sobald die Rueckkehradresse pc+4 erreicht wird. */
+                g_classify_active    = 1;
+                g_classify_return_pc = pc + 4;
+                g_classify_call_pc   = pc;
+                g_classify_callcode  = (uint16_t)callcode;
+                g_classify_seen_mask = 0;
+            }
             if (g_trap_trace_all &&
                 (callcode == 0x80 || callcode == 0x83 || callcode == 0x84 ||
                  callcode == 0x86 || callcode == 0x87)) {
@@ -760,6 +802,34 @@ static int m68krt_trap_trace_callback(int trap)
 
 static void m68krt_watch_pc_callback(unsigned int pc)
 {
+    if (g_classify_active) {
+        if (pc == g_classify_return_pc) {
+            if (g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
+                fprintf(g_trap_trace_fp,
+                        "classify pc=%08x callcode=%04x kernel=%d ioman=%d syscache=%d ssm=%d other=%d\n",
+                        g_classify_call_pc, g_classify_callcode,
+                        (g_classify_seen_mask & Q9_CLASSIFY_BIT_KERNEL)   ? 1 : 0,
+                        (g_classify_seen_mask & Q9_CLASSIFY_BIT_IOMAN)    ? 1 : 0,
+                        (g_classify_seen_mask & Q9_CLASSIFY_BIT_SYSCACHE) ? 1 : 0,
+                        (g_classify_seen_mask & Q9_CLASSIFY_BIT_SSM)     ? 1 : 0,
+                        (g_classify_seen_mask & Q9_CLASSIFY_BIT_OTHER)   ? 1 : 0);
+                g_trap_trace_n++;
+            }
+            g_classify_active = 0;
+        } else {
+            if (pc >= Q9_CLASSIFY_KERNEL_LO && pc < Q9_CLASSIFY_KERNEL_HI) {
+                g_classify_seen_mask |= Q9_CLASSIFY_BIT_KERNEL;
+            } else if (pc >= Q9_CLASSIFY_IOMAN_LO && pc < Q9_CLASSIFY_IOMAN_HI) {
+                g_classify_seen_mask |= Q9_CLASSIFY_BIT_IOMAN;
+            } else if (pc >= Q9_CLASSIFY_SYSCACHE_LO && pc < Q9_CLASSIFY_SYSCACHE_HI) {
+                g_classify_seen_mask |= Q9_CLASSIFY_BIT_SYSCACHE;
+            } else if (pc >= Q9_CLASSIFY_SSM_LO && pc < Q9_CLASSIFY_SSM_HI) {
+                g_classify_seen_mask |= Q9_CLASSIFY_BIT_SSM;
+            } else {
+                g_classify_seen_mask |= Q9_CLASSIFY_BIT_OTHER;
+            }
+        }
+    }
     if (g_syscall_return_pc && pc == g_syscall_return_pc && g_trap_trace_fp &&
         g_trap_trace_n < g_trap_trace_cap) {
         fprintf(g_trap_trace_fp,
