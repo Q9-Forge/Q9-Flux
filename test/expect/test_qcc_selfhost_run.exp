@@ -1,0 +1,75 @@
+#!/usr/bin/expect -f
+# QCC-Selfhosting-Test: den von QCC selbst uebersetzten EBNF-Generator
+# (PROJECTS/ebnf_gen_tc/ebnf_gen_tc) auf dem echten Q9 ausfuehren.
+#
+# Der Generator hat KEINEN argc/argv-Mechanismus -- main() ruft
+# ebnfMain("qcc") mit fest einkompiliertem Basisnamen (siehe
+# SourceQCC/ebnf.tc). Die zu verarbeitende Grammatik muss deshalb als
+# qcc.ebnf im Arbeitsverzeichnis liegen; erzeugt werden qcc_p.c, qcc.s68,
+# qcc.lextab und qcc.lexlst.
+#
+# Laeuft gegen die ISOLIERTE Arbeitskopie, NICHT gegen local_images/OS9SYS.hda
+# (Produktion, zudem dauerhaft vom laufenden Terminalserver belegt).
+
+set timeout 120
+set send_slow {1 .003}
+log_file -noappend test/expect/results/test_qcc_selfhost_run_result.txt
+
+set image local_images/OS9SYS.claude-work.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+
+proc login {} {
+    set timeout 90
+    expect "devices online"
+    set timeout 20
+    set logged_in 0
+    for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+        expect {
+            "User name?:" { sleep 2; send -s "super\r"; exp_continue }
+            -re {Password[^\r\n]*:} { sleep 2; send -s "Al35uUbC\r"; exp_continue }
+            -re {[#$] ?$} { set logged_in 1 }
+            timeout { send "\r" }
+        }
+    }
+    if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
+}
+
+spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+login
+
+send_log "\n=== Arbeits- UND Ausfuehrungsverzeichnis wechseln ===\n"
+sleep 1
+send -s "chd /dd/PROJECTS/ebnf_gen_tc\r"
+expect -re {[#$] ?$}
+# OS-9 trennt Daten- und Ausfuehrungsverzeichnis; "chx" gibt es in dieser
+# Shell nicht, deshalb wird das Modul unten ueber seinen VOLLEN Pfad
+# aufgerufen (chd allein reicht nicht -- die Shell sucht sonst nur /dd/CMDS
+# und meldet "command not found").
+
+send_log "\n=== Ausgangslage (Ausgabedateien duerfen NICHT existieren) ===\n"
+sleep 1
+send -s "dir\r"
+expect "ebnf_gen_tc#"
+
+# WICHTIG: ab hier NICHT mehr auf {[#$] ?$} warten! Die Testgrammatik enthaelt
+# den Oberon-Ungleichheitsoperator "#", den der Generator waehrend des Laufs
+# ausgibt -- das generische Prompt-Muster matcht darauf und der Test haelt den
+# noch laufenden Generator faelschlich fuer fertig. Deshalb auf den
+# VOLLSTAENDIGEN, eindeutigen Arbeitsverzeichnis-Prompt warten.
+send_log "\n=== Selbstgehosteten Generator ausfuehren ===\n"
+sleep 1
+send -s "/dd/PROJECTS/ebnf_gen_tc/ebnf_gen_tc\r"
+set timeout 900
+expect "ebnf_gen_tc#"
+set timeout 60
+
+send_log "\n=== Ergebnis: erzeugte Dateien ===\n"
+sleep 1
+send -s "dir -e\r"
+expect "ebnf_gen_tc#"
+
+send_log "\n<<<HOST-ESCAPE, EMULATOR BEENDEN>>>\n"
+send "\x1d"
+expect eof
+
+send_log "\n<<<TEST ENDE>>>\n"
