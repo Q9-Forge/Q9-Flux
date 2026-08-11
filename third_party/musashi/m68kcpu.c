@@ -1022,8 +1022,8 @@ int m68k_execute(int num_cycles)
 }
 
 
-/* Q9/CB030 (5.9): schmaler Accessor, ob die CPU gerade angehalten ist (STOP-Instruktion,
-   z.B. OS-9s Idle-Loop) -- der Aufrufer (cb030run.c) kann damit den Host in dieser Zeit
+/* Q9 (5.9): schmaler Accessor, ob die CPU gerade angehalten ist (STOP-Instruktion,
+   z.B. OS-9s Idle-Loop) -- der Aufrufer (q9boardrun.c) kann damit den Host in dieser Zeit
    schlafen legen statt den naechsten m68k_execute()-Slice sofort "leer" zu verbrennen. */
 int m68k_is_stopped(void)
 {

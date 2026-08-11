@@ -13,7 +13,7 @@ log_file -noappend test/expect/results/paste_paced_result.txt
 set image local_images/OS9SYS.claudia-paste-test.hda
 exec cp -c local_images/OS9SYS.hda $image
 
-spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+spawn ./build/native/q9.exe --rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
 
 set timeout 60
 expect "devices online"

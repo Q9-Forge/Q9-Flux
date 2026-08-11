@@ -12,9 +12,9 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-03│ 1.00 │ 1.10: Konsole (termios raw+nonblocking), Timer, Disk-Image, Selftest    │ CF
 // 26-07-10│ 1.10 │ 5.7: TX-Ringpuffer fuer q9_hal_con_put (nicht-blockierendes write()),    │ CF
-//         │      │ statt pro Zeichen zu blockieren -- Gegenstueck zum RX-FIFO (cb030.c)     │
+//         │      │ statt pro Zeichen zu blockieren -- Gegenstueck zum RX-FIFO (q9board.c)     │
 // 26-07-10│ 1.11 │ 5.8: Ctrl-]-Host-Escape + DEL->BS-Mapping in q9_hal_con_get()            │ CF
-// 26-07-10│ 1.20 │ 5.9: q9_hal_sleep_ms (usleep) fuer die CB030-Idle-Drossel                │ CF
+// 26-07-10│ 1.20 │ 5.9: q9_hal_sleep_ms (usleep) fuer die Idle-Drossel                │ CF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <stdio.h>
@@ -28,7 +28,7 @@
 #include <signal.h>
 
 #include "../q9_hal.h"
-#include "../../kernel/cb030run.h"
+#include "../../kernel/q9boardrun.h"
 #include "../../kernel/boardcfg.h"
 
 #define DISK_IMAGE "local_images/q9disk.img"
@@ -37,7 +37,7 @@ static FILE *disk = NULL;
 static struct termios orig_termios;
 static int termios_saved = 0;
 
-/* 5.7: TX-Ringpuffer -- Gegenstueck zum RX-FIFO in cb030.c. q9_hal_con_put() darf den Haupt-Loop
+/* 5.7: TX-Ringpuffer -- Gegenstueck zum RX-FIFO in q9board.c. q9_hal_con_put() darf den Haupt-Loop
    nie blockieren (sonst friert bei einem langsamen/gestockten Terminal-Leser die GESAMTE Emulation
    ein, s. ARBEITSPLAN 5.7). 256 KiB reichen fuer jeden realistischen Ausgabe-Burst zwischen zwei
    Haupt-Loop-Durchlaeufen bei weitem -- Ueberlauf wird (wie beim RX-FIFO) nur gezaehlt, nicht
@@ -174,7 +174,7 @@ int q9_hal_con_get(void)
         exit(0);
     }
     if (n == 1 && c == 0x1e) {                         /* Debug-Sondertaste: Ctrl-^ dumpt          */
-        q9_dbg_dump_requested = 1;                     /* physischen Kernel-Speicher (cb030run.c)  */
+        q9_dbg_dump_requested = 1;                     /* physischen Kernel-Speicher (q9boardrun.c)  */
         return -1;                                     /* schlucken, nicht an den Gast weiterreichen */
     }
     if (n == 1 && c == 0x7f) {
@@ -272,22 +272,24 @@ const char *q9_hal_target(void)
 //           5.19: Der ERSTE Parameter OHNE fuehrendes "-" gibt eine Board-Config-Datei an
 //           (Extension ".q9" wird angenommen, falls keine da ist, s. boardcfg.h). Darin stehen
 //           ROM, Netz-Backend und MEHRERE CF-Images (rbf/pcf) — der Emulator startet dann direkt
-//           im CB030-Board-Modus. Die bestehenden Optionen bleiben und ueberschreiben die Config:
-//           --cb030 <rom> (statt/zusaetzlich zum ROM aus der Config), --cf <image> (Onboard-CF-
+//           im Board-Modus. Die bestehenden Optionen bleiben und ueberschreiben die Config:
+//           --rom <rom> (statt/zusaetzlich zum ROM aus der Config), --cf <image> (Onboard-CF-
 //           Master), --net nat|vmnet|bridge:<ifname> (5.13, Default nat). Ohne Config UND ohne
-//           --cb030 laeuft wie bisher der reine Q9-Kernel (selftest oder Loop) — Ende per Ctrl-C.
-// Call:     q9.exe [<config[.q9]>] [--cb030 <rom>] [--cf <image>] [--net nat|vmnet|bridge:<if>]
+//           --rom laeuft wie bisher der reine Q9-Kernel (selftest oder Loop) — Ende per Ctrl-C.
+// Call:     q9.exe [<config[.q9]>] [--rom <rom>] [--cf <image>] [--net nat|vmnet|bridge:<if>]
 //           q9.exe --selftest
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
     const char *cfg_arg  = NULL;                       /* erster Positionsparameter (ohne '-')   */
-    const char *rom_path = NULL;                        /* --cb030                                */
+    const char *rom_path = NULL;                        /* --rom                                  */
     const char *cf_path  = NULL;                        /* --cf                                   */
     const char *net_mode = NULL;                        /* --net                                  */
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--cb030") == 0 && i + 1 < argc) {
+        /* --rom ist die aktuelle Schreibweise; --cb030 bleibt als stilles Alias
+           erhalten, damit aeltere Skripte/Testrezepte weiterlaufen. */
+        if ((strcmp(argv[i], "--rom") == 0 || strcmp(argv[i], "--cb030") == 0) && i + 1 < argc) {
             rom_path = argv[++i];
         } else if (strcmp(argv[i], "--cf") == 0 && i + 1 < argc) {
             cf_path = argv[++i];
@@ -300,7 +302,7 @@ int main(int argc, char **argv)
 
     if (cfg_arg == NULL && rom_path == NULL) {
         fprintf(stderr,
-                "usage: %s <config[.q9]> | --cb030 <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]\n",
+                "usage: %s <config[.q9]> | --rom <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]\n",
                 argv[0]);
         return 1;
     }
@@ -315,13 +317,13 @@ int main(int argc, char **argv)
             char err[256];
             q9_board_cfg_resolve_path(cfg_arg, path, sizeof(path));
             if (q9_board_cfg_load(&cfg, path, err, sizeof(err)) != 0) {
-                fprintf(stderr, "cb030: %s\n", err);
+                fprintf(stderr, "q9board: %s\n", err);
                 return 1;
             }
             cfgp = &cfg;
         }
         q9_hal_init();                                 /* termios raw — die UART braucht das     */
-        return q9_cb030_boot(rom_path, cf_path, net_mode, cfgp);
+        return q9_board_boot(rom_path, cf_path, net_mode, cfgp);
     }
 }
 

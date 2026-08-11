@@ -1,7 +1,7 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030.c                                                                         Ver. 2.00
+// File:   q9board.c                                                                         Ver. 2.00
 // Owner:  AF
-// Desc.:  Implementierung der CB030-Board-Emulation, siehe cb030.h.
+// Desc.:  Implementierung der Board-Emulation, siehe q9board.h.
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -12,31 +12,31 @@
 // 26-07-04│ 1.20 │ 5.2c: Compact-Flash (ATA-PIO-Minimalprotokoll, Backing-Datei)            │ CF
 // 26-07-04│ 1.30 │ 5.2d: Timer/IRQ3 (kooperative Host-Zeitpruefung)                         │ CF
 // 26-07-05│ 1.40 │ 5.3: Spiegelgrenze bis 0xFEFF_FFFF (statt 0x0800_0000), I/O vor dem       │ CF
-//         │      │ Remap erreichbar (Dispatch umgestellt), q9_cb030_rom_load neu             │
+//         │      │ Remap erreichbar (Dispatch umgestellt), q9_board_rom_load neu             │
 // 26-07-05│ 1.50 │ 5.5a: CF-Multi-Sektor — READ/WRITE SECTOR(S) zaehlen cf_sectcnt jetzt      │ CF
 //         │      │ echt durch (0 = 256 Sektoren), Puffer wird pro Sektor nachgeladen/          │
 //         │      │ geschrieben, DRQ bleibt bis zum letzten Sektor gesetzt                     │
 // 26-07-10│ 1.60 │ 5.7: SRA-TxRDY/TxEMT sind kein Immer-Bereit-Fake mehr, sondern spiegeln     │ CF
 //         │      │ den Fuellstand des HAL-TX-Ringpuffers (q9_hal_con_tx_ready/tx_empty)        │
-// 26-07-14│ 1.70 │ 5.6: RTC72421 ($FFFFD000): cb030_rtc_refresh/_read — Host-Uhr als BCD-   │ CF
+// 26-07-14│ 1.70 │ 5.6: RTC72421 ($FFFFD000): board_rtc_refresh/_read — Host-Uhr als BCD-   │ CF
 //         │      │ Nibbles mit S1-Latch, Schreibzugriffe im Dispatch ignoriert               │
-// 26-07-14│ 1.80 │ 5.17: 68681-DUART aus dem hartkodierten Dispatch in cb030_read_byte/       │ CF
-//         │      │ cb030_write_byte in die Geraete-Registry verlegt (q9_devtype_duart68681,   │
+// 26-07-14│ 1.80 │ 5.17: 68681-DUART aus dem hartkodierten Dispatch in board_read_byte/       │ CF
+//         │      │ board_write_byte in die Geraete-Registry verlegt (q9_devtype_duart68681,   │
 //         │      │ Instanz in m68krt.c) — Registerlogik selbst unveraendert                  │
 // 26-07-14│ 1.90 │ 5.17: Compact-Flash umgezogen (q9_devtype_cf, eigene 16/32-Bit-Pfade)      │ CF
 // 26-07-14│ 1.91 │ 5.17: Timer/IRQ3-Adress-Trigger umgezogen (q9_devtype_timer_irq, neues     │ CF
 //         │      │ Feld timer_irq_pending fuer den transienten Poll-Merker)                   │
 // 26-07-14│ 1.92 │ 5.17: RTC72421 umgezogen (q9_devtype_rtc72421) -- letztes board-internes   │ CF
-//         │      │ Geraet; cb030_read_byte/write_byte kennen jetzt nur noch REMAP+RAM/ROM      │
+//         │      │ Geraet; board_read_byte/write_byte kennen jetzt nur noch REMAP+RAM/ROM      │
 // 26-07-16│ 2.00 │ 5.19a: CF-Emulation auf q9_cf_t umgestellt (mehrfach instanziierbar,        │ CF
 //         │      │ Master/Slave via DEV-Bit, Format rbf/pcf steuert Sektor-Heuristik/IDENTIFY) │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
-#include "cb030.h"
+#include "q9board.h"
 #include "../hal/q9_hal.h"
 #include <stdlib.h>
 #include <string.h>
 
-/* 5.2c: interne ATA-Registeroffsets relativ zu Q9_CB030_CF_BASE. Nur das Minimum, das das
+/* 5.2c: interne ATA-Registeroffsets relativ zu Q9_BOARD_CF_BASE. Nur das Minimum, das das
    READ/WRITE-SECTOR(S)-Protokoll braucht — kein Feature-/Error-Register, keine Mehrfach-Laufwerke. */
 #define CF_REG_DATA     0x00u                        /* Datenregister, 1 Byte pro Zugriff        */
 #define CF_REG_SECCNT   0x02u                        /* Sektor-Anzahl                             */
@@ -51,27 +51,27 @@
 #define RBF_DD_LSNSIZE  0x68u
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_is_remap_reg
-// Desc.:    Prueft, ob 'addr' im REMAP-Registerbereich liegt (reiner Adress-Trigger, s. cb030.h).
-// Call:     if (cb030_is_remap_reg(addr)) ...
+// Function: board_is_remap_reg
+// Desc.:    Prueft, ob 'addr' im REMAP-Registerbereich liegt (reiner Adress-Trigger, s. q9board.h).
+// Call:     if (board_is_remap_reg(addr)) ...
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static int cb030_is_remap_reg(uint32_t addr)
+static int board_is_remap_reg(uint32_t addr)
 {
-    return addr >= Q9_CB030_REMAP_REG_BASE && addr <= Q9_CB030_REMAP_REG_TOP;
+    return addr >= Q9_BOARD_REMAP_REG_BASE && addr <= Q9_BOARD_REMAP_REG_TOP;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_uart_poll_rx
+// Function: board_uart_poll_rx
 // Desc.:    Leert alle momentan verfuegbaren Host-Terminalzeichen in den emulierten RX-FIFO.
 //           Das ist wichtig fuer Copy/Paste: der Host kann viele Bytes auf einmal liefern,
 //           OS-9 liest sie aber ueber die 68681 zeichenweise aus RHRA.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static int cb030_uart_rx_has_data(const q9_cb030_t *b)
+static int board_uart_rx_has_data(const q9_board_t *b)
 {
     return b->uart_rx_count != 0;
 }
 
-static int cb030_uart_rx_push(q9_cb030_t *b, uint8_t c)
+static int board_uart_rx_push(q9_board_t *b, uint8_t c)
 {
     if (!b->uart_rx_fifo || b->uart_rx_count >= b->uart_rx_fifo_size) {
         b->uart_rx_overflow++;
@@ -83,11 +83,11 @@ static int cb030_uart_rx_push(q9_cb030_t *b, uint8_t c)
     return 1;
 }
 
-static uint8_t cb030_uart_rx_pop(q9_cb030_t *b)
+static uint8_t board_uart_rx_pop(q9_board_t *b)
 {
     uint8_t c;
 
-    if (!cb030_uart_rx_has_data(b)) {
+    if (!board_uart_rx_has_data(b)) {
         return 0;
     }
     c = b->uart_rx_fifo[b->uart_rx_tail];
@@ -96,20 +96,20 @@ static uint8_t cb030_uart_rx_pop(q9_cb030_t *b)
     return c;
 }
 
-static void cb030_uart_poll_rx(q9_cb030_t *b)
+static void board_uart_poll_rx(q9_board_t *b)
 {
     while (b->uart_rx_fifo && b->uart_rx_count < b->uart_rx_fifo_size) {
         int c = q9_hal_con_get();
         if (c < 0) {
             break;
         }
-        cb030_uart_rx_push(b, (uint8_t)c);
+        board_uart_rx_push(b, (uint8_t)c);
     }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_uart_read / cb030_uart_write
-// Desc.:    5.2b/5.4: 68681-DUART, Registerkarte s. docs/CB030.md. Kanal A ist die Konsole
+// Function: board_uart_read / board_uart_write
+// Desc.:    5.2b/5.4: 68681-DUART, Registerkarte s. docs/BOARD.md. Kanal A ist die Konsole
 //           (THRA -> q9_hal_con_put, RHRA <- Host-Terminal via RX-FIFO); Kanal B ist
 //           unverbunden (sendet ins Leere, empfaengt nie). Die Mode-Register MR1/MR2 (einziges
 //           echtes R/W-Register der 68681, interner Zeiger: nach jedem Zugriff auf MR2, Reset
@@ -122,37 +122,37 @@ static void cb030_uart_poll_rx(q9_cb030_t *b)
 //           (TxRDYA 0x01, RxRDYA 0x02, TxRDYB 0x10).
 //           Der Rest des Registersatzes wird sauber angenommen (liest 0, Schreiben verworfen).
 //────────────────────────────────────────────────────────────────────────────────────────────────
-/* Debug-Werkzeug (5.4): mit -DQ9_CB030_UART_TRACE uebersetzt, protokolliert jeder UART-Zugriff
+/* Debug-Werkzeug (5.4): mit -DQ9_BOARD_UART_TRACE uebersetzt, protokolliert jeder UART-Zugriff
    Offset+Wert auf stderr — damit wurde der sc68681-Treiber-Init beim ersten OS-9-Boot
    durchleuchtet (IVR-Readback, IMR-Sequenz). Im normalen Build komplett wegkompiliert. */
-#ifdef Q9_CB030_UART_TRACE
+#ifdef Q9_BOARD_UART_TRACE
 #include <stdio.h>
 #define UART_TRACE(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define UART_TRACE(...)
 #endif
 
-static int cb030_cf_trace_enabled(void)
+static int board_cf_trace_enabled(void)
 {
     static int cached = -1;
     if (cached < 0) {
-        cached = getenv("Q9_CB030_CF_TRACE") != 0;
+        cached = getenv("Q9_BOARD_CF_TRACE") != 0;
     }
     return cached;
 }
 
-#define CF_TRACE(...) do { if (cb030_cf_trace_enabled()) fprintf(stderr, __VA_ARGS__); } while (0)
+#define CF_TRACE(...) do { if (board_cf_trace_enabled()) fprintf(stderr, __VA_ARGS__); } while (0)
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // 5.6: RTC72421 — Epson-Echtzeituhr am Bus ($FFFFD000, 16 Nibble-Register).
-// Lesen = Host-Uhr (q9_hal_time), Schreiben wird ignoriert (s. cb030.h). Register:
+// Lesen = Host-Uhr (q9_hal_time), Schreiben wird ignoriert (s. q9board.h). Register:
 //   0 S1  1 S10  2 MI1  3 MI10  4 H1  5 H10  6 D1  7 D10  8 MO1  9 MO10  A Y1  B Y10  C W
 //   D Control D (HOLD/BUSY/IRQ — bei uns immer 0, nie busy)   E Control E (0)
 //   F Control F (Bit2 = 24h-Modus, fest gesetzt)
 // Ein Lesezugriff auf Register 0 frischt den Latch auf; die uebrigen Register lesen aus dem
 // Latch, damit ein Treiber-Lesedurchlauf S1..W einen konsistenten Zeitstempel sieht.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void cb030_rtc_refresh(q9_cb030_t *b)
+static void board_rtc_refresh(q9_board_t *b)
 {
     q9_datetime_t dt;
     if (q9_hal_time(&dt) != 0) {
@@ -184,10 +184,10 @@ static void cb030_rtc_refresh(q9_cb030_t *b)
     b->rtc_latch_valid = 1;
 }
 
-static uint8_t cb030_rtc_read(q9_cb030_t *b, uint32_t off)
+static uint8_t board_rtc_read(q9_board_t *b, uint32_t off)
 {
     if (off == 0 || !b->rtc_latch_valid) {
-        cb030_rtc_refresh(b);
+        board_rtc_refresh(b);
     }
     if (off <= 12) {
         return b->rtc_regs[off];
@@ -198,10 +198,10 @@ static uint8_t cb030_rtc_read(q9_cb030_t *b, uint32_t off)
     return 0x00;                                       /* Control D/E: nie HOLD/BUSY/IRQ         */
 }
 
-static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
+static uint8_t board_uart_read(q9_board_t *b, uint32_t addr)
 {
-    UART_TRACE("[uart rd %02x]", (unsigned)(addr - Q9_CB030_UART_BASE));
-    switch (addr - Q9_CB030_UART_BASE) {
+    UART_TRACE("[uart rd %02x]", (unsigned)(addr - Q9_BOARD_UART_BASE));
+    switch (addr - Q9_BOARD_UART_BASE) {
     case 0x00:                                         /* MRA (MR1A/MR2A, interner Zeiger)       */
     {
         uint8_t v = b->uart_mr_a[b->uart_mr_ptr_a];
@@ -211,8 +211,8 @@ static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
     case 0x02:                                         /* SRA: 5.7 -- TxRDY/TxEMT ehrlich */
     {
         uint8_t sr = 0;
-        cb030_uart_poll_rx(b);
-        if (cb030_uart_rx_has_data(b)) {
+        board_uart_poll_rx(b);
+        if (board_uart_rx_has_data(b)) {
             sr |= 0x01u;                                /* RxRDY                                  */
         }
         if (q9_hal_con_tx_ready()) {
@@ -224,11 +224,11 @@ static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
         return sr;
     }
     case 0x06:                                         /* RHRA */
-        cb030_uart_poll_rx(b);
-        return cb030_uart_rx_pop(b);
+        board_uart_poll_rx(b);
+        return board_uart_rx_pop(b);
     case 0x0A:                                         /* ISR (Polling-Bits, s.o.)               */
-        cb030_uart_poll_rx(b);
-        return (uint8_t)(0x11u | (cb030_uart_rx_has_data(b) ? 0x02u : 0u));
+        board_uart_poll_rx(b);
+        return (uint8_t)(0x11u | (board_uart_rx_has_data(b) ? 0x02u : 0u));
     case 0x10:                                         /* MRB (MR1B/MR2B, interner Zeiger)       */
     {
         uint8_t v = b->uart_mr_b[b->uart_mr_ptr_b];
@@ -244,10 +244,10 @@ static uint8_t cb030_uart_read(q9_cb030_t *b, uint32_t addr)
     }
 }
 
-static void cb030_uart_write(q9_cb030_t *b, uint32_t addr, uint8_t val)
+static void board_uart_write(q9_board_t *b, uint32_t addr, uint8_t val)
 {
-    UART_TRACE("[uart wr %02x=%02x]", (unsigned)(addr - Q9_CB030_UART_BASE), val);
-    switch (addr - Q9_CB030_UART_BASE) {
+    UART_TRACE("[uart wr %02x=%02x]", (unsigned)(addr - Q9_BOARD_UART_BASE), val);
+    switch (addr - Q9_BOARD_UART_BASE) {
     case 0x00:                                         /* MRA */
         b->uart_mr_a[b->uart_mr_ptr_a] = val;
         b->uart_mr_ptr_a = 1;
@@ -282,9 +282,9 @@ static void cb030_uart_write(q9_cb030_t *b, uint32_t addr, uint8_t val)
     }
 }
 
-int q9_cb030_uart_irq_pending(q9_cb030_t *b)
+int q9_board_uart_irq_pending(q9_board_t *b)
 {
-    cb030_uart_poll_rx(b);
+    board_uart_poll_rx(b);
 
     if (b->uart_imr & 0x01u) {                         /* TxRDYA-Interrupt: 5.7 -- ehrlich pruefen */
         if (q9_hal_con_tx_ready()) {
@@ -292,7 +292,7 @@ int q9_cb030_uart_irq_pending(q9_cb030_t *b)
         }
     }
     if (b->uart_imr & 0x02u) {                         /* RxRDYA-Interrupt: Zeichen da?          */
-        if (cb030_uart_rx_has_data(b)) {
+        if (board_uart_rx_has_data(b)) {
             return 1;
         }
     }
@@ -309,7 +309,7 @@ static q9_cf_unit_t *cf_cur_unit(q9_cf_t *c)
     return &c->unit[(c->lba3 >> 4) & 1u];
 }
 
-static int cb030_cf_ensure_open(q9_cf_t *c)
+static int board_cf_ensure_open(q9_cf_t *c)
 {
     q9_cf_unit_t *u = cf_cur_unit(c);
 
@@ -324,17 +324,17 @@ static int cb030_cf_ensure_open(q9_cf_t *c)
         u->file = fopen(u->path, "w+b");
     }
     if (u->file && u->image_sector_size == 0) {
-        u->image_sector_size = Q9_CB030_CF_SECTOR_SIZE;
+        u->image_sector_size = Q9_BOARD_CF_SECTOR_SIZE;
 
         /* 5.19a: PCF-Images (FAT12/16) sind immer 512er-Sektoren — die RBF-Heuristik unten wuerde
            die FAT-Bootsektor-Bytes als LSN0 fehlgedeutet abtasten, deshalb hier ueberspringen. */
         if (u->format != Q9_CF_FMT_PCF) {
-            uint8_t hdr[Q9_CB030_CF_SECTOR_SIZE];
+            uint8_t hdr[Q9_BOARD_CF_SECTOR_SIZE];
             size_t  n;
             long    cur;
 
             cur = ftell(u->file);
-            fseek(u->file, (long)u->start_sector * (long)Q9_CB030_CF_SECTOR_SIZE, SEEK_SET);
+            fseek(u->file, (long)u->start_sector * (long)Q9_BOARD_CF_SECTOR_SIZE, SEEK_SET);
             n = fread(hdr, 1, sizeof(hdr), u->file);
             fseek(u->file, cur, SEEK_SET);
 
@@ -372,25 +372,25 @@ static int cb030_cf_ensure_open(q9_cf_t *c)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_cf_load_sector / cb030_cf_store_sector
+// Function: board_cf_load_sector / board_cf_store_sector
 // Desc.:    5.5a: Ein einzelner Sektor-Transfer zwischen Backing-Datei und sector-Puffer, an der
-//           aktuellen c->lba. Ausgelagert aus cb030_cf_write, weil READ/WRITE SECTOR(S) jetzt
-//           mehrere Sektoren hintereinander bedienen (s. cb030_cf_read/write unten) und pro
+//           aktuellen c->lba. Ausgelagert aus board_cf_write, weil READ/WRITE SECTOR(S) jetzt
+//           mehrere Sektoren hintereinander bedienen (s. board_cf_read/write unten) und pro
 //           Sektor genau dieselben zwei Operationen brauchen.
-// Call:     cb030_cf_load_sector(c); ... cb030_cf_store_sector(c);
+// Call:     board_cf_load_sector(c); ... board_cf_store_sector(c);
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void cb030_cf_load_sector(q9_cf_t *c)
+static void board_cf_load_sector(q9_cf_t *c)
 {
     uint32_t img_sec;
 
-    memset(c->sector, 0, Q9_CB030_CF_SECTOR_SIZE);
-    if (cb030_cf_ensure_open(c)) {
+    memset(c->sector, 0, Q9_BOARD_CF_SECTOR_SIZE);
+    if (board_cf_ensure_open(c)) {
         q9_cf_unit_t *u = cf_cur_unit(c);
-        img_sec = u->image_sector_size ? u->image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+        img_sec = u->image_sector_size ? u->image_sector_size : Q9_BOARD_CF_SECTOR_SIZE;
         fseek(u->file, (long)(u->start_sector + c->lba) * (long)img_sec, SEEK_SET);
         fread(c->sector, 1, img_sec, u->file);
     }
-    if (c->lba == 0 || cb030_cf_trace_enabled()) {
+    if (c->lba == 0 || board_cf_trace_enabled()) {
         CF_TRACE("[cf read lba=%u first=%02x %02x %02x %02x %02x %02x %02x %02x]\n",
                  c->lba, c->sector[0], c->sector[1], c->sector[2], c->sector[3],
                  c->sector[4], c->sector[5], c->sector[6], c->sector[7]);
@@ -398,40 +398,40 @@ static void cb030_cf_load_sector(q9_cf_t *c)
     c->pos = 0;
 }
 
-static void cb030_cf_load_write_buffer(q9_cf_t *c)
+static void board_cf_load_write_buffer(q9_cf_t *c)
 {
     uint32_t img_sec;
 
-    memset(c->sector, 0, Q9_CB030_CF_SECTOR_SIZE);
-    if (cb030_cf_ensure_open(c)) {
+    memset(c->sector, 0, Q9_BOARD_CF_SECTOR_SIZE);
+    if (board_cf_ensure_open(c)) {
         q9_cf_unit_t *u = cf_cur_unit(c);
-        img_sec = u->image_sector_size ? u->image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+        img_sec = u->image_sector_size ? u->image_sector_size : Q9_BOARD_CF_SECTOR_SIZE;
         fseek(u->file, (long)(u->start_sector + c->lba) * (long)img_sec, SEEK_SET);
         fread(c->sector, 1, img_sec, u->file);
-        if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
+        if (img_sec < Q9_BOARD_CF_SECTOR_SIZE) {
             fseek(u->file, (long)(u->start_sector + c->lba + 1u) * (long)img_sec, SEEK_SET);
-            fread(c->sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, u->file);
+            fread(c->sector + img_sec, 1, Q9_BOARD_CF_SECTOR_SIZE - img_sec, u->file);
         }
     }
     c->pos = 0;
 }
 
-static void cb030_cf_store_sector(q9_cf_t *c)
+static void board_cf_store_sector(q9_cf_t *c)
 {
-    if (cb030_cf_ensure_open(c)) {
+    if (board_cf_ensure_open(c)) {
         q9_cf_unit_t *u = cf_cur_unit(c);
-        uint32_t img_sec = u->image_sector_size ? u->image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+        uint32_t img_sec = u->image_sector_size ? u->image_sector_size : Q9_BOARD_CF_SECTOR_SIZE;
         uint32_t written = c->pos;
-        if (written == 0 || written > Q9_CB030_CF_SECTOR_SIZE) {
-            written = Q9_CB030_CF_SECTOR_SIZE;
+        if (written == 0 || written > Q9_BOARD_CF_SECTOR_SIZE) {
+            written = Q9_BOARD_CF_SECTOR_SIZE;
         }
         fseek(u->file, (long)(u->start_sector + c->lba) * (long)img_sec, SEEK_SET);
 
         /* For 256-byte images: write TWO sectors (matching the read behavior in load_write_buffer) */
-        if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
+        if (img_sec < Q9_BOARD_CF_SECTOR_SIZE) {
             fwrite(c->sector, 1, img_sec, u->file);
             fseek(u->file, (long)(u->start_sector + c->lba + 1u) * (long)img_sec, SEEK_SET);
-            fwrite(c->sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, u->file);
+            fwrite(c->sector + img_sec, 1, Q9_BOARD_CF_SECTOR_SIZE - img_sec, u->file);
         } else {
             fwrite(c->sector, 1, written < img_sec ? written : img_sec, u->file);
         }
@@ -442,12 +442,12 @@ static void cb030_cf_store_sector(q9_cf_t *c)
              c->sector[4], c->sector[5], c->sector[6], c->sector[7]);
 }
 
-static void cb030_cf_identify(q9_cf_t *c)
+static void board_cf_identify(q9_cf_t *c)
 {
     uint32_t sectors = 0;
 
-    memset(c->sector, 0, Q9_CB030_CF_SECTOR_SIZE);
-    if (cb030_cf_ensure_open(c)) {
+    memset(c->sector, 0, Q9_BOARD_CF_SECTOR_SIZE);
+    if (board_cf_ensure_open(c)) {
         q9_cf_unit_t *u = cf_cur_unit(c);
         long cur;
 
@@ -472,7 +472,7 @@ static void cb030_cf_identify(q9_cf_t *c)
         fseek(u->file, 0, SEEK_END);
         cur = ftell(u->file);
         if (sectors == 0 && cur > 0) {
-            uint32_t img_sec = u->image_sector_size ? u->image_sector_size : Q9_CB030_CF_SECTOR_SIZE;
+            uint32_t img_sec = u->image_sector_size ? u->image_sector_size : Q9_BOARD_CF_SECTOR_SIZE;
             unsigned long skip = (unsigned long)u->start_sector * (unsigned long)img_sec;
             sectors = cur > (long)skip ? (uint32_t)(((unsigned long)cur - skip) / img_sec) : 0;
         }
@@ -485,26 +485,26 @@ static void cb030_cf_identify(q9_cf_t *c)
     c->sector[122] = (uint8_t)((sectors >> 16) & 0xFFu);
     c->sector[123] = (uint8_t)((sectors >> 24) & 0xFFu);
     c->pos = 0;
-    c->transfer_size = Q9_CB030_CF_SECTOR_SIZE;
+    c->transfer_size = Q9_BOARD_CF_SECTOR_SIZE;
     CF_TRACE("[cf identify sectors=%u]\n", sectors);
 }
 
-static uint32_t cb030_cf_transfer_size(q9_cf_t *c)
+static uint32_t board_cf_transfer_size(q9_cf_t *c)
 {
     uint32_t size;
 
-    if (!cb030_cf_ensure_open(c)) {
-        return Q9_CB030_CF_SECTOR_SIZE;
+    if (!board_cf_ensure_open(c)) {
+        return Q9_BOARD_CF_SECTOR_SIZE;
     }
     size = cf_cur_unit(c)->image_sector_size;
     if (size == 0) {
-        size = Q9_CB030_CF_SECTOR_SIZE;
+        size = Q9_BOARD_CF_SECTOR_SIZE;
     }
-    return (size < Q9_CB030_CF_SECTOR_SIZE) ? size : Q9_CB030_CF_SECTOR_SIZE;
+    return (size < Q9_BOARD_CF_SECTOR_SIZE) ? size : Q9_BOARD_CF_SECTOR_SIZE;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_cf_read / cb030_cf_write
+// Function: board_cf_read / board_cf_write
 // Desc.:    5.2c/5.5a: ATA-PIO-Minimalprotokoll — READ SECTOR(S) (0x20) und WRITE SECTOR(S)
 //           (0x30) zaehlen den Sector-Count jetzt echt durch (cf_remaining, 0 in CF_REG_SECCNT
 //           bedeutet 256 Sektoren, ATA-Konvention): nach jedem vollen Sektor wird die LBA
@@ -514,23 +514,23 @@ static uint32_t cb030_cf_transfer_size(q9_cf_t *c)
 //           Datenregister ist 8-Bit-weise adressiert (ein Byte pro Zugriff, cf_pos zaehlt
 //           0..511 pro Sektor hoch).
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static uint8_t cb030_cf_read(q9_cf_t *c, uint32_t off)
+static uint8_t board_cf_read(q9_cf_t *c, uint32_t off)
 {
     if (off == CF_REG_CMD) {
         return c->status;
     }
     if (off == CF_REG_DATA) {
-        uint32_t xfer_size = c->transfer_size ? c->transfer_size : Q9_CB030_CF_SECTOR_SIZE;
+        uint32_t xfer_size = c->transfer_size ? c->transfer_size : Q9_BOARD_CF_SECTOR_SIZE;
         if (c->pos < xfer_size) {
             uint8_t v = c->sector[c->pos++];
             if (c->pos >= xfer_size) {
                 c->remaining--;
                 c->lba++;
                 if (c->remaining > 0) {
-                    cb030_cf_load_sector(c);              /* naechster Sektor, DRQ bleibt gesetzt */
-                    c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
+                    board_cf_load_sector(c);              /* naechster Sektor, DRQ bleibt gesetzt */
+                    c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY | Q9_BOARD_CF_STAT_DRQ);
                 } else {
-                    c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY);      /* DRQ fertig geloescht */
+                    c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY);      /* DRQ fertig geloescht */
                 }
             }
             return v;
@@ -540,7 +540,7 @@ static uint8_t cb030_cf_read(q9_cf_t *c, uint32_t off)
     return 0;                                           /* LBA/Seccnt: hier nicht rueckgelesen */
 }
 
-static void cb030_cf_write(q9_cf_t *c, uint32_t off, uint8_t val)
+static void board_cf_write(q9_cf_t *c, uint32_t off, uint8_t val)
 {
     switch (off) {
     case CF_REG_FEAT:
@@ -565,15 +565,15 @@ static void cb030_cf_write(q9_cf_t *c, uint32_t off, uint8_t val)
         if (c->write_pending && c->pos < c->transfer_size) {
             c->sector[c->pos++] = val;
             if (c->pos >= c->transfer_size) {
-                cb030_cf_store_sector(c);
+                board_cf_store_sector(c);
                 c->remaining--;
                 c->lba++;
                 if (c->remaining > 0) {
                     c->pos = 0;                           /* naechster Sektor, DRQ bleibt gesetzt */
-                    c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
+                    c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY | Q9_BOARD_CF_STAT_DRQ);
                 } else {
                     c->write_pending = 0;
-                    c->status = Q9_CB030_CF_STAT_RDY;
+                    c->status = Q9_BOARD_CF_STAT_RDY;
                 }
             }
         }
@@ -586,32 +586,32 @@ static void cb030_cf_write(q9_cf_t *c, uint32_t off, uint8_t val)
            des e0/f0-Descriptors sauber scheitert statt Null-Sektoren zu liefern. */
         if (!cf_cur_unit(c)->path) {
             c->write_pending = 0;
-            c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_ERR);
+            c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY | Q9_BOARD_CF_STAT_ERR);
             return;
         }
-        if (val == Q9_CB030_CF_CMD_READ) {
+        if (val == Q9_BOARD_CF_CMD_READ) {
             c->remaining = c->sectcnt ? c->sectcnt : 256u;
-            c->transfer_size = cb030_cf_transfer_size(c);
-            cb030_cf_load_sector(c);
+            c->transfer_size = board_cf_transfer_size(c);
+            board_cf_load_sector(c);
             c->write_pending = 0;
-            c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
-        } else if (val == Q9_CB030_CF_CMD_WRITE) {
+            c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY | Q9_BOARD_CF_STAT_DRQ);
+        } else if (val == Q9_BOARD_CF_CMD_WRITE) {
             c->remaining = c->sectcnt ? c->sectcnt : 256u;
-            c->transfer_size = cb030_cf_transfer_size(c);
-            cb030_cf_load_write_buffer(c);
+            c->transfer_size = board_cf_transfer_size(c);
+            board_cf_load_write_buffer(c);
             c->write_pending = 1;
-            c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
-        } else if (val == Q9_CB030_CF_CMD_SETFEAT) {
-            /* SET FEATURES (z.B. 8-Bit-Mode, den der CB030-Boot-Treiber setzt): kommentarlos
-               annehmen — unser Datenregister ist ohnehin byteweise (s. cb030_cf_read). */
-            c->status = Q9_CB030_CF_STAT_RDY;
+            c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY | Q9_BOARD_CF_STAT_DRQ);
+        } else if (val == Q9_BOARD_CF_CMD_SETFEAT) {
+            /* SET FEATURES (z.B. 8-Bit-Mode, den der Board-Boot-Treiber setzt): kommentarlos
+               annehmen — unser Datenregister ist ohnehin byteweise (s. board_cf_read). */
+            c->status = Q9_BOARD_CF_STAT_RDY;
         } else if (val == CF_CMD_IDENTIFY) {
             c->remaining = 1;
-            cb030_cf_identify(c);
+            board_cf_identify(c);
             c->write_pending = 0;
-            c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_DRQ);
+            c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY | Q9_BOARD_CF_STAT_DRQ);
         } else {
-            c->status = (uint8_t)(Q9_CB030_CF_STAT_RDY | Q9_CB030_CF_STAT_ERR);
+            c->status = (uint8_t)(Q9_BOARD_CF_STAT_RDY | Q9_BOARD_CF_STAT_ERR);
         }
         return;
     default:
@@ -620,37 +620,37 @@ static void cb030_cf_write(q9_cf_t *c, uint32_t off, uint8_t val)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_read_byte
-// Desc.:    Adress-Dispatch fuer einen einzelnen Lesezugriff (if/else-Kette aus docs/CB030.md).
+// Function: board_read_byte
+// Desc.:    Adress-Dispatch fuer einen einzelnen Lesezugriff (if/else-Kette aus docs/BOARD.md).
 //           I/O (REMAP/Timer/CF/UART) wird VOR der Zustandsweiche geprueft — die I/O-Region ist
 //           in beiden REMAP-Zustaenden erreichbar (das Boot-ROM initialisiert die DUART vor dem
 //           Remap). Ein Treffer im REMAP-Registerbereich schaltet immer um, unabhaengig vom
 //           bisherigen Zustand oder vom gelesenen Wert (0). TI_IRQ_ON/OFF sind reine Adress-
 //           Trigger (5.2d) — auch beim Lesen wirksam.
-// Call:     v = cb030_read_byte(b, addr)
+// Call:     v = board_read_byte(b, addr)
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
+static uint8_t board_read_byte(q9_board_t *b, uint32_t addr)
 {
-    if (cb030_is_remap_reg(addr)) {
+    if (board_is_remap_reg(addr)) {
         b->remapped = 1;
         return 0;
     }
     if (!b->remapped) {
         /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
-           Adressraums (0xFEFF_FFFF einschl., docs/CB030.md Speicherkarte) — das Boot-ROM
+           Adressraums (0xFEFF_FFFF einschl., docs/BOARD.md Speicherkarte) — das Boot-ROM
            springt darum vor dem REMAP-Trigger hoch nach 0xFE00_xxxx. */
-        if (addr <= Q9_CB030_ROM_MIRROR_TOP && b->rom_len > 0) {
+        if (addr <= Q9_BOARD_ROM_MIRROR_TOP && b->rom_len > 0) {
             return b->rom[addr % b->rom_len];
         }
         return 0;
     }
 
-    /* Remap-Zustand: RAM zuerst (haeufigster Fall, s. docs/CB030.md), danach ROM (einmalig). */
+    /* Remap-Zustand: RAM zuerst (haeufigster Fall, s. docs/BOARD.md), danach ROM (einmalig). */
     if (addr < b->ram_len) {
         return b->ram[addr];
     }
-    if (addr >= Q9_CB030_ROM_REMAP_BASE && addr <= Q9_CB030_ROM_REMAP_TOP && b->rom_len > 0) {
-        uint32_t off = addr - Q9_CB030_ROM_REMAP_BASE;
+    if (addr >= Q9_BOARD_ROM_REMAP_BASE && addr <= Q9_BOARD_ROM_REMAP_TOP && b->rom_len > 0) {
+        uint32_t off = addr - Q9_BOARD_ROM_REMAP_BASE;
         return (off < b->rom_len) ? b->rom[off] : 0;
     }
 
@@ -658,16 +658,16 @@ static uint8_t cb030_read_byte(q9_cb030_t *b, uint32_t addr)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: cb030_write_byte
+// Function: board_write_byte
 // Desc.:    Adress-Dispatch fuer einen einzelnen Schreibzugriff. I/O wird — wie beim Lesen — VOR
 //           der Zustandsweiche geprueft (in beiden REMAP-Zustaenden erreichbar). ROM ist nie
 //           beschreibbar; ein Treffer im REMAP-Registerbereich schaltet um, der Wert selbst wird
 //           verworfen. Ebenso TI_IRQ_ON/OFF (5.2d, reine Adress-Trigger).
-// Call:     cb030_write_byte(b, addr, val)
+// Call:     board_write_byte(b, addr, val)
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
+static void board_write_byte(q9_board_t *b, uint32_t addr, uint8_t val)
 {
-    if (cb030_is_remap_reg(addr)) {
+    if (board_is_remap_reg(addr)) {
         b->remapped = 1;
         return;
     }
@@ -683,10 +683,10 @@ static void cb030_write_byte(q9_cb030_t *b, uint32_t addr, uint8_t val)
     /* ROM-Bereich (read-only) und undefinierte Adressen: kommentarlos verwerfen. */
 }
 
-int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *ram, uint32_t ram_len)
+int q9_board_init(q9_board_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *ram, uint32_t ram_len)
 {
     if (!ram || ram_len == 0) {
-        return Q9_CB030_ERR_RAM;
+        return Q9_BOARD_ERR_RAM;
     }
 
     memset(b, 0, sizeof(*b));
@@ -695,19 +695,19 @@ int q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len, uint8_t *
     b->ram     = ram;
     b->ram_len = ram_len;
     b->remapped = 0;
-    b->uart_rx_fifo = (uint8_t *)malloc(Q9_CB030_UART_RX_FIFO_SIZE);
+    b->uart_rx_fifo = (uint8_t *)malloc(Q9_BOARD_UART_RX_FIFO_SIZE);
     if (!b->uart_rx_fifo) {
-        return Q9_CB030_ERR_RAM;
+        return Q9_BOARD_ERR_RAM;
     }
-    b->uart_rx_fifo_size = Q9_CB030_UART_RX_FIFO_SIZE;
-    b->cf.status = Q9_CB030_CF_STAT_RDY;
+    b->uart_rx_fifo_size = Q9_BOARD_UART_RX_FIFO_SIZE;
+    b->cf.status = Q9_BOARD_CF_STAT_RDY;
     b->uart_ivr  = 0x0F;                              /* 68681-Reset-Wert "uninitialisierter
                                                          Vektor" — der OS-9-Treiber sc68681
                                                          prueft GENAU darauf (sonst E$BMode) */
-    return Q9_CB030_OK;
+    return Q9_BOARD_OK;
 }
 
-void q9_cb030_reset(q9_cb030_t *b)
+void q9_board_reset(q9_board_t *b)
 {
     b->remapped = 0;
 }
@@ -726,7 +726,7 @@ void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format)
     u->format = format;
 
     /* Registersatz zuruecksetzen wie bei einem Kartenwechsel (Verhalten wie das alte
-       q9_cb030_cf_attach, nur dass der Zustand jetzt am Interface statt am Board haengt). */
+       q9_board_cf_attach, nur dass der Zustand jetzt am Interface statt am Board haengt). */
     c->lba = 0;
     c->lba3 = 0;
     c->sectcnt = 0;
@@ -734,7 +734,7 @@ void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format)
     c->transfer_size = 0;
     c->write_pending = 0;
     c->remaining = 0;
-    c->status = Q9_CB030_CF_STAT_RDY;
+    c->status = Q9_BOARD_CF_STAT_RDY;
 }
 
 void q9_cf_set_start_sector(q9_cf_t *c, int unit, uint32_t start_sector)
@@ -742,30 +742,30 @@ void q9_cf_set_start_sector(q9_cf_t *c, int unit, uint32_t start_sector)
     c->unit[unit & 1].start_sector = start_sector;
 }
 
-void q9_cb030_cf_attach(q9_cb030_t *b, const char *path)
+void q9_board_cf_attach(q9_board_t *b, const char *path)
 {
     q9_cf_attach(&b->cf, 0, path, Q9_CF_FMT_AUTO);
 }
 
-int q9_cb030_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t *out_len)
+int q9_board_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t *out_len)
 {
     FILE  *f = fopen(path, "rb");
     size_t n;
 
     if (!f) {
-        return Q9_CB030_ERR_ROM;
+        return Q9_BOARD_ERR_ROM;
     }
     n = fread(buf, 1, buf_max, f);
     if (n == 0 || fgetc(f) != EOF) {                  /* leer oder groesser als der Puffer */
         fclose(f);
-        return Q9_CB030_ERR_ROM;
+        return Q9_BOARD_ERR_ROM;
     }
     fclose(f);
     *out_len = (uint32_t)n;
-    return Q9_CB030_OK;
+    return Q9_BOARD_OK;
 }
 
-int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms)
+int q9_board_poll_timer(q9_board_t *b, uint32_t now_ms)
 {
     if (!b->timer_active) {
         return 0;
@@ -777,7 +777,7 @@ int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms)
         b->timer_last_ms = now_ms;
         return 1;
     }
-    if (now_ms - b->timer_last_ms >= Q9_CB030_TIMER_PERIOD_MS) {
+    if (now_ms - b->timer_last_ms >= Q9_BOARD_TIMER_PERIOD_MS) {
         /* 5.6: Tick-Schulden nachholen statt verwerfen — vorher wurde timer_last_ms auf
            "jetzt" gesetzt, d.h. pro Poll hoechstens EIN Tick, egal wie viel Echtzeit
            vergangen war. Im Idle-Betrieb (STOP + Host-Schlafdrossel, 5.9) verlor die
@@ -790,86 +790,86 @@ int q9_cb030_poll_timer(q9_cb030_t *b, uint32_t now_ms)
         if (now_ms - b->timer_last_ms > 30000u) {
             b->timer_last_ms = now_ms - 30000u;
         }
-        b->timer_last_ms += Q9_CB030_TIMER_PERIOD_MS;
+        b->timer_last_ms += Q9_BOARD_TIMER_PERIOD_MS;
         return 1;
     }
     return 0;
 }
 
-uint8_t q9_cb030_read8(q9_cb030_t *b, uint32_t addr)
+uint8_t q9_board_read8(q9_board_t *b, uint32_t addr)
 {
-    return cb030_read_byte(b, addr);
+    return board_read_byte(b, addr);
 }
 
-uint16_t q9_cb030_read16(q9_cb030_t *b, uint32_t addr)
+uint16_t q9_board_read16(q9_board_t *b, uint32_t addr)
 {
     /* 5.17: CF hat einen eigenen Word/Long-Pfad (q9_devtype_cf, s.u.) — wird ueber die
        Geraete-Registry in m68krt.c VOR diesem Board-Fallback abgefangen, erreicht diese
        Funktion also nicht mehr. */
-    uint16_t hi = cb030_read_byte(b, addr);
-    uint16_t lo = cb030_read_byte(b, addr + 1);
+    uint16_t hi = board_read_byte(b, addr);
+    uint16_t lo = board_read_byte(b, addr + 1);
     return (uint16_t)((hi << 8) | lo);
 }
 
-uint32_t q9_cb030_read32(q9_cb030_t *b, uint32_t addr)
+uint32_t q9_board_read32(q9_board_t *b, uint32_t addr)
 {
-    uint32_t b0 = cb030_read_byte(b, addr);
-    uint32_t b1 = cb030_read_byte(b, addr + 1);
-    uint32_t b2 = cb030_read_byte(b, addr + 2);
-    uint32_t b3 = cb030_read_byte(b, addr + 3);
+    uint32_t b0 = board_read_byte(b, addr);
+    uint32_t b1 = board_read_byte(b, addr + 1);
+    uint32_t b2 = board_read_byte(b, addr + 2);
+    uint32_t b3 = board_read_byte(b, addr + 3);
     return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
 }
 
-void q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val)
+void q9_board_write8(q9_board_t *b, uint32_t addr, uint8_t val)
 {
-    cb030_write_byte(b, addr, val);
+    board_write_byte(b, addr, val);
 }
 
-void q9_cb030_write16(q9_cb030_t *b, uint32_t addr, uint16_t val)
+void q9_board_write16(q9_board_t *b, uint32_t addr, uint16_t val)
 {
-    cb030_write_byte(b, addr, (uint8_t)(val >> 8));
-    cb030_write_byte(b, addr + 1, (uint8_t)val);
+    board_write_byte(b, addr, (uint8_t)(val >> 8));
+    board_write_byte(b, addr + 1, (uint8_t)val);
 }
 
-void q9_cb030_write32(q9_cb030_t *b, uint32_t addr, uint32_t val)
+void q9_board_write32(q9_board_t *b, uint32_t addr, uint32_t val)
 {
-    cb030_write_byte(b, addr, (uint8_t)(val >> 24));
-    cb030_write_byte(b, addr + 1, (uint8_t)(val >> 16));
-    cb030_write_byte(b, addr + 2, (uint8_t)(val >> 8));
-    cb030_write_byte(b, addr + 3, (uint8_t)val);
+    board_write_byte(b, addr, (uint8_t)(val >> 24));
+    board_write_byte(b, addr + 1, (uint8_t)(val >> 16));
+    board_write_byte(b, addr + 2, (uint8_t)(val >> 8));
+    board_write_byte(b, addr + 3, (uint8_t)val);
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: duart_dev_* / q9_devtype_duart68681
 // Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h). dev->state zeigt auf das
-//           q9_cb030_t-Board; die eigentliche Registerlogik bleibt unveraendert in cb030_uart_read/
-//           cb030_uart_write/q9_cb030_uart_irq_pending (nur der Dispatch-Aufruf wandert hierher, aus
-//           dem alten if-Block in cb030_read_byte/cb030_write_byte). level_held=1: die IRQ-Leitung
+//           q9_board_t-Board; die eigentliche Registerlogik bleibt unveraendert in board_uart_read/
+//           board_uart_write/q9_board_uart_irq_pending (nur der Dispatch-Aufruf wandert hierher, aus
+//           dem alten if-Block in board_read_byte/board_write_byte). level_held=1: die IRQ-Leitung
 //           bleibt an, bis der RX-Puffer geleert bzw. TxRDY nicht mehr ansteht -- nimmt an der
 //           IACK-/Reassert-Pruefschleife in m68krt.c teil (wie vor 5.17).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint8_t duart_dev_read8(q9_device_t *dev, uint32_t addr)
 {
-    return cb030_uart_read((q9_cb030_t *)dev->state, addr);
+    return board_uart_read((q9_board_t *)dev->state, addr);
 }
 
 static void duart_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
 {
-    cb030_uart_write((q9_cb030_t *)dev->state, addr, val);
+    board_uart_write((q9_board_t *)dev->state, addr, val);
 }
 
 static int duart_dev_irq_pending(q9_device_t *dev)
 {
-    return q9_cb030_uart_irq_pending((q9_cb030_t *)dev->state);
+    return q9_board_uart_irq_pending((q9_board_t *)dev->state);
 }
 
-/* Der OS-9-Treiber (sc68681) programmiert seinen Vektor laufzeit ins IVR-Register (s. cb030_uart_
+/* Der OS-9-Treiber (sc68681) programmiert seinen Vektor laufzeit ins IVR-Register (s. board_uart_
    write case 0x18) -- anders als QUICC/Netz-Terminals ist das KEIN fester, bei der Registrierung
    bekannter Wert, deshalb der dynamische Weg ueber irq_vector_fn statt des statischen
    dev->irq_vector (wie vor 5.17: m68krt_board_int_ack las direkt g_board->uart_ivr). */
 static int duart_dev_irq_vector(q9_device_t *dev)
 {
-    return ((q9_cb030_t *)dev->state)->uart_ivr;
+    return ((q9_board_t *)dev->state)->uart_ivr;
 }
 
 const q9_device_vtable_t q9_devtype_duart68681 = {
@@ -890,31 +890,31 @@ const q9_device_vtable_t q9_devtype_duart68681 = {
 // Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), zweites umgezogenes Geraet.
 //           5.19a: dev->state zeigt jetzt auf das q9_cf_t-INTERFACE (nicht mehr aufs Board) und
 //           die Basisadresse kommt aus dev->base — damit dieselbe Vtable auch die zweite Instanz
-//           (RC2014-SC145 bei Q9_CB030_CF2_BASE) bedienen kann. CF ist die im ARBEITSPLAN 5.17
+//           (RC2014-SC145 bei Q9_BOARD_CF2_BASE) bedienen kann. CF ist die im ARBEITSPLAN 5.17
 //           genannte Ausnahme "behaelt eigene 16/32-Bit-Pfade": am Datenregister (CF_REG_DATA,
 //           addr==dev->base) liest/schreibt ein 16/32-Bit-Zugriff MEHRERE aufeinanderfolgende
 //           Byte-Transfers desselben ATA-PIO-Datenregisters (kein Adress-Fortschreiten wie bei
 //           generischer Byte-Synthese!) -- genau das musste schon vor 5.17 in
-//           q9_cb030_read16/32/write16/32 speziell behandelt werden. Kein IRQ (poll/irq_pending
+//           q9_board_read16/32/write16/32 speziell behandelt werden. Kein IRQ (poll/irq_pending
 //           bleiben NULL, wie im alten Board-Fallback: CF wurde nie vom Hauptschleifen-Poll
 //           abgefragt).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint8_t cf_dev_read8(q9_device_t *dev, uint32_t addr)
 {
-    return cb030_cf_read((q9_cf_t *)dev->state, addr - dev->base);
+    return board_cf_read((q9_cf_t *)dev->state, addr - dev->base);
 }
 
 static void cf_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
 {
-    cb030_cf_write((q9_cf_t *)dev->state, addr - dev->base, val);
+    board_cf_write((q9_cf_t *)dev->state, addr - dev->base, val);
 }
 
 static uint16_t cf_dev_read16(q9_device_t *dev, uint32_t addr)
 {
     q9_cf_t *c = (q9_cf_t *)dev->state;
     if (addr == dev->base) {
-        uint16_t hi = cb030_cf_read(c, CF_REG_DATA);
-        uint16_t lo = cb030_cf_read(c, CF_REG_DATA);
+        uint16_t hi = board_cf_read(c, CF_REG_DATA);
+        uint16_t lo = board_cf_read(c, CF_REG_DATA);
         return (uint16_t)((hi << 8) | lo);
     }
     {
@@ -928,8 +928,8 @@ static void cf_dev_write16(q9_device_t *dev, uint32_t addr, uint16_t val)
 {
     q9_cf_t *c = (q9_cf_t *)dev->state;
     if (addr == dev->base) {
-        cb030_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 8));
-        cb030_cf_write(c, CF_REG_DATA, (uint8_t)val);
+        board_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 8));
+        board_cf_write(c, CF_REG_DATA, (uint8_t)val);
         return;
     }
     cf_dev_write8(dev, addr,      (uint8_t)(val >> 8));
@@ -940,10 +940,10 @@ static uint32_t cf_dev_read32(q9_device_t *dev, uint32_t addr)
 {
     q9_cf_t *c = (q9_cf_t *)dev->state;
     if (addr == dev->base) {
-        uint32_t b0 = cb030_cf_read(c, CF_REG_DATA);
-        uint32_t b1 = cb030_cf_read(c, CF_REG_DATA);
-        uint32_t b2 = cb030_cf_read(c, CF_REG_DATA);
-        uint32_t b3 = cb030_cf_read(c, CF_REG_DATA);
+        uint32_t b0 = board_cf_read(c, CF_REG_DATA);
+        uint32_t b1 = board_cf_read(c, CF_REG_DATA);
+        uint32_t b2 = board_cf_read(c, CF_REG_DATA);
+        uint32_t b3 = board_cf_read(c, CF_REG_DATA);
         return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
     }
     {
@@ -959,10 +959,10 @@ static void cf_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
 {
     q9_cf_t *c = (q9_cf_t *)dev->state;
     if (addr == dev->base) {
-        cb030_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 24));
-        cb030_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 16));
-        cb030_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 8));
-        cb030_cf_write(c, CF_REG_DATA, (uint8_t)val);
+        board_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 24));
+        board_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 16));
+        board_cf_write(c, CF_REG_DATA, (uint8_t)(val >> 8));
+        board_cf_write(c, CF_REG_DATA, (uint8_t)val);
         return;
     }
     cf_dev_write8(dev, addr,      (uint8_t)(val >> 24));
@@ -975,10 +975,10 @@ static void cf_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
 // Function: timer_dev_* / q9_devtype_timer_irq
 // Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), drittes umgezogenes Geraet.
 //           TI_IRQ_ON/OFF sind reine Adress-Trigger (kein Datenwert, Lesen wie Schreiben loesen
-//           dieselbe Wirkung aus, s. cb030.h) -- read8/write8 fassen deshalb beide Fenster
+//           dieselbe Wirkung aus, s. q9board.h) -- read8/write8 fassen deshalb beide Fenster
 //           ($FFFF9000-$FFFF97FF OFF, $FFFF9800-$FFFF9FFF ON) in EINEM Geraet zusammen und
 //           unterscheiden per Adresse.
-//           poll()/irq_pending() bilden den bisherigen cb030run.c-Aufruf ab (q9_cb030_poll_timer
+//           poll()/irq_pending() bilden den bisherigen q9boardrun.c-Aufruf ab (q9_board_poll_timer
 //           liefert 1 GENAU IN DER RUNDE, in der ein Tick faellig ist): poll() ruft ihn auf und
 //           merkt sich das Ergebnis transient in b->timer_irq_pending; irq_pending() liest nur
 //           diesen Merker (kein erneuter Seiteneffekt). level_held=0 (s. devreg.h) haelt den
@@ -988,8 +988,8 @@ static void cf_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint8_t timer_dev_read8(q9_device_t *dev, uint32_t addr)
 {
-    q9_cb030_t *b = (q9_cb030_t *)dev->state;
-    if (addr >= Q9_CB030_TIRQ_ON_BASE && addr <= Q9_CB030_TIRQ_ON_TOP) {
+    q9_board_t *b = (q9_board_t *)dev->state;
+    if (addr >= Q9_BOARD_TIRQ_ON_BASE && addr <= Q9_BOARD_TIRQ_ON_TOP) {
         b->timer_active = 1;
         b->timer_synced = 0;                          /* 5.6: Tick-Epoche neu starten            */
     } else {
@@ -1006,13 +1006,13 @@ static void timer_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
 
 static void timer_dev_poll(q9_device_t *dev, uint32_t now_ms)
 {
-    q9_cb030_t *b = (q9_cb030_t *)dev->state;
-    b->timer_irq_pending = q9_cb030_poll_timer(b, now_ms);
+    q9_board_t *b = (q9_board_t *)dev->state;
+    b->timer_irq_pending = q9_board_poll_timer(b, now_ms);
 }
 
 static int timer_dev_irq_pending(q9_device_t *dev)
 {
-    return ((q9_cb030_t *)dev->state)->timer_irq_pending;
+    return ((q9_board_t *)dev->state)->timer_irq_pending;
 }
 
 const q9_device_vtable_t q9_devtype_timer_irq = {
@@ -1031,14 +1031,14 @@ const q9_device_vtable_t q9_devtype_timer_irq = {
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: rtc_dev_* / q9_devtype_rtc72421
 // Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), viertes umgezogenes Geraet
-//           (LETZTES der vier board-internen Geraete -- damit kennt cb030_read_byte/cb030_write_byte
-//           danach nur noch REMAP-Trigger + RAM/ROM, s. ARBEITSPLAN 5.17). cb030_rtc_read bleibt
+//           (LETZTES der vier board-internen Geraete -- damit kennt board_read_byte/board_write_byte
+//           danach nur noch REMAP-Trigger + RAM/ROM, s. ARBEITSPLAN 5.17). board_rtc_read bleibt
 //           unveraendert; Schreiben wird weiterhin komplett ignoriert (Host-Uhr ist die Wahrheit,
-//           s. cb030.h). Kein IRQ.
+//           s. q9board.h). Kein IRQ.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint8_t rtc_dev_read8(q9_device_t *dev, uint32_t addr)
 {
-    return cb030_rtc_read((q9_cb030_t *)dev->state, addr - Q9_CB030_RTC_BASE);
+    return board_rtc_read((q9_board_t *)dev->state, addr - Q9_BOARD_RTC_BASE);
 }
 
 static void rtc_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
@@ -1073,5 +1073,5 @@ const q9_device_vtable_t q9_devtype_cf = {
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030.c                                                                             Ver. 2.00
+// EOF q9board.c                                                                             Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────

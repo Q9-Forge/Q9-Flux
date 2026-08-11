@@ -13,14 +13,14 @@ if {$argc < 1} {
 set ROM [lindex $argv 0]
 
 # Enable CF tracing
-set env(Q9_CB030_CF_TRACE) 1
+set env(Q9_BOARD_CF_TRACE) 1
 
-puts "=== CB030 Module Save Test ==="
+puts "=== Module Save Test ==="
 puts "ROM: $ROM"
 puts "CF:  $CF"
 puts ""
 
-spawn ./build/native/q9.exe --cb030 $ROM --cf $CF
+spawn ./build/native/q9.exe --rom $ROM --cf $CF
 
 # Wait for shell prompt (mshell or shell)
 expect {

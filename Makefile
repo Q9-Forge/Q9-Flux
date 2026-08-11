@@ -1,7 +1,7 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
 # File:   Makefile                                                                        Ver. 3.30
 # Owner:  AF
-# Desc.:  Q9-Flux Build-System (CB030/68030-Emulator fuer echtes Microware-OS-9).
+# Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k).
 #         Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc), test, clean.
 #
 # Call:   make native | make test | make test-cf-sector | make clean
@@ -14,7 +14,7 @@
 # ... (fruehere Historie siehe docs/PROJECT_VISION_ARCHIV.md und Git-Historie)             │
 # 26-07-31│ 3.00 │ Eigener Mini-Kernel + wasm3 + Browser-Frontend nach Q9RESUME-Kernel      │ CF
 #         │      │ ausgelagert (unbenutzt seit 26-07-04) -- native baut jetzt ausschliesslich │
-#         │      │ den CB030/Microware-OS-9-Emulator, kein wasm-Target mehr                 │
+#         │      │ den OS-9/68k-Emulator, kein wasm-Target mehr                 │
 # 26-08-06│ 3.10 │ Nativer Windows-Build (Winsock2 statt BSD-Sockets in m68krt.c/           │ AF
 #         │      │ videobridge.c, s. src/kernel/q9_sockcompat.h) -- -lws2_32 unter Windows   │
 # 26-08-06│ 3.20 │ PLATFORM_DIR: build/native/ war fuer alle drei OS gleich benannt -- baut  │ AF
@@ -101,12 +101,12 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 
-# 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap, docs/CB030.md) -- Q9-eigener Code, volle CFLAGS
+# 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
-CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c src/kernel/quicc.c src/kernel/devreg.c \
+BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/quicc.c src/kernel/devreg.c \
             src/kernel/boardcfg.c src/kernel/mc6845.c src/kernel/framebuf.c src/kernel/clut.c \
             src/kernel/videobridge.c
-CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h src/kernel/devreg.h \
+BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/quicc.h src/kernel/devreg.h \
             src/kernel/boardcfg.h src/kernel/mc6845.h src/kernel/framebuf.h src/kernel/videobridge.h
 
 # 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
@@ -114,10 +114,10 @@ CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h src/kern
 # noetig (reines POSIX/ioctl). Auf anderen Plattformen bleiben beide Defines ungesetzt und die
 # jeweilige --net-Option meldet sich sauber ab.
 ifeq ($(shell uname -s 2>/dev/null),Darwin)
-    CB030_NET_SRC   = src/kernel/vmnet_net.c src/kernel/bpf_net.c
-    CB030_NET_HDR   = src/kernel/vmnet_net.h src/kernel/bpf_net.h
-    CB030_NET_FLAGS = -DQ9_HAVE_VMNET -DQ9_HAVE_BPF
-    CB030_NET_LIBS  = -framework vmnet
+    BOARD_NET_SRC   = src/kernel/vmnet_net.c src/kernel/bpf_net.c
+    BOARD_NET_HDR   = src/kernel/vmnet_net.h src/kernel/bpf_net.h
+    BOARD_NET_FLAGS = -DQ9_HAVE_VMNET -DQ9_HAVE_BPF
+    BOARD_NET_LIBS  = -framework vmnet
 endif
 
 # 5.14: slirp-Backend (--net slirp), PLATTFORMUEBERGREIFEND (anders als vmnet/bridge oben) -- unter
@@ -166,13 +166,13 @@ native: $(BUILD)/$(PLATFORM_DIR)/q9.exe
 	@echo "-> $(BUILD)/$(PLATFORM_DIR)/q9.exe"
 
 $(BUILD)/$(PLATFORM_DIR)/q9.exe: $(M68KRT_SRC) $(M68KRT_HDR) \
-                        $(CB030_SRC) $(CB030_HDR) $(CB030_NET_SRC) $(CB030_NET_HDR) \
+                        $(BOARD_SRC) $(BOARD_HDR) $(BOARD_NET_SRC) $(BOARD_NET_HDR) \
                         $(SLIRP_SRC) $(SLIRP_HDR) \
                         $(NATIVE_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(CB030_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
-	    $(M68KRT_SRC) $(CB030_SRC) $(CB030_NET_SRC) $(SLIRP_SRC) $(NATIVE_HAL_SRC) \
-	    $(MUSASHI_OBJS) $(CB030_NET_LIBS) $(SLIRP_LIBS) $(NATIVE_EXTRA_LIBS) -o $@
+	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(BOARD_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
+	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(NATIVE_HAL_SRC) \
+	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(NATIVE_EXTRA_LIBS) -o $@
 ifneq ($(SLIRP_RUNTIME_DLLS),)
 	@cp $(SLIRP_RUNTIME_DLLS) $(BUILD)/$(PLATFORM_DIR)/
 endif
@@ -182,12 +182,12 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 test: test-cf-sector
 
-# 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (cb030.c) -- reines
+# 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
 test-cf-sector:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) test/07_test_cf_sector512.c test/07_hal_stub.c \
-	    src/kernel/cb030.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
+	    src/kernel/q9board.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 	$(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 
 clean:

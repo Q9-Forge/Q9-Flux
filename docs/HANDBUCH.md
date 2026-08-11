@@ -21,20 +21,20 @@
 #         │      │ erweitert, Phase-4-Status in Abschnitt 6 (Anschluss 4.6-4.9 komplett)     │
 # 26-07-04│ 1.50 │ 5.1: Musashi-68k-Emulation (Entscheidung E12) — third_party/musashi/,    │ CF
 #         │      │ m68krt.c/.h, neuer Abschnitt 5.9, Abschnitt 3/6/7 aktualisiert            │
-# 26-07-04│ 1.60 │ 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap) — cb030.c/.h, neuer       │ CF
+# 26-07-04│ 1.60 │ 5.2a: Board-Speicherlogik (RAM/ROM/Remap) — q9board.c/.h, neuer       │ CF
 #         │      │ Abschnitt 5.10, Abschnitt 3/6 aktualisiert                                │
-# 26-07-04│ 1.70 │ 5.2b-d: DUART/Compact-Flash/Timer-IRQ3 — cb030.c/.h + m68krt.c/.h         │ CF
+# 26-07-04│ 1.70 │ 5.2b-d: DUART/Compact-Flash/Timer-IRQ3 — q9board.c/.h + m68krt.c/.h         │ CF
 #         │      │ (q9_m68krt_set_irq) erweitert, Abschnitt 5.10/6 aktualisiert. Phase 5.2   │
 #         │      │ damit komplett (5.2a-d alle fertig)                                       │
-# 26-07-05│ 1.80 │ 5.3: Musashi-CB030-Verdrahtung (q9_m68krt_attach_board), ROM-Laden         │ CF
-#         │      │ (q9_cb030_rom_load), Boot-Runner cb030run.c/.h (q9.exe --cb030 <rom>),     │
+# 26-07-05│ 1.80 │ 5.3: Musashi-Board-Verdrahtung (q9_m68krt_attach_board), ROM-Laden         │ CF
+#         │      │ (q9_board_rom_load), Boot-Runner q9boardrun.c/.h (q9.exe --rom <rom>),     │
 #         │      │ Spiegelgrenzen-Korrektur (bis 0xFEFF_FFFF, I/O vor Remap erreichbar)       │
 # 26-07-07│ 1.90 │ OS9SYS-CF-Boot, os9gen /c0_fmt, Windows-Terminal-Keyfix und Toolshed/WSL    │ CF
 #         │      │ Arbeitsregeln dokumentiert; alten 5.2a-Spiegelgrenzen-Satz korrigiert       │
 # 26-07-10│ 1.91 │ 5.7: TX-Ringpuffer (hal_posix.c) — HAL-Schnittstelle (Abschnitt 5.7) um     │ CF
 #         │      │ q9_hal_con_flush/tx_ready/tx_empty erweitert, veraltete "TxRDY immer        │
 #         │      │ gesetzt"-Aussage in Abschnitt 5.10 (5.2b) korrigiert                        │
-# 26-07-10│ 1.92 │ 5.9: Idle-Drossel CB030-Runner — q9_hal_sleep_ms (Abschnitt 5.7),           │ CF
+# 26-07-10│ 1.92 │ 5.9: Idle-Drossel Board-Runner — q9_hal_sleep_ms (Abschnitt 5.7),           │ CF
 #         │      │ q9_m68krt_is_stopped (Abschnitt 5.9), Boot-Runner-Beschreibung in           │
 #         │      │ Abschnitt 5.10 aktualisiert (Ctrl-] statt Ctrl-C, Idle-Drossel-Absatz)       │
 # 26-07-14│ 2.00 │ 5.17: Geraete-Registry (Entscheidung E14) — devreg.c/.h neu, Abschnitt 3     │ CF
@@ -47,7 +47,7 @@
 
 # Q9 — Handbuch
 
-Q9 ist ein modulares Mini-Betriebssystem in der Tradition von Microware OS-9:
+Q9 ist ein modulares Mini-Betriebssystem in der Tradition von OS-9:
 gleiches Grundkonzept (Modulsystem, einheitliches I/O über Syscalls, Geräte als
 Module), aber ein komplett neuer, portabler C-Kern — kein Assembler, keine
 Binärkompatibilität zu OS-9. Der Kern läuft unverändert im Browser (WebAssembly)
@@ -67,7 +67,7 @@ Für Details verweist es auf die Fachdokumente in `docs/` statt sie zu wiederhol
 - [`MODULES.md`](MODULES.md) — OS-9-Modulsystem als Referenz für Q9s eigenes
 - [`TOOLCHAIN.md`](TOOLCHAIN.md) — Toolchain-Stand je Entwicklungsrechner (Versionen, Pfade)
 - [`AUTONOMIE.md`](AUTONOMIE.md) — Setup für den automatisierten Arbeitsmodus (projektintern, für Aussenstehende irrelevant)
-- [`CB030.md`](CB030.md) — Hardware-Referenz (Speicherkarte, DUART/CF-Register) für die Musashi-Board-Emulation (Phase 5.2)
+- [`BOARD.md`](BOARD.md) — Hardware-Referenz (Speicherkarte, DUART/CF-Register) für die Musashi-Board-Emulation (Phase 5.2)
 - [`OS9SYS_BOOT.md`](OS9SYS_BOOT.md) — lokales Runbook fuer OS9SYS-CF-Boot, `os9gen /c0_fmt`, Toolshed/WSL und Terminal-Keyfix
 
 ---
@@ -214,32 +214,32 @@ Q9/
 │   │   │                       NUR im nativen Build, s. Abschnitt 5.9) — definiert die von
 │   │   │                       Musashi verlangten m68k_read/write_memory_*-Funktionen: wahlweise
 │   │   │                       gegen einen nackten RAM-Block (5.1) oder via
-│   │   │                       q9_m68krt_attach_board ueber den CB030-Adress-Dispatch (5.3);
+│   │   │                       q9_m68krt_attach_board ueber den Board-Adress-Dispatch (5.3);
 │   │   │                       noch OHNE Scheduler-/Syscall-Bridge (kommt mit der Detailplanung
 │   │   │                       von Phase 5)
-│   │   ├── cb030.c/.h         CB030-Board-Emulation (Schritte 5.2a-d + 5.3, NUR im nativen
+│   │   ├── q9board.c/.h         Board-Emulation (Schritte 5.2a-d + 5.3, NUR im nativen
 │   │   │                       Build, s. Abschnitt 5.10) — RAM/ROM/Remap-Adress-Dekoder,
 │   │   │                       68681-DUART, Compact-Flash (ATA-PIO), Timer/IRQ3 (kooperativ)
-│   │   │                       und ROM-Datei-Lader (q9_cb030_rom_load), alles als eigenes
-│   │   │                       Handle (q9_cb030_t) ohne Musashi-Abhaengigkeit
+│   │   │                       und ROM-Datei-Lader (q9_board_rom_load), alles als eigenes
+│   │   │                       Handle (q9_board_t) ohne Musashi-Abhaengigkeit
 │   │   ├── quicc.c/.h         QUICC-Ethernet-Emulation (Schritt 5.11, NUR im nativen Build,
 │   │   │                       s. Abschnitt 5.11) — MC68360-SCC1 im Ethernet-Modus als 8K-Fenster
 │   │   │                       $FFFF2000-$FFFF3FFF (DPRAM, SCC1-Parameter-RAM, Registerbank),
 │   │   │                       TX-/RX-Buffer-Descriptor-Ringe, IRQ Level 5/Vektor 254 und ein
 │   │   │                       User-Mode-Mini-NAT-Backend (ARP/ICMP als Gegenstelle 192.168.200.1);
-│   │   │                       Gegenstueck zum originalen Microware-SPF-Treiber sp360 im
+│   │   │                       Gegenstueck zum originalen SPF-Treiber sp360 im
 │   │   │                       MWOS-Q9-Port
-│   │   ├── cb030run.c/.h      CB030-Boot-Runner (Schritte 5.3/5.5a, NUR im nativen Build) —
-│   │   │                       Einstiegspunkt fuer `q9.exe --cb030 <rom-datei> [--cf <image>]`:
+│   │   ├── q9boardrun.c/.h      Board-Boot-Runner (Schritte 5.3/5.5a, NUR im nativen Build) —
+│   │   │                       Einstiegspunkt fuer `q9.exe --rom <rom-datei> [--cf <image>]`:
 │   │   │                       ROM laden, Board+Musashi verdrahten, CPU-Endlosschleife mit
-│   │   │                       Timer-Polling (das echte Microware-ROM bleibt lokal, NIE im
+│   │   │                       Timer-Polling (das echte Boot-ROM bleibt lokal, NIE im
 │   │   │                       Repository); `--cf` waehlt optional ein eigenes CF-Backing-Image
-│   │   │                       statt des Default `cb030_cf.img`
+│   │   │                       statt des Default `board_cf.img`
 │   │   └── devreg.c/.h        Geraete-Interface + Registry (Schritt 5.17, NUR im nativen Build,
 │   │                           s. Abschnitt 5.12, Entscheidung E14) — q9_device_t/Vtable,
 │   │                           statische Instanz-Registry + Typ-Registry (Typname->Vtable, KEINE
 │   │                           Linker-Magie); loest die drei bis dahin hartkodierten Geraete-
-│   │                           ketten in m68krt.c/cb030run.c ab, alle sechs CB030-Bestandsgeraete
+│   │                           ketten in m68krt.c/q9boardrun.c ab, alle sechs Board-Bestandsgeraete
 │   │                           sind darueber angebunden
 │   └── hal/               Hardware Abstraction Layer — hier UND NUR hier ist Code Target-spezifisch
 │       ├── q9_hal.h           die schmale Schnittstelle, die jedes Target erfüllen muss
@@ -342,11 +342,11 @@ Tests daher explizit das echte Python verwenden:
 make test PYTHON=python
 ```
 
-CB030/OS-9-Arbeitsimage unter Windows:
+OS-9-Arbeitsimage unter Windows:
 
 ```powershell
 cd D:\projekts\Q9
-.\build\native\q9.exe --cb030 .\local_images\roms\romimage.dev.running.BIN --cf .\local_images\OS9SYS.hda
+.\build\native\q9.exe --rom .\local_images\roms\romimage.dev.running.BIN --cf .\local_images\OS9SYS.hda
 ```
 
 Vor Neubuilds oder Image-Arbeiten pruefen, ob noch alte Emulatorprozesse laufen:
@@ -709,29 +709,29 @@ den Reset-Vektoren (SP bei Adresse 0, PC bei Adresse 4, big-endian) in einem
 emulierten RAM-Block; nach `q9_m68krt_reset()` + `q9_m68krt_execute()` steht
 `D0 == 5`.
 
-### 5.10 CB030-Board-Emulation (Schritt 5.2, `src/kernel/cb030.c/.h`)
+### 5.10 Board-Emulation (Schritt 5.2, `src/kernel/q9board.c/.h`)
 
-Das **CB030-Board** dient als Bootstrap/Validierungs-Zwischenschritt für die
-Musashi-Integration — mit dem originalen, proprietären Microware-OS-9-Boot-ROM
+Das **Q9-Board** dient als Bootstrap/Validierungs-Zwischenschritt für die
+Musashi-Integration — mit dem originalen, proprietären OS-9-Boot-ROM
 statt nur mit handassemblierten Testprogrammen (Andreas' Vorschlag,
 2026-07-04 abends). Ändert nichts an der eigentlichen Q9-Zielhardware
 (MC68EN360/QUICC bleibt Ziel für Phase 7, s. PROJECT.md O4). Speicherkarte +
-Peripherie-Register: [`docs/CB030.md`](CB030.md). Das reale Boot-ROM bleibt
+Peripherie-Register: [`docs/BOARD.md`](BOARD.md). Das reale Boot-ROM bleibt
 wie die MWOS-SDK-Kopie proprietär und NICHT im Repository — nur die
 Hardware-Dokumentation selbst und der Emulationscode sind es.
 
 **5.2a** (RAM/ROM/Remap-Speicherlogik, erster Baustein): reiner
 Adress-Dekoder als if/else-Kette (RAM zuerst geprüft), unabhängig von
 Musashis eigenem CPU-Zustand — der REMAP-Merker sitzt in einem eigenen
-`q9_cb030_t`-Handle:
+`q9_board_t`-Handle:
 
 ```c
-// cb030.h — Adress-Dispatch (5.2a)
-int      q9_cb030_init(q9_cb030_t *b, const uint8_t *rom, uint32_t rom_len,
+// q9board.h — Adress-Dispatch (5.2a)
+int      q9_board_init(q9_board_t *b, const uint8_t *rom, uint32_t rom_len,
                         uint8_t *ram, uint32_t ram_len);
-void     q9_cb030_reset(q9_cb030_t *b);
-uint8_t  q9_cb030_read8(q9_cb030_t *b, uint32_t addr);   // + read16/read32
-void     q9_cb030_write8(q9_cb030_t *b, uint32_t addr, uint8_t val);  // + write16/write32
+void     q9_board_reset(q9_board_t *b);
+uint8_t  q9_board_read8(q9_board_t *b, uint32_t addr);   // + read16/read32
+void     q9_board_write8(q9_board_t *b, uint32_t addr, uint8_t val);  // + write16/write32
 ```
 
 Reset-Zustand: ROM bei Adresse 0, gespiegelt bis `0xFEFF_FFFF`. Ein einzelner
@@ -758,31 +758,31 @@ Beginn immer "sofort bereit" zu melden. THRA-Schreibzugriff → `q9_hal_con_put`
 **5.2c** (Compact-Flash): ATA-PIO-Minimalprotokoll — Register `CF_BASE+0`
 (Data, 1 Byte/Zugriff), `+2` (Sectcount), `+3..+5` (LBA0-2), `+7`
 (Kommando/Status). Unterstützte Kommandos: READ SECTOR(S) (`0x20`), WRITE
-SECTOR(S) (`0x30`), Statusbits BSY/DRQ/RDY/ERR wie in `docs/CB030.md`
+SECTOR(S) (`0x30`), Statusbits BSY/DRQ/RDY/ERR wie in `docs/BOARD.md`
 festgelegt. Backing Store ist eine lazy geöffnete Host-Datei
-(`q9_cb030_cf_attach(board, path)`, Muster wie `q9disk.img`, Abschnitt 3.1) —
-für den Selbsttest `cb030_cf_test.img` (neu in `.gitignore`, wird vom
+(`q9_board_cf_attach(board, path)`, Muster wie `q9disk.img`, Abschnitt 3.1) —
+für den Selbsttest `board_cf_test.img` (neu in `.gitignore`, wird vom
 `make test`-Target vorher gelöscht).
 
 **5.2d** (Timer/IRQ3): kooperative Umsetzung statt echtem
 Host-Timerinterrupt (ein Signal-Handler oder separater Thread wäre nicht
 threadsicher gegen Musashis globalen, nicht-reentranten Zustand und würde
 die kooperative Grundausrichtung aus Entscheidung E8 durchbrechen).
-`q9_cb030_poll_timer(board, now_ms)` prüft, ob der Timer per
+`q9_board_poll_timer(board, now_ms)` prüft, ob der Timer per
 `TI_IRQ_ON`/`TI_IRQ_OFF` (reine Adress-Trigger, `0xFFFF_9000`-`0xFFFF_9FFF`)
 aktiv ist und seit dem letzten Auslösen ≥10ms (100 Hz) Host-Zeit
 (`q9_hal_ticks_ms()`) vergangen sind — der Aufrufer muss dann selbst
-`q9_m68krt_set_irq(3)` aufrufen. `cb030.c` kennt Musashi bewusst nicht;
+`q9_m68krt_set_irq(3)` aufrufen. `q9board.c` kennt Musashi bewusst nicht;
 `q9_m68krt_set_irq()` ist ein neuer schmaler Wrapper in `m68krt.h/.c` um
 `m68k_set_irq()` — Musashi erledigt die eigentliche Interrupt-Mechanik
 (Stack/Vektorsprung) vollständig selbst.
 
-Damit ist Phase 5.2 (CB030-Board-Emulation) komplett: 5.2a–d alle ✅.
+Damit ist Phase 5.2 (Board-Emulation) komplett: 5.2a–d alle ✅.
 
-**5.3** (Musashi ↔ CB030 verdrahten + Boot-Runner): `q9_m68krt_attach_board(&board)`
+**5.3** (Musashi ↔ Board verdrahten + Boot-Runner): `q9_m68krt_attach_board(&board)`
 schaltet die sechs Musashi-Speicher-Hooks vom nackten RAM-Block (5.1) auf den
-CB030-Adress-Dispatch um — ab dann laufen ALLE CPU-Zugriffe (inkl. der
-Reset-Vektoren) über `q9_cb030_read/write8/16/32`. Der Interrupt-Acknowledge
+Board-Adress-Dispatch um — ab dann laufen ALLE CPU-Zugriffe (inkl. der
+Reset-Vektoren) über `q9_board_read/write8/16/32`. Der Interrupt-Acknowledge
 läuft im Board-Betrieb als Autovector mit Puls-Verhalten (die IRQ-Leitung wird
 beim Annehmen losgelassen, sonst würde der level-gehaltene IRQ3 endlos erneut
 unterbrechen). Zwei Korrekturen am 5.2a-Dekoder, ohne die das echte Boot-ROM
@@ -790,26 +790,26 @@ nicht gebootet hätte: die ROM-Spiegelung im Reset-Zustand reicht bis
 `0xFEFF_FFFF` (nicht `0x0800_0000` — das ROM springt vor dem REMAP-Trigger
 hoch nach `0xFE00_xxxx`), und die I/O-Region ist in beiden Zuständen
 erreichbar (die DUART wird vor dem Remap initialisiert). Der Boot-Runner
-(`cb030run.c`) macht daraus ein Kommando:
+(`q9boardrun.c`) macht daraus ein Kommando:
 
 ```
-./build/<platform>/q9.exe --cb030 <pfad-zum-rom-image> [--cf <pfad-zum-cf-image>]
+./build/<platform>/q9.exe --rom <pfad-zum-rom-image> [--cf <pfad-zum-cf-image>]
 ```
 
-Lädt das ROM (max. 512 KByte, `q9_cb030_rom_load`), stellt 16 MByte
+Lädt das ROM (max. 512 KByte, `q9_board_rom_load`), stellt 16 MByte
 emuliertes RAM, hängt die CF-Backing-Datei an (lazy angelegt — standardmäßig
-`cb030_cf.img`, mit `--cf` ein beliebiger anderer Pfad, 5.5a) und lässt die
+`board_cf.img`, mit `--cf` ein beliebiger anderer Pfad, 5.5a) und lässt die
 CPU laufen (Ende: Ctrl-] als Host-Escape, s. `q9_hal_con_get`). **Idle-Drossel
 (5.9):** Ist die CPU per `STOP` angehalten (`q9_m68krt_is_stopped`, z.B. OS-9s
 Leerlauf am Login-Prompt) UND liegt kein IRQ an, schläft der Host-Loop kurz
 (`q9_hal_sleep_ms(1)`) statt den nächsten Slice sofort "leer" zu verbrennen —
 senkt die Host-CPU-Last im Leerlauf von ~100 % auf ca. 1–2 %, ohne die
 OS-9-Uhr zu verfälschen (`q9_hal_ticks_ms()` bleibt Wanduhr-basiert, der
-nächste 10-ms-Timer-Tick weckt die CPU regulär). Das echte Microware-Boot-ROM ist proprietär und
-bleibt lokal — `.gitignore` deckt `cb030rom*.bin`/`*.rom` ab. Der Selbsttest
+nächste 10-ms-Timer-Tick weckt die CPU regulär). Das echte Boot-ROM ist proprietär und
+bleibt lokal — `.gitignore` deckt `boardrom*.bin`/`*.rom` ab. Der Selbsttest
 bootet stattdessen ein synthetisches 32-Byte-ROM über exakt dasselbe
 Bootmuster (Vektoren aus dem ROM, Sprung hoch, REMAP, RAM-Schreiben). Die
-CF-Emulation (`cb030_cf_read/write`) zählt READ/WRITE SECTOR(S) seit 5.5a
+CF-Emulation (`board_cf_read/write`) zählt READ/WRITE SECTOR(S) seit 5.5a
 echt über mehrere Sektoren durch (Sector-Count 0 = 256 Sektoren, ATA-
 Konvention) statt nur einen Sektor pro Kommando zu bedienen.
 
@@ -830,7 +830,7 @@ Rename von `OS9Boot` zu `E$Format` (`000:255`). Eine fehlerhafte Bootlist kann
 ohne auffaellige `os9gen`-Meldung ein zu kleines/unbrauchbares `OS9Boot`
 erzeugen; typisches Bootsymptom ist `Sysgo can't chx to 'CMDS'`, `Sysgo can't
 open 'startup' file`, danach `E$BPNam` (`000:215`). Details und Arbeitsregeln:
-[`CB030.md`](CB030.md), Abschnitt "Erkenntnisse aus dem produktiven CF-Boot".
+[`BOARD.md`](BOARD.md), Abschnitt "Erkenntnisse aus dem produktiven CF-Boot".
 
 **Toolshed/WSL fuer Images:** RBF-/OS-9-Images werden lokal ueber Toolshed in
 Debian WSL bearbeitet (`~/.local/bin/os9`). Nicht gleichzeitig mit Toolshed
@@ -841,7 +841,7 @@ und im laufenden Emulator auf dasselbe `.hda` schreiben.
 ### 5.11 QUICC-Ethernet-Emulation (Schritt 5.11, `src/kernel/quicc.c/.h`)
 
 Das im Q9-Emulator laufende OS-9 bekommt echtes TCP/IP: Im MWOS-Q9-Port
-(`OS9/68030/PORTS/Q9/SPF/`) wurde der originale Microware-SPF-Ethernet-Treiber
+(`OS9/68030/PORTS/Q9/SPF/`) wurde der originale SPF-Ethernet-Treiber
 `sp360` fuer den MC68360/QUICC uebernommen und fuer 68020/030 uebersetzt —
 `quicc.c` emuliert die Hardware-Seite, die dieser Treiber programmiert:
 
@@ -872,11 +872,11 @@ mit 0 Fehlern. Testskript: `test/expect/test_quicc_net.exp`. (Adressierung 2026-
 
 ### 5.12 Geräte-Registry (Schritt 5.17, `src/kernel/devreg.c/.h`, Entscheidung E14)
 
-Bis Schritt 5.17 waren die sechs CB030-Bestandsgeräte (68681-DUART,
+Bis Schritt 5.17 waren die sechs Board-Bestandsgeräte (68681-DUART,
 Compact-Flash, Timer/IRQ3, RTC72421, Netz-Terminals `/x1..x8`, QUICC-Ethernet)
 an drei Stellen hartkodiert verdrahtet: dem Speicher-Dispatch
 (`m68k_read/write_memory_*` in `m68krt.c`), dem Hauptschleifen-Poll
-(`q9_cb030_boot` in `cb030run.c`) und dem Interrupt-Acknowledge/Reassert
+(`q9_board_boot` in `q9boardrun.c`) und dem Interrupt-Acknowledge/Reassert
 (`m68krt_board_int_ack`/`m68krt_reassert_pending_irq` in `m68krt.c`). Jedes
 neue Gerät hätte an allen drei Stellen einen weiteren `if`/`switch`-Zweig
 gebraucht. `devreg.c/.h` löst das über ein generisches Geräte-Interface:
@@ -942,19 +942,19 @@ Instanziierung über Typnamen kommt erst mit der Config-Datei (ARBEITSPLAN
 
 Die sechs Vtables selbst leben bei ihren jeweiligen Geräten (nicht in
 `devreg.c`): `q9_devtype_duart68681`/`q9_devtype_cf`/`q9_devtype_timer_irq`/
-`q9_devtype_rtc72421` in `cb030.c` (state zeigt auf das `q9_cb030_t`-Board —
+`q9_devtype_rtc72421` in `q9board.c` (state zeigt auf das `q9_board_t`-Board —
 kein separater Zustand nötig, nur der Dispatch wandert), `q9_devtype_nettty`
 in `m68krt.c` (delegiert an die bestehenden `network_read8/write8`, die
 schon über alle acht Kanäle suchen) und `q9_devtype_quicc` in `quicc.c`
-(delegiert an die bestehende `q9_quicc_*`-API). `cb030_read_byte`/
-`cb030_write_byte` (cb030.c) kennen nach 5.17 nur noch den REMAP-Trigger und
+(delegiert an die bestehende `q9_quicc_*`-API). `board_read_byte`/
+`board_write_byte` (q9board.c) kennen nach 5.17 nur noch den REMAP-Trigger und
 RAM/ROM — alle vier board-internen Geräte sind vollständig ausgezogen.
 
 **NICHT zu verwechseln** mit dem bestehenden `device.c`/`device.h`: das
 modelliert OS-9-**Pfad**-Geräte (`/term`, `/nil`, `/d0`) im wasm3-Kernelpfad
 (Abschnitt 5.3) — ein komplett anderes Konzept auf einer anderen
 Abstraktionsebene. `devreg.h` modelliert Board-**Hardware** im emulierten
-68k-Adressraum (CB030-Runner, Abschnitt 5.10).
+68k-Adressraum (Board-Runner, Abschnitt 5.10).
 
 Migriert wurden alle sechs Geräte einzeln, mit je eigenem Boot-Test
 (`test/expect/test_517_boot.exp` über die lokale DUART-Konsole, `test/test_517_nettty.py`
@@ -975,13 +975,13 @@ Der Emulator nimmt seit 5.19a als **ersten Positionsparameter (ohne führendes
 
 Die bestehenden Optionen bleiben unverändert und **überschreiben** die Config
 (Vorrang: eingebaute Defaults < Config-Datei < CLI). Ohne Config UND ohne
-`--cb030` läuft wie bisher der reine Q9-Kernel. Format (INI-artig, C99-Parser
+`--rom` läuft wie bisher der reine Q9-Kernel. Format (INI-artig, C99-Parser
 ohne Fremdbibliothek, Kommentare `;`/`#`, Pfade **relativ zur Config-Datei**):
 
 ```ini
 [board]
-name = CB030-Q9
-rom  = roms/romimage.dev.running.BIN     ; Boot-ROM (statt --cb030)
+name = Q9-Board
+rom  = roms/romimage.dev.running.BIN     ; Boot-ROM (statt --rom)
 net  = nat                               ; nat | vmnet | bridge:<ifname>
 ; Nur fuer net = vmnet: zentrale Adressdaten des virtuellen Q9-Netzes
 vmnet_ip       = 192.168.200.2            ; statische Gast-IP in OS-9
@@ -1003,7 +1003,7 @@ image = q9-fat16.img
 ```
 
 Der entscheidende Emulator-seitige Umbau: die Compact-Flash-Emulation ist jetzt
-**mehrfach instanziierbar**. Der frühere, im `q9_cb030_t`-Board eingebettete
+**mehrfach instanziierbar**. Der frühere, im `q9_board_t`-Board eingebettete
 CF-Zustand steckt in einem eigenständigen Typ `q9_cf_t` (mit zwei
 `q9_cf_unit_t`, Master/Slave). Damit gibt es zwei CF-**Interfaces**: die
 Onboard-CF (`$FFFFE000`, Descriptoren `c0..c3`) und das
@@ -1020,7 +1020,7 @@ Der `type`-Schlüssel steuert die Sektorgrößen-Heuristik: `rbf` (bzw. `auto`)
 erkennt alte 256-Byte-LSN-Images an LSN0, `pcf` **schaltet diese Heuristik ab**
 (sonst würde der FAT-Bootsektor als OS-9-LSN0 fehlgedeutet) und behandelt das
 Image als reine 512-Byte-Sektoren. Die Buffergröße ist durchgängig 512 Byte
-(`Q9_CB030_CF_SECTOR_SIZE`) — die Größe, die im produktiven Boot funktioniert.
+(`Q9_BOARD_CF_SECTOR_SIZE`) — die Größe, die im produktiven Boot funktioniert.
 
 Test-Images erzeugt man mit ToolShed (RBF: `os9 format -bs512 -c32 …`) bzw. dem
 neuen `tools/make_fat_image.py` (FAT12/16-Superfloppy). Beispiel-Config:
@@ -1040,7 +1040,7 @@ Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARB
 | 2 | Modulsystem: Header, CRC32, Directory, F$Link/F$UnLink | ✅ fertig |
 | 3 | Dateisystem: Block-Device, VFS, FAT16 lesend/schreibend, F$Load, OPFS-Backend | ✅ fertig, live mit macOS-Tooling gegengetestet |
 | 4 | Prozesse: Descriptor-Tabelle, Scheduler, F$Fork/Exit/Wait/Chain, Blockieren, Suspend/Priorität, Signale | ✅ fertig, inkl. Anschluss 4.6-4.9 (echte WASM-Ausführungs-Engine, s. Entscheidung E10/O6): 4.6 (Grundbaustein wasm3), 4.7 (Syscall-Bridge, native Seite), 4.8 (Zeiger-/Speicher-Marshaling: I$Open/I$Read/I$Write/I$Close für WASM-Module), 4.9 (Fixed-Heap statt Host-malloc in wasm3, Q9-Systemkonfiguration `config.h`); Browser-Seite von 4.7 zurückgestellt (s. ARBEITSPLAN.md „Geparkt") |
-| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (CB030-Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10), 5.3/5.5a (Musashi↔CB030-Verdrahtung, Boot-Runner `q9.exe --cb030 <rom> [--cf <image>]`, CF-Multisektor) — OS9SYS-CF-Boot funktioniert lokal mit `OS9Boot`, `startup`, `q9term` und `umacs`; 5.7-5.9 (TX-Ringpuffer, Ctrl-]/DEL-Mapping, Idle-Drossel, Abschnitt 5.7/5.10) seither ebenfalls fertig |
+| 5 | 68k-Runtime (Musashi, native) — umnummeriert 2026-07-04 abends vor Phase 6/Shell (Entscheidung E11: Shell braucht eine echte Ausführungs-Engine für reale Programme, sonst bliebe sie ein Geflecht aus Vorwegnahmen) | 🔄 begonnen: 5.1 (Grundbaustein Musashi + Makefile-Integration + Rauchtest, Abschnitt 5.9), 5.2 komplett (Board-Emulation: 5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d Timer/IRQ3, Abschnitt 5.10), 5.3/5.5a (Musashi↔Board-Verdrahtung, Boot-Runner `q9.exe --rom <rom> [--cf <image>]`, CF-Multisektor) — OS9SYS-CF-Boot funktioniert lokal mit `OS9Boot`, `startup`, `q9term` und `umacs`; 5.7-5.9 (TX-Ringpuffer, Ctrl-]/DEL-Mapping, Idle-Drossel, Abschnitt 5.7/5.10) seither ebenfalls fertig |
 | 6 | Shell | offen |
 | 7 | 68k nativ (Vinculum-Hardware) | offen |
 | 8 | Vision: 6809-Runtime, Netzwerk, Self-Hosting | offen |

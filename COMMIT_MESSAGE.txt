@@ -15,10 +15,10 @@ cb030_cf_load_write_buffer():
 Solution:
 Modified cb030_cf_store_sector() to write BOTH sectors for 256-byte images:
 ```c
-if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
+if (img_sec < Q9_BOARD_CF_SECTOR_SIZE) {
     fwrite(b->cf_sector, 1, img_sec, b->cf_file);
     fseek(b->cf_file, (long)(b->cf_lba + 1u) * (long)img_sec, SEEK_SET);
-    fwrite(b->cf_sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, b->cf_file);
+    fwrite(b->cf_sector + img_sec, 1, Q9_BOARD_CF_SECTOR_SIZE - img_sec, b->cf_file);
 }
 ```
 
@@ -28,7 +28,7 @@ Testing:
 - See TEST_CF_WRITE.md for usage
 
 Files changed:
-- src/kernel/cb030.c - Fix in cb030_cf_store_sector()
+- src/kernel/q9board.c - Fix in cb030_cf_store_sector()
 - BUGFIX_CF_WRITE.md - Technical documentation
 - TEST_CF_WRITE.md - Test instructions
 - Test scripts: test/cf/test_save_modules.sh, test/expect/save_ram_modules.exp, test/cf/verify_cf_writes.sh

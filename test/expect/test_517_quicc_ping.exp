@@ -9,7 +9,7 @@ log_file -noappend test/expect/results/test_517_quicc_result.txt
 set rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN
 set image /Volumes/SSD1TB/projects/Q9/local_images/OS9SYS.claudia-517-devreg.hda
 
-spawn ./build/native/q9.exe --cb030 $rom --cf $image --net nat
+spawn ./build/native/q9.exe --rom $rom --cf $image --net nat
 
 set timeout 60
 expect "devices online"

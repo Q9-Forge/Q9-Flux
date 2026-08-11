@@ -1,14 +1,14 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   cb030run.c                                                                      Ver. 1.80
+// File:   q9boardrun.c                                                                      Ver. 1.80
 // Owner:  AF
-// Desc.:  Implementierung des CB030-Boot-Runners, siehe cb030run.h.
+// Desc.:  Implementierung des Board-Boot-Runners, siehe q9boardrun.h.
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-05│ 1.00 │ 5.3: Erster Boot-Runner                                                 │ CF
-// 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (NULL = Default CB030_CF_IMAGE)                 │ CF
+// 26-07-05│ 1.10 │ 5.5a: cf_path-Parameter (NULL = Default BOARD_CF_IMAGE)                 │ CF
 // 26-07-10│ 1.20 │ 5.7: q9_hal_con_flush() pro Runde -- TX-Ringpuffer-Rest ausliefern,     │ CF
 //         │      │ auch ohne neues THRA-Byte im selben Durchlauf                           │
 // 26-07-10│ 1.30 │ 5.9: Idle-Drossel -- q9_hal_sleep_ms(1) statt Busy-Loop, wenn die CPU    │ CF
@@ -27,8 +27,8 @@
 // 26-08-07│ 1.80 │ 5.14: slirp_config/slirp_hostfwd an q9_quicc_net_mode -- net_hostfwd aus    │ AF
 //         │      │ der Config wird per q9_parse_hostfwd zerlegt                               │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
-#include "cb030run.h"
-#include "cb030.h"
+#include "q9boardrun.h"
+#include "q9board.h"
 #include "m68krt.h"
 #include "quicc.h"
 #include "mc6845.h"                                    /* 5.24: MC6845-CRT-Controller             */
@@ -41,24 +41,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CB030_RAM_BYTES   (16u * 1024u * 1024u)       /* 16 MByte SIM-Bestueckung (docs/CB030.md) */
-#define CB030_ROM_MAX     (512u * 1024u)              /* 29F040-Flash: 512 KByte                  */
-#define CB030_CF_IMAGE    "local_images/cb030_cf.img" /* Backing-Datei, lazy angelegt (5.2c)      */
-#define CB030_SLICE_CYCLES 20000                       /* CPU-Takte je Runde zwischen Timer-Polls  */
+#define BOARD_RAM_BYTES   (16u * 1024u * 1024u)       /* 16 MByte SIM-Bestueckung (docs/BOARD.md) */
+#define BOARD_ROM_MAX     (512u * 1024u)              /* 29F040-Flash: 512 KByte                  */
+#define BOARD_CF_IMAGE    "local_images/board_cf.img" /* Backing-Datei, lazy angelegt (5.2c)      */
+#define BOARD_SLICE_CYCLES 20000                       /* CPU-Takte je Runde zwischen Timer-Polls  */
 #define Q9_MAX_HOSTFWD    8                             /* 5.14: Obergrenze net_hostfwd-Eintraege   */
 
 /* Statisch statt Host-malloc (Q9-Grundsatz, vgl. Fixed-Heap-Entscheidung 4.9) — native-only,
    im BSS kostet das nichts, solange es unberuehrt bleibt. */
-static uint8_t cb030_ram[CB030_RAM_BYTES];
-static uint8_t cb030_rom[CB030_ROM_MAX];
-static uint8_t cb030_vram[Q9_FRAMEBUF_MAX_SIZE];       /* 5.26: VRAM-Backing, s. framebuf.h        */
+static uint8_t board_ram[BOARD_RAM_BYTES];
+static uint8_t board_rom[BOARD_ROM_MAX];
+static uint8_t board_vram[Q9_FRAMEBUF_MAX_SIZE];       /* 5.26: VRAM-Backing, s. framebuf.h        */
 
-volatile int q9_dbg_dump_requested = 0;                /* s. cb030run.h */
+volatile int q9_dbg_dump_requested = 0;                /* s. q9boardrun.h */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: dbg_dump_kernel_globals
 // Desc.:    Debug-Sondertaste-Handler (Ctrl-^): liest physischen RAM direkt ueber
-//           q9_cb030_read32, ohne MMU-Uebersetzung -- genau der Speicherbereich, den ein
+//           q9_board_read32, ohne MMU-Uebersetzung -- genau der Speicherbereich, den ein
 //           User-State-Debugger (OS-9 "debug") wegen Bus-Error nicht erreicht. Adresse 0
 //           enthaelt (falls VBR=0 nach Reset gilt) den System-Global-Zeiger (Q9-OS-RE-Fund:
 //           "movec VBR,A6 / movea.l (A6),A6"-Idiom); wirkt plausibel, wird automatisch auch
@@ -66,7 +66,7 @@ volatile int q9_dbg_dump_requested = 0;                /* s. cb030run.h */
 //────────────────────────────────────────────────────────────────────────────────────────────────
 #define DBG_DUMP_FILE "local_images/q9dbg_dump.txt"
 
-static void dbg_dump_kernel_globals(q9_cb030_t *b)
+static void dbg_dump_kernel_globals(q9_board_t *b)
 {
     /* In eine Datei statt nach stderr schreiben: bei groesseren Dumps (Syscall-Tabellen-Scan,
        D_ExcJmp) geht sonst Text im PTY-Puffer verloren, wenn viele Zeilen ohne Interaktion in
@@ -78,27 +78,27 @@ static void dbg_dump_kernel_globals(q9_cb030_t *b)
         return;
     }
 
-    uint32_t v0 = q9_cb030_read32(b, 0);
+    uint32_t v0 = q9_board_read32(b, 0);
 
     fprintf(f, "physisch @0x00000000 = %08x (Kandidat System-Global-Zeiger)\n", v0);
-    if (v0 == 0 || v0 >= CB030_RAM_BYTES) {
+    if (v0 == 0 || v0 >= BOARD_RAM_BYTES) {
         fprintf(f, "Wert ausserhalb 0..%uM RAM -- kein plausibler Zeiger, breche ab.\n",
-                CB030_RAM_BYTES / (1024u * 1024u));
+                BOARD_RAM_BYTES / (1024u * 1024u));
         fclose(f);
         fprintf(stderr, "\n[q9dbg] Dump (abgebrochen) geschrieben nach %s\n", DBG_DUMP_FILE);
         return;
     }
-    uint32_t excjmp = q9_cb030_read32(b, v0 + 0x68);
-    uint32_t sysdis = q9_cb030_read32(b, v0 + 0x3a4);
-    uint32_t usrdis = q9_cb030_read32(b, v0 + 0x3a8);
+    uint32_t excjmp = q9_board_read32(b, v0 + 0x68);
+    uint32_t sysdis = q9_board_read32(b, v0 + 0x3a4);
+    uint32_t usrdis = q9_board_read32(b, v0 + 0x3a8);
 
     fprintf(f, "D_ExcJmp   @+0x68  = %08x\n", excjmp);
     fprintf(f, "D_SysDis   @+0x3a4 = %08x\n", sysdis);
     fprintf(f, "D_UsrDis   @+0x3a8 = %08x\n", usrdis);
-    fprintf(f, "(0x8e4)    @+0x8e4 = %08x\n", q9_cb030_read32(b, v0 + 0x8e4));
+    fprintf(f, "(0x8e4)    @+0x8e4 = %08x\n", q9_board_read32(b, v0 + 0x8e4));
     fprintf(f, "32 Byte ab System-Global-Basis:\n ");
     for (int i = 0; i < 32; i++) {
-        fprintf(f, "%02x ", q9_cb030_read8(b, v0 + (uint32_t)i));
+        fprintf(f, "%02x ", q9_board_read8(b, v0 + (uint32_t)i));
         if (i == 15) fprintf(f, "\n ");
     }
     fprintf(f, "\n");
@@ -112,15 +112,15 @@ static void dbg_dump_kernel_globals(q9_cb030_t *b)
         uint32_t baseline;
         int      outliers = 0;
 
-        if (base == 0 || base >= CB030_RAM_BYTES) {
+        if (base == 0 || base >= BOARD_RAM_BYTES) {
             fprintf(f, "%s unplausibel, ueberspringe Scan.\n", t == 0 ? "D_SysDis" : "D_UsrDis");
             continue;
         }
-        baseline = q9_cb030_read32(b, base);
+        baseline = q9_board_read32(b, base);
         fprintf(f, "%s-Primaerarray Scan (Basiswert Slot0=%08x, nur Abweichungen):\n",
                 t == 0 ? "D_SysDis" : "D_UsrDis", baseline);
         for (int i = 0; i < 256; i++) {
-            uint32_t v = q9_cb030_read32(b, base + (uint32_t)(i * 4));
+            uint32_t v = q9_board_read32(b, base + (uint32_t)(i * 4));
             if (v != baseline) {
                 fprintf(f, "  Slot %3d (0x%02x) = %08x\n", i, i, v);
                 outliers++;
@@ -137,7 +137,7 @@ static void dbg_dump_kernel_globals(q9_cb030_t *b)
        Q9_disp_*-Offsets (0x180/0x452/0x472/0x488/0x5d0/0x888/0x8d0/0xba4) abgleichen. Alle
        Vektoren 2-63 (kompletter dokumentierter Bereich) plus ein paar Stichproben aus dem
        User-Defined-Bereich (64-255). */
-    if (excjmp != 0 && excjmp < CB030_RAM_BYTES) {
+    if (excjmp != 0 && excjmp < BOARD_RAM_BYTES) {
         /* Fehler-Stub-Mehrheitswert der Syscall-Tabelle als Kernel-Basis-Referenz (haeufigster
            Wert im D_SysDis-Array, s. Scan oben -- hier zur Einfachheit erneut ermittelt statt
            durchgereicht). */
@@ -145,7 +145,7 @@ static void dbg_dump_kernel_globals(q9_cb030_t *b)
         uint32_t vals[256];
         int      n = 0;
         for (int i = 0; i < 256; i++) {
-            uint32_t v = q9_cb030_read32(b, sysdis + (uint32_t)(i * 4));
+            uint32_t v = q9_board_read32(b, sysdis + (uint32_t)(i * 4));
             int      found = 0;
             for (int j = 0; j < n; j++) {
                 if (vals[j] == v) { counts[j]++; found = 1; break; }
@@ -169,7 +169,7 @@ static void dbg_dump_kernel_globals(q9_cb030_t *b)
         for (int vec = 2; vec <= 63; vec++) {
             uint32_t entry = excjmp + (uint32_t)((vec - 2) * 10);
             uint8_t  raw[10];
-            for (int i = 0; i < 10; i++) raw[i] = q9_cb030_read8(b, entry + (uint32_t)i);
+            for (int i = 0; i < 10; i++) raw[i] = q9_board_read8(b, entry + (uint32_t)i);
             uint32_t pea_val = ((uint32_t)raw[2] << 8) | raw[3];
             uint32_t target  = ((uint32_t)raw[6] << 24) | ((uint32_t)raw[7] << 16)
                               | ((uint32_t)raw[8] << 8) | raw[9];
@@ -184,7 +184,7 @@ static void dbg_dump_kernel_globals(q9_cb030_t *b)
                 int      vec   = samples[si];
                 uint32_t entry = excjmp + (uint32_t)((vec - 2) * 10);
                 uint8_t  raw[10];
-                for (int i = 0; i < 10; i++) raw[i] = q9_cb030_read8(b, entry + (uint32_t)i);
+                for (int i = 0; i < 10; i++) raw[i] = q9_board_read8(b, entry + (uint32_t)i);
                 uint32_t pea_val = ((uint32_t)raw[2] << 8) | raw[3];
                 uint32_t target  = ((uint32_t)raw[6] << 24) | ((uint32_t)raw[7] << 16)
                                   | ((uint32_t)raw[8] << 8) | raw[9];
@@ -248,17 +248,17 @@ static int q9_parse_hostfwd(const char *s, q9_slirp_hostfwd_t *out, int max)
             out[count].guest_port = (uint16_t)gp;
             count++;
         } else {
-            fprintf(stderr, "cb030: net_hostfwd-Eintrag ignoriert (Format tcp|udp:hostport:gastport): '%s'\n",
+            fprintf(stderr, "q9board: net_hostfwd-Eintrag ignoriert (Format tcp|udp:hostport:gastport): '%s'\n",
                     tok);
         }
     }
     return count;
 }
 
-int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mode,
+int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mode,
                   const q9_board_cfg_t *cfg)
 {
-    static q9_cb030_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
+    static q9_board_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
     static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
     static q9_mc6845_t crtc;                           /* 5.24: MC6845-CRT-Controller             */
     static q9_framebuf_t fb;                            /* 5.26: VRAM-Geraet                       */
@@ -279,12 +279,12 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     int               onboard_from_cfg = 0;
 
     /* 5.19: Vorrang klaeren. ROM: CLI schlaegt Config; ohne beides Fehler (kein Default-ROM,
-       das echte Boot-ROM ist proprietaer, s. cb030run.h). */
+       das echte Boot-ROM ist proprietaer, s. q9boardrun.h). */
     if ((rom_path == NULL || rom_path[0] == '\0') && cfg && cfg->rom_path[0]) {
         rom_path = cfg->rom_path;
     }
     if (rom_path == NULL || rom_path[0] == '\0') {
-        fprintf(stderr, "cb030: kein Boot-ROM angegeben (--cb030 <rom> oder [board] rom= in der Config)\n");
+        fprintf(stderr, "q9board: kein Boot-ROM angegeben (--rom <rom> oder [board] rom= in der Config)\n");
         return 1;
     }
 
@@ -309,19 +309,19 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
         slirp_hostfwd_count = q9_parse_hostfwd(cfg->net_hostfwd, slirp_hostfwd, Q9_MAX_HOSTFWD);
     }
 
-    if (q9_cb030_rom_load(rom_path, cb030_rom, sizeof(cb030_rom), &rom_len) != Q9_CB030_OK) {
-        fprintf(stderr, "cb030: ROM-Datei '%s' nicht lesbar (fehlt, leer oder > %u KByte)\n",
-                rom_path, CB030_ROM_MAX / 1024u);
+    if (q9_board_rom_load(rom_path, board_rom, sizeof(board_rom), &rom_len) != Q9_BOARD_OK) {
+        fprintf(stderr, "q9board: ROM-Datei '%s' nicht lesbar (fehlt, leer oder > %u KByte)\n",
+                rom_path, BOARD_ROM_MAX / 1024u);
         return 1;
     }
 
     if (cfg && cfg->name[0]) {
-        printf("cb030: Board-Config '%s'\r\n", cfg->name);
+        printf("q9board: Board-Config '%s'\r\n", cfg->name);
     }
-    printf("cb030: ROM '%s' geladen (%u Byte), %u MByte RAM — Reset.\r\n",
-           rom_path, rom_len, CB030_RAM_BYTES / (1024u * 1024u));
+    printf("q9board: ROM '%s' geladen (%u Byte), %u MByte RAM — Reset.\r\n",
+           rom_path, rom_len, BOARD_RAM_BYTES / (1024u * 1024u));
 
-    q9_cb030_init(&board, cb030_rom, rom_len, cb030_ram, sizeof(cb030_ram));
+    q9_board_init(&board, board_rom, rom_len, board_ram, sizeof(board_ram));
     cf_extra_count = 0;
 
     /* 5.19: CF-Images aus der Config verteilen — Onboard-CF (board.cf) und RC2014-Zweitinterface
@@ -331,9 +331,9 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
         for (int i = 0; i < cfg->cf_count; i++) {
             const q9_cfg_cf_t *e = &cfg->cf[i];
             uint32_t base = e->base ? e->base :
-                            (e->bus == Q9_CFG_BUS_RC2014 ? Q9_CB030_CF2_BASE : Q9_CB030_CF_BASE);
+                            (e->bus == Q9_CFG_BUS_RC2014 ? Q9_BOARD_CF2_BASE : Q9_BOARD_CF_BASE);
             q9_cf_t *iface = 0;
-            if (base == Q9_CB030_CF_BASE) {
+            if (base == Q9_BOARD_CF_BASE) {
                 iface = &board.cf;
                 onboard_from_cfg = 1;
             } else {
@@ -345,7 +345,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
                 }
                 cf2_used = 1;
             }
-            if (!iface) { fprintf(stderr, "cb030: zu viele CF-Bases in Config\n"); return 1; }
+            if (!iface) { fprintf(stderr, "q9board: zu viele CF-Bases in Config\n"); return 1; }
             /* Mehrere Descriptoren dürfen dieselbe Hardware und dasselbe Backing-Image
                beschreiben (Partitionen, z.B. e0/e1). Das Interface wird nur einmal bestückt;
                die jeweilige PD_LSNOffs steht im OS-9-Descriptor. */
@@ -353,7 +353,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
             for (int j = 0; j < i; j++) {
                 const q9_cfg_cf_t *p = &cfg->cf[j];
                 uint32_t pb = p->base ? p->base :
-                              (p->bus == Q9_CFG_BUS_RC2014 ? Q9_CB030_CF2_BASE : Q9_CB030_CF_BASE);
+                              (p->bus == Q9_CFG_BUS_RC2014 ? Q9_BOARD_CF2_BASE : Q9_BOARD_CF_BASE);
                 if (pb == base && p->unit == e->unit && strcmp(p->path, e->path) == 0) {
                     duplicate = 1;
                     break;
@@ -363,7 +363,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
                 q9_cf_attach(iface, e->unit, e->path, e->format);
                 q9_cf_set_start_sector(iface, e->unit, e->start_sector);
             }
-            printf("cb030: CF %s/%s <- %s (%s)\r\n",
+            printf("q9board: CF %s/%s <- %s (%s)\r\n",
                    e->bus == Q9_CFG_BUS_RC2014 ? "secondary" : "onboard",
                    e->unit ? "slave" : "master", e->path,
                    e->format == Q9_CF_FMT_PCF ? "pcf" :
@@ -372,24 +372,24 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     }
 
     /* CLI --cf: Onboard-Master. Ueberschreibt eine etwaige Config-Onboard-Master-Angabe; ohne
-       Config UND ohne --cf bleibt der bisherige Default (cb030_cf.img), damit Andreas' fertige
+       Config UND ohne --cf bleibt der bisherige Default (board_cf.img), damit Andreas' fertige
        Startzeilen unveraendert funktionieren. */
     if (cf_path && cf_path[0]) {
-        q9_cb030_cf_attach(&board, cf_path);
-        printf("cb030: CF onboard/master <- %s (auto)\r\n", cf_path);
+        q9_board_cf_attach(&board, cf_path);
+        printf("q9board: CF onboard/master <- %s (auto)\r\n", cf_path);
     } else if (!onboard_from_cfg) {
-        q9_cb030_cf_attach(&board, CB030_CF_IMAGE);
+        q9_board_cf_attach(&board, BOARD_CF_IMAGE);
     }
 
     fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
 
-    q9_m68krt_init(&rt, cb030_ram, sizeof(cb030_ram));
+    q9_m68krt_init(&rt, board_ram, sizeof(board_ram));
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     if (cf2_used) {
         for (int i = 0; i < cf_extra_count; i++)
             q9_m68krt_attach_cf_at(&cf_extra[i], cf_extra_base[i], "cf-secondary");
     }
-    q9_quicc_init(&quicc, cb030_ram, sizeof(cb030_ram));
+    q9_quicc_init(&quicc, board_ram, sizeof(board_ram));
     if (q9_quicc_net_mode(&quicc, net_mode, vmnet_config_ptr,
                           slirp_config_ptr, slirp_hostfwd, slirp_hostfwd_count) != 0) {
         return 1;
@@ -397,7 +397,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     q9_m68krt_attach_quicc(&quicc);                    /* 5.11: Ethernet-Fenster $FFFF2000       */
     q9_mc6845_init(&crtc);                              /* 5.24: MC6845, Reset-Zustand = alle 0   */
     q9_m68krt_attach_mc6845(&crtc);                     /* 5.24: CRTC-Fenster $FFFFA000           */
-    q9_framebuf_init(&fb, cb030_vram, sizeof(cb030_vram), Q9_FRAMEBUF_DEFAULT_SIZE, &crtc);
+    q9_framebuf_init(&fb, board_vram, sizeof(board_vram), Q9_FRAMEBUF_DEFAULT_SIZE, &crtc);
     q9_m68krt_attach_framebuf(&fb);                     /* 5.26: VRAM-Fenster $FD000000           */
     q9_clut_init(&clut);                                /* 5.29-Nachtrag: CLUT, Identitaets-Graustufe */
     q9_m68krt_attach_clut(&clut);                       /* 5.29-Nachtrag: CLUT-Fenster $FFFFA010  */
@@ -411,7 +411,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
         if (vb_tcp_env && vb_tcp_env[0]) vb_tcp_port = (unsigned)atoi(vb_tcp_env);
         if (vb_udp_env && vb_udp_env[0]) vb_udp_port = (unsigned)atoi(vb_udp_env);
         if (q9_videobridge_init(&videobridge, &fb, &crtc, &clut, vb_tcp_port, vb_udp_port, "Q9Flux") != 0) {
-            fprintf(stderr, "cb030: Q9-Frame-Video-Bridge (TCP %u/UDP %u) konnte nicht gestartet werden -- "
+            fprintf(stderr, "q9board: Q9-Frame-Video-Bridge (TCP %u/UDP %u) konnte nicht gestartet werden -- "
                              "Emulation laeuft trotzdem weiter (rein additiver Host-Dienst).\r\n",
                     vb_tcp_port, vb_udp_port);
         }
@@ -419,18 +419,18 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
     q9_m68krt_reset(&rt);                              /* Reset-Vektoren kommen aus dem ROM      */
 
     {
-        /* Q9_CB030_DEBUG=1 in der Umgebung: alle ~3s CPU-Zustand auf stderr (PC/SR/IACK-Zaehler
+        /* Q9_BOARD_DEBUG=1 in der Umgebung: alle ~3s CPU-Zustand auf stderr (PC/SR/IACK-Zaehler
            + Board-Zustand) — das Werkzeug, mit dem der erste OS-9-Boot durchdebuggt wurde. */
-        int      dbg         = getenv("Q9_CB030_DEBUG") != 0;
+        int      dbg         = getenv("Q9_BOARD_DEBUG") != 0;
         uint32_t last_dbg_ms = q9_hal_ticks_ms();
 
         for (;;) {
             int      irq;
             uint32_t now_ms;
 
-            q9_m68krt_execute(&rt, CB030_SLICE_CYCLES);
+            q9_m68krt_execute(&rt, BOARD_SLICE_CYCLES);
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
-            if (q9_dbg_dump_requested) {                    /* Debug-Sondertaste, s. cb030run.h     */
+            if (q9_dbg_dump_requested) {                    /* Debug-Sondertaste, s. q9boardrun.h     */
                 q9_dbg_dump_requested = 0;
                 dbg_dump_kernel_globals(&board);
             }
@@ -439,7 +439,7 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
             /* 5.17: Hauptschleifen-Poll -- die frueher hier hartkodierten Bloecke (DUART/QUICC/
                Timer je einzeln verdrahtet) sind vollstaendig durch EINE Schleife ueber die
                Geraete-Registry ersetzt: erst poll() (falls vorhanden), danach irq_pending()
-               unmittelbar im Anschluss (wichtig fuer den Timer -- s. cb030.c timer_dev_poll/
+               unmittelbar im Anschluss (wichtig fuer den Timer -- s. q9board.c timer_dev_poll/
                timer_dev_irq_pending: der Merker gilt nur fuer GENAU diese Runde).
                WICHTIG fuer die Reihenfolge: q9_m68krt_set_irq() bildet nur EINE kombinierte
                Leitung nach (kein Bus mit unabhaengigen Level-Leitungen, s. m68krt.c-Kommentar bei
@@ -496,5 +496,5 @@ int q9_cb030_boot(const char *rom_path, const char *cf_path, const char *net_mod
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF cb030run.c                                                                          Ver. 1.80
+// EOF q9boardrun.c                                                                          Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────

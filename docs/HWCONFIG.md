@@ -35,9 +35,9 @@ Gerät kostet exakt null Laufzeit.
 ## Ist-Zustand (vor dem Umbau, Stand 5.16)
 
 Geräte fest verdrahtet an DREI Stellen: Speicher-Dispatch (`m68krt.c`
-Musashi-Hooks → Netz-Terminals → QUICC → `cb030.c`-if/else-Kette:
+Musashi-Hooks → Netz-Terminals → QUICC → `q9board.c`-if/else-Kette:
 REMAP → 2× Timer-Trigger → RTC → CF → UART → *erst dann* RAM), Hauptschleifen-Poll
-(`cb030run.c`), IRQ-Ack (`m68krt_board_int_ack` + `m68krt_reassert_pending_irq`).
+(`q9boardrun.c`), IRQ-Ack (`m68krt_board_int_ack` + `m68krt_reassert_pending_irq`).
 Jeder RAM-Zugriff läuft durch bis zu ~10 Bereichsabfragen, 16/32-Bit-Zugriffe
 rufen den Byte-Pfad 2×/4× auf. Opcode-Fetches (16 Bit) sind der heißeste Pfad.
 
@@ -152,7 +152,7 @@ Planungsrunde — namentliche Keys können sich in der Umsetzung noch schärfen)
 ; Kommentare mit ';' oder '#', Adressen hex mit 0x, Groessen mit K/M-Suffix
 
 [board]
-name = CB030-Q9
+name = Q9-Board
 
 [ram0]                     ; Haupt-RAM ab 0 = Dispatch-Schnellpfad
 type = ram
@@ -171,7 +171,7 @@ type    = rom
 base    = 0xFE000000
 size    = 512K
 preload = romimage.dev.running.BIN
-mirror_at_reset = yes      ; CB030-Eigenart: ROM-Spiegel im Reset-Zustand
+mirror_at_reset = yes      ; Board-Eigenart: ROM-Spiegel im Reset-Zustand
 
 [remap]
 type = remap_trigger       ; Adress-Trigger als Mini-Geraet
@@ -231,7 +231,7 @@ mac     = 00:73:39:33:36:30
   eingebaute Default-Config = **heutiges Board byte-genau** (Adressen/Vektoren/
   Level identisch — bestehende Images, Descriptoren, startup laufen unverändert).
 - Prioritätsreihenfolge: eingebaute Defaults → Config-Datei → CLI
-  (bestehende Optionen `--cb030`/`--cf`/`--net` bleiben als überschreibende
+  (bestehende Optionen `--rom`/`--cf`/`--net` bleiben als überschreibende
   Kurzformen für schnelle Testläufe).
 - **Validierung beim Start** (lieber hart sterben als OS-9 mysteriös nicht
   booten lassen): Fensterüberlappung, Vektor-/Level-Kollisionen, base mitten

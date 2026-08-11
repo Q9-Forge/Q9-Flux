@@ -16,9 +16,9 @@ set send_slow {1 .003}
 log_file -noappend test/expect/results/test_517_result.txt
 
 if {$net_mode eq ""} {
-    spawn ./build/native/q9.exe --cb030 $rom --cf $image
+    spawn ./build/native/q9.exe --rom $rom --cf $image
 } else {
-    spawn ./build/native/q9.exe --cb030 $rom --cf $image --net $net_mode
+    spawn ./build/native/q9.exe --rom $rom --cf $image --net $net_mode
 }
 
 set timeout 60

@@ -12,7 +12,7 @@ log_file -noappend test/expect/results/quicc_net_result.txt
 
 set image local_images/OS9SYS.claudia-net-test.hda
 
-spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+spawn ./build/native/q9.exe --rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
 
 set timeout 60
 expect "devices online"

@@ -1,11 +1,11 @@
 #!/usr/bin/expect -f
 # Reproduziert den Paste-Stall (Andreas, 2026-07-09): 400 KURZE Zeilen (je
 # 11 Byte, insgesamt nur 4,8 KByte - bewusst weit unter jedem Zeilenlaengen-
-# limit) werden dem emulierten CB030 als EIN Block praesentiert, wie ein
+# limit) werden dem emulierten Board als EIN Block praesentiert, wie ein
 # echtes Cmd-V-Paste in ein Terminal es tut. Heutiges (fehlerhaftes) Ergebnis:
 # "build" echot ca. 20-25 Zeilen und friert dann komplett ein - kein Prompt,
 # keine Fehlermeldung, keine Reaktion mehr, auch nach vielen Sekunden nicht.
-# Mit Q9_CB030_DEBUG=1 sieht man: der PC/SR-Heartbeat (alle 3s) setzt in
+# Mit Q9_BOARD_DEBUG=1 sieht man: der PC/SR-Heartbeat (alle 3s) setzt in
 # diesem Moment ebenfalls aus - der GESAMTE q9.exe-Host-Prozess blockiert,
 # nicht nur der OS-9-Gast. Ursache: q9_hal_con_put() (hal_posix.c) macht pro
 # Echo-Zeichen ein blockierendes fputc()+fflush(stdout); haelt der Pty-Leser
@@ -27,7 +27,7 @@ log_file -noappend test/expect/results/paste_burst_result.txt
 set image local_images/OS9SYS.claudia-paste-test.hda
 exec cp -c local_images/OS9SYS.hda $image
 
-spawn ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+spawn ./build/native/q9.exe --rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
 
 set timeout 60
 expect "devices online"

@@ -1,7 +1,7 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // File:   07_hal_stub.c                                                                  Ver. 1.00
 // Owner:  AF
-// Desc.:  Minimal-HAL nur fuer 07_test_cf_sector512.c: cb030.c referenziert q9_hal_* (UART/RTC-
+// Desc.:  Minimal-HAL nur fuer 07_test_cf_sector512.c: q9board.c referenziert q9_hal_* (UART/RTC-
 //         Codepfade), die der reine CF-Sektortest nie erreicht -- diese Stubs loesen nur das
 //         Linken, ohne die volle native HAL (hal_posix.c, mit eigener main()/Terminal-Rohmodus)
 //         einzubinden.

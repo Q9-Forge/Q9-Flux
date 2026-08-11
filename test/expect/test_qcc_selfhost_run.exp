@@ -34,7 +34,7 @@ proc login {} {
     if {!$logged_in} { send_log "\n<<<LOGIN FEHLGESCHLAGEN>>>\n"; exit 1 }
 }
 
-spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+spawn ./build/native/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
 login
 
 send_log "\n=== Arbeits- UND Ausfuehrungsverzeichnis wechseln ===\n"
