@@ -54,9 +54,9 @@
 #define Q9_VIDEOBRIDGE_H
 
 #include <stdint.h>
-#include "framebuf.h"
-#include "mc6845.h"
-#include "clut.h"                                      /* 5.29-Nachtrag: q9_clut_t                 */
+#include "../framebuf/framebuf.h"
+#include "../mc6845/mc6845.h"
+#include "../clut/clut.h"                              /* 5.29-Nachtrag: q9_clut_t                 */
 
 #define Q9_VIDEOBRIDGE_TCP_PORT   2001    /* wie Q9-Frame tests/dummy_server.cpp             */
 #define Q9_VIDEOBRIDGE_UDP_PORT   2000    /* Discovery, wie Q9-Frame src/udp_scan.cpp         */

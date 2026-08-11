@@ -59,9 +59,9 @@
 #define Q9_QUICC_H
 
 #include <stdint.h>
-#include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
-#include "vmnet_net.h"                                  /* vmnet-Konfiguration aus .q9            */
-#include "slirp_net.h"                                  /* 5.14: slirp-Konfiguration aus .q9      */
+#include "../../kernel/devreg.h"                        /* 5.17: q9_device_t/Vtable, s. devreg.h  */
+#include "../net/vmnet_net.h"                          /* vmnet-Konfiguration aus .q9            */
+#include "../net/slirp_net.h"                          /* 5.14: slirp-Konfiguration aus .q9      */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_QUICC_BASE        0xFFFF2000u              /* QUICC-Basis ("MBAR"), 8K-aligned         */

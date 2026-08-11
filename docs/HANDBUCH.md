@@ -838,7 +838,7 @@ und im laufenden Emulator auf dasselbe `.hda` schreiben.
 
 ---
 
-### 5.11 QUICC-Ethernet-Emulation (Schritt 5.11, `src/kernel/quicc.c/.h`)
+### 5.11 QUICC-Ethernet-Emulation (Schritt 5.11, `src/devices/quicc/quicc.c/.h`)
 
 Das im Q9-Emulator laufende OS-9 bekommt echtes TCP/IP: Im MWOS-Q9-Port
 (`OS9/68030/PORTS/Q9/SPF/`) wurde der originale SPF-Ethernet-Treiber

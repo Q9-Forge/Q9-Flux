@@ -47,7 +47,7 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
-#include "quicc.h"
+#include "../devices/quicc/quicc.h"
 #include "devreg.h"
 #include "m68k.h"
 #include "q9_sockcompat.h"    /* Windows-Build: Windows/Winsock-Portabilitaet fuer die Netz-Terminals */

@@ -45,8 +45,8 @@
 #define Q9_FRAMEBUF_H
 
 #include <stdint.h>
-#include "devreg.h"                                    /* q9_device_t/Vtable                     */
-#include "mc6845.h"                                    /* q9_mc6845_stride() fuers Dirty-Mapping  */
+#include "../../kernel/devreg.h"                        /* q9_device_t/Vtable                     */
+#include "../mc6845/mc6845.h"                          /* q9_mc6845_stride() fuers Dirty-Mapping  */
 
 //─── Adressfenster (Q9-Frame WORK_PACKAGES.md WP02) ─────────────────────────────────────────────
 #define Q9_FRAMEBUF_BASE           0xFD000000u

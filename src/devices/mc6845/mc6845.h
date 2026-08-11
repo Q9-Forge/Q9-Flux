@@ -73,7 +73,7 @@
 #define Q9_MC6845_H
 
 #include <stdint.h>
-#include "devreg.h"                                    /* q9_device_t/Vtable                     */
+#include "../../kernel/devreg.h"                        /* q9_device_t/Vtable                     */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_MC6845_BASE       0xFFFFA000u               /* Q9-Frame WORK_PACKAGES.md WP03          */

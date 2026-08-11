@@ -35,9 +35,9 @@
 
 #include <stdint.h>
 #include "q9board.h"
-#include "mc6845.h"                                    /* 5.24: q9_mc6845_t                       */
-#include "framebuf.h"                                  /* 5.26: q9_framebuf_t                     */
-#include "clut.h"                                      /* 5.29-Nachtrag: q9_clut_t                 */
+#include "../devices/mc6845/mc6845.h"                  /* 5.24: q9_mc6845_t                       */
+#include "../devices/framebuf/framebuf.h"              /* 5.26: q9_framebuf_t                     */
+#include "../devices/clut/clut.h"                      /* 5.29-Nachtrag: q9_clut_t                 */
 
 #define Q9_M68KRT_OK        0
 #define Q9_M68KRT_ERR_RAM  -1                       /* RAM fehlt oder zu klein fuer Reset-Vektoren */
