@@ -16,7 +16,7 @@
 
 # Konfigurierbare Hardware-Module — Design-Referenz (5.17–5.21)
 
-Bezug: [ARBEITSPLAN.md](../ARBEITSPLAN.md) Schritte 5.17–5.21.
+Bezug: [ARBEITSPLAN.md](../.claude/ARBEITSPLAN.md) Schritte 5.17–5.21.
 
 ## Die vier Ziele (Andreas, 2026-07-14)
 
