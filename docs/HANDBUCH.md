@@ -822,6 +822,14 @@ echtem `0xE0` oder `\340H` waren nicht stabil; sichtbares Symptom waren die
 zweiten Bytes (`H`, `M`, `P`, `K`) im Editor. `Ctrl-C` wird vom Windows-HAL
 abgefangen, damit es nicht den Hostprozess beendet.
 
+**WinEd 3.9 unter Windows (2026-08-09):** WinEd verarbeitet ANSI-Cursorfolgen
+nicht als einzelne Tasten. Die vier Cursor-Tasten liefern daher unter Windows
+standardmaessig WinEds direkte Emacs-Bindungen (`Hoch=^P`, `Runter=^N`,
+`Links=^B`, `Rechts=^F`); `umacs` arbeitet damit ebenfalls. Fuer ein Programm,
+das ANSI-Sequenzen benoetigt, setzt `Q9_KEYMODE=ansi`; `q9term` wird nicht
+angepasst. Windows-Terminal verarbeitet Mausmarkierung, `Ctrl+V` und manche
+F-Tasten selbst; diese Host-Funktionen werden deshalb nicht im Emulator auf
+WinEd-Befehle umgebogen.
 **OS9SYS-CF-Boot und `os9gen` (2026-07-07):** Das lokale Arbeitsimage
 `local_images/OS9SYS.hda` bootet direkt von CompactFlash und fuehrt danach das
 CF-`startup` aus. Fuer Bootfile-Experimente muss der formatierbare Descriptor
