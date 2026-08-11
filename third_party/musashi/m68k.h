@@ -329,7 +329,7 @@ void m68k_pulse_reset(void);
 /* execute num_cycles worth of instructions.  returns number of cycles used */
 int m68k_execute(int num_cycles);
 
-/* Q9/CB030 (5.9): 1 wenn die CPU per STOP-Instruktion angehalten ist (z.B. OS-9-Idle-Loop),
+/* Q9 (5.9): 1 wenn die CPU per STOP-Instruktion angehalten ist (z.B. OS-9-Idle-Loop),
    sonst 0 -- Grundlage fuer eine Host-Idle-Drossel, s. Q9_VENDOR.md. */
 int m68k_is_stopped(void);
 

@@ -1,7 +1,7 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // File:   quicc.h                                                                         Ver. 1.40
 // Owner:  AF
-// Desc.:  5.11: QUICC-Ethernet-Emulation (MC68360, SCC1 im Ethernet-Modus) fuer den CB030-Runner —
+// Desc.:  5.11: QUICC-Ethernet-Emulation (MC68360, SCC1 im Ethernet-Modus) fuer den Board-Runner —
 //         das Hardware-Gegenstueck zum originalen Microware-SPF-Treiber `sp360` (MWOS-SDK,
 //         SRC/DPIO/SPF/DRVR/SPQUICC). Emuliert wird NUR das, was dieser Treiber tatsaechlich
 //         anfasst: 8K-Fenster ab Q9_QUICC_BASE mit Dual-Port-RAM (BD-Ringe), SCC1-Parameter-RAM

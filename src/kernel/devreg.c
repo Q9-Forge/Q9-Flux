@@ -11,7 +11,7 @@
 //         │      │ Typ-Registry startet mit "duart68681" (waechst mit jedem Migrationsschritt) │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devreg.h"
-#include "cb030.h"
+#include "q9board.h"
 #include <string.h>
 
 //────────────────────────────────────────────────────────────────────────────────────────────────

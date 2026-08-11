@@ -1,7 +1,7 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // File:   mc6845.h                                                                        Ver. 1.03
 // Owner:  AF
-// Desc.:  5.24: MC6845-CRT-Controller-Emulation fuer den CB030-Runner — liefert die Register-
+// Desc.:  5.24: MC6845-CRT-Controller-Emulation fuer den Board-Runner — liefert die Register-
 //         Grundlage fuer den Framebuffer (5.26) und die Host-Video-Bridge zu Q9 Frame (5.27).
 //
 //         Adressmodell (Planungsrunde Andreas + Ada, 2026-08-03; Adresse bereits in Q9-Frame
@@ -10,7 +10,7 @@
 //         +1 Datenregister: liest/schreibt das gewaehlte Register). Bewusste Vereinfachung ggue.
 //         echter Hardware: ALLE Register sind frei lesbar UND schreibbar (der echte MC6845 kennt
 //         teils schreibgeschuetzte/nur-lesbare Register je nach R/W-Pin-Verdrahtung des Systems) —
-//         analog zur RTC72421-Vereinfachung (s. cb030.h), hier aber dokumentiert als "alles R/W".
+//         analog zur RTC72421-Vereinfachung (s. q9board.h), hier aber dokumentiert als "alles R/W".
 //
 //         Register R0-R15 = Standard-MC6845 (Horizontal Total/Displayed/SyncPos/SyncWidth,
 //         Vertical Total/TotalAdjust/Displayed/SyncPos, Interlace/Skew, MaxScanLine, Cursor

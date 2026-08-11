@@ -1,4 +1,4 @@
-# Ethernet-Recherche für CB030 (und Vinculum)
+# Ethernet-Recherche für das Q9-Board (und Vinculum)
 
 Stand: 2026-07-07 (aus dem CF-Debugging-Arbeitsstand gerettet, 2026-07-09).
 
@@ -6,10 +6,10 @@ Ziel: Wenn möglich eine reale, historisch nachbaubare Ethernet-Hardware
 verwenden, statt nur einen frei erfundenen virtuellen Adapter. Emulator
 zuerst, später ggf. echte Hardware.
 
-## Variante 1: LANCE / Am7990 — bester Kandidat für CB030
+## Variante 1: LANCE / Am7990 — bester Kandidat für das Q9-Board
 
 Im MWOS-SDK ist ein echter OS-9/SPF-Treiber vorhanden; das ist aktuell der
-beste Kandidat für CB030-Ethernet.
+beste Kandidat für Q9-Board-Ethernet.
 
 Gefundene Module/Quellen (alle lokal, MWOS ist proprietär):
 
@@ -43,7 +43,7 @@ bekannt.
 
 Offene Emulator-Aufgaben:
 
-- LANCE-Registermodell an passender CB030-Adresse emulieren.
+- LANCE-Registermodell an passender Board-Adresse emulieren.
 - CSR0-3, RAP/RDP, Init-Block, RX/TX-Descriptor-Ringe implementieren.
 - IRQ-Level/Vektor für LANCE ergänzen.
 - Host-Anbindung zuerst einfach halten: Frame-Logger, UDP-Tunnel, später
@@ -52,7 +52,7 @@ Offene Emulator-Aufgaben:
 ## Variante 2: MC68360 / QUICC — Testpfad für Vinculum
 
 Für 68360/QUICC ist ebenfalls ein kompletter SPF-Ethernet-Treiber vorhanden.
-Für CB030-Ethernet nicht der direkte Weg (der Treiber ist für Systeme
+Für Q9-Board-Ethernet nicht der direkte Weg (der Treiber ist für Systeme
 gedacht, bei denen der 68360 selbst Systemprozessor/On-Chip-Peripheriezentrum
 ist) — für Vinculum aber sehr wertvoll als vorhandener Ethernet-Testpfad.
 
@@ -93,7 +93,7 @@ CPM-Interruptregister), `ser360.d` (seriell), `timm360.d` (Timer),
 
 ## Empfehlung
 
-- Für CB030: zuerst LANCE/AM7990 emulieren und mit `sp147` + `sple0` testen.
+- Für das Q9-Board: zuerst LANCE/AM7990 emulieren und mit `sp147` + `sple0` testen.
 - Für Vinculum: 68360/QUICC-Pfad im Auge behalten (`sp360`/`spqe0` plus
   Systemmodule vorhanden).
 - NE2000/RTL8019AS bleibt hardwareseitig interessant, aber ohne

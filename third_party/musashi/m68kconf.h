@@ -107,7 +107,7 @@
  * If off, all interrupts will be autovectored and all interrupt requests will
  * auto-clear when the interrupt is serviced.
  *
- * Q9/CB030 change (see Q9_VENDOR.md): ON — the CB030's 68681 DUART supplies its
+ * Q9 change (see Q9_VENDOR.md): ON — the board's 68681 DUART supplies its
  * vector register (IVR) during the IACK cycle (the OS-9 driver registers its
  * handler on that vector, e.g. 0x50), while the board timer is autovectored.
  * The callback (m68krt.c) decides per interrupt which vector to return.
