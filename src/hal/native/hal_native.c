@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_native.c                                                                    Ver. 1.23
+// File:   hal_native.c                                                                    Ver. 1.29
 // Owner:  AF
 // Desc.:  HAL-Implementierung für den nativen PC-Build (Windows, w64devkit/gcc).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
@@ -30,6 +30,9 @@
 //         │      │ hardwareseitig auf Home/End gemappt) -- zusaetzlich Strg+<Buchstabe> als     │
 //         │      │ Host-Escape (Q9_QUIT_CTRL, Default Ctrl-Q), layoutunabhaengig da Buchstaben   │
 //         │      │ (anders als ']') auf jeder Tastatur ohne AltGr erreichbar sind                │
+// 26-08-09│ 1.24 │ Cursor als ^P/^N/^B/^F fuer WinEd/umacs als Windows-Standard; ANSI optional  │ AF
+// 26-08-09│ 1.29 │ Nicht funktionierende Windows-Editor-Makros entfernt; Cursor bleibt WinEd-kompatibel│ AF
+
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <ctype.h>
@@ -54,6 +57,7 @@ static int keybuf_tail = 0;
 static int quit_scan      = 0x44;                      /* F10 (Default), s. q9_scan_from_env  */
 static int debugdump_scan = 0x43;                      /* F9  (Default)                       */
 static int quit_ctrl      = 0x11;                      /* Ctrl-Q (Default), s. q9_ctrl_from_env */
+static int wined_keymode  = 0;                         /* WinEd-Cursormodus, s. q9_hal_init    */
 
 static void q9_timer_resolution_restore(void) { timeEndPeriod(1); }
 
@@ -86,6 +90,17 @@ static int q9_ctrl_from_env(const char *var, int fallback)
     if (!s || !s[0] || s[1] != '\0') return fallback;
     c = (char)toupper((unsigned char)s[0]);
     return (c >= 'A' && c <= 'Z') ? (c - 'A' + 1) : fallback;
+}
+
+/* WinEd 3.9 verarbeitet ANSI-Cursorfolgen nicht als einzelne Tasten, sondern
+   kennt fuer die vier Richtungen direkt seine Emacs-Bindungen. */
+static int q9_wined_keymode_from_env(void)
+{
+    const char *mode = getenv("Q9_KEYMODE");
+
+    /* WinEd und uemacs verstehen die klassischen Emacs-Steuercodes.
+     * ANSI ist fuer andere terminalorientierte Programme weiterhin waehlbar. */
+    return !mode || (strcmp(mode, "ansi") != 0 && strcmp(mode, "vt100") != 0);
 }
 
 static BOOL WINAPI q9_console_ctrl_handler(DWORD event)
@@ -131,6 +146,7 @@ static void keybuf_push_csi_tilde(char code)
     keybuf_push('~');
 }
 
+
 //╔══════════════════════════════════════════════════════════════════════════════════════════════╗
 //║ HAL IMPLEMENTATION                                                                           ║
 //╚══════════════════════════════════════════════════════════════════════════════════════════════╝
@@ -152,6 +168,7 @@ void q9_hal_init(void)
     quit_scan      = q9_scan_from_env("Q9_QUIT_SCAN",      0x44);  /* F10 */
     debugdump_scan = q9_scan_from_env("Q9_DEBUGDUMP_SCAN",  0x43); /* F9  */
     quit_ctrl      = q9_ctrl_from_env("Q9_QUIT_CTRL",       0x11); /* Ctrl-Q */
+    wined_keymode  = q9_wined_keymode_from_env();
 
     SetConsoleOutputCP(CP_UTF8);                       /* kernel output is a UTF-8 byte stream   */
     SetConsoleCtrlHandler(q9_console_ctrl_handler, TRUE);
@@ -214,10 +231,18 @@ int q9_hal_con_get(void)
                 return -1;
             }
             switch (scan) {
-            case 0x48: keybuf_push_csi('A'); break;     /* Up       */
-            case 0x50: keybuf_push_csi('B'); break;     /* Down     */
-            case 0x4b: keybuf_push_csi('D'); break;     /* Left     */
-            case 0x4d: keybuf_push_csi('C'); break;     /* Right    */
+            case 0x48:                                 /* Up */
+                if (wined_keymode) keybuf_push(0x10); else keybuf_push_csi('A');
+                break;
+            case 0x50:                                 /* Down */
+                if (wined_keymode) keybuf_push(0x0e); else keybuf_push_csi('B');
+                break;
+            case 0x4b:                                 /* Left */
+                if (wined_keymode) keybuf_push(0x02); else keybuf_push_csi('D');
+                break;
+            case 0x4d:                                 /* Right */
+                if (wined_keymode) keybuf_push(0x06); else keybuf_push_csi('C');
+                break;
             case 0x47: keybuf_push_csi('H'); break;     /* Home     */
             case 0x4f: keybuf_push_csi('F'); break;     /* End      */
             case 0x52: keybuf_push_csi_tilde('2'); break; /* Insert */
