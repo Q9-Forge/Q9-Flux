@@ -36,9 +36,9 @@ Befehlssatz beschränken, nicht auf 68030-exklusive Features verlassen.
 
 ## Q9-eigene Änderungen am Vendor-Code (2026-07-05, Schritt 5.4)
 
-Beim ersten Boot des echten Microware-CB030-ROMs (OS-9/68K mit ssm851) stießen wir
+Beim ersten Boot des echten Microware-Q9-Board-ROMs (OS-9/68K mit ssm851) stießen wir
 auf mehrere Lücken in Musashis FPU-/MMU-/Interrupt-Emulation. Alle Änderungen sind
-im Code mit `Q9/CB030` markiert und bewusst minimal-invasiv (MIT-Lizenz erlaubt
+im Code mit `Q9` markiert und bewusst minimal-invasiv (MIT-Lizenz erlaubt
 Modifikation; Upstream-tauglich, falls je gewünscht):
 
 1. **`m68kfpu.c` — FRESTORE/FSAVE-Adressierungsarten ergänzt**: FRESTORE `(d16,PC)`
@@ -56,7 +56,7 @@ Modifikation; Upstream-tauglich, falls je gewünscht):
 4. **`m68kmmu.h` — Diagnostik**: Die verbliebenen `fatalerror`-Meldungen enthalten
    jetzt Adresse/TC/SRP/CRP/SR/PC bzw. Deskriptor-Inhalt (und die "Table B"-Meldung
    im C-Zweig druckte vorher die falsche Variable).
-5. **`m68kconf.h` — `M68K_EMULATE_INT_ACK` ON**: Die 68681-DUART des CB030 liefert
+5. **`m68kconf.h` — `M68K_EMULATE_INT_ACK` ON**: Die 68681-DUART des Q9-Board liefert
    ihren Vektor (IVR, z.B. 0x50) im IACK-Zyklus — der OS-9-Treiber registriert
    seinen Handler auf genau diesem Vektor. Mit OFF (Default) waere alles autovektor-
    isiert und der DUART-Handler nie angesprungen. Die Vektor-Auswahl (DUART = IVR,
@@ -70,7 +70,7 @@ mshell (`$`-Prompt, `mdir` funktioniert) — s. ARBEITSPLAN.md 5.4.
 6. **`m68kcpu.c`/`m68k.h` — `m68k_is_stopped(void)` neu**: schmaler Accessor, der
    zurückgibt, ob `CPU_STOPPED` (internes Flag, wird u.a. von der `STOP`-Instruktion
    gesetzt) ungleich 0 ist. Grund: OS-9 idlet im Login-Prompt per `STOP #$3000` —
-   ohne diesen Accessor "verbrennt" `cb030run.c` die angeforderten Zyklen einer
+   ohne diesen Accessor "verbrennt" `q9boardrun.c` die angeforderten Zyklen einer
    gestoppten CPU sofort wieder (100 % Host-CPU im Leerlauf), weil es von aussen
    keine Möglichkeit gab, den Stopp-Zustand abzufragen. Rein additiv (keine
-   bestehende Funktion geändert), markiert mit `Q9/CB030`.
+   bestehende Funktion geändert), markiert mit `Q9`.

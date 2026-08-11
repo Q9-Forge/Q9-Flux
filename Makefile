@@ -1,7 +1,7 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 3.30
+# File:   Makefile                                                                        Ver. 3.40
 # Owner:  AF
-# Desc.:  Q9-Flux Build-System (CB030/68030-Emulator fuer echtes Microware-OS-9).
+# Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k).
 #         Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc), test, clean.
 #
 # Call:   make native | make test | make test-cf-sector | make clean
@@ -14,7 +14,7 @@
 # ... (fruehere Historie siehe docs/PROJECT_VISION_ARCHIV.md und Git-Historie)             │
 # 26-07-31│ 3.00 │ Eigener Mini-Kernel + wasm3 + Browser-Frontend nach Q9RESUME-Kernel      │ CF
 #         │      │ ausgelagert (unbenutzt seit 26-07-04) -- native baut jetzt ausschliesslich │
-#         │      │ den CB030/Microware-OS-9-Emulator, kein wasm-Target mehr                 │
+#         │      │ den OS-9/68k-Emulator, kein wasm-Target mehr                 │
 # 26-08-06│ 3.10 │ Nativer Windows-Build (Winsock2 statt BSD-Sockets in m68krt.c/           │ AF
 #         │      │ videobridge.c, s. src/kernel/q9_sockcompat.h) -- -lws2_32 unter Windows   │
 # 26-08-06│ 3.20 │ PLATFORM_DIR: build/native/ war fuer alle drei OS gleich benannt -- baut  │ AF
@@ -24,6 +24,11 @@
 #         │      │ windows/ (vendorte libslirp+glib2, kein Paketmanager noetig), macOS/Linux  │
 #         │      │ gegen System-libslirp per pkg-config; DLLs werden nach dem Link neben      │
 #         │      │ q9.exe kopiert                                                             │
+# 26-08-11│ 3.40 │ 6.6: Geraete (mc6845/clut/framebuf/quicc/videobridge/slirp_net/vmnet_net/  │ AF
+#         │      │ bpf_net) von src/kernel/ nach src/devices/<name>/ verschoben (je ein         │
+#         │      │ Unterordner pro Modul, Mehrarchitektur-Vorbereitung); q9board.c/m68krt.c/   │
+#         │      │ q9boardrun.c/devreg.c/boardcfg.c bleiben bewusst in src/kernel/ (Bus/CPU-    │
+#         │      │ Wrapper/Framework, keine eigenstaendigen Geraete)                            │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -101,22 +106,24 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 
-# 5.2a: CB030-Board-Speicherlogik (RAM/ROM/Remap, docs/CB030.md) -- Q9-eigener Code, volle CFLAGS
+# 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
-CB030_SRC = src/kernel/cb030.c src/kernel/cb030run.c src/kernel/quicc.c src/kernel/devreg.c \
-            src/kernel/boardcfg.c src/kernel/mc6845.c src/kernel/framebuf.c src/kernel/videobridge.c
-CB030_HDR = src/kernel/cb030.h src/kernel/cb030run.h src/kernel/quicc.h src/kernel/devreg.h \
-            src/kernel/boardcfg.h src/kernel/mc6845.h src/kernel/framebuf.h src/kernel/videobridge.h
+BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/devreg.c src/kernel/boardcfg.c \
+            src/devices/quicc/quicc.c src/devices/mc6845/mc6845.c src/devices/framebuf/framebuf.c \
+            src/devices/clut/clut.c src/devices/videobridge/videobridge.c
+BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src/kernel/boardcfg.h \
+            src/devices/quicc/quicc.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
+            src/devices/clut/clut.h src/devices/videobridge/videobridge.h
 
 # 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
 # 5.13: bridge-Ethernet-Backend (--net bridge:<ifname>), nur macOS: BPF (/dev/bpf*), kein Framework
 # noetig (reines POSIX/ioctl). Auf anderen Plattformen bleiben beide Defines ungesetzt und die
 # jeweilige --net-Option meldet sich sauber ab.
 ifeq ($(shell uname -s 2>/dev/null),Darwin)
-    CB030_NET_SRC   = src/kernel/vmnet_net.c src/kernel/bpf_net.c
-    CB030_NET_HDR   = src/kernel/vmnet_net.h src/kernel/bpf_net.h
-    CB030_NET_FLAGS = -DQ9_HAVE_VMNET -DQ9_HAVE_BPF
-    CB030_NET_LIBS  = -framework vmnet
+    BOARD_NET_SRC   = src/devices/net/vmnet_net.c src/devices/net/bpf_net.c
+    BOARD_NET_HDR   = src/devices/net/vmnet_net.h src/devices/net/bpf_net.h
+    BOARD_NET_FLAGS = -DQ9_HAVE_VMNET -DQ9_HAVE_BPF
+    BOARD_NET_LIBS  = -framework vmnet
 endif
 
 # 5.14: slirp-Backend (--net slirp), PLATTFORMUEBERGREIFEND (anders als vmnet/bridge oben) -- unter
@@ -124,8 +131,8 @@ endif
 # Paketmanager noetig, w64devkit allein reicht), unter macOS/Linux gegen ein System-libslirp per
 # pkg-config (brew install libslirp / apt install libslirp-dev). Fehlt beides, bleibt Q9_HAVE_SLIRP
 # ungesetzt und "--net slirp" meldet sich beim Start sauber ab (s. quicc.c).
-SLIRP_SRC = src/kernel/slirp_net.c
-SLIRP_HDR = src/kernel/slirp_net.h
+SLIRP_SRC = src/devices/net/slirp_net.c
+SLIRP_HDR = src/devices/net/slirp_net.h
 ifeq ($(PLATFORM),windows)
     ifneq ($(wildcard third_party/slirp/windows/include/slirp/libslirp.h),)
         SLIRP_VENDOR   = third_party/slirp/windows
@@ -136,7 +143,14 @@ ifeq ($(PLATFORM),windows)
     endif
 else
     ifeq ($(shell pkg-config --exists slirp 2>/dev/null && echo yes),yes)
-        SLIRP_FLAGS = -DQ9_HAVE_SLIRP $(shell pkg-config --cflags slirp)
+        # 26-08-10: Homebrews libslirp.pc liefert nur "-I<includedir>/slirp" (fuer #include
+        # <libslirp.h>), unser slirp_net.c schreibt aber #include <slirp/libslirp.h> -- deshalb
+        # zusaetzlich den PARENT-Include-Pfad (<includedir> selbst) mitgeben, damit beide
+        # Schreibweisen funktionieren, ohne slirp_net.c anzufassen (Debian/Fedora-libslirp-Pakete
+        # liefern ueblicherweise direkt "-I<includedir>" und brauchen diesen Zusatz nicht, schadet
+        # dort aber auch nicht).
+        SLIRP_FLAGS = -DQ9_HAVE_SLIRP $(shell pkg-config --cflags slirp) \
+                      -I$(shell pkg-config --variable=includedir slirp)
         SLIRP_LIBS  = $(shell pkg-config --libs slirp)
     endif
 endif
@@ -158,13 +172,13 @@ native: $(BUILD)/$(PLATFORM_DIR)/q9.exe
 	@echo "-> $(BUILD)/$(PLATFORM_DIR)/q9.exe"
 
 $(BUILD)/$(PLATFORM_DIR)/q9.exe: $(M68KRT_SRC) $(M68KRT_HDR) \
-                        $(CB030_SRC) $(CB030_HDR) $(CB030_NET_SRC) $(CB030_NET_HDR) \
+                        $(BOARD_SRC) $(BOARD_HDR) $(BOARD_NET_SRC) $(BOARD_NET_HDR) \
                         $(SLIRP_SRC) $(SLIRP_HDR) \
                         $(NATIVE_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(CB030_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
-	    $(M68KRT_SRC) $(CB030_SRC) $(CB030_NET_SRC) $(SLIRP_SRC) $(NATIVE_HAL_SRC) \
-	    $(MUSASHI_OBJS) $(CB030_NET_LIBS) $(SLIRP_LIBS) $(NATIVE_EXTRA_LIBS) -o $@
+	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(BOARD_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
+	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(NATIVE_HAL_SRC) \
+	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(NATIVE_EXTRA_LIBS) -o $@
 ifneq ($(SLIRP_RUNTIME_DLLS),)
 	@cp $(SLIRP_RUNTIME_DLLS) $(BUILD)/$(PLATFORM_DIR)/
 endif
@@ -174,12 +188,12 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 test: test-cf-sector
 
-# 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (cb030.c) -- reines
+# 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
 test-cf-sector:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) test/07_test_cf_sector512.c test/07_hal_stub.c \
-	    src/kernel/cb030.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
+	    src/kernel/q9board.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 	$(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 
 clean:

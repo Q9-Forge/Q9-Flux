@@ -54,7 +54,7 @@ proc paste_file {localpath remotename blankmarker} {
     set timeout 20
 }
 
-spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+spawn ./build/native/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
 login
 
 send_log "\n=== SCHRITT 1+2: Configs pasten, idbgen laufen lassen ===\n"
@@ -113,7 +113,7 @@ send "\x1d"
 expect eof
 
 send_log "\n=== SCHRITT 5: NEUSTART UND VERIFIKATION ===\n"
-spawn ./build/native/q9.exe --cb030 $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+spawn ./build/native/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
 login
 
 sleep 2

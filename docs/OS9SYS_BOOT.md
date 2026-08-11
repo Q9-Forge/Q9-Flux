@@ -2,7 +2,7 @@
 
 Stand: 2026-07-07
 
-Dieses Runbook beschreibt den lokalen, erfolgreichen CB030/OS-9-Bootpfad mit
+Dieses Runbook beschreibt den lokalen, erfolgreichen OS-9-Bootpfad mit
 `local_images/OS9SYS.hda`. ROMs, `.hda`-Images und extrahierte Microware-Module
 sind proprietaer bzw. gross und bleiben lokal; sie duerfen nicht ins Repository.
 
@@ -10,7 +10,7 @@ sind proprietaer bzw. gross und bleiben lokal; sie duerfen nicht ins Repository.
 
 ```powershell
 cd D:\projekts\Q9
-.\build\native\q9.exe --cb030 .\local_images\roms\romimage.dev.running.BIN --cf .\local_images\OS9SYS.hda
+.\build\native\q9.exe --rom .\local_images\roms\romimage.dev.running.BIN --cf .\local_images\OS9SYS.hda
 ```
 
 Vor Neubuilds oder Image-Arbeiten alte Emulatorprozesse suchen:

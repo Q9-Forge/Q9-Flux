@@ -11,7 +11,7 @@
 //         **Nicht-blockierend (Q9-Frame ARCHITECTURE.md: "darf CPU-Emulation ... nicht anhalten"):**
 //         alle Sockets laufen mit O_NONBLOCK (exakt das schon etablierte Muster der Netz-Terminals,
 //         s. m68krt.c init_network_terminals/update_network_terminals) -- q9_videobridge_poll() wird
-//         einmal je Hauptschleifen-Runde aufgerufen (cb030run.c) und kehrt immer sofort zurueck.
+//         einmal je Hauptschleifen-Runde aufgerufen (q9boardrun.c) und kehrt immer sofort zurueck.
 //
 //         **Bewusste Vereinfachungen ggue. der Zielarchitektur (ARCHITECTURE.md), analog zu den
 //         bisherigen "erst einfach"-Entscheidungen (framebuf.h Board-Config, mc6845.h Register-
@@ -23,10 +23,11 @@
 //             oder kurzer Schreibzugriff), wird die Verbindung getrennt statt Updates zu sammeln/zu
 //             verwerfen (ARCHITECTURE.md nennt das als Zielverhalten, hier erstmal einfach: Client
 //             fliegt raus, naechster `accept()` bedient ihn/den naechsten neu mit Vollbild).
-//           - CLUT fuer indizierte Modi: mangels eines eigenen Paletten-Geraets (noch nicht Teil von
-//             5.24-5.26) wird eine Graustufen-Rampe gesendet (`build_grayscale_clut`-Portierung aus
-//             Q9-Frame `framebuffer.cpp`) -- ein echtes CLUT-Register/Device waere ein spaeterer,
-//             hier nicht blockierender Ausbauschritt.
+//           - CLUT fuer indizierte Modi: **NACHTRAG 2026-08-10 (Claude, 5.29):** echtes CLUT-Geraet
+//             (clut.h) existiert jetzt, `vb->clut` liefert die vom Gast per SS_clut/SS_clutall
+//             programmierte Palette. Die alte Graustufen-Rampe (`build_grayscale_clut`) bleibt nur
+//             als Fallback erhalten, falls `q9_videobridge_init()` mit `clut=NULL` aufgerufen wird
+//             (z.B. isolierte Tests ohne CLUT-Geraet).
 //
 //         **Modus-/Geometrieaenderung zur Laufzeit:** jede Poll-Runde wird die aktuelle Stride/
 //         Hoehe/Modus (mc6845.h) mit dem zuletzt an den Client gemeldeten Stand verglichen -- bei
@@ -39,7 +40,7 @@
 //         Byte-Spalte/[2/3] je nach bpp (s. mc6845.h-Kopf, dieselbe Granularitaets-Tabelle).
 //
 // Call:   q9_videobridge_t vb;
-//         q9_videobridge_init(&vb, &fb, &crtc, Q9_VIDEOBRIDGE_TCP_PORT, Q9_VIDEOBRIDGE_UDP_PORT, "Q9Flux");
+//         q9_videobridge_init(&vb, &fb, &crtc, &clut, Q9_VIDEOBRIDGE_TCP_PORT, Q9_VIDEOBRIDGE_UDP_PORT, "Q9Flux");
 //         // je Hauptschleifen-Runde:
 //         q9_videobridge_poll(&vb, now_ms);
 //
@@ -53,8 +54,9 @@
 #define Q9_VIDEOBRIDGE_H
 
 #include <stdint.h>
-#include "framebuf.h"
-#include "mc6845.h"
+#include "../framebuf/framebuf.h"
+#include "../mc6845/mc6845.h"
+#include "../clut/clut.h"                              /* 5.29-Nachtrag: q9_clut_t                 */
 
 #define Q9_VIDEOBRIDGE_TCP_PORT   2001    /* wie Q9-Frame tests/dummy_server.cpp             */
 #define Q9_VIDEOBRIDGE_UDP_PORT   2000    /* Discovery, wie Q9-Frame src/udp_scan.cpp         */
@@ -65,7 +67,7 @@
 
 /* WICHTIG: enthaelt einen mehrere MByte grossen Sendepuffer (out_buf, s.u.) -- NIEMALS als lokale
    (Stack-)Variable anlegen (Stack-Overflow), immer `static` oder als Teil einer bereits statischen
-   Struktur (analog q9_framebuf_t/q9_mc6845_t in cb030run.c). */
+   Struktur (analog q9_framebuf_t/q9_mc6845_t in q9boardrun.c). */
 typedef struct {
     int      udp_fd;
     int      tcp_fd;
@@ -80,6 +82,7 @@ typedef struct {
     uint32_t adv_stride;
     uint32_t adv_height;
     int      adv_mode;
+    uint32_t adv_clut_gen;   /* 5.29-Nachtrag: zuletzt gesendeter clut->generation-Stand, s. clut.h */
 
     uint16_t tcp_port;
     char     name[Q9_VIDEOBRIDGE_NAME_MAX];
@@ -96,20 +99,24 @@ typedef struct {
 
     q9_framebuf_t     *fb;
     const q9_mc6845_t *crtc;
+    const q9_clut_t   *clut;   /* 5.29-Nachtrag: echte CLUT statt Graustufen-Platzhalter, s. clut.h */
 } q9_videobridge_t;
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q9_videobridge_init
-// Desc.:    Oeffnet UDP-Discovery- und TCP-Video-Socket (beide O_NONBLOCK, SO_REUSEADDR). fb/crtc
-//           muessen die gesamte Laufzeit ueberleben (nur als Zeiger gehalten, analog framebuf.h).
+// Desc.:    Oeffnet UDP-Discovery- und TCP-Video-Socket (beide O_NONBLOCK, SO_REUSEADDR). fb/crtc/
+//           clut muessen die gesamte Laufzeit ueberleben (nur als Zeiger gehalten, analog
+//           framebuf.h). clut darf NULL sein (5.29-Nachtrag optional -- faellt dann weiterhin auf
+//           die alte Graustufen-Platzhalterpalette zurueck, z.B. fuer Tests ohne CLUT-Geraet).
 //           Rueckgabe: 0 = ok, -1 = Socket-Fehler (bind/listen).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 int q9_videobridge_init(q9_videobridge_t *vb, q9_framebuf_t *fb, const q9_mc6845_t *crtc,
-                         uint16_t tcp_port, uint16_t udp_port, const char *name);
+                         const q9_clut_t *clut, uint16_t tcp_port, uint16_t udp_port,
+                         const char *name);
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q9_videobridge_poll
-// Desc.:    Einmal je Hauptschleifen-Runde aufrufen (cb030run.c) -- niemals blockierend. Bedient
+// Desc.:    Einmal je Hauptschleifen-Runde aufrufen (q9boardrun.c) -- niemals blockierend. Bedient
 //           UDP-Discovery-Anfragen, nimmt (bei freiem Client-Slot) neue TCP-Verbindungen an,
 //           handshaked neue Clients, erkennt Modus-/Geometrieaenderungen und sendet faellige
 //           Dirty-Updates (gedrosselt auf die Rate aus MC6845-Register R19).

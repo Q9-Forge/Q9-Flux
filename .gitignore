@@ -10,15 +10,23 @@ debug.log
 # Block-Device-Testimage (3.1, HAL-seitig lazy erzeugt von q9_hal_blk_read/write)
 q9disk.img
 
-# CB030-Compact-Flash-Testimage (5.2c, lazy erzeugt von q9_cb030_cf_attach)
+# Compact-Flash-Testimage (5.2c, lazy erzeugt von q9_board_cf_attach)
+board_cf_test.img
 cb030_cf_test.img
 
-# CB030-Compact-Flash-Multi-Sektor-Testimage (5.5a)
+# Compact-Flash-Multi-Sektor-Testimage (5.5a)
+board_cf_multi_test.img
+board_cf_rbf256_test.img
 cb030_cf_multi_test.img
 cb030_cf_rbf256_test.img
 
-# CB030-Boot-Betrieb (5.3): CF-Image des Runners + lokale Boot-ROM-Images
-# (das Microware-ROM ist proprietaer und darf NIE ins Repository, s. docs/CB030.md)
+# Boot-Betrieb (5.3): CF-Image des Runners + lokale Boot-ROM-Images
+# (das Original-Boot-ROM ist proprietaer und darf NIE ins Repository,
+#  s. docs/BOARD.md). Die cb030*-Namen stammen aus der Zeit vor der
+#  Umbenennung auf "board" und bleiben stehen, damit aeltere, lokal noch
+#  vorhandene Dateien weiterhin ignoriert werden.
+board_cf.img
+boardrom*.bin
 cb030_cf.img
 cb030rom*.bin
 *.rom

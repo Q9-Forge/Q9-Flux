@@ -14,7 +14,7 @@
 // 26-08-07│ 1.10 │ 5.14: net_hostfwd-Key (Host->Gast-Portweiterleitung fuer net=slirp)       │ AF
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "boardcfg.h"
-#include "cb030.h"                                     /* Q9_CF_FMT_*                            */
+#include "q9board.h"                                     /* Q9_CF_FMT_*                            */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

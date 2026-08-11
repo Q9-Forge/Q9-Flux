@@ -1,14 +1,14 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // File:   framebuf.h                                                                     Ver. 1.00
 // Owner:  AF
-// Desc.:  5.26: VRAM-Geraet fuer den CB030-Runner — Fenster ab Q9_FRAMEBUF_BASE = $FD000000 (Adresse
+// Desc.:  5.26: VRAM-Geraet fuer den Board-Runner — Fenster ab Q9_FRAMEBUF_BASE = $FD000000 (Adresse
 //         bereits in Q9-Frame WORK_PACKAGES.md WP02 festgelegt), konfigurierbare Groesse (Default
 //         1 MByte, max. 16 MByte), plus Dirty-Rechteck-Tracking direkt in den Schreib-Hooks.
 //
-//         **Speicherhaltung (Q9-Grundsatz "kein Host-malloc", analog cb030run.c RAM/ROM):** der
+//         **Speicherhaltung (Q9-Grundsatz "kein Host-malloc", analog q9boardrun.c RAM/ROM):** der
 //         eigentliche Puffer wird NICHT von diesem Modul alloziert, sondern von aussen (statisches
-//         Array in cb030run.c) per q9_framebuf_init() hereingereicht — dieselbe Struktur wie
-//         q9_cb030_init(&b, rom, rom_len, ram, ram_len).
+//         Array in q9boardrun.c) per q9_framebuf_init() hereingereicht — dieselbe Struktur wie
+//         q9_board_init(&b, rom, rom_len, ram, ram_len).
 //
 //         **Dirty-Tracking:** jeder Schreibzugriff (write8/16/32) markiert NUR seinen eigenen
 //         Byte-Bereich, kein Scannen des kompletten VRAM. Die Byte-Adresse wird ueber die aktuelle
@@ -26,7 +26,7 @@
 //
 //         **Nicht Teil von 5.26 (bewusst vertagt):** Board-Config-Anbindung fuer eine vom Default
 //         abweichende Groesse (analog dem CF-Weg aus 5.19) — bisher fester Compile-Zeit-Default
-//         Q9_FRAMEBUF_DEFAULT_SIZE, s. cb030run.c. Bei Bedarf spaeter nachziehen, kein Blocker fuer
+//         Q9_FRAMEBUF_DEFAULT_SIZE, s. q9boardrun.c. Bei Bedarf spaeter nachziehen, kein Blocker fuer
 //         5.27 (Host-Video-Bridge).
 //
 // Call:   static uint8_t vram[Q9_FRAMEBUF_MAX_SIZE];
@@ -45,8 +45,8 @@
 #define Q9_FRAMEBUF_H
 
 #include <stdint.h>
-#include "devreg.h"                                    /* q9_device_t/Vtable                     */
-#include "mc6845.h"                                    /* q9_mc6845_stride() fuers Dirty-Mapping  */
+#include "../../kernel/devreg.h"                        /* q9_device_t/Vtable                     */
+#include "../mc6845/mc6845.h"                          /* q9_mc6845_stride() fuers Dirty-Mapping  */
 
 //─── Adressfenster (Q9-Frame WORK_PACKAGES.md WP02) ─────────────────────────────────────────────
 #define Q9_FRAMEBUF_BASE           0xFD000000u

@@ -41,20 +41,20 @@
 //         │      │ aus q9_quicc_poll()                                                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "quicc.h"
-#include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
+#include "../../kernel/devreg.h"                        /* 5.17: q9_device_t/Vtable, s. devreg.h  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef Q9_HAVE_VMNET
-#include "vmnet_net.h"                                /* 5.12: vmnet-Backend (nur macOS)          */
+#include "../net/vmnet_net.h"                        /* 5.12: vmnet-Backend (nur macOS)          */
 #endif
 #ifdef Q9_HAVE_BPF
-#include "bpf_net.h"                                  /* 5.13: bridge-Backend (nur macOS)         */
+#include "../net/bpf_net.h"                          /* 5.13: bridge-Backend (nur macOS)         */
 #endif
 #ifdef Q9_HAVE_SLIRP
-#include "slirp_net.h"                                /* 5.14: slirp-Backend (plattformuebergreifend) */
+#include "../net/slirp_net.h"                        /* 5.14: slirp-Backend (plattformuebergreifend) */
 #endif
 
 //─── Register-/PRAM-Offsets (per offsetof aus Motorolas quicc.h verifiziert, 2026-07-12) ─────────
