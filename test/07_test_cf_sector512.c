@@ -1,20 +1,20 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // File:   07_test_cf_sector512.c                                                         Ver. 1.00
 // Owner:  AF
-// Desc.:  Dateisystem-unabhaengiger Sektor-Roundtrip-Test fuer die CF-Emulation (cb030.c). Faehrt
+// Desc.:  Dateisystem-unabhaengiger Sektor-Roundtrip-Test fuer die CF-Emulation (q9board.c). Faehrt
 //         das rohe ATA-PIO-READ/WRITE-SECTOR(S)-Protokoll direkt gegen q9_cf_attach/q9_devtype_cf,
 //         OHNE 68k-CPU, OHNE OS-9, OHNE RBF/PCF-Treiber -- die Frage ist ausschliesslich: schreibt/
 //         liest die Emulation bei image_sector_size=512 dieselben Bytes zurueck wie bei 256?
-//         cb030.h dokumentiert die CF-Emulation ausdruecklich als "eigenstaendig testbar"
-//         (q9_cb030_read8/write8, q9_cf_attach) -- dieser Test nutzt genau diesen Seiteneingang.
+//         q9board.h dokumentiert die CF-Emulation ausdruecklich als "eigenstaendig testbar"
+//         (q9_board_read8/write8, q9_cf_attach) -- dieser Test nutzt genau diesen Seiteneingang.
 //
 //         Vergleicht drei Szenarien im selben Lauf: RBF/256 (Kontrolle, laut Andreas bekannt gut),
 //         RBF/512 (explizite DD.LSNSize=512 im Header, KEINE Heuristik), PCF/512 (Format-Flag
-//         schaltet die RBF-Heuristik komplett ab, s. 5.19a-Kommentar in cb030.c). Jedes Szenario
+//         schaltet die RBF-Heuristik komplett ab, s. 5.19a-Kommentar in q9board.c). Jedes Szenario
 //         durchlaeuft: Einzel-Sektor an low/high LBA, Mehrfach-Sektor (count=4), volle 256er-Kette
 //         (SECCNT=0 = ATA-Konvention fuer 256 Sektoren), Master/Slave-Isolation (DEV-Bit LBA3),
 //         sowie 16-/32-Bit-Datenregisterzugriffe (cf_dev_read16/32 haben einen eigenen Pfad, s.
-//         cb030.c-Kommentar bei q9_devtype_cf).
+//         q9board.c-Kommentar bei q9_devtype_cf).
 //
 // Call:   make test-cf-sector   (baut+startet), oder manuell s. Makefile-Target
 //
@@ -25,14 +25,14 @@
 // 26-07-21│ 1.00 │ Initiale Version (Andreas' Wunsch: genereller 512-Byte-Sektortest,       │ CF
 //         │      │ unabhaengig vom Dateisystem, vor der PCF-Format-Fehlersuche)             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
-#include "../src/kernel/cb030.h"
+#include "../src/kernel/q9board.h"
 #include "../src/kernel/devreg.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* ATA-Registeroffsets -- 1:1 aus cb030.c gespiegelt (dort als CF_REG_* static, hier fuer den
-   Test-Treiber dupliziert, weil cb030.c bewusst keine internen Offsets exportiert). */
+/* ATA-Registeroffsets -- 1:1 aus q9board.c gespiegelt (dort als CF_REG_* static, hier fuer den
+   Test-Treiber dupliziert, weil q9board.c bewusst keine internen Offsets exportiert). */
 #define REG_DATA    0x00u
 #define REG_SECCNT  0x02u
 #define REG_LBA0    0x03u
@@ -76,7 +76,7 @@ static void set_lba(q9_device_t *d, uint32_t lba, uint8_t dev)
 
 /* 8-Bit-Pfad: ein Byte pro Zugriff (Standardfall, wie der reale cfide-Treiber im 8-Bit-Modus).
    sector_bytes = tatsaechliche Transfergroesse je ATA-"Sektor" (256 bei RBF/256, sonst 512, s.
-   cb030_cf_transfer_size) -- bei 256-Byte-LSNs pulst DRQ schon nach 256 statt 512 Byte, ein Treiber
+   board_cf_transfer_size) -- bei 256-Byte-LSNs pulst DRQ schon nach 256 statt 512 Byte, ein Treiber
    (real oder Test) MUSS das wissen, sonst laeuft die zweite Haelfte des Puffers ins Leere. */
 static void ata_write8(q9_device_t *d, uint32_t lba, uint32_t count, uint8_t dev, uint8_t salt, uint32_t sector_bytes)
 {
@@ -115,7 +115,7 @@ static int ata_read8_verify(q9_device_t *d, uint32_t lba, uint32_t count, uint8_
     return mism;
 }
 
-/* 16-/32-Bit-Pfad: cf_dev_read16/32 haben laut cb030.c-Kommentar einen EIGENEN Pfad am
+/* 16-/32-Bit-Pfad: cf_dev_read16/32 haben laut q9board.c-Kommentar einen EIGENEN Pfad am
    Datenregister (mehrere aufeinanderfolgende Byte-Transfers desselben Registers, kein Adress-
    Fortschreiten) -- getrennt gegengeprueft, weil das eine bekannte Ausnahme von der generischen
    Byte-Synthese ist. */
@@ -203,8 +203,8 @@ static int ata_read32_verify(q9_device_t *d, uint32_t lba, uint32_t count, uint8
 }
 
 /* Legt eine leere Backing-Datei mit 'sectors' Sektoren a 'sector_bytes' an. force_lsn_size!=0
-   schreibt zusaetzlich DD.LSNSize (Offset 0x68/0x69, s. RBF_DD_LSNSIZE in cb030.c) an den
-   Dateianfang, damit die RBF-Heuristik in cb030_cf_ensure_open genau diese Groesse erkennt. */
+   schreibt zusaetzlich DD.LSNSize (Offset 0x68/0x69, s. RBF_DD_LSNSIZE in q9board.c) an den
+   Dateianfang, damit die RBF-Heuristik in board_cf_ensure_open genau diese Groesse erkennt. */
 static void make_image(const char *path, uint32_t sectors, uint32_t sector_bytes, uint16_t force_lsn_size)
 {
     FILE *f = fopen(path, "w+b");
@@ -314,7 +314,7 @@ int main(void)
 {
     int f256, f512_rbf, f512_pcf;
 
-    printf("Q9 CF-Sektor-Emulationstest (dateisystem-unabhaengig, s. cb030.c/cb030.h)\n");
+    printf("Q9 CF-Sektor-Emulationstest (dateisystem-unabhaengig, s. q9board.c/q9board.h)\n");
     printf("Testet ausschliesslich das rohe ATA-PIO-Protokoll (q9_cf_attach + q9_devtype_cf),\n");
     printf("keine 68k-CPU, kein OS-9, kein RBF-/PCF-Treiber beteiligt.\n");
 

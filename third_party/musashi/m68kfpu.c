@@ -1970,7 +1970,7 @@ void m68040_fpu_op1(void)
 					break;
 
 				case 5: // (d16,An)
-					// Q9/CB030 addition (see Q9_VENDOR.md): counterpart to the
+					// Q9 addition (see Q9_VENDOR.md): counterpart to the
 					// FRESTORE (d16,An) the OS-9/68K kernel uses for FPU context
 					// switches — no pre/post inc/dec bookkeeping needed.
 					addr = EA_AY_DI_32();
@@ -2042,7 +2042,7 @@ void m68040_fpu_op1(void)
 					break;
 
 				case 5: // (d16,An)
-					// Q9/CB030 addition (see Q9_VENDOR.md): the OS-9/68K kernel restores
+					// Q9 addition (see Q9_VENDOR.md): the OS-9/68K kernel restores
 					// FPU state via FRESTORE with a displaced address register — no
 					// pre/post inc/dec to handle, same NULL-frame logic as mode 2.
 					addr = EA_AY_DI_32();
@@ -2060,7 +2060,7 @@ void m68040_fpu_op1(void)
 					break;
 
 				case 7: // extended modes
-					// Q9/CB030 addition (see Q9_VENDOR.md): the Microware CB030 boot
+					// Q9 addition (see Q9_VENDOR.md): the Microware Q9-Board boot
 					// ROM resets the FPU via "FRESTORE nullframe(PC)" — (d16,PC), a
 					// constant NULL frame in ROM. No pre/post inc/dec to handle.
 					switch (reg)

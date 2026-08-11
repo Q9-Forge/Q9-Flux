@@ -2,11 +2,11 @@
 // File:   devreg.h                                                                        Ver. 1.00
 // Owner:  AF
 // Desc.:  5.17: Geraete-Interface + Registry fuer die Board-Hardware im emulierten 68k-Adressraum
-//         (CB030-Runner, docs/CB030.md) — NICHT zu verwechseln mit device.c/device.h, das die
+//         (Board-Runner, docs/BOARD.md) — NICHT zu verwechseln mit device.c/device.h, das die
 //         OS-9-SEITIGEN Pfad-Geraete (/term, /nil, /d0) fuer den wasm3-Kernelpfad modelliert. Hier
 //         geht es um Host-emulierte Hardware am 68k-Bus (DUART, CF, Timer, RTC, Netz-Terminals,
 //         QUICC-Ethernet), die bisher als sechs hartkodierte if/switch-Ketten an drei Stellen
-//         (m68krt.c Speicher-Dispatch, cb030run.c Hauptschleifen-Poll, m68krt.c IRQ-Ack/Reassert)
+//         (m68krt.c Speicher-Dispatch, q9boardrun.c Hauptschleifen-Poll, m68krt.c IRQ-Ack/Reassert)
 //         verdrahtet waren (s. ARBEITSPLAN 5.17).
 //
 //         q9_device_t buendelt Adressfenster (base/size), IRQ-Zuordnung (level/vector, vector=-1
@@ -14,12 +14,12 @@
 //         read16/32 und write16/32 sind optional (NULL = wird aus den Byte-Zugriffen synthetisiert,
 //         big-endian wie der 68k) — die einzige Ausnahme im Bestand ist Compact-Flash, das am
 //         Datenregister eigene 16/32-Bit-Pfade braucht (ATA-Doppel-/Vierfach-Byte-Transfer, s.
-//         cb030.c) und deshalb eigene read16/32/write16/32-Funktionen einsetzt. poll/irq_pending/
+//         q9board.c) und deshalb eigene read16/32/write16/32-Funktionen einsetzt. poll/irq_pending/
 //         reset sind ebenfalls optional (NULL = Geraet braucht das nicht, z.B. CF hat kein IRQ).
 //
 //         Registry: EIN statisches Array von Geraete-INSTANZEN (q9_devreg_add/get/count), das die
 //         drei genannten Stellen statt der alten Ketten durchlaufen. Instanzen werden weiterhin von
-//         Hand angelegt (cb030run.c/m68krt.c) — das ist bewusst NICHT die "Typ-Registry": die Typ-
+//         Hand angelegt (q9boardrun.c/m68krt.c) — das ist bewusst NICHT die "Typ-Registry": die Typ-
 //         Registry (q9_devtype_lookup) bildet Typnamen ("duart68681", "cf", ...) auf ihre Vtable ab
 //         und ist eine explizite, statisch kompilierte Tabelle (KEINE Linker-Magie wie
 //         __attribute__((constructor)) — portabel, wasm-tauglich, im Projektstil). Sie liegt schon
@@ -27,8 +27,8 @@
 //         sie noch nicht zur Instanziierung.
 //
 // Call:   q9_device_t d = {0};
-//         d.type = "duart68681"; d.name = "uart0"; d.base = Q9_CB030_UART_BASE;
-//         d.size = Q9_CB030_UART_TOP - Q9_CB030_UART_BASE + 1; d.irq_level = 3; d.irq_vector = -1;
+//         d.type = "duart68681"; d.name = "uart0"; d.base = Q9_BOARD_UART_BASE;
+//         d.size = Q9_BOARD_UART_TOP - Q9_BOARD_UART_BASE + 1; d.irq_level = 3; d.irq_vector = -1;
 //         d.vt = &q9_devtype_duart68681; d.state = &board;
 //         q9_devreg_add(d);
 //         ... q9_devreg_count(); q9_devreg_get(i); q9_devreg_reset_all();
@@ -68,7 +68,7 @@ typedef struct {
     q9_dev_irq_pending_fn  irq_pending;  /* optional: 1 = Geraet fordert gerade seinen IRQ an */
     q9_dev_reset_fn        reset;        /* optional: 68k-Reset (q9_m68krt_reset)            */
     /* optional: NUR fuer Geraete mit LAUFZEIT-programmiertem Vektor (68681-DUART: der OS-9-
-       Treiber schreibt seinen Vektor ins IVR-Register, s. cb030.c uart_ivr) -- NULL bedeutet
+       Treiber schreibt seinen Vektor ins IVR-Register, s. q9board.c uart_ivr) -- NULL bedeutet
        "benutze das statische dev->irq_vector" (QUICC/Netz-Terminals: fester Vektor je Instanz,
        s. devreg.h Kommentar bei irq_vector). */
     q9_dev_irq_vector_fn   irq_vector_fn;
@@ -84,9 +84,9 @@ struct q9_device {
     /* 1 = "level-held" -- die IRQ-Leitung bleibt an, bis das Geraet selbst sie wieder freigibt
        (DUART-RX-Puffer, QUICC-SCC-Event, Netz-Terminal-Byte); solche Geraete nimmt der
        IACK-/Reassert-Mechanismus (m68krt.c) in seine Pruefschleife auf. 0 = einmaliger Puls
-       je Runde (Timer/IRQ3-Trigger: q9_cb030_poll_timer feuert genau einmal pro faelligem
+       je Runde (Timer/IRQ3-Trigger: q9_board_poll_timer feuert genau einmal pro faelligem
        Tick und wird bewusst NICHT re-asserted, exakt wie vor 5.17) -- solche Geraete werden
-       nur vom Hauptschleifen-Poll (cb030run.c) ueber irq_pending() unmittelbar nach poll()
+       nur vom Hauptschleifen-Poll (q9boardrun.c) ueber irq_pending() unmittelbar nach poll()
        abgefragt, s. ARBEITSPLAN 5.17. */
     int         level_held;
     const q9_device_vtable_t *vt;
@@ -131,7 +131,7 @@ int      q9_device_irq_vector (q9_device_t *dev);
 // Typ-Registry: explizite, statisch kompilierte Tabelle Typname -> Vtable (bewusst KEINE Linker-
 // Magie). Fuer 5.17 nur bereitgestellt/testbar, noch nicht zur Instanziierung genutzt (kommt mit
 // der Config-Datei in 5.19). Die Vtables selbst sind in den jeweiligen Geraete-Dateien definiert
-// (cb030.c: DUART/CF/Timer/RTC, m68krt.c: nettty, quicc.c: QUICC) und werden hier nur verzeichnet.
+// (q9board.c: DUART/CF/Timer/RTC, m68krt.c: nettty, quicc.c: QUICC) und werden hier nur verzeichnet.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 typedef struct {
     const char                *type;

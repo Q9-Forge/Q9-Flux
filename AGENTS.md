@@ -1,11 +1,22 @@
 # Q9 Arbeitsregeln fuer Codex
 
+Diese Datei bleibt bewusst im Repo-Root -- sie ist die "erste Datei", die
+Codex/Claude beim Start automatisch findet. Die eigentlichen Arbeitsdokumente
+liegen unter `.claude/`, damit der Root aufgeraeumt bleibt.
+
 Beim Arbeiten in diesem Projekt zuerst lesen:
 
-1. `PROJECT.md` fuer Vision, Architektur und Entscheidungen.
-2. `ARBEITSPLAN.md` fuer aktuellen Status und naechste freigegebene Schritte.
-3. `context.txt` fuer den kompakten letzten Arbeitsstand.
+1. `PROJECT.md` fuer Vision, Architektur und Entscheidungen (aktuell nicht
+   vorhanden -- historischer Verweis, s. `docs/PROJECT_VISION_ARCHIV.md`).
+2. `.claude/ARBEITSPLAN.md` fuer aktuellen Status und naechste freigegebene
+   Schritte (deutsches Original: `.claude/ARBEITSPLAN_de.md`; Volltext-Archiv
+   aller erledigten Schritte: `.claude/ARBEITSPLAN_ARCHIV.md`).
+3. `.claude/context.txt` fuer den kompakten letzten Arbeitsstand.
 4. Bei Build-, Toolchain- oder Architekturfragen: `docs/HANDBUCH.md`.
+
+Weitere Dokumente unter `.claude/`: `Q9_CURRENT_STATUS.md` (Windows-
+Arbeitsstand-Snapshot), `BUGFIX_CF_WRITE.md`/`TEST_CF_WRITE.md` (CF-Write-
+Bugfix-Dokumentation), `COMMIT_MESSAGE.txt` (Entwurf).
 
 Arbeitsweise:
 
@@ -17,6 +28,6 @@ Arbeitsweise:
 # Projektübergreifender Kontext
 
 Vor Arbeiten am Teilprojekt zusätzlich den zentralen Kontext
-[Q9Forge/AI_CONTEXT.md](../Q9Forge/AI_CONTEXT.md) beachten. Er enthält die
+[Q9-Forge/AI_CONTEXT.md](../AI_CONTEXT.md) beachten. Er enthält die
 verbindlichen Namen und die Einordnung von Q9 Forge, Q9 Flux, Q9-OS, QCC und
 Parsec.

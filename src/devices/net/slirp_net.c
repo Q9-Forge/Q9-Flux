@@ -44,7 +44,7 @@
 //         │      │ Fix: Uebersetzung SLIRP_POLL_* <-> WSAPOLLFD-Bits unter _WIN32, POSIX unveraendert │
 //═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 #include "slirp_net.h"
-#include "q9_sockcompat.h"
+#include "../../kernel/q9_sockcompat.h"
 #include <slirp/libslirp.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -36,7 +36,7 @@ Das Script:
 ### Option B: Manuell
 
 ```bash
-export Q9_CB030_CF_TRACE=1
+export Q9_BOARD_CF_TRACE=1
 ./build/native/q9.exe --cb030 /pfad/zum/rom.bin --cf local_images/Q9-cb030-work-test.hda
 ```
 
@@ -79,7 +79,7 @@ Prüft:
 
 CF-Trace aktivieren für detaillierte Logs:
 ```bash
-export Q9_CB030_CF_TRACE=1
+export Q9_BOARD_CF_TRACE=1
 ```
 
 Zeigt:
@@ -94,10 +94,10 @@ obwohl der Buffer 2 Sektoren (512 Bytes) enthält.
 
 **Lösung:**
 ```c
-if (img_sec < Q9_CB030_CF_SECTOR_SIZE) {
+if (img_sec < Q9_BOARD_CF_SECTOR_SIZE) {
     fwrite(b->cf_sector, 1, img_sec, b->cf_file);
     fseek(b->cf_file, (long)(b->cf_lba + 1u) * (long)img_sec, SEEK_SET);
-    fwrite(b->cf_sector + img_sec, 1, Q9_CB030_CF_SECTOR_SIZE - img_sec, b->cf_file);
+    fwrite(b->cf_sector + img_sec, 1, Q9_BOARD_CF_SECTOR_SIZE - img_sec, b->cf_file);
 }
 ```
 
