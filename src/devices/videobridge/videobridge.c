@@ -10,7 +10,7 @@
 // 26-08-03│ 1.00 │ 5.27: Erster Wurf                                                       │ Ada
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "videobridge.h"
-#include "q9_sockcompat.h"    /* Windows-Build: Windows/Winsock-Portabilitaet fuer den Netzwerk-Teil */
+#include "../../kernel/q9_sockcompat.h"    /* Windows-Build: Windows/Winsock-Portabilitaet fuer den Netzwerk-Teil */
 #include <string.h>
 #include <stdio.h>
 

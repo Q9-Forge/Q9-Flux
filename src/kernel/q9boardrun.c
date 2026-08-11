@@ -30,10 +30,10 @@
 #include "q9boardrun.h"
 #include "q9board.h"
 #include "m68krt.h"
-#include "quicc.h"
-#include "mc6845.h"                                    /* 5.24: MC6845-CRT-Controller             */
-#include "framebuf.h"                                  /* 5.26: VRAM-Geraet                       */
-#include "videobridge.h"                               /* 5.27: Host-Video-Bridge                  */
+#include "../devices/quicc/quicc.h"
+#include "../devices/mc6845/mc6845.h"                  /* 5.24: MC6845-CRT-Controller             */
+#include "../devices/framebuf/framebuf.h"              /* 5.26: VRAM-Geraet                       */
+#include "../devices/videobridge/videobridge.h"        /* 5.27: Host-Video-Bridge                  */
 #include "devreg.h"
 #include "boardcfg.h"
 #include "../hal/q9_hal.h"

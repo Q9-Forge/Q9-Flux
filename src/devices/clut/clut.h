@@ -44,7 +44,7 @@
 #define Q9_CLUT_H
 
 #include <stdint.h>
-#include "devreg.h"                                    /* q9_device_t/Vtable                     */
+#include "../../kernel/devreg.h"                        /* q9_device_t/Vtable                     */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_CLUT_BASE   0xFFFFA010u                      /* hinter MC6845 $FFFFA000-01, s. Kopf     */
