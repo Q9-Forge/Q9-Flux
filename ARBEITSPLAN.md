@@ -381,6 +381,42 @@ Nach dem Fix per echtem Screenshot verifiziert: Rechteck-Umriss, gefuelltes Rech
 
 ---
 
+### Phase 6 — Mehrere Zielarchitekturen (💡 Vorschlag, 2026-08-11, mit Andreas besprochen)
+
+Andreas möchte Q9 Forge über die Motorola-68K-Familie hinaus erweitern:
+**RISC-V32**, **ARM64** (bereits angefangener nativer Q9-Port, konkretes
+Mac-Modell noch offen) und **x86 32-Bit**. Für x86 wurde die Modusfrage
+geklärt: "32-Bit Real Mode" existiert auf x86 nicht (Real Mode ist zwingend
+16-Bit) — Zielmodus ist **Protected Mode, flach**, angelehnt an OS-9000 auf
+386+ (Microwares eigener portabler, in C geschriebener OS-9-Nachfolger für
+386/68020+/PowerPC/MIPS/SPARC; Boot-Sequenz-Details nicht mit Primärquelle
+verifiziert, aber architektonisch die einzig mögliche Basis für einen
+portablen 32-Bit-Kernel).
+
+Pro Zielarchitektur zwei grundverschiedene Bauarten (Details/Begriffe siehe
+`Q9Forge/AI_CONTEXT.md`, Abschnitt "Mehrere Zielarchitekturen"):
+
+- **Typ A — Board-Emulator**: vollständige Hardware-Emulation (CPU + Board),
+  läuft auf Linux/Windows/Mac, führt unveränderten Gast-Code aus. Heutige
+  Bauart von Q9 Flux, bisher nur für Motorola 68K.
+- **Typ B — native Runtime**: Q9-OS nativ für die Zielarchitektur übersetzt,
+  läuft direkt auf echter Hardware/echtem Host-Kernel, keine Hardware-
+  Emulation, nur dünne HAL-Übersetzung der Syscalls. Entspricht dem
+  archivierten Mini-Kernel-Konzept (`Q9RESUME-Kernel`).
+
+Heutiger Stand ist bewusst nur Struktur/Planung (ROADMAP.md +
+AI_CONTEXT.md aktualisiert) — noch keine Code-Arbeit. Alle drei
+Zielarchitekturen sind grob gleich eingeordnet, ohne Priorisierung.
+
+| # | Schritt | Status | Wer | Notizen |
+|---|---------|--------|-----|---------|
+| 6.1 | Namen für Typ A/Typ B final festlegen (Arbeitsbegriffe: "Board-Emulator" / "native Runtime") und in AI_CONTEXT.md als verbindlich markieren | 💡 | — | Aktuell nur Arbeitsbegriffe, noch nicht als "verbindliche Namen" bestätigt |
+| 6.2 | Repo-/Verzeichnisstruktur pro Zielarchitektur festlegen (z. B. eigenes Q9-Forge-Teilprojekt je Zielarchitektur vs. Unterordner in Q9-Flux) | 💡 | — | Betrifft auch, wie Typ A und Typ B einer Zielarchitektur zueinander stehen (gleiches Repo, getrennte Repos?) |
+| 6.3 | Priorität für die erste konkrete Umsetzung festlegen | 💡 | — | Andreas wollte bewusst noch keine Priorisierung (alle drei Zielarchitekturen gleich grob einordnen) — offen, bis das gewünscht wird |
+| 6.4 | x86-Boot-Sequenz (Real Mode → Protected Mode Umschaltung) und OS-9000-Referenzverhalten genauer verifizieren, falls x86-Typ-A angegangen wird | 💡 | — | Heutige Aussage ("Protected Mode, flach") ist architektonisch sicher, aber ohne Primärquelle zur genauen OS-9000-Boot-Sequenz |
+
+---
+
 ### Phase U — Userland-Werkzeuge (Codex-Baustelle, separater Nebenschauplatz)
 
 **Nicht Teil des normalen Phasenablaufs** — läuft parallel zu Phase 3/4, auf
