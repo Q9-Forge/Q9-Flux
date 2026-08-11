@@ -14,7 +14,7 @@
 
 # CB030 — Hardware-Referenz
 
-Bezug: [ARBEITSPLAN.md](../ARBEITSPLAN.md) Schritt 5.2. Das CB030-Board dient als
+Bezug: [ARBEITSPLAN.md](../.claude/ARBEITSPLAN.md) Schritt 5.2. Das CB030-Board dient als
 **Bootstrap/Validierungs-Zwischenschritt** für die Musashi-Integration (Schritt 5.1) —
 mit einem echten, produktiven OS-9-Boot-ROM testen, statt nur mit
 handassemblierten Testprogrammen. Ändert nichts an der eigentlichen Q9-Zielhardware

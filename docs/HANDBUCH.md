@@ -60,7 +60,7 @@ Für Details verweist es auf die Fachdokumente in `docs/` statt sie zu wiederhol
 
 **Verwandte Dokumente:**
 - [`../PROJECT.md`](../PROJECT.md) — Vision, Entscheidungshistorie (E1–E12), offene Fragen (O1–O6)
-- [`../ARBEITSPLAN.md`](../ARBEITSPLAN.md) — laufender Arbeitsstand, Schritt für Schritt (internes Arbeitsdokument, siehe unten)
+- [`../.claude/ARBEITSPLAN.md`](../.claude/ARBEITSPLAN.md) — laufender Arbeitsstand, Schritt für Schritt (internes Arbeitsdokument, siehe unten)
 - [`SYSCALLS.md`](SYSCALLS.md) — vollständige Syscall-ABI (Register, Fehlercodes)
 - [`SYSCALL_ROADMAP.md`](SYSCALL_ROADMAP.md) — alle 97 OS-9-Syscalls mit Q9-Status
 - [`DEVICES.md`](DEVICES.md) — Geräte-/Pfadtabelle, Treiber-Schnittstelle
@@ -1030,7 +1030,7 @@ Typ-Registry, Fensterüberlappungs-/Vektorkollisions-Validierung.
 
 ## 6. Stand der Dinge
 
-Kompletter, feingranularer Stand mit Begründungen: [`../ARBEITSPLAN.md`](../ARBEITSPLAN.md)
+Kompletter, feingranularer Stand mit Begründungen: [`../.claude/ARBEITSPLAN.md`](../.claude/ARBEITSPLAN.md)
 (Statusmodell 💡/💤/🟢/🔄/✅/⛔). Kurzfassung nach Phase (Stand 2026-07-07):
 
 | Phase | Inhalt | Stand |
