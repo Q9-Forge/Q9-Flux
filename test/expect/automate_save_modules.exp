@@ -1,15 +1,15 @@
 #!/usr/bin/expect -f
-# Automatisiertes Script: Startet CB030-Emulator und speichert alle RAM-Module
+# Automatisiertes Script: Startet den Emulator und speichert alle RAM-Module
 
 set timeout 120
 set ROM "local_images/HD5-skip2-work.hda"
 set CF "local_images/Q9-cb030-work-test.hda"
 
 # Enable CF tracing
-set env(Q9_CB030_CF_TRACE) 1
+set env(Q9_BOARD_CF_TRACE) 1
 
-puts "=== Starting CB030 Emulator ==="
-spawn ./build/native/q9.exe --cb030 $ROM --cf $CF
+puts "=== Starting Emulator ==="
+spawn ./build/native/q9.exe --rom $ROM --cf $CF
 
 # Wait for boot and shell prompt
 expect {

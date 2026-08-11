@@ -1,9 +1,9 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   CB030.md                                                                        Ver. 1.00
+# File:   BOARD.md                                                                        Ver. 1.00
 # Owner:  AF
 # Desc.:  Hardware-Referenz fuer das CB030-Board (68030-SBC) — Speicherkarte + Peripherie-Register.
 #         Grundlage fuer Schritt 5.2 (ARBEITSPLAN.md): Musashi-Board-Emulation zur Bootstrap-
-#         Validierung mit dem originalen Microware-OS-9-Boot-ROM, bevor eigene Q9-Module treten.
+#         Validierung mit dem originalen, proprietaeren OS-9-Boot-ROM, bevor eigene Q9-Module treten.
 #
 # Edition History
 #─────────┬──────┬─────────────────────────────────────────────────────────────────────────┬──────
@@ -16,7 +16,7 @@
 
 Bezug: [ARBEITSPLAN.md](../ARBEITSPLAN.md) Schritt 5.2. Das CB030-Board dient als
 **Bootstrap/Validierungs-Zwischenschritt** für die Musashi-Integration (Schritt 5.1) —
-mit einem echten, produktiven Microware-OS-9-Boot-ROM testen, statt nur mit
+mit einem echten, produktiven OS-9-Boot-ROM testen, statt nur mit
 handassemblierten Testprogrammen. Ändert nichts an der eigentlichen Q9-Zielhardware
 (MC68EN360/QUICC bleibt Ziel für Phase 7, siehe PROJECT.md O4).
 
@@ -88,16 +88,16 @@ echten Interrupt, der nur ein Flag setzt, das zur richtigen Zeit im Zyklus
 abgefragt wird — nur ohne die echte Asynchronität):
 
 ```
-q9_cb030_t bekommt: timer_active (an/aus, durch TI_IRQ_ON/OFF umgeschaltet)
+q9_board_t bekommt: timer_active (an/aus, durch TI_IRQ_ON/OFF umgeschaltet)
                     last_tick_ms (Host-Zeit beim letzten Auslösen)
 
-q9_cb030_poll_timer(board, jetzt_ms):
+q9_board_poll_timer(board, jetzt_ms):
     wenn timer_active UND (jetzt_ms - last_tick_ms) >= 10:
         m68k_set_irq(3)
         last_tick_ms = jetzt_ms
 ```
 
-`q9_cb030_poll_timer` wird von der Stelle aufgerufen, die auch `m68k_execute()`
+`q9_board_poll_timer` wird von der Stelle aufgerufen, die auch `m68k_execute()`
 antreibt — Häufigkeit hängt am noch offenen Zyklenbudget pro Aufruf, ist aber
 für Software-Timer-Zwecke unkritisch (keine harte Echtzeitanforderung).
 
@@ -173,7 +173,7 @@ sonst:                          (nach dem einen REMAP-Zugriff)
 Der REMAP-Zustand ("schon umgeschaltet: ja/nein") ist ein einzelner Merker in einer
 neuen Board-Zustandsstruktur — unabhängig von Musashis eigenem CPU-Zustand.
 
-**ROM-Inhalt**: Kommt aus einer Datei (das reale Microware-Boot-ROM-Image, proprietär —
+**ROM-Inhalt**: Kommt aus einer Datei (das reale Boot-ROM-Image, proprietär —
 bleibt lokal, NICHT ins Repo, siehe Lizenzhinweis oben), beim Board-Start einmal komplett
 eingelesen und im Speicher gehalten (512 KByte, passt locker). Dateipfad wird konfigurierbar
 sein, nicht fest einprogrammiert.

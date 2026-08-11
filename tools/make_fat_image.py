@@ -3,7 +3,7 @@
 # File:   make_fat_image.py                                                                Ver. 1.00
 # Owner:  AF
 # Desc.:  5.19: Erzeugt ein FAT12- oder FAT16-Superfloppy-Image (PCF-Typ) fuer den Q9-Emulator.
-#         512 Byte/Sektor (die Buffergroesse, die aktuell funktioniert, = Q9_CB030_CF_SECTOR_SIZE).
+#         512 Byte/Sektor (die Buffergroesse, die aktuell funktioniert, = Q9_BOARD_CF_SECTOR_SIZE).
 #         FAT12 vs. FAT16 ergibt sich automatisch aus der Cluster-Anzahl (< 4085 -> FAT12).
 #         Legt optional ein paar Testdateien + ein Unterverzeichnis an, damit dir/read im
 #         Emulator etwas zu sehen haben.

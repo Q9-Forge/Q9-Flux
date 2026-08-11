@@ -11,7 +11,7 @@
 //         **Nicht-blockierend (Q9-Frame ARCHITECTURE.md: "darf CPU-Emulation ... nicht anhalten"):**
 //         alle Sockets laufen mit O_NONBLOCK (exakt das schon etablierte Muster der Netz-Terminals,
 //         s. m68krt.c init_network_terminals/update_network_terminals) -- q9_videobridge_poll() wird
-//         einmal je Hauptschleifen-Runde aufgerufen (cb030run.c) und kehrt immer sofort zurueck.
+//         einmal je Hauptschleifen-Runde aufgerufen (q9boardrun.c) und kehrt immer sofort zurueck.
 //
 //         **Bewusste Vereinfachungen ggue. der Zielarchitektur (ARCHITECTURE.md), analog zu den
 //         bisherigen "erst einfach"-Entscheidungen (framebuf.h Board-Config, mc6845.h Register-
@@ -67,7 +67,7 @@
 
 /* WICHTIG: enthaelt einen mehrere MByte grossen Sendepuffer (out_buf, s.u.) -- NIEMALS als lokale
    (Stack-)Variable anlegen (Stack-Overflow), immer `static` oder als Teil einer bereits statischen
-   Struktur (analog q9_framebuf_t/q9_mc6845_t in cb030run.c). */
+   Struktur (analog q9_framebuf_t/q9_mc6845_t in q9boardrun.c). */
 typedef struct {
     int      udp_fd;
     int      tcp_fd;
@@ -116,7 +116,7 @@ int q9_videobridge_init(q9_videobridge_t *vb, q9_framebuf_t *fb, const q9_mc6845
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q9_videobridge_poll
-// Desc.:    Einmal je Hauptschleifen-Runde aufrufen (cb030run.c) -- niemals blockierend. Bedient
+// Desc.:    Einmal je Hauptschleifen-Runde aufrufen (q9boardrun.c) -- niemals blockierend. Bedient
 //           UDP-Discovery-Anfragen, nimmt (bei freiem Client-Slot) neue TCP-Verbindungen an,
 //           handshaked neue Clients, erkennt Modus-/Geometrieaenderungen und sendet faellige
 //           Dirty-Updates (gedrosselt auf die Rate aus MC6845-Register R19).

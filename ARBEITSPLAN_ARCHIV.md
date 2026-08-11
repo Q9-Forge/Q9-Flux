@@ -158,31 +158,31 @@ Vier neue Importe q9.i_open/i_close/i_read/i_write in wasmproc.c. Details siehe 
 
 #### Schritt 5.2a: RAM/ROM/Remap-Speicherlogik
 
-`src/kernel/cb030.c/.h` neu (native-only, wie m68krt.c): `q9_cb030_t` (rom/rom_len, ram/ram_len, remapped-Merker, unabhängig von Musashis CPU-Zustand) + reiner Adress-Dekoder `q9_cb030_read/write8/16/32` als if/else-Kette (REMAP-Registerbereich zuerst geprüft — Trigger unabhängig vom Zustand —, danach RAM vor ROM, wie in docs/CB030.md vorgegeben). Reset-Zustand: ROM gespiegelt bis `0x0800_0000` (Modulo auf rom_len, nicht hart auf 512 KB); nach REMAP-Trigger (jeder Lese-/Schreibzugriff auf `0xFFFF_8000`–`0xFFFF_8FFF`) liegt RAM ab 0, ROM nur noch einmal read-only bei `0xFE00_0000`–`0xFE07_FFFF`, keine Spiegelung mehr. Bewusst NOCH NICHT enthalten (Grundlage für 5.2b–d): echtes Laden des proprietären Microware-Boot-ROMs aus einer Datei (Pfad/Lade-Helper folgt, sobald ein Verbraucher — z.B. der erste Musashi-Rauchtest mit echtem ROM — ansteht) und die Peripherie-Adressbereiche (UART/CF/Timer liefern hier nur 0 bzw. verwerfen Schreibzugriffe); ebenso offen: die Verdrahtung an Musashis `m68k_read/write_memory_*`-Hooks aus m68krt.c (reiner Hardware-Adress-Dekoder-Test, noch ohne Musashi-Anbindung). 3 neue Selbsttest-Checks unter `-DQ9_HAVE_M68K` (synthetisches 4-Byte-Test-ROM statt echtem Boot-ROM: Reset-Spiegelung, REMAP schaltet RAM frei, Remap-Zustand ROM einmalig+read-only). docs/HANDBUCH.md (Abschnitt 3, neuer Abschnitt 5.10, Abschnitt 6) aktualisiert. `make test` PASS, `make native`/`make wasm` warnungsfrei
+`src/kernel/q9board.c/.h` neu (native-only, wie m68krt.c): `q9_board_t` (rom/rom_len, ram/ram_len, remapped-Merker, unabhängig von Musashis CPU-Zustand) + reiner Adress-Dekoder `q9_board_read/write8/16/32` als if/else-Kette (REMAP-Registerbereich zuerst geprüft — Trigger unabhängig vom Zustand —, danach RAM vor ROM, wie in docs/BOARD.md vorgegeben). Reset-Zustand: ROM gespiegelt bis `0x0800_0000` (Modulo auf rom_len, nicht hart auf 512 KB); nach REMAP-Trigger (jeder Lese-/Schreibzugriff auf `0xFFFF_8000`–`0xFFFF_8FFF`) liegt RAM ab 0, ROM nur noch einmal read-only bei `0xFE00_0000`–`0xFE07_FFFF`, keine Spiegelung mehr. Bewusst NOCH NICHT enthalten (Grundlage für 5.2b–d): echtes Laden des proprietären Microware-Boot-ROMs aus einer Datei (Pfad/Lade-Helper folgt, sobald ein Verbraucher — z.B. der erste Musashi-Rauchtest mit echtem ROM — ansteht) und die Peripherie-Adressbereiche (UART/CF/Timer liefern hier nur 0 bzw. verwerfen Schreibzugriffe); ebenso offen: die Verdrahtung an Musashis `m68k_read/write_memory_*`-Hooks aus m68krt.c (reiner Hardware-Adress-Dekoder-Test, noch ohne Musashi-Anbindung). 3 neue Selbsttest-Checks unter `-DQ9_HAVE_M68K` (synthetisches 4-Byte-Test-ROM statt echtem Boot-ROM: Reset-Spiegelung, REMAP schaltet RAM frei, Remap-Zustand ROM einmalig+read-only). docs/HANDBUCH.md (Abschnitt 3, neuer Abschnitt 5.10, Abschnitt 6) aktualisiert. `make test` PASS, `make native`/`make wasm` warnungsfrei
 
 #### Schritt 5.2b: 68681-DUART (seriell)
 
-Minimalansatz umgesetzt: `cb030.c` `cb030_uart_read/write` — nur SRA (`UART_BASE+0x02`, TxRDY=0x04 immer gesetzt, RxRDY=0x01 wenn 1-Byte-Empfangspuffer gefüllt) und THRA/RHRA (`UART_BASE+0x06`, schreiben → `q9_hal_con_put`, lesen → Empfangspuffer, gefüllt via `q9_hal_con_get()` bei SRA-Abfrage) sind wirklich aktiv; restlicher Registersatz wird sauber angenommen (liest 0 / verwirft Schreibzugriff). 1 neuer Selbsttest (`kernel.c`, `-DQ9_HAVE_M68K`): SRA TxRDY gesetzt/RxRDY leer im Testlauf, THRA-Schreibzugriff ok. `make test` PASS
+Minimalansatz umgesetzt: `q9board.c` `cb030_uart_read/write` — nur SRA (`UART_BASE+0x02`, TxRDY=0x04 immer gesetzt, RxRDY=0x01 wenn 1-Byte-Empfangspuffer gefüllt) und THRA/RHRA (`UART_BASE+0x06`, schreiben → `q9_hal_con_put`, lesen → Empfangspuffer, gefüllt via `q9_hal_con_get()` bei SRA-Abfrage) sind wirklich aktiv; restlicher Registersatz wird sauber angenommen (liest 0 / verwirft Schreibzugriff). 1 neuer Selbsttest (`kernel.c`, `-DQ9_HAVE_M68K`): SRA TxRDY gesetzt/RxRDY leer im Testlauf, THRA-Schreibzugriff ok. `make test` PASS
 
 #### Schritt 5.2c: Compact-Flash-Interface
 
-ATA-PIO-Minimalprotokoll umgesetzt: `cb030.c` `cb030_cf_read/write`, Register `CF_BASE+0` (Data, 1 Byte/Zugriff) / `+2` (Sectcount) / `+3..+5` (LBA0-2) / `+7` (Kommando/Status). READ SECTOR(S) (`0x20`) + WRITE SECTOR(S) (`0x30`), Statusbits BSY/DRQ/RDY/ERR wie geplant. Backing Store: lazy geöffnete Host-Datei über `q9_cb030_cf_attach(board, path)` (Muster wie `q9disk.img`, 3.1) — Testdatei `cb030_cf_test.img` neu in `.gitignore`/`Makefile test`-Target (Löschung vor Testlauf). 1 neuer Selbsttest: WRITE-SECTOR-Testmuster schreiben, mit frischer Board-Instanz (simuliert Neustart) über READ SECTOR(S) zurücklesen, Byte-für-Byte verglichen. `make test` PASS
+ATA-PIO-Minimalprotokoll umgesetzt: `q9board.c` `cb030_cf_read/write`, Register `CF_BASE+0` (Data, 1 Byte/Zugriff) / `+2` (Sectcount) / `+3..+5` (LBA0-2) / `+7` (Kommando/Status). READ SECTOR(S) (`0x20`) + WRITE SECTOR(S) (`0x30`), Statusbits BSY/DRQ/RDY/ERR wie geplant. Backing Store: lazy geöffnete Host-Datei über `q9_board_cf_attach(board, path)` (Muster wie `q9disk.img`, 3.1) — Testdatei `cb030_cf_test.img` neu in `.gitignore`/`Makefile test`-Target (Löschung vor Testlauf). 1 neuer Selbsttest: WRITE-SECTOR-Testmuster schreiben, mit frischer Board-Instanz (simuliert Neustart) über READ SECTOR(S) zurücklesen, Byte-für-Byte verglichen. `make test` PASS
 
 #### Schritt 5.2d: Timer/IRQ3
 
-Kooperative Umsetzung wie geplant: `q9_cb030_poll_timer(board, now_ms)` in `cb030.c` — `TI_IRQ_ON`/`TI_IRQ_OFF` (reine Adress-Trigger, `cb030_read/write_byte`) schalten `timer_active`; bei aktivem Timer und ≥10ms seit `timer_last_ms` liefert die Funktion 1 zurück (Aufrufer ruft dann `m68k_set_irq(3)`). Bewusst KEINE Musashi-Abhängigkeit in `cb030.c` selbst — dafür neuer schmaler Wrapper `q9_m68krt_set_irq(level)` in `m68krt.h/.c` (ruft direkt `m68k_set_irq()`, Musashi erledigt Stack/Vektorsprung komplett selbst). 1 neuer Selbsttest: Timer aus → kein Signal; TI_IRQ_ON → sofortiger erster Trigger; innerhalb 10ms kein zweites Signal, danach wieder; TI_IRQ_OFF stoppt. `make test` PASS
+Kooperative Umsetzung wie geplant: `q9_board_poll_timer(board, now_ms)` in `q9board.c` — `TI_IRQ_ON`/`TI_IRQ_OFF` (reine Adress-Trigger, `cb030_read/write_byte`) schalten `timer_active`; bei aktivem Timer und ≥10ms seit `timer_last_ms` liefert die Funktion 1 zurück (Aufrufer ruft dann `m68k_set_irq(3)`). Bewusst KEINE Musashi-Abhängigkeit in `q9board.c` selbst — dafür neuer schmaler Wrapper `q9_m68krt_set_irq(level)` in `m68krt.h/.c` (ruft direkt `m68k_set_irq()`, Musashi erledigt Stack/Vektorsprung komplett selbst). 1 neuer Selbsttest: Timer aus → kein Signal; TI_IRQ_ON → sofortiger erster Trigger; innerhalb 10ms kein zweites Signal, danach wieder; TI_IRQ_OFF stoppt. `make test` PASS
 
 #### Schritt 5.4: **Erster echter OS-9-Boot** — Microware-ROM bootet bis zur interaktiven Shell 🎉
 
-Das unveränderte `romimage.dev.running.BIN` (ROMBUG, 512K, lokal — nie im Repo) bootet in `q9.exe --cb030 <rom>` bis zum mshell-Prompt; `mdir` läuft und listet alle Module. Der Weg dahin (iterativ durchdebuggt, jede Hürde einzeln): (1) Musashi-FPU: FRESTORE `(d16,PC)` (Boot-ROM-FPU-Reset), FRESTORE/FSAVE `(d16,An)` (Kernel-Kontextwechsel) ergänzt — vorher `fatalerror`-Abbruch. (2) Musashi-MMU: Root-Deskriptor DT=1 (Direct Mapping — OS-9s initiale 1:1-Map) + komplette vierte Tabellenebene (TID — ssm851 nutzt alle vier 68851-Ebenen) implementiert. (3) CF: SET FEATURES (`0xEF`, 8-Bit-Mode) wird angenommen. (4) DUART: volle Registerkarte — MR1/MR2-Latch mit Zeiger-Semantik + CR-Kommando "Reset MR Pointer", **IVR-Reset-Wert `0x0F`** (der sc68681-Treiber prüft exakt darauf — war der E$BMode-Blocker!), IMR-Latch, ISR-Polling-Bits, TxEMT in SRA, Kanal B stumm. (5) Interrupts: `M68K_EMULATE_INT_ACK` ON in m68kconf.h — die DUART liefert im IACK-Zyklus ihren **IVR-Vektor (0x50, vektorisiert!)**, der Timer Autovector 27; Auswahl im IACK-Callback (`m68krt.c`), `q9_cb030_uart_irq_pending()` neu, Runner legt IRQ3 bei Timer ODER DUART an. Alle Musashi-Änderungen dokumentiert in `third_party/musashi/Q9_VENDOR.md`. Debug-Werkzeuge (bleiben): `-DQ9_CB030_UART_TRACE` (UART-Zugriffs-Log), `Q9_CB030_DEBUG=1` (periodischer PC/SR/IACK-Report), `q9_m68krt_debug_state()`. Offen/bekannt: PFLUSH/PTEST nur geloggt statt emuliert (für den Boot unkritisch — kein TLB, Übersetzung läuft eh bei jedem Zugriff), CF-Image ist leer (Boot fällt sauber auf ROM zurück), MMU-Schreibschutz/Faults fehlen (Prozess-Isolation im Emulator noch nicht wirksam). `make test` PASS
+Das unveränderte `romimage.dev.running.BIN` (ROMBUG, 512K, lokal — nie im Repo) bootet in `q9.exe --cb030 <rom>` bis zum mshell-Prompt; `mdir` läuft und listet alle Module. Der Weg dahin (iterativ durchdebuggt, jede Hürde einzeln): (1) Musashi-FPU: FRESTORE `(d16,PC)` (Boot-ROM-FPU-Reset), FRESTORE/FSAVE `(d16,An)` (Kernel-Kontextwechsel) ergänzt — vorher `fatalerror`-Abbruch. (2) Musashi-MMU: Root-Deskriptor DT=1 (Direct Mapping — OS-9s initiale 1:1-Map) + komplette vierte Tabellenebene (TID — ssm851 nutzt alle vier 68851-Ebenen) implementiert. (3) CF: SET FEATURES (`0xEF`, 8-Bit-Mode) wird angenommen. (4) DUART: volle Registerkarte — MR1/MR2-Latch mit Zeiger-Semantik + CR-Kommando "Reset MR Pointer", **IVR-Reset-Wert `0x0F`** (der sc68681-Treiber prüft exakt darauf — war der E$BMode-Blocker!), IMR-Latch, ISR-Polling-Bits, TxEMT in SRA, Kanal B stumm. (5) Interrupts: `M68K_EMULATE_INT_ACK` ON in m68kconf.h — die DUART liefert im IACK-Zyklus ihren **IVR-Vektor (0x50, vektorisiert!)**, der Timer Autovector 27; Auswahl im IACK-Callback (`m68krt.c`), `q9_board_uart_irq_pending()` neu, Runner legt IRQ3 bei Timer ODER DUART an. Alle Musashi-Änderungen dokumentiert in `third_party/musashi/Q9_VENDOR.md`. Debug-Werkzeuge (bleiben): `-DQ9_BOARD_UART_TRACE` (UART-Zugriffs-Log), `Q9_BOARD_DEBUG=1` (periodischer PC/SR/IACK-Report), `q9_m68krt_debug_state()`. Offen/bekannt: PFLUSH/PTEST nur geloggt statt emuliert (für den Boot unkritisch — kein TLB, Übersetzung läuft eh bei jedem Zugriff), CF-Image ist leer (Boot fällt sauber auf ROM zurück), MMU-Schreibschutz/Faults fehlen (Prozess-Isolation im Emulator noch nicht wirksam). `make test` PASS
 
 #### Schritt 5.5a: CF-Vorbereitung: Multi-Sektor-Transfers + `--cf <pfad>`-Option
 
-Beide Teile umgesetzt: (1) **Multi-Sektor**: `cb030_cf_read/write` (cb030.c) zaehlen `cf_sectcnt` jetzt echt durch (neues Feld `cf_remaining` in `q9_cb030_t`, 0 = 256 Sektoren, ATA-Konvention) — neue Helfer `cb030_cf_load_sector`/`cb030_cf_store_sector`, DRQ bleibt ueber die Sektorgrenze gesetzt und wird erst nach dem letzten Sektor geloescht. Neuer Selbsttest "5.5a" (kernel.c): 2-Sektor-WRITE/READ SECTOR(S) mit je einem Kommando, DRQ-Zustand an der Sektorgrenze mitgeprueft. (2) **`--cf <pfad>`**: `q9_cb030_boot(rom_path, cf_path)` (cb030run.h/.c) nimmt jetzt einen optionalen zweiten Pfad (NULL/leer → Default `cb030_cf.img`), `main()` in `hal_posix.c`/`hal_native.c` parst `--cf <image>` als optionales drittes Argumentpaar nach `--cb030 <rom>`. Manuell verifiziert (synthetisches Test-ROM, Banner zeigt uebergebenen CF-Pfad statt Default). `.gitignore`/Makefile-`test`-Target um `cb030_cf_multi_test.img` ergaenzt. `make test` PASS (alle 6 Testskripte), `make native` warnungsfrei (einzige verbleibende Meldung ist die vorbestehende Linker-Alignment-Warnung, nicht codebezogen)
+Beide Teile umgesetzt: (1) **Multi-Sektor**: `cb030_cf_read/write` (q9board.c) zaehlen `cf_sectcnt` jetzt echt durch (neues Feld `cf_remaining` in `q9_board_t`, 0 = 256 Sektoren, ATA-Konvention) — neue Helfer `cb030_cf_load_sector`/`cb030_cf_store_sector`, DRQ bleibt ueber die Sektorgrenze gesetzt und wird erst nach dem letzten Sektor geloescht. Neuer Selbsttest "5.5a" (kernel.c): 2-Sektor-WRITE/READ SECTOR(S) mit je einem Kommando, DRQ-Zustand an der Sektorgrenze mitgeprueft. (2) **`--cf <pfad>`**: `q9_board_boot(rom_path, cf_path)` (q9boardrun.h/.c) nimmt jetzt einen optionalen zweiten Pfad (NULL/leer → Default `cb030_cf.img`), `main()` in `hal_posix.c`/`hal_native.c` parst `--cf <image>` als optionales drittes Argumentpaar nach `--cb030 <rom>`. Manuell verifiziert (synthetisches Test-ROM, Banner zeigt uebergebenen CF-Pfad statt Default). `.gitignore`/Makefile-`test`-Target um `cb030_cf_multi_test.img` ergaenzt. `make test` PASS (alle 6 Testskripte), `make native` warnungsfrei (einzige verbleibende Meldung ist die vorbestehende Linker-Alignment-Warnung, nicht codebezogen)
 
 #### Schritt 5.3: Musashi ↔ CB030 verdrahten + Boot-ROM laden + Boot-Runner
 
-Damit ist der Weg frei für den ersten Boot-Versuch mit dem echten Microware-ROM. (1) **Spiegelgrenzen-Korrektur** in `cb030.c/.h`: ROM spiegelt im Reset-Zustand bis `0xFEFF_FFFF` (einschl.) statt fälschlich `0x0800_0000` — die Speicherkarten-Tabelle in docs/CB030.md hatte es richtig, nur der Pseudocode/5.2a-Erstwurf nicht; nötig, weil das echte Boot-ROM vor dem REMAP hoch nach `0xFE00_xxxx` springt (sonst würde ihm der Code unter dem PC wegremappt). Außerdem I/O-Bereich (`0xFFFF_xxxx`) jetzt in BEIDEN Zuständen erreichbar (Dispatch prüft I/O vor der Zustandsweiche — das ROM initialisiert die DUART vor dem Remap). (2) **`q9_cb030_rom_load(path, buf, max, &len)`** in `cb030.c`: lädt das ROM-Image von der Platte (Fehler bei fehlend/leer/>512K); ROM bleibt lokal, Pfad per Kommandozeile, `.gitignore` um `cb030_cf.img`/`cb030rom*.bin`/`*.rom` erweitert. (3) **`q9_m68krt_attach_board(&board)`** in `m68krt.c/.h`: schaltet die sechs Musashi-Speicher-Hooks auf den CB030-Dispatch um (inkl. Reset-Vektoren aus dem ROM) + Autovector-Int-Ack mit Puls-Verhalten (IRQ-Leitung wird beim Annehmen losgelassen, sonst Endlos-Interrupt). (4) **Boot-Runner `cb030run.c/.h`** (neu, native-only, im Makefile): `q9.exe --cb030 <rom-datei>` lädt das ROM, 16 MByte statisches RAM, CF → `cb030_cf.img`, Endlosschleife execute+Timer-Poll, Ende per Ctrl-C — `main()` in beiden HALs erweitert. 1 neuer Selbsttest: synthetisches 32-Byte-Boot-ROM durchläuft das echte Bootmuster (Vektoren aus ROM, `JMP $FE000010`, REMAP via `TST.B ($8000).W`, RAM-Schreiben) über die volle Kette CPU→Hooks→Dispatch. `make test` PASS, Boot-Runner-Rauchtest (2s Dauerlauf mit Test-ROM) ok
+Damit ist der Weg frei für den ersten Boot-Versuch mit dem echten Microware-ROM. (1) **Spiegelgrenzen-Korrektur** in `q9board.c/.h`: ROM spiegelt im Reset-Zustand bis `0xFEFF_FFFF` (einschl.) statt fälschlich `0x0800_0000` — die Speicherkarten-Tabelle in docs/BOARD.md hatte es richtig, nur der Pseudocode/5.2a-Erstwurf nicht; nötig, weil das echte Boot-ROM vor dem REMAP hoch nach `0xFE00_xxxx` springt (sonst würde ihm der Code unter dem PC wegremappt). Außerdem I/O-Bereich (`0xFFFF_xxxx`) jetzt in BEIDEN Zuständen erreichbar (Dispatch prüft I/O vor der Zustandsweiche — das ROM initialisiert die DUART vor dem Remap). (2) **`q9_board_rom_load(path, buf, max, &len)`** in `q9board.c`: lädt das ROM-Image von der Platte (Fehler bei fehlend/leer/>512K); ROM bleibt lokal, Pfad per Kommandozeile, `.gitignore` um `cb030_cf.img`/`cb030rom*.bin`/`*.rom` erweitert. (3) **`q9_m68krt_attach_board(&board)`** in `m68krt.c/.h`: schaltet die sechs Musashi-Speicher-Hooks auf den CB030-Dispatch um (inkl. Reset-Vektoren aus dem ROM) + Autovector-Int-Ack mit Puls-Verhalten (IRQ-Leitung wird beim Annehmen losgelassen, sonst Endlos-Interrupt). (4) **Boot-Runner `q9boardrun.c/.h`** (neu, native-only, im Makefile): `q9.exe --cb030 <rom-datei>` lädt das ROM, 16 MByte statisches RAM, CF → `cb030_cf.img`, Endlosschleife execute+Timer-Poll, Ende per Ctrl-C — `main()` in beiden HALs erweitert. 1 neuer Selbsttest: synthetisches 32-Byte-Boot-ROM durchläuft das echte Bootmuster (Vektoren aus ROM, `JMP $FE000010`, REMAP via `TST.B ($8000).W`, RAM-Schreiben) über die volle Kette CPU→Hooks→Dispatch. `make test` PASS, Boot-Runner-Rauchtest (2s Dauerlauf mit Test-ROM) ok
 
 #### Schritt 5.1: Musashi als CPU-Kern einbinden — Grundbaustein + Rauchtest, KEINE Scheduler-/Syscall-Bridge-Entscheidungen (die kommen erst mit der Detailplanung). Analog zu 4.6 (wasm3): Makefile-Integration (Musashis Zweistufen-Build — `m68kmake` generiert `m68kops.c/.h` aus `m68k_in.c` zur Bauzeit, siehe `third_party/musashi/Q9_VENDOR.md`), schmaler Wrapper `src/kernel/m68krt.c/.h` (analog `wasmrt.c/.h`), CPU-Typ `M68K_CPU_TYPE_68030`. Rauchtest: ein von Hand geschriebenes/assembliertes 68k-Testprogramm (z.B. zwei Zahlen addieren) in emuliertes RAM legen, `m68k_pulse_reset()` + `m68k_execute()` aufrufen, Ergebnis über die emulierten Register prüfen
 
@@ -819,7 +819,7 @@ verdrahtet, Boot-ROM-Laden, Boot-Runner (`q9.exe --cb030 <rom>`).** Andreas
 sucht derweil das echte Microware-Boot-ROM-Image raus — sobald es da ist:
 `./build/native/q9.exe --cb030 <pfad-zum-rom>` und schauen, wie weit es
 kommt. Wichtigster Nebenfund: Die ROM-Spiegelgrenze aus 5.2a war falsch
-(`0x0800_0000` statt bis `0xFEFF_FFFF` — die Speicherkarte in docs/CB030.md
+(`0x0800_0000` statt bis `0xFEFF_FFFF` — die Speicherkarte in docs/BOARD.md
 hatte es richtig, der Pseudocode nicht); außerdem ist die I/O-Region jetzt
 auch VOR dem Remap erreichbar. Beides hätte den echten ROM-Boot scheitern
 lassen. Neuer Selbsttest bootet ein synthetisches 32-Byte-ROM über das echte
@@ -840,13 +840,13 @@ TeraTerm statt Windows Terminal, dort ist nichts zu bauen.
 
 Davor: 2026-07-04 abends — **5.2b/c/d (DUART/Compact-Flash/
 Timer-IRQ3) implementiert und fertig ✅**, direkt von Andreas angestoßen
-("Arbeitsplan jetzt ausführen, Limits übrig"). `cb030.c/.h`: `cb030_uart_read/
+("Arbeitsplan jetzt ausführen, Limits übrig"). `q9board.c/.h`: `cb030_uart_read/
 write` (SRA+THRA/RHRA minimal aktiv, Rest sauber angenommen), `cb030_cf_read/
 write` (ATA-PIO READ/WRITE SECTOR(S), Backing Store = lazy Host-Datei
-`cb030_cf_test.img`, neu in `.gitignore`/`Makefile`), `q9_cb030_poll_timer`
+`cb030_cf_test.img`, neu in `.gitignore`/`Makefile`), `q9_board_poll_timer`
 (kooperatives 100-Hz-Polling, s. Begründung unten). `m68krt.h/.c`: neuer
 Wrapper `q9_m68krt_set_irq(level)` um Musashis `m68k_set_irq()` — bewusst der
-einzige Berührungspunkt zwischen `cb030.c` (kennt Musashi nicht) und Musashi
+einzige Berührungspunkt zwischen `q9board.c` (kennt Musashi nicht) und Musashi
 selbst. 3 neue Selbsttests (`kernel.c`, `-DQ9_HAVE_M68K`), alle grün. `make
 test` PASS, `make native` warnungsfrei. Damit ist Phase 5.2 (CB030-Board-
 Emulation) komplett: 5.2a–d alle ✅.
@@ -857,10 +857,10 @@ echter Host-Timerinterrupt (Signal/Thread wäre nicht threadsicher gegen
 Musashis Zustand, widerspricht dem kooperativen E8-Grundsatz) — stattdessen
 Host-Uhrzeit zählen und bei ≥10ms `m68k_set_irq(3)` aufrufen, Musashi erledigt
 den eigentlichen Interrupt-Mechanismus (Stack/Vektorsprung) selbst. Details in
-`docs/CB030.md`.
+`docs/BOARD.md`.
 
 Davor: 2026-07-04 abends — **5.2a fertig, 5.2b/c
-freigegeben.** `src/kernel/cb030.c/.h` neu: RAM/ROM/Remap-Adress-Dekoder,
+freigegeben.** `src/kernel/q9board.c/.h` neu: RAM/ROM/Remap-Adress-Dekoder,
 3 Selbsttests grün, `make test` PASS. Andreas' Nachfrage berechtigt: 5.2b
 (DUART) und 5.2c (CF) waren schon ausreichend spezifiziert, um loszulegen
 (SRA/THRA/RHRA-Minimalansatz bzw. Standard-ATA-PIO-Kommandos READ/WRITE
@@ -882,7 +882,7 @@ Merker. ROM-Inhalt kommt aus einer lokalen Datei (Microware-Boot-ROM,
 proprietär, nicht im Repo). UART braucht nur SRA+THRA/RHRA wirklich
 funktionsfähig, aber jeder Registerzugriff muss angenommen werden. CF-Karte
 braucht mindestens ein ATA-Lese/Schreib-Kommandoprotokoll, nicht nur rohe
-Register. Details: `docs/CB030.md` Abschnitt „Emulations-Architektur".
+Register. Details: `docs/BOARD.md` Abschnitt „Emulations-Architektur".
 5.2b–d bleiben 💡 bis zu weiteren Detailfragen (RAM-Größe/CF-Kommandos/
 Timer-Frequenz).
 
@@ -898,7 +898,7 @@ Davor: 2026-07-04 abends — **CB030-Hardware-Details geklärt,
 5.2 in Einzelgeräte aufgebrochen.** Andreas: REMAP und `TI_IRQ_ON`/`TI_IRQ_OFF`
 sind reine Adress-Trigger (kein Bit-Layout) — REMAP schaltet einmalig auf
 RAM-bei-0 + ROM-einmalig-bei-`0xFE00_0000` um, der Timer löst IRQ3 aus.
-`docs/CB030.md` entsprechend präzisiert. Schritt 5.2 in vier Einzelgeräte
+`docs/BOARD.md` entsprechend präzisiert. Schritt 5.2 in vier Einzelgeräte
 aufgeteilt (5.2a RAM/ROM/Remap, 5.2b DUART, 5.2c Compact-Flash, 5.2d
 Timer/IRQ3) — bleiben 💡, da die Anbindung an Musashis Speicher-/Interrupt-
 Mechanismus noch nicht architektonisch entschieden ist (Phase-5-Detailplanung).
@@ -1015,8 +1015,8 @@ im Port schon), gleich 8 Kanaele, Emulator entsprechend erweitern. Akzeptanz: 8 
 Telnet-Verbindungen, auf allen arbeiten.
 
 **Emulator-Seite (Q9-Repo, Release 1.65):**
-- `cb030.h`: MAX_CHANNELS 4 -> 8, Registerfenster $FFFF1010-$FFFF108F
-  (Q9_CB030_NET_X1..X8_BASE), Kanaltabelle aus dem Header nach m68krt.c verlegt
+- `q9board.h`: MAX_CHANNELS 4 -> 8, Registerfenster $FFFF1010-$FFFF108F
+  (Q9_BOARD_NET_X1..X8_BASE), Kanaltabelle aus dem Header nach m68krt.c verlegt
   (war static im Header = tote Kopie je Uebersetzungseinheit).
 - `m68krt.c`: Vektoren 70..77 (je Kanal ein eigener Autovektor), zwei Bugfixes:
   1. `network_irq_resync()`: Die IRQ-Leitung ist das ODER aller RX-Ready-Bits.
@@ -1071,7 +1071,7 @@ Kanal zu (Meldung "Gast dynamisch an /xN uebergeben"), tsmon startet login.
 Schreiben wird ignoriert.
 
 **Emulator (Q9-Repo, Release 1.66):**
-- `cb030.h/.c`: RTC72421-Fenster $FFFFD000–$FFFFD00F (kollisionsfrei; NET endet
+- `q9board.h/.c`: RTC72421-Fenster $FFFFD000–$FFFFD00F (kollisionsfrei; NET endet
   $FFFF108F, QUICC $FFFF3FFF, REMAP ab $FFFF8000, CF ab $FFFFE000). 16 Nibble-
   Register: 0..C = S1,S10,MI1,MI10,H1,H10,D1,D10,MO1,MO10,Y1,Y10,W als BCD aus
   q9_hal_time (Wochentag nach Sakamoto, Jahr Basis 2000), D/E = 0 (nie BUSY),
@@ -1082,7 +1082,7 @@ Schreiben wird ignoriert.
   Autovektor 27 — der MWOS-Q9-Port registriert tkq9 aber auf Vektor 30 =
   Level 6 (_TckVect, "new CPLD"). Folge: Die OS-9-Uhr hat im Emulator NIE
   getickt (date stand, "Module Directory at 00:00:00", sleep -s 3 = 25 s über
-  irgendeinen Umweg). Fix: Timer -> set_irq(6) (cb030run.c, als hoechster Level
+  irgendeinen Umweg). Fix: Timer -> set_irq(6) (q9boardrun.c, als hoechster Level
   zuletzt angelegt), IACK: DUART-IVR nur noch bei Level 3, Level 6 -> Autovektor.
 - **Ur-Bug 2 (Tick-Verlust):** poll_timer setzte timer_last_ms auf "jetzt"
   (1 Tick pro Poll, Rest weg — im Idle-Betrieb stand die Uhr selbst mit

@@ -1,5 +1,5 @@
 #!/usr/bin/expect -f
-# 5.19: Boot+Login-Test ueber die Board-CONFIG-DATEI (statt --cb030/--cf). Prueft, dass der
+# 5.19: Boot+Login-Test ueber die Board-CONFIG-DATEI (statt --rom/--cf). Prueft, dass der
 # config-gesteuerte Startweg ein echtes Systemimage bis zum Login bringt (Onboard-CF = bootendes
 # RBF-Image aus der Config) und ein zweites CF-Interface (RC2014) danebenlaeuft.
 # Aufruf: expect test_519_config_boot.exp <config-datei>

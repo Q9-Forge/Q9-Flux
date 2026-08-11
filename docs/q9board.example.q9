@@ -5,7 +5,7 @@
 ;           q9.exe <datei> --net vmnet     (CLI-Optionen ueberschreiben die Config)
 ;
 ; Kommentare mit ';' oder '#'. Pfade sind relativ zu DIESER Datei (nicht zum CWD).
-; Die bestehenden CLI-Optionen (--cb030 <rom>, --cf <image>, --net ...) bleiben und haben Vorrang.
+; Die bestehenden CLI-Optionen (--rom <rom>, --cf <image>, --net ...) bleiben und haben Vorrang.
 ; ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 [board]

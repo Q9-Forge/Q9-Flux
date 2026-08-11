@@ -46,7 +46,7 @@ uint pmmu_translate_addr(uint addr_in)
 	switch (root_limit & 3)
 	{
 		case 0:	// invalid, should cause MMU exception
-			// Q9/CB030: diagnostic detail added (see Q9_VENDOR.md)
+			// Q9: diagnostic detail added (see Q9_VENDOR.md)
 			fatalerror("680x0 PMMU: Unhandled root mode (addr %08x tc %08x srp %08x/%08x crp %08x/%08x sr %04x pc %08x)\n",
 				addr_in, m68ki_cpu.mmu_tc,
 				m68ki_cpu.mmu_srp_limit, m68ki_cpu.mmu_srp_aptr,
@@ -55,7 +55,7 @@ uint pmmu_translate_addr(uint addr_in)
 			break;
 
 		case 1:	// page descriptor -> direct mapping
-			// Q9/CB030 addition (see Q9_VENDOR.md): DT=1 in the root pointer means
+			// Q9 addition (see Q9_VENDOR.md): DT=1 in the root pointer means
 			// the root pointer itself is the page descriptor — the whole address
 			// space maps flat, offset by the descriptor's address field (OS-9/68K
 			// boots with such a 1:1 supervisor map before the SSM takes over).
@@ -81,7 +81,7 @@ uint pmmu_translate_addr(uint addr_in)
 			break;
 	}
 
-	// Q9/CB030 addition: root was a page descriptor (direct mapping) — done, don't
+	// Q9 addition: root was a page descriptor (direct mapping) — done, don't
 	// walk the (nonexistent) tables (tamode==0 would hit the Table A fatalerror).
 	if (resolved)
 	{
@@ -204,7 +204,7 @@ uint pmmu_translate_addr(uint addr_in)
 
 	if (!resolved)
 	{
-		// Q9/CB030 change (see Q9_VENDOR.md): table C entries with DT=2/3 point to a
+		// Q9 change (see Q9_VENDOR.md): table C entries with DT=2/3 point to a
 		// FOURTH table level (TID field of TC) — the 68851/68030 walk has up to four
 		// levels A/B/C/D and OS-9/68K's ssm851 actually uses them all. Was fatalerror
 		// (with a mislabeled "Table B"/tbmode message) before.
@@ -312,7 +312,7 @@ void m68881_mmu_ops(void)
 				}
 				else if ((modes & 0xe200) == 0x2000)	// PFLUSH
 				{
-					// Q9/CB030 (see Q9_VENDOR.md): warn once, then stay silent — OS-9
+					// Q9 (see Q9_VENDOR.md): warn once, then stay silent — OS-9
 					// flushes on every context switch and the repeated message wrecks
 					// the console. Ignoring PFLUSH is harmless here: this emulation
 					// has no TLB, every access re-walks the tables.
@@ -341,7 +341,7 @@ void m68881_mmu_ops(void)
 				}
 				else if ((modes & 0xe000) == 0x8000)	// PTEST
 				{
-					// Q9/CB030 (see Q9_VENDOR.md): warn once, then stay silent (s. PFLUSH).
+					// Q9 (see Q9_VENDOR.md): warn once, then stay silent (s. PFLUSH).
 					// TODO: PTEST sollte eigentlich das MMU-SR setzen — bisher scheint
 					// OS-9 das Ergebnis nicht auszuwerten (Boot + Shell laufen), bei
 					// Bedarf nachruesten.

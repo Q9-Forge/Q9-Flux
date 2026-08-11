@@ -132,7 +132,7 @@ Kontrollgruppe gegen einen mit Zeiger.
 # auf dem Mac, im Q9-Flux-Checkout:
 export Q9_TRAP_TRACE=/tmp/trace.txt
 export Q9_TRAP_TRACE_ALL=1
-./build/macos/q9.exe --cb030 <rom> --cf <image>
+./build/macos/q9.exe --rom <rom> --cf <image>
 # ... booten, einloggen, ein paar Befehle ausführen, dann Emulator beenden ...
 
 grep '^classify' /tmp/trace.txt \
