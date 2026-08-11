@@ -4,7 +4,7 @@ set timeout 90
 log_file -noappend test/expect/results/test_mdir_addr_result.txt
 set image local_images/OS9SYS.claudia-optionb-patchtest.hda
 
-spawn sudo -n ./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image --net vmnet
+spawn sudo -n ./build/native/q9.exe --rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image --net vmnet
 set emu_id $spawn_id
 set timeout 60
 expect -i $emu_id "devices online"

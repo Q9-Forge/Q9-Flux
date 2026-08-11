@@ -48,7 +48,7 @@ Wichtige Erkenntnisse:
 - Vor Neubuilds alte `q9*.exe`-Prozesse pruefen/killen, sonst wird die EXE
   gesperrt oder ein alter Prozess getestet.
 
-Dokumentiert in `docs/OS9SYS_BOOT.md`, `docs/CB030.md`,
+Dokumentiert in `docs/OS9SYS_BOOT.md`, `docs/BOARD.md`,
 `Q9_CURRENT_STATUS.md`, `docs/HANDBUCH.md`.
 
 ## Session 2026-07-17: CF-Partitionen, Offset-Fix und PCF/RBF-Teststand
@@ -145,7 +145,7 @@ Ganzer Bogen an einem Abend: QUICC-Ethernet von null bis zum funktionierenden pi
   IRQ Level 5 / Vektor 254; Mini-NAT-Backend: Proxy-ARP + ICMP-Echo als
   Gegenstelle 10.0.0.2 (User-Mode, kein Root/TAP)
 - m68krt.c: QUICC-Dispatch in allen 6 Speicher-Hooks + IACK-Zweig Level 5;
-  cb030run.c: Instanz/attach/poll/IRQ; Makefile: quicc.c im CB030_SRC
+  q9boardrun.c: Instanz/attach/poll/IRQ; Makefile: quicc.c im BOARD_SRC
 - Host-Rauchtest (BD-Mechanik+ARP) UND End-to-End: test_quicc_net.exp
   (Klon-Image OS9SYS.claudia-net-test.hda, netmods-Merge mit 23 SPF-Modulen
   via ToolShed): load netmods + mbinstall + ipstart, ping 10.0.0.2 ->
@@ -211,7 +211,7 @@ __attribute__((constructor))-Magie). Alle sechs Bestandsgeraete (68681-DUART,
 Compact-Flash, Timer/IRQ3, RTC72421, Netz-Terminals /x1..x8, QUICC) einzeln
 umgezogen, je mit eigenem Commit + Boot-Test (Klon-Image
 local_images/OS9SYS.claudia-517-devreg.hda, lokale Konsole + Port 2000 +
-QUICC-Ping). cb030_read_byte/cb030_write_byte (cb030.c) kennen danach nur
+QUICC-Ping). cb030_read_byte/cb030_write_byte (q9board.c) kennen danach nur
 noch REMAP-Trigger + RAM/ROM. make test PASS nach jedem Schritt, make native
 durchgehend warnungsfrei. Zwei dokumentierte, bewusst in Kauf genommene
 Nebeneffekte ohne Funktionsverlust (Reassert-Tie-Break-Reihenfolge bei
@@ -233,13 +233,13 @@ Buffergroesse = 512 B/Sektor).
   name/rom/net + beliebig viele [cfN] (type=rbf|pcf, bus=onboard|rc2014,
   unit=master|slave, image=). Pfade relativ zur Config-Datei. Extension-Regel
   (.q9), Kollisionspruefung (zwei Images auf derselber Einheit -> Fehler).
-- CF-Emulation mehrfach instanziierbar (cb030.c/.h Ver. 2.00): CF-Zustand aus
-  q9_cb030_t in neuen Typ q9_cf_t/q9_cf_unit_t gezogen. Zwei Interfaces:
+- CF-Emulation mehrfach instanziierbar (q9board.c/.h Ver. 2.00): CF-Zustand aus
+  q9_board_t in neuen Typ q9_cf_t/q9_cf_unit_t gezogen. Zwei Interfaces:
   Onboard $FFFFE000 (c0..c3) + RC2014-SC145 $FFFFC010 (e0/f0), Master/Slave ueber
   DEV-Bit (Bit 4) in LBA3 ($E0/$F0). Beide nutzen q9_devtype_cf; Registeroffset
   ueber dev->base. type=pcf schaltet die RBF-256-Byte-Heuristik ab.
 - m68krt.c: q9_m68krt_attach_cf2() registriert das RC2014-Interface (nur wenn die
-  Config dort Images anhaengt). cb030run.c (Ver. 1.70): q9_cb030_boot() bekommt
+  Config dort Images anhaengt). q9boardrun.c (Ver. 1.70): q9_board_boot() bekommt
   cfg-Parameter, verteilt CF-Images, Vorrang Default<Config<CLI.
 - hal_posix.c/hal_native.c: neue main()-Argumentparser (erster Non-"-"-Param =
   Config, .q9-Default), alte Optionen (--cb030/--cf/--net/--selftest) unveraendert.

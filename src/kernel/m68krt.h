@@ -23,18 +23,18 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-04│ 1.00 │ 5.1: Erster Grundbaustein — RAM anbinden, Reset+Execute, D0-D7 lesen    │ CF
 // 26-07-04│ 1.10 │ 5.2d: q9_m68krt_set_irq — duenner Wrapper um m68k_set_irq() fuer         │ CF
-//         │      │ cb030.c's Timer/IRQ3-Polling                                            │
+//         │      │ q9board.c's Timer/IRQ3-Polling                                            │
 // 26-07-05│ 1.20 │ 5.3: q9_m68krt_attach_board — Speicherzugriffe wahlweise ueber den       │ CF
-//         │      │ CB030-Adress-Dispatch (cb030.h) statt nacktem RAM-Block                 │
+//         │      │ Board-Adress-Dispatch (q9board.h) statt nacktem RAM-Block                 │
 // 26-07-10│ 1.30 │ 5.9: q9_m68krt_is_stopped — Wrapper um Musashis m68k_is_stopped()        │ CF
-//         │      │ (Vendor-Patch) fuer die CB030-Idle-Drossel                              │
+//         │      │ (Vendor-Patch) fuer die Idle-Drossel                              │
 // 26-08-03│ 1.21 │ 5.26: q9_m68krt_attach_framebuf (framebuf.h, VRAM-Geraet)               │ Ada
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_M68KRT_H
 #define Q9_M68KRT_H
 
 #include <stdint.h>
-#include "cb030.h"
+#include "q9board.h"
 #include "mc6845.h"                                    /* 5.24: q9_mc6845_t                       */
 #include "framebuf.h"                                  /* 5.26: q9_framebuf_t                     */
 #include "clut.h"                                      /* 5.29-Nachtrag: q9_clut_t                 */
@@ -97,8 +97,8 @@ void q9_m68krt_free(q9_m68krt_t *rt);
 // Function: q9_m68krt_set_irq
 // Desc.:    5.2d: Duenner Wrapper um Musashis m68k_set_irq(level) — die eigentliche Interrupt-
 //           Mechanik (PC+SR auf den Supervisor-Stack, Vektor holen, springen) macht Musashi
-//           vollstaendig selbst; dieser Wrapper existiert nur, damit cb030.c (das Musashi bewusst
-//           nicht kennt, s. cb030.h) nicht direkt gegen third_party/musashi linken muss. level = 0
+//           vollstaendig selbst; dieser Wrapper existiert nur, damit q9board.c (das Musashi bewusst
+//           nicht kennt, s. q9board.h) nicht direkt gegen third_party/musashi linken muss. level = 0
 //           loescht die Interrupt-Anforderung wieder (Musashi-Konvention).
 // Call:     q9_m68krt_set_irq(3)
 //════════════════════════════════════════════════════════════════════════════════════════════════
@@ -106,9 +106,9 @@ void q9_m68krt_set_irq(int level);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_attach_board
-// Desc.:    5.3: Schaltet die sechs Musashi-Speicher-Hooks auf den CB030-Adress-Dispatch um —
+// Desc.:    5.3: Schaltet die sechs Musashi-Speicher-Hooks auf den Board-Adress-Dispatch um —
 //           ALLE CPU-Zugriffe (auch das Holen der Reset-Vektoren durch q9_m68krt_reset) laufen
-//           dann ueber q9_cb030_read/write8/16/32 (RAM/ROM/Remap/UART/CF/Timer) statt ueber den
+//           dann ueber q9_board_read/write8/16/32 (RAM/ROM/Remap/UART/CF/Timer) statt ueber den
 //           nackten RAM-Block aus q9_m68krt_init. Setzt ausserdem den Interrupt-Acknowledge-
 //           Callback auf Autovector-Betrieb mit Puls-Verhalten (IRQ-Leitung wird beim Annehmen
 //           losgelassen, s. m68krt.c). board = NULL schaltet zurueck in den RAM-Modus (5.1);
@@ -116,7 +116,7 @@ void q9_m68krt_set_irq(int level);
 //           q9_m68krt_init und VOR q9_m68krt_reset.
 // Call:     q9_m68krt_attach_board(&board);  ...  q9_m68krt_attach_board(0);
 //════════════════════════════════════════════════════════════════════════════════════════════════
-void q9_m68krt_attach_board(q9_cb030_t *board);
+void q9_m68krt_attach_board(q9_board_t *board);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_attach_quicc
@@ -160,7 +160,7 @@ void q9_m68krt_attach_clut(q9_clut_t *clut);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_attach_cf2
 // Desc.:    5.19a: Registriert ein ZWEITES Compact-Flash-Interface (RC2014-SC145-Kartenleser bei
-//           Q9_CB030_CF2_BASE, Descriptoren e0/f0 im MWOS-Q9-Port) in der Geraete-Registry. Nutzt
+//           Q9_BOARD_CF2_BASE, Descriptoren e0/f0 im MWOS-Q9-Port) in der Geraete-Registry. Nutzt
 //           dieselbe q9_devtype_cf-Vtable wie die Onboard-CF, nur mit eigener q9_cf_t-Instanz und
 //           eigener Basisadresse. Kein IRQ (wie die Onboard-CF). Nur aufrufen, wenn die Board-
 //           Config dort Images anhaengt — ohne Aufruf existiert das Fenster nicht (Board wie 5.17).
@@ -194,7 +194,7 @@ uint32_t q9_m68krt_quicc_acks(void);
 // Desc.:    5.9: Duenner Wrapper um Musashis m68k_is_stopped() (Vendor-Patch, s.
 //           third_party/musashi/Q9_VENDOR.md) — 1 wenn die CPU per STOP-Instruktion angehalten
 //           ist (z.B. OS-9s Idle-Loop), sonst 0. Grundlage fuer die Host-Idle-Drossel im
-//           CB030-Runner (cb030run.c): wenn gestoppt UND kein IRQ anliegt, kann der Host
+//           Board-Runner (q9boardrun.c): wenn gestoppt UND kein IRQ anliegt, kann der Host
 //           kurz schlafen statt den Slice sofort wieder "leer" zu verbrennen.
 // Call:     if (q9_m68krt_is_stopped()) ...
 //════════════════════════════════════════════════════════════════════════════════════════════════

@@ -42,7 +42,7 @@
 #include <mmsystem.h>                                   /* timeBeginPeriod/timeEndPeriod, -lwinmm */
 
 #include "../q9_hal.h"
-#include "../../kernel/cb030run.h"
+#include "../../kernel/q9boardrun.h"
 #include "../../kernel/boardcfg.h"
 
 #define DISK_IMAGE "local_images/q9disk.img"
@@ -141,7 +141,7 @@ void q9_hal_init(void)
     DWORD  mode;
 
     /* Andreas' Performance-Report (2026-08-06): Windows' System-Timer laeuft per Default mit
-       15.6ms-Aufloesung -- q9_hal_sleep_ms(1) im CPU-Idle-Pfad (cb030run.c, 5.9) schlaeft dadurch
+       15.6ms-Aufloesung -- q9_hal_sleep_ms(1) im CPU-Idle-Pfad (q9boardrun.c, 5.9) schlaeft dadurch
        oft ~15ms statt 1ms, macht das ganze Idle-Verhalten bis zu 15x langsamer als auf macOS/Linux
        (dort ist usleep/nanosleep von Haus aus fein genug). timeBeginPeriod(1) hebt die System-weite
        Timer-Aufloesung fuer die Laufzeit dieses Prozesses auf 1ms an (Standard-Fix, s. MSDN
@@ -190,7 +190,7 @@ int q9_hal_con_get(void)
             exit(0);
         }
         if (c == 0x1e) {                                /* Debug-Sondertaste: Ctrl-^ dumpt physischen */
-            q9_dbg_dump_requested = 1;                  /* Kernel-Speicher (cb030run.c)                */
+            q9_dbg_dump_requested = 1;                  /* Kernel-Speicher (q9boardrun.c)                */
             return -1;                                  /* schlucken, nicht an den Gast weiterreichen  */
         }
         if (c != 0 && c == quit_ctrl) {                 /* Konfigurierbarer Strg-Buchstabe (Default
@@ -240,7 +240,7 @@ uint32_t q9_hal_ticks_ms(void)
 
 void q9_hal_sleep_ms(uint32_t ms)
 {
-    Sleep((DWORD)ms);                                      /* 5.9: CB030-Idle-Drossel           */
+    Sleep((DWORD)ms);                                      /* 5.9: Idle-Drossel           */
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -315,21 +315,23 @@ const char *q9_hal_target(void)
 //           5.19: Der ERSTE Parameter OHNE fuehrendes "-" gibt eine Board-Config-Datei an
 //           (Extension ".q9" wird angenommen, falls keine da ist, s. boardcfg.h). Darin stehen
 //           ROM, Netz-Backend und MEHRERE CF-Images (rbf/pcf); der Emulator startet dann direkt
-//           im CB030-Board-Modus. Die bestehenden Optionen bleiben und ueberschreiben die Config:
-//           --cb030 <rom>, --cf <image> (Onboard-CF-Master), --net nat|vmnet (5.12, Default nat).
-//           Ohne Config UND ohne --cb030 laeuft wie bisher der reine Q9-Kernel — Ende per Ctrl-C.
-// Call:     q9.exe [<config[.q9]>] [--cb030 <rom>] [--cf <image>] [--net nat|vmnet]
+//           im Board-Modus. Die bestehenden Optionen bleiben und ueberschreiben die Config:
+//           --rom <rom>, --cf <image> (Onboard-CF-Master), --net nat|vmnet (5.12, Default nat).
+//           Ohne Config UND ohne --rom laeuft wie bisher der reine Q9-Kernel — Ende per Ctrl-C.
+// Call:     q9.exe [<config[.q9]>] [--rom <rom>] [--cf <image>] [--net nat|vmnet]
 //           q9.exe --selftest
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
     const char *cfg_arg  = NULL;                       /* erster Positionsparameter (ohne '-')   */
-    const char *rom_path = NULL;                        /* --cb030                                */
+    const char *rom_path = NULL;                        /* --rom                                  */
     const char *cf_path  = NULL;                        /* --cf                                   */
     const char *net_mode = NULL;                        /* --net                                  */
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--cb030") == 0 && i + 1 < argc) {
+        /* --rom ist die aktuelle Schreibweise; --cb030 bleibt als stilles Alias
+           erhalten, damit aeltere Skripte/Testrezepte weiterlaufen. */
+        if ((strcmp(argv[i], "--rom") == 0 || strcmp(argv[i], "--cb030") == 0) && i + 1 < argc) {
             rom_path = argv[++i];
         } else if (strcmp(argv[i], "--cf") == 0 && i + 1 < argc) {
             cf_path = argv[++i];
@@ -342,7 +344,7 @@ int main(int argc, char **argv)
 
     if (cfg_arg == NULL && rom_path == NULL) {
         fprintf(stderr,
-                "usage: %s <config[.q9]> | --cb030 <rom> [--cf <image>] [--net nat|vmnet]\n",
+                "usage: %s <config[.q9]> | --rom <rom> [--cf <image>] [--net nat|vmnet]\n",
                 argv[0]);
         return 1;
     }
@@ -357,13 +359,13 @@ int main(int argc, char **argv)
             char err[256];
             q9_board_cfg_resolve_path(cfg_arg, path, sizeof(path));
             if (q9_board_cfg_load(&cfg, path, err, sizeof(err)) != 0) {
-                fprintf(stderr, "cb030: %s\n", err);
+                fprintf(stderr, "q9board: %s\n", err);
                 return 1;
             }
             cfgp = &cfg;
         }
         q9_hal_init();
-        return q9_cb030_boot(rom_path, cf_path, net_mode, cfgp);
+        return q9_board_boot(rom_path, cf_path, net_mode, cfgp);
     }
 }
 

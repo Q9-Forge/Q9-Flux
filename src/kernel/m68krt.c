@@ -15,8 +15,8 @@
 // 26-07-04│ 1.00 │ 5.1: Erster Grundbaustein                                               │ CF
 // 26-07-04│ 1.10 │ 5.2d: q9_m68krt_set_irq (Wrapper um m68k_set_irq())                     │ CF
 // 26-07-05│ 1.20 │ 5.3: q9_m68krt_attach_board — Speicher-Hooks koennen wahlweise ueber     │ CF
-//         │      │ den CB030-Adress-Dispatch laufen (inkl. Autovector-Int-Ack)             │
-// 26-07-14│ 1.30 │ 5.10: Netzwerk-Terminals 4 → 8 (/x1../x8), Kanaltabelle aus cb030.h      │ CF
+//         │      │ den Board-Adress-Dispatch laufen (inkl. Autovector-Int-Ack)             │
+// 26-07-14│ 1.30 │ 5.10: Netzwerk-Terminals 4 → 8 (/x1../x8), Kanaltabelle aus q9board.h      │ CF
 //         │      │ hierher, network_irq_resync gegen verlorene Interrupts bei >1 Kanal      │
 // 26-07-14│ 1.31 │ 5.17: Geraete-Registry (devreg.h) eingebunden -- 68681-DUART als erstes   │ CF
 //         │      │ Geraet umgezogen (Dispatch + IACK/Reassert pruefen jetzt zuerst die       │
@@ -46,7 +46,7 @@
 //         │      │ Prozess-Reichweite                                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
-#include "cb030.h"
+#include "q9board.h"
 #include "quicc.h"
 #include "devreg.h"
 #include "m68k.h"
@@ -59,12 +59,12 @@
 
 /* Musashi haelt seinen CPU-Zustand in eigenen globalen Variablen und ruft m68k_read/write_memory_*
    ohne Kontext-Zeiger auf (s. m68krt.h) — deshalb muessen der aktive RAM-Block bzw. das aktive
-   CB030-Board hier ebenfalls global liegen, statt im q9_m68krt_t-Handle. Nur EIN q9_m68krt_init()
+   Board hier ebenfalls global liegen, statt im q9_m68krt_t-Handle. Nur EIN q9_m68krt_init()
    gleichzeitig aktiv. Ist g_board gesetzt (q9_m68krt_attach_board, 5.3), laufen ALLE Zugriffe
-   ueber den CB030-Adress-Dispatch (RAM/ROM/Remap/UART/CF/Timer); sonst nackter RAM-Block (5.1). */
+   ueber den Board-Adress-Dispatch (RAM/ROM/Remap/UART/CF/Timer); sonst nackter RAM-Block (5.1). */
 static uint8_t     *g_ram;
 static uint32_t     g_ram_len;
-static q9_cb030_t  *g_board;
+static q9_board_t  *g_board;
 static q9_quicc_t  *g_quicc;                          /* 5.11: QUICC-Ethernet, optional (attach) */
 
 // === Forward-Deklarationen für den Netzwerk-Server ===
@@ -75,17 +75,17 @@ static void network_write8(unsigned int address, unsigned char value);
 static int main_server_fd = -1;
 
 /* 5.10: 8 virtuelle Netzwerk-Terminals /x1../x8 (vorher 4x /t1../t4) — Registerlayout je Kanal
-   s. cb030.h. Jeder Kanal hat seinen EIGENEN Autovektor (70..77), der IACK-Zyklus liefert genau
+   s. q9board.h. Jeder Kanal hat seinen EIGENEN Autovektor (70..77), der IACK-Zyklus liefert genau
    den Vektor des Kanals mit gesetztem RX-Ready-Bit (s. m68krt_board_int_ack). */
 static os9_uart_t channels[MAX_CHANNELS] = {
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X1_BASE, 4, 70, 0, 0}, // /x1
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X2_BASE, 4, 71, 0, 0}, // /x2
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X3_BASE, 4, 72, 0, 0}, // /x3
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X4_BASE, 4, 73, 0, 0}, // /x4
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X5_BASE, 4, 74, 0, 0}, // /x5
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X6_BASE, 4, 75, 0, 0}, // /x6
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X7_BASE, 4, 76, 0, 0}, // /x7
-    {-1, 0, 0, 0x02, Q9_CB030_NET_X8_BASE, 4, 77, 0, 0}  // /x8
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X1_BASE, 4, 70, 0, 0}, // /x1
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X2_BASE, 4, 71, 0, 0}, // /x2
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X3_BASE, 4, 72, 0, 0}, // /x3
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X4_BASE, 4, 73, 0, 0}, // /x4
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X5_BASE, 4, 74, 0, 0}, // /x5
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X6_BASE, 4, 75, 0, 0}, // /x6
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X7_BASE, 4, 76, 0, 0}, // /x7
+    {-1, 0, 0, 0x02, Q9_BOARD_NET_X8_BASE, 4, 77, 0, 0}  // /x8
 };
 
 /* 5.10: Die IRQ-Leitung ist das ODER aller RX-Ready-Bits (level-getriggert). Nach jedem Verbrauch
@@ -395,9 +395,9 @@ static const q9_device_vtable_t q9_devtype_nettty = {
     .irq_vector_fn = nettty_dev_irq_vector,
 };
 
-/* 5.17: Geraete-Registry -- Geraete, die bereits umgezogen sind (s. devreg.h/cb030.h), werden HIER
+/* 5.17: Geraete-Registry -- Geraete, die bereits umgezogen sind (s. devreg.h/q9board.h), werden HIER
    vor dem alten Board-Fallback geprueft; noch nicht migrierte Geraete (Netz-Terminals, QUICC, sowie
-   innerhalb von q9_cb030_read8/write8: CF/Timer/RTC) bleiben bis zu ihrem eigenen 5.17-Schritt in
+   innerhalb von q9_board_read8/write8: CF/Timer/RTC) bleiben bis zu ihrem eigenen 5.17-Schritt in
    den bisherigen, direkt danebenstehenden Pruefungen bzw. im Board-Fallback. */
 static q9_device_t *devreg_hit(uint32_t address)
 {
@@ -419,7 +419,7 @@ unsigned int m68k_read_memory_8(unsigned int address)
         return q9_device_read8(dev, (uint32_t)address);
     }
     if (g_board) {
-        return q9_cb030_read8(g_board, (uint32_t)address);
+        return q9_board_read8(g_board, (uint32_t)address);
     }
     return (address < g_ram_len) ? g_ram[address] : 0;
 }
@@ -432,7 +432,7 @@ unsigned int m68k_read_memory_16(unsigned int address)
         return q9_device_read16(dev, (uint32_t)address);
     }
     if (g_board) {
-        return q9_cb030_read16(g_board, (uint32_t)address);
+        return q9_board_read16(g_board, (uint32_t)address);
     }
     if (address + 1 >= g_ram_len) {
         return 0;
@@ -448,7 +448,7 @@ unsigned int m68k_read_memory_32(unsigned int address)
         return q9_device_read32(dev, (uint32_t)address);
     }
     if (g_board) {
-        return q9_cb030_read32(g_board, (uint32_t)address);
+        return q9_board_read32(g_board, (uint32_t)address);
     }
     if (address + 3 >= g_ram_len) {
         return 0;
@@ -466,7 +466,7 @@ void m68k_write_memory_8(unsigned int address, unsigned int value)
         return;
     }
     if (g_board) {
-        q9_cb030_write8(g_board, (uint32_t)address, (uint8_t)value);
+        q9_board_write8(g_board, (uint32_t)address, (uint8_t)value);
         return;
     }
     if (address < g_ram_len) {
@@ -483,7 +483,7 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
         return;
     }
     if (g_board) {
-        q9_cb030_write16(g_board, (uint32_t)address, (uint16_t)value);
+        q9_board_write16(g_board, (uint32_t)address, (uint16_t)value);
         return;
     }
     if (address + 1 >= g_ram_len) {
@@ -502,7 +502,7 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
         return;
     }
     if (g_board) {
-        q9_cb030_write32(g_board, (uint32_t)address, (uint32_t)value);
+        q9_board_write32(g_board, (uint32_t)address, (uint32_t)value);
         return;
     }
     if (address + 3 >= g_ram_len) {
@@ -534,7 +534,7 @@ static uint32_t g_quicc_ack_count;                    /* 5.15-Diagnose: davon QU
    nur EINEN kombinierten `m68k_set_irq()`-Wert nach (kein Bus mit unabhaengigen Leitungen) -
    das blanke `m68k_set_irq(0)` unten wirft deshalb bislang ALLE gleichzeitig anstehenden
    Anforderungen weg, nicht nur die des gerade quittierten Geraets, und ueberlaesst die
-   Wiederherstellung der naechsten Hauptschleifen-Runde (ganze CB030_SLICE_CYCLES spaeter).
+   Wiederherstellung der naechsten Hauptschleifen-Runde (ganze BOARD_SLICE_CYCLES spaeter).
    Traf ein SCC1-TXB-Event (Level 5) wiederholt mit dem 100Hz-Timer (Level 6, wird zuletzt
    gesetzt und ueberschreibt daher bewusst 3/5) zusammen, ging die QUICC-Anforderung dadurch
    in einer Weise "verloren", die kein reines Hardware-Aequivalent hat - vermutlicher Ausloeser
@@ -545,7 +545,7 @@ static uint32_t g_quicc_ack_count;                    /* 5.15-Diagnose: davon QU
    Ack-Behandlung analog zum Prioritaets-Encoder echter Hardware selbstheilend. */
 /* 5.17: liefert das erste registrierte "level-held" Geraet (s. devreg.h), das GERADE einen IRQ
    anfordert -- Timer/IRQ3-Trigger sind bewusst NICHT level-held (level_held=0) und bleiben daher
-   wie vor 5.17 aus dieser Pruefung aussen vor (einmaliger Puls je Runde, s. cb030run.c). */
+   wie vor 5.17 aus dieser Pruefung aussen vor (einmaliger Puls je Runde, s. q9boardrun.c). */
 static q9_device_t *devreg_pending_level_held(int filter_level)
 {
     int i, n = q9_devreg_count();
@@ -589,7 +589,7 @@ static int m68krt_board_int_ack(int int_level)
         vector = (v >= 0) ? v : M68K_INT_ACK_AUTOVECTOR;
     }
     /* sonst: Autovektor (z.B. Level 6/Timer, das laut devreg-Eintrag level_held=0 hat und     */
-    /* deshalb nie hier landet, s. cb030.c timer_dev_*-Kommentar).                             */
+    /* deshalb nie hier landet, s. q9board.c timer_dev_*-Kommentar).                             */
 
     m68krt_reassert_pending_irq();                     /* 5.15: sofort statt erst naechste Runde  */
     return vector;
@@ -883,7 +883,7 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
     g_board     = 0;                                  /* RAM-Modus, bis attach_board (5.3) folgt */
     q9_devreg_clear();                                /* 5.17: frische Geraete-Registry je Boot  */
 
-    /* Keep the real Q9/CB030 CPU as the default.  The EC030 switch is a
+    /* Keep the real Q9-CPU as the default.  The EC030 switch is a
      * diagnostic-only comparison run: it disables Musashi's PMMU so we can
      * separate an OS-9/ftpdc failure from a PMMU-emulation failure. */
     if (getenv("Q9_CPU") && strcmp(getenv("Q9_CPU"), "ec030") == 0) {
@@ -925,7 +925,7 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
 
 
 
-void q9_m68krt_attach_board(q9_cb030_t *board)
+void q9_m68krt_attach_board(q9_board_t *board)
 {
     g_board = board;
     m68k_set_int_ack_callback(board ? m68krt_board_int_ack : 0);
@@ -933,7 +933,7 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
     /* 5.17: Geraete in die Registry eintragen -- DUART/CF/Timer/RTC (board-intern) + Netz-
        Terminals (unabhaengig vom Board, aber nur beim echten Boot gebraucht, s.u.). Nur QUICC
        bleibt noch hartkodiert (eigener 5.17-Schritt). WICHTIG: die Netz-Terminals (Level 4)
-       werden bewusst NACH der DUART (Level 3) registriert -- cb030run.c's erster Poll-Durchgang
+       werden bewusst NACH der DUART (Level 3) registriert -- q9boardrun.c's erster Poll-Durchgang
        (Level < 5, filtert Timer/Level 6 per Levelvergleich weg, s. dort) durchlaeuft die Registry
        in dieser Reihenfolge, und q9_m68krt_set_irq() bildet nur EINE kombinierte Leitung nach
        (letzter Aufruf gewinnt) -- die Level-3-vor-Level-4-Reihenfolge muss darum erhalten bleiben. */
@@ -942,8 +942,8 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
         memset(&d, 0, sizeof(d));
         d.type       = "duart68681";
         d.name       = "uart0";
-        d.base       = Q9_CB030_UART_BASE;
-        d.size       = Q9_CB030_UART_TOP - Q9_CB030_UART_BASE + 1u;
+        d.base       = Q9_BOARD_UART_BASE;
+        d.size       = Q9_BOARD_UART_TOP - Q9_BOARD_UART_BASE + 1u;
         d.irq_level  = 3;
         d.irq_vector = -1;                            /* dynamisch, s. irq_vector_fn            */
         d.level_held = 1;
@@ -954,12 +954,12 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
         /* 5.17: Compact-Flash, zweites umgezogenes Geraet -- kein IRQ (level_held bleibt 0,
            irq_vector -1/unbenutzt: q9_devtype_cf setzt keinen irq_pending). 5.19a: state zeigt
            auf das q9_cf_t-Interface im Board (nicht mehr aufs Board selbst) -- dieselbe Vtable
-           bedient auch das RC2014-Zweitinterface, das cb030run.c bei Bedarf registriert. */
+           bedient auch das RC2014-Zweitinterface, das q9boardrun.c bei Bedarf registriert. */
         memset(&d, 0, sizeof(d));
         d.type       = "cf";
         d.name       = "cf0";
-        d.base       = Q9_CB030_CF_BASE;
-        d.size       = Q9_CB030_CF_TOP - Q9_CB030_CF_BASE + 1u;
+        d.base       = Q9_BOARD_CF_BASE;
+        d.size       = Q9_BOARD_CF_TOP - Q9_BOARD_CF_BASE + 1u;
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
@@ -973,8 +973,8 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
         memset(&d, 0, sizeof(d));
         d.type       = "rtc72421";
         d.name       = "rtc0";
-        d.base       = Q9_CB030_RTC_BASE;
-        d.size       = Q9_CB030_RTC_TOP - Q9_CB030_RTC_BASE + 1u;
+        d.base       = Q9_BOARD_RTC_BASE;
+        d.size       = Q9_BOARD_RTC_TOP - Q9_BOARD_RTC_BASE + 1u;
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
@@ -984,15 +984,15 @@ void q9_m68krt_attach_board(q9_cb030_t *board)
 
         /* 5.17: Netz-Terminals, fuenftes umgezogenes Geraet -- EIN Geraete-Eintrag fuer alle acht
            Kanaele (s. q9_devtype_nettty-Kommentar weiter oben). Registriert NACH DUART (Level 3),
-           damit die Registrierungsreihenfolge innerhalb von cb030run.c's erstem Poll-Durchgang
+           damit die Registrierungsreihenfolge innerhalb von q9boardrun.c's erstem Poll-Durchgang
            (Level < 5) aufsteigend bleibt (3 vor 4) -- wichtig fuer die "letzter Aufruf gewinnt"-
            Semantik von q9_m68krt_set_irq(), s. Kommentar dort. channels[] existiert zwar auch ohne
            Board, aber nettty wird nur beim echten Boot (immer MIT Board) gebraucht. */
         memset(&d, 0, sizeof(d));
         d.type       = "nettty";
         d.name       = "x1-x8";
-        d.base       = Q9_CB030_NET_BASE;
-        d.size       = Q9_CB030_NET_TOP - Q9_CB030_NET_BASE + 1u;
+        d.base       = Q9_BOARD_NET_BASE;
+        d.size       = Q9_BOARD_NET_TOP - Q9_BOARD_NET_BASE + 1u;
         d.irq_level  = 4;
         d.irq_vector = -1;                            /* dynamisch, s. irq_vector_fn (pro Kanal) */
         d.level_held = 1;
@@ -1013,11 +1013,11 @@ void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
        Erklaerung in q9_m68krt_attach_board.
        Timer/IRQ3 (Level 6, viertes 5.17-Geraet inhaltlich, aber ERST HIER registriert statt in
        attach_board) folgt bewusst GANZ ZULETZT: Level 6 muss in der Registrierungsreihenfolge
-       NACH QUICC/Level 5 stehen, damit cb030run.c's Poll-Schleife (Level < 5 vor QUICC, Level
+       NACH QUICC/Level 5 stehen, damit q9boardrun.c's Poll-Schleife (Level < 5 vor QUICC, Level
        >= 5 danach) und m68krt_board_int_ack/reassert_pending_irq (durchlaufen die GESAMTE
        Registry in Registrierungsreihenfolge) am Ende bei gleichzeitig anstehenden Interrupts
        konsistent das hoechste Level uebrig lassen -- exakt das Verhalten, das vor 5.17 durch die
-       hartkodierte Aufrufreihenfolge (DUART 3, QUICC 5, Timer 6) in cb030run.c sichergestellt war. */
+       hartkodierte Aufrufreihenfolge (DUART 3, QUICC 5, Timer 6) in q9boardrun.c sichergestellt war. */
     if (quicc && g_board) {
         q9_device_t d;
         memset(&d, 0, sizeof(d));
@@ -1035,8 +1035,8 @@ void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
         memset(&d, 0, sizeof(d));
         d.type       = "timer_irq";
         d.name       = "tirq0";
-        d.base       = Q9_CB030_TIRQ_OFF_BASE;
-        d.size       = Q9_CB030_TIRQ_ON_TOP - Q9_CB030_TIRQ_OFF_BASE + 1u;
+        d.base       = Q9_BOARD_TIRQ_OFF_BASE;
+        d.size       = Q9_BOARD_TIRQ_ON_TOP - Q9_BOARD_TIRQ_OFF_BASE + 1u;
         d.irq_level  = 6;
         d.irq_vector = -1;
         d.level_held = 0;
@@ -1049,10 +1049,10 @@ void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
 void q9_m68krt_attach_cf2(q9_cf_t *cf2)
 {
     /* 5.19a: RC2014-SC145-Zweitinterface — kein IRQ (level_held 0), Reihenfolge damit egal
-       (q9_devtype_cf setzt nie irq_pending, s. cb030.c). Eigene Basisadresse: cf_dev_* rechnen
+       (q9_devtype_cf setzt nie irq_pending, s. q9board.c). Eigene Basisadresse: cf_dev_* rechnen
        den ATA-Registeroffset ueber dev->base aus, dieselbe Vtable bedient beide Interfaces. */
     if (cf2) {
-        q9_m68krt_attach_cf_at(cf2, Q9_CB030_CF2_BASE, "cf1");
+        q9_m68krt_attach_cf_at(cf2, Q9_BOARD_CF2_BASE, "cf1");
     }
 }
 
@@ -1064,7 +1064,7 @@ void q9_m68krt_attach_cf_at(q9_cf_t *cf, uint32_t base, const char *name)
         d.type       = "cf";
         d.name       = name ? name : "cf";
         d.base       = base;
-        d.size       = Q9_CB030_CF2_TOP - Q9_CB030_CF2_BASE + 1u;
+        d.size       = Q9_BOARD_CF2_TOP - Q9_BOARD_CF2_BASE + 1u;
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;

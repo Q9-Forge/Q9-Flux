@@ -9,8 +9,8 @@
 //         RC2014-SC145-Zweitinterface.
 //
 //         Bewusst schlank gehalten: die Datei fuellt nur eine q9_board_cfg_t-Struktur, die der
-//         Boot-Runner (cb030run.c) auswertet. Die bestehenden CLI-Optionen (--cb030/--cf/--net)
-//         bleiben und ueberschreiben die Config-Werte (s. cb030run/main).
+//         Boot-Runner (q9boardrun.c) auswertet. Die bestehenden CLI-Optionen (--rom/--cf/--net)
+//         bleiben und ueberschreiben die Config-Werte (s. q9boardrun/main).
 //
 // Call:   q9_board_cfg_t cfg; q9_board_cfg_default(&cfg);
 //         if (q9_board_cfg_load(&cfg, "mysystem.q9", errbuf, sizeof(errbuf)) != 0) { ... }
@@ -41,7 +41,7 @@ typedef struct {
     char descriptor[Q9_CFG_PATH_MAX];        /* optionaler OS-9-Descriptor fuer ROM-Generator       */
     int  bus;                                /* Q9_CFG_BUS_*                                        */
     int  unit;                               /* 0 = Master, 1 = Slave                              */
-    int  format;                             /* Q9_CF_FMT_* (cb030.h): AUTO/RBF/PCF                 */
+    int  format;                             /* Q9_CF_FMT_* (q9board.h): AUTO/RBF/PCF                 */
     uint32_t base;                           /* ATA-Base; 0 = Standard-Base anhand bus             */
     uint32_t start_sector;                   /* Host-Startsektor fuer Gast-LBA 0 (Default 0)       */
     uint32_t length_sectors;                 /* logische Partitionslaenge fuer Descriptor/Pruefung  */

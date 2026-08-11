@@ -11,7 +11,7 @@ ROM = "/Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/rom
 IMG = "/Volumes/SSD1TB/projects/Q9/local_images/OS9SYS.claudia-517-devreg.hda"
 
 proc = subprocess.Popen(
-    ["./build/native/q9.exe", "--cb030", ROM, "--cf", IMG, "--net", "nat"],
+    ["./build/native/q9.exe", "--rom", ROM, "--cf", IMG, "--net", "nat"],
     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
 )
 
