@@ -135,11 +135,16 @@ Für jeden 🟢-Ready-Schritt mit Wer=Codex:
 10. NIEMALS selbst nach `main` mergen — das bleibt immer Andreas' Entscheidung,
     auch wenn ein PR erfolgreich erstellt wurde.
 
-**docs/HANDBUCH.md mitpflegen**: das öffentlichkeitstaugliche Gesamt-Handbuch
-(Werkzeuge, Quellcode-Layout, Build je Target, Architektur, Lizenzlage,
-Glossar) — im Gegensatz zu ARBEITSPLAN.md/diesem Dokument, die intern bleiben.
-Nach jedem abgeschlossenen Ready-Schritt (auch Codex-delegierten) prüfen, ob
-HANDBUCH.md betroffen ist (neue Architekturentscheidung, neue Kernel-
+**docs/HANDBOOK.md (+ docs/HANDBUCH_de.md) mitpflegen**: das
+öffentlichkeitstaugliche Gesamt-Handbuch (Werkzeuge, Quellcode-Layout, Build
+je Target, Architektur, Lizenzlage, Glossar) — im Gegensatz zu
+ARBEITSPLAN.md/diesem Dokument, die intern bleiben. Seit 2026-08-12 zwei
+Dateien: `HANDBOOK.md` (Englisch, Original) + `HANDBUCH_de.md` (Deutsch,
+Übersetzung) — bei einer Änderung mindestens die deutsche Fassung
+aktualisieren und einen Übersetzungs-Nachtrag für `HANDBOOK.md` in der
+Notiz vermerken, falls keine Zeit für beide bleibt. Nach jedem
+abgeschlossenen Ready-Schritt (auch Codex-delegierten) prüfen, ob das
+Handbuch betroffen ist (neue Architekturentscheidung, neue Kernel-
 Komponente, neues Werkzeug, neue externe Referenz samt Lizenz, neuer
 Fachbegriff, Phase komplett abgeschlossen) und im selben Commit aktualisieren
 (bei Codex-Schritten: im Claudia-Commit, der die ARBEITSPLAN-Aktualisierung
@@ -149,13 +154,11 @@ ist ein gezielter, separater Schritt am Ende, nicht Teil der Routine.
 
 Build & Test: make test muss PASS sein, Build warnungsfrei.
 - Windows: vorher $env:PATH = "C:\Users\AF\w64devkit\bin;$env:PATH"
-- macOS: clang/make aus den Xcode CLT; erst möglich ab POSIX-HAL (1.10)
-- make wasm: pro Rechner prüfen, ob emsdk installiert ist (docs/TOOLCHAIN.md)
-  — auf dem Mac Mini seit 2026-07-04 vorhanden (`~/emsdk`), Aktivierung pro
-  Shell-Aufruf: `source ~/emsdk/emsdk_env.sh && make wasm`. Sonst Code
-  schreiben und "wasm ungetestet" in den Notizen vermerken. Wenn die wasm-HAL
-  betroffen ist und emsdk verfügbar: nach Möglichkeit auch im Browser
-  verifizieren (Server auf build/wasm, siehe docs/HANDBUCH.md Abschnitt 4.2).
+- macOS: clang/make aus den Xcode CLT
+- Linux: gcc/make aus dem Distributions-Paket (z.B. `build-essential`)
+- kein separates wasm-Target mehr (der Mini-Kernel inkl. wasm3-Runtime wurde
+  am 2026-07-31 nach Q9RESUME-Kernel ausgelagert) — `make native` deckt alle
+  drei Plattformen ab, `make test` reicht als Verifikation.
 
 Fasse am Ende in 2–3 Sätzen zusammen, was getan wurde (oder warum nichts) —
 bei Codex-Delegation explizit erwähnen, ob ein PR erstellt wurde oder Andreas

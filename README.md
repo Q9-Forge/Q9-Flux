@@ -20,9 +20,9 @@ make native   # -> build/<platform>/q9.exe (windows/macos/linux, chosen automati
 # or: ./build/<platform>/q9.exe --rom <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]
 ```
 
-See [`docs/HANDBUCH.md`](docs/HANDBUCH.md) (German) for the full manual:
-tools, build instructions, source layout, architecture, and licensing
-notes for third-party reference material.
+See [`docs/HANDBOOK.md`](docs/HANDBOOK.md) (German: [`docs/HANDBUCH_de.md`](docs/HANDBUCH_de.md))
+for the full manual: tools, build instructions, source layout, architecture,
+and licensing notes for third-party reference material.
 
 ## History
 
