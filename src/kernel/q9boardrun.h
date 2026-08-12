@@ -5,7 +5,7 @@
 //         mit dem Board (q9_m68krt_attach_board) und laesst die emulierte CPU laufen
 //         (Endlosschleife mit Timer-Polling, Abbruch per Ctrl-C). Das ist der Einstiegspunkt
 //         fuer `q9.exe --rom <rom-datei> [--cf <image>]` (s. main() in hal_posix.c/
-//         hal_native.c) — der normale Q9-Kernel wird in diesem Modus NICHT gestartet, es laeuft
+//         hal_windows.c) — der normale Q9-Kernel wird in diesem Modus NICHT gestartet, es laeuft
 //         ausschliesslich das emulierte Board. Native-only (wie q9board.h/m68krt.h).
 //
 //         Das echte Microware-Boot-ROM ist proprietaer und bleibt lokal — der Pfad kommt

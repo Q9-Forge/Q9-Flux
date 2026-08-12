@@ -1,10 +1,10 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // File:   hal_posix.c                                                                     Ver. 1.20
 // Owner:  AF
-// Desc.:  HAL-Implementierung für den nativen POSIX-Build (macOS/Linux, clang/gcc).
+// Desc.:  HAL-Implementierung für den POSIX-Host-Build (macOS/Linux, clang/gcc, termios).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
 //
-// Call:   build/native/q9.exe [--selftest]
+// Call:   build/macos|linux/q9.exe [--selftest]   (gebaut per "make host")
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────

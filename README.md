@@ -15,7 +15,7 @@ planned, see [Q9-Forge's roadmap](https://github.com/Q9-Forge/.github/blob/main/
 ## Usage
 
 ```sh
-make native   # -> build/<platform>/q9.exe (windows/macos/linux, chosen automatically)
+make host   # -> build/<platform>/q9.exe (windows/macos/linux, chosen automatically)
 ./build/<platform>/q9.exe <config.q9>
 # or: ./build/<platform>/q9.exe --rom <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]
 ```
