@@ -15,11 +15,21 @@ for {set i 0} {$i < 10 && !$logged_in} {incr i} {
         timeout { send "\r" }
     }
 }
-send -s "/dd/CMDS/q9_qcc_p_xcc10 @/dd/qcc_p_xcc.i\r"
+send -s "/dd/CMDS/q9_qcc_p_xcc_bootstrap @/dd/bootstrap_probe.c\r"
 expect {
     -re {FUNC main} { send_log "\n<<< QCC XCC SELF-RUN OK >>>\n" }
     -re {FAIL|error|Error} { send_log "\n<<< QCC XCC SELF-RUN ERROR >>>\n"; exit 1 }
     timeout { send_log "\n<<< QCC XCC SELF-RUN TIMEOUT >>>\n"; exit 1 }
+}
+# Die 255-KB-Bootstrapquelle erzeugt auch bei Semantikfehlern sehr viel IR.
+# Der Lauf selbst darf deshalb keinen Ausgabepuffer beanspruchen. Erst wenn
+# die Semantik fehlerfrei ist, wird im naechsten Schritt die IR in eine Datei
+# geschrieben und an das QCC-Backend uebergeben.
+send -s "/dd/CMDS/q9_qcc_p_xcc_bootstrap @/dd/qcc_p.bootstrap.c >/nil\r"
+expect {
+    -re {[#$] ?$} { send_log "\n<<< QCC XCC BOOTSTRAP COMPLETE (SEMERR expected) >>>\n" }
+    -re {FAIL|error|Error} { send_log "\n<<< QCC XCC BOOTSTRAP PARSE ERROR >>>\n"; exit 1 }
+    timeout { send_log "\n<<< QCC XCC BOOTSTRAP TIMEOUT >>>\n"; exit 1 }
 }
 send "\x1d"
 expect eof
