@@ -21,7 +21,7 @@ handassemblierten Testprogrammen. Ändert nichts an der eigentlichen Q9-Zielhard
 (MC68EN360/QUICC bleibt Ziel für Phase 7, siehe PROJECT.md O4).
 
 **Lizenzhinweis**: Das Microware-Boot-ROM/die Microware-Module selbst sind proprietär —
-dieselbe Regel wie bei der privaten MWOS-SDK-Kopie (siehe HANDBUCH.md Abschnitt 1/7):
+dieselbe Regel wie bei der privaten MWOS-SDK-Kopie (siehe HANDBUCH_de.md Abschnitt 1/7):
 NICHT ins Repository, nur lokal für Andreas' eigene Validierung. Diese Speicherkarten-
 und Register-Beschreibung selbst ist reine Hardware-Dokumentation (keine Microware-
 Quelle) und unproblematisch.

@@ -14,7 +14,7 @@
 > historisch, nicht mehr aktueller Stand.
 >
 > Praktisches Handbuch (Werkzeuge, Build je Target, Quellcode-Layout, Architektur,
-> Lizenzlage der Referenzquellen): [`HANDBUCH.md`](HANDBUCH.md).
+> Lizenzlage der Referenzquellen): [`HANDBUCH_de.md`](HANDBUCH_de.md) (englisches Original: [`HANDBOOK.md`](HANDBOOK.md)).
 > Dieses Dokument hier ist die urspruengliche Vision samt Entscheidungshistorie.
 
 **Q9** ist ein modulares Mini-Betriebssystem in der Tradition von OS-9.
