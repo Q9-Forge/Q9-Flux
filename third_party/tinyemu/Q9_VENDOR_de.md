@@ -107,7 +107,54 @@ uns. Das war eine bewusste Entscheidung: die RISC-V-Basis-ISA ist ratifiziert un
 eingefroren, ein vollständiger Kern verrottet also nicht, und mit 6146 Zeilen ist
 er klein genug, um ihn zu besitzen. Bei Musashi ist die Lage dieselbe.
 
+## Gemessen gegen die offizielle ISA-Suite (2026-08-12)
+
+`make test-riscv` lässt die RISC-V-Suite `riscv-tests` gegen diesen Kern laufen —
+ganz ohne Board, nur RAM und das HTIF-Meldewort. Schlägt dort etwas fehl, kennt
+man die *Instruktion*, nicht bloß „bootet nicht".
+
+RV32, Basisgruppen: **95 von 104**.
+
+| Gruppe | | Gruppe | |
+|---|---|---|---|
+| `rv32ui` Basis-Integer | **42/42** | `rv32uf` Float | 10/11 |
+| `rv32um` Mul/Div | **8/8** | `rv32ud` Double | 9/10 |
+| `rv32uc` Compressed | **1/1** | `rv32mi` Machine-Mode | 11/16 |
+| `rv32ua` Atomics | 9/10 | `rv32si` Supervisor | 5/6 |
+
+Der Nutzer-Instruktionssatz ist vollständig. Jeder Fehlschlag liegt in einer
+**nicht implementierten Funktion**, nicht in falscher Instruktionsbedeutung — am
+Quelltext nachgeprüft:
+
+| Fehlschlagender Test | Ursache im Kern |
+|---|---|
+| `rv32mi-p-pmpaddr` | PMP gibt es gar nicht (0 Nennungen `pmpaddr`/`pmpcfg`) |
+| `rv32mi-p-breakpoint` | Debug-Trigger `tdata1`/`tselect` fehlen |
+| `rv32mi-p-mcsr`, `-instret_overflow` | `mcountinhibit` fehlt |
+| `rv32si-p-dirty` | `PTE_A`/`PTE_D` vorhanden, aber unvollständig |
+| `rv32ua-p-lrsc` | keine Reservierungsverwaltung für LR/SC |
+
+**Für die nächsten Schritte wichtig**: die unvollständige `PTE_A`/`PTE_D`-Behandlung
+wird relevant, sobald ein echtes Betriebssystem mit Paging läuft (xv6), und LR/SC
+bei Mehrkernbetrieb. Die übrigen (PMP, Debug-Trigger, Zählersperre) sind für Q9
+vorerst ohne Belang.
+
+Die Erweiterungsgruppen Zba/Zbb/Zbc/Zbs/Zbkb/Zbkx/Zfh/Zicond (52 weitere Tests)
+scheitern geschlossen mit „unerlaubte Instruktion" — dieser Kern ist älter (2017).
+Sie gehören bewusst **nicht** zur Basis, denn eine dauerhaft rote Suite wird
+ignoriert. `test/riscv/run-isa-tests.sh` hält deshalb den obigen Stand fest und
+meldet nur *Veränderungen*, in beide Richtungen.
+
 ## Q9-eigene Änderungen am Vendor-Code
 
-Bisher keine. Jede Änderung sollte im Code mit `Q9` markiert und hier aufgeführt
+1. **`riscv_cpu.c` — `case 64:` in `riscv_cpu_init()` bedingt gemacht**
+   (2026-08-12). Der `case 128:` darunter war bereits mit
+   `#if CONFIG_RISCV_MAX_XLEN == 128` abgesichert, dieser nicht. Folge: ein
+   reiner 32-Bit-Bau (`CONFIG_RISCV_MAX_XLEN=32`) **übersetzte, ließ sich aber
+   nicht linken** — der Verteiler verwies auf `riscv_cpu_class64`, das in diesem
+   Bau nicht entsteht. Der oben zugesagte kleine RV32-Bau funktionierte also bis
+   zu dieser Korrektur gar nicht. Rein additive Bedingung, Verhalten für
+   `CONFIG_RISCV_MAX_XLEN >= 64` unverändert. Im Code mit `Q9` markiert.
+
+Jede weitere Änderung sollte im Code mit `Q9` markiert und hier aufgeführt
 werden, so wie es `third_party/musashi/Q9_VENDOR.md` vormacht.

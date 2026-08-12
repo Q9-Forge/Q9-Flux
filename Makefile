@@ -201,10 +201,45 @@ test-cf-sector:
 	    src/kernel/q9board.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 	$(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
+# Bewusst OHNE Board -- nur RAM und das HTIF-Meldewort; damit prueft der Lauf ausschliesslich die
+# CPU. Schlaegt hier etwas fehl, kennt man die INSTRUKTION statt nur "bootet nicht".
+# Die Testbinaerdateien sind Fremdmaterial und NICHT eingecheckt:
+#     test/riscv/fetch-isa-tests.sh 32     (einmalig, holt+baut riscv-tests)
+#     make test-riscv
+# RVXLEN=64 baut den Kern in 64 Bit (dann auch fetch-isa-tests.sh 64 laufen lassen).
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVXLEN      ?= 32
+TINYEMU_DIR  = third_party/tinyemu
+RVTEST_SRC   = $(TINYEMU_DIR)/riscv_cpu.c $(TINYEMU_DIR)/iomem.c \
+               $(TINYEMU_DIR)/cutils.c $(TINYEMU_DIR)/softfp.c
+RVTEST_DIR   = $(BUILD)/riscv-tests/rv$(RVXLEN)
+
+test-riscv: $(BUILD)/$(PLATFORM_DIR)/rvtest_runner
+	@if [ ! -d "$(RVTEST_DIR)" ]; then \
+	    echo "  Testbinaerdateien fehlen -- zuerst: test/riscv/fetch-isa-tests.sh $(RVXLEN)"; \
+	    exit 1; \
+	fi
+	@test/riscv/run-isa-tests.sh $(RVXLEN)
+
+$(BUILD)/$(PLATFORM_DIR)/rvtest_runner: test/rvtest_runner.c $(RVTEST_SRC)
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -DMAX_XLEN=$(RVXLEN) -DCONFIG_RISCV_MAX_XLEN=$(RVXLEN) \
+	    test/rvtest_runner.c $(RVTEST_SRC) -o $@
+
 clean:
+	@# build/riscv-tests/ bleibt bewusst stehen: das ist GEHOLTES Fremdmaterial, dessen
+	@# Neubeschaffung eine Netzverbindung braucht. Ein Aufraeumlauf darf einen spaeteren
+	@# "make test-riscv" nicht offline unmoeglich machen. "make distclean" raeumt auch das weg.
+	@if [ -d $(BUILD) ]; then \
+	    find $(BUILD) -mindepth 1 -maxdepth 1 ! -name riscv-tests -exec rm -rf {} + ; \
+	fi
+
+distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: host native q9fat test test-cf-sector clean
+.PHONY: host native q9fat test test-cf-sector test-riscv clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00
