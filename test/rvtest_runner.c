@@ -34,6 +34,8 @@
 #include "iomem.h"
 #include "riscv_cpu.h"
 
+#include "rvelf.h"
+
 #define RAM_BASE   0x80000000ULL
 #define RAM_SIZE   (64u * 1024u * 1024u)
 #define BOOT_BASE  0x1000ULL          /* Reset-PC des Kerns, s. riscv_cpu.c */
@@ -45,110 +47,11 @@
 /* Notbremse: ein haengender Test darf den Sammellauf nicht blockieren. */
 #define MAX_SLICES        2000
 
-//───────────────────────────────────────────────────────────────────────────────────────────────
-// Minimaler ELF32-Leser. Bewusst von Hand statt libelf: wir brauchen genau zwei Dinge --
-// die PT_LOAD-Segmente und die Adresse eines einzigen Symbols.
-//───────────────────────────────────────────────────────────────────────────────────────────────
-
-#define PT_LOAD    1
-#define SHT_SYMTAB 2
-
-typedef struct {
-    uint8_t  *data;
-    size_t    size;
-    uint32_t  entry;
-    uint32_t  tohost;      /* 0 = nicht gefunden */
-} elf_file_t;
-
-static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+/* Nur zum Auslesen des Meldeworts -- der ELF-Teil liegt in test/riscv/rvelf.c, gemeinsam
+   genutzt mit test/rvboard_hello.c. */
 static uint32_t rd32(const uint8_t *p)
 {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static int elf_read(const char *path, elf_file_t *out)
-{
-    FILE *f = fopen(path, "rb");
-    if (!f) { fprintf(stderr, "  kann '%s' nicht oeffnen\n", path); return -1; }
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (n <= 0) { fclose(f); return -1; }
-    out->data = malloc((size_t)n);
-    out->size = (size_t)n;
-    if (fread(out->data, 1, (size_t)n, f) != (size_t)n) { fclose(f); free(out->data); return -1; }
-    fclose(f);
-
-    const uint8_t *e = out->data;
-    if (out->size < 52 || memcmp(e, "\177ELF", 4) != 0) {
-        fprintf(stderr, "  '%s' ist keine ELF-Datei\n", path); return -1;
-    }
-    if (e[4] != 1) { fprintf(stderr, "  '%s': nur ELF32 wird hier gelesen\n", path); return -1; }
-    if (e[5] != 1) { fprintf(stderr, "  '%s': nur Little-Endian\n", path); return -1; }
-    out->entry  = rd32(e + 24);
-    out->tohost = 0;
-    return 0;
-}
-
-/* Kopiert alle PT_LOAD-Segmente an ihre physische Adresse. */
-static int elf_load_segments(elf_file_t *ef, PhysMemoryMap *map)
-{
-    const uint8_t *e = ef->data;
-    uint32_t phoff  = rd32(e + 28);
-    uint16_t phentsz = rd16(e + 42);
-    uint16_t phnum   = rd16(e + 44);
-    int loaded = 0;
-
-    for (uint16_t i = 0; i < phnum; i++) {
-        const uint8_t *ph = e + phoff + (size_t)i * phentsz;
-        if (rd32(ph) != PT_LOAD) continue;
-        uint32_t offset = rd32(ph + 4);
-        uint32_t paddr  = rd32(ph + 12);
-        uint32_t filesz = rd32(ph + 16);
-        uint32_t memsz  = rd32(ph + 20);
-        if (filesz == 0 && memsz == 0) continue;
-
-        uint8_t *dst = phys_mem_get_ram_ptr(map, paddr, TRUE);
-        if (!dst) {
-            fprintf(stderr, "  Segment %u will nach 0x%08x -- dort ist kein RAM\n", i, paddr);
-            return -1;
-        }
-        memcpy(dst, e + offset, filesz);
-        if (memsz > filesz) memset(dst + filesz, 0, memsz - filesz);   /* .bss */
-        loaded++;
-    }
-    if (!loaded) { fprintf(stderr, "  keine ladbaren Segmente\n"); return -1; }
-    return 0;
-}
-
-/* Sucht die Adresse eines Symbols in der Symboltabelle. */
-static uint32_t elf_find_symbol(elf_file_t *ef, const char *name)
-{
-    const uint8_t *e = ef->data;
-    uint32_t shoff   = rd32(e + 32);
-    uint16_t shentsz = rd16(e + 46);
-    uint16_t shnum   = rd16(e + 48);
-
-    for (uint16_t i = 0; i < shnum; i++) {
-        const uint8_t *sh = e + shoff + (size_t)i * shentsz;
-        if (rd32(sh + 4) != SHT_SYMTAB) continue;
-        uint32_t symoff  = rd32(sh + 16);
-        uint32_t symsz   = rd32(sh + 20);
-        uint32_t link    = rd32(sh + 24);          /* zugehoerige Stringtabelle */
-        uint32_t entsz   = rd32(sh + 36);
-        if (entsz == 0) continue;
-
-        const uint8_t *strsh = e + shoff + (size_t)link * shentsz;
-        const char *strtab = (const char *)(e + rd32(strsh + 16));
-
-        for (uint32_t o = 0; o + entsz <= symsz; o += entsz) {
-            const uint8_t *sym = e + symoff + o;
-            uint32_t nameoff = rd32(sym);
-            if (nameoff == 0) continue;
-            if (strcmp(strtab + nameoff, name) == 0) return rd32(sym + 4);   /* st_value */
-        }
-    }
-    return 0;
 }
 
 //───────────────────────────────────────────────────────────────────────────────────────────────
@@ -159,35 +62,26 @@ typedef enum { R_PASS, R_FAIL, R_HANG, R_ERROR } result_t;
 
 static result_t run_one(const char *path, int xlen, uint32_t *fail_case, uint64_t *cycles_out)
 {
-    elf_file_t ef;
+    rvelf_t ef;
+    uint32_t tohost;
     result_t res = R_ERROR;
     *fail_case = 0; *cycles_out = 0;
 
-    if (elf_read(path, &ef) != 0) return R_ERROR;
+    if (rvelf_read(path, &ef) != 0) return R_ERROR;
 
     PhysMemoryMap *map = phys_mem_map_init();
     cpu_register_ram(map, RAM_BASE,  RAM_SIZE,  0);
     cpu_register_ram(map, BOOT_BASE, BOOT_SIZE, 0);
 
-    if (elf_load_segments(&ef, map) != 0) goto out;
+    if (rvelf_load_segments(&ef, map) != 0) goto out;
 
-    ef.tohost = elf_find_symbol(&ef, "tohost");
-    if (!ef.tohost) { fprintf(stderr, "  kein Symbol 'tohost'\n"); goto out; }
+    tohost = rvelf_find_symbol(&ef, "tohost");
+    if (!tohost) { fprintf(stderr, "  kein Symbol 'tohost'\n"); goto out; }
 
-    /* Sprungbefehl am Reset-PC: lui t0, <hi20 von entry>; jalr x0, lo12(t0) */
-    {
-        uint8_t *boot = phys_mem_get_ram_ptr(map, BOOT_BASE, TRUE);
-        if (!boot) goto out;
-        uint32_t hi = (ef.entry + 0x800) & 0xfffff000u;   /* Vorzeichenkorrektur fuer lo12 */
-        uint32_t lo = ef.entry - hi;
-        uint32_t lui  = hi | (5u << 7) | 0x37u;                       /* lui  t0, hi   */
-        uint32_t jalr = ((lo & 0xfffu) << 20) | (5u << 15) | 0x67u;   /* jalr x0, lo(t0) */
-        memcpy(boot + 0, &lui,  4);
-        memcpy(boot + 4, &jalr, 4);
-    }
+    if (rvelf_place_boot_stub(map, BOOT_BASE, ef.entry) != 0) goto out;
 
-    uint8_t *tohost_ptr = phys_mem_get_ram_ptr(map, ef.tohost, FALSE);
-    if (!tohost_ptr) { fprintf(stderr, "  'tohost' (0x%08x) liegt nicht im RAM\n", ef.tohost); goto out; }
+    uint8_t *tohost_ptr = phys_mem_get_ram_ptr(map, tohost, FALSE);
+    if (!tohost_ptr) { fprintf(stderr, "  'tohost' (0x%08x) liegt nicht im RAM\n", tohost); goto out; }
 
     RISCVCPUState *cpu = riscv_cpu_init(map, xlen);
     if (!cpu) { fprintf(stderr, "  CPU laesst sich nicht anlegen (xlen=%d)\n", xlen); goto out; }
@@ -208,7 +102,7 @@ static result_t run_one(const char *path, int xlen, uint32_t *fail_case, uint64_
 
 out:
     phys_mem_map_end(map);
-    free(ef.data);
+    rvelf_free(&ef);
     return res;
 }
 

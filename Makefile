@@ -225,8 +225,42 @@ test-riscv: $(BUILD)/$(PLATFORM_DIR)/rvtest_runner
 
 $(BUILD)/$(PLATFORM_DIR)/rvtest_runner: test/rvtest_runner.c $(RVTEST_SRC)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -DMAX_XLEN=$(RVXLEN) -DCONFIG_RISCV_MAX_XLEN=$(RVXLEN) \
-	    test/rvtest_runner.c $(RVTEST_SRC) -o $@
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -DMAX_XLEN=$(RVXLEN) -DCONFIG_RISCV_MAX_XLEN=$(RVXLEN) \
+	    test/rvtest_runner.c test/riscv/rvelf.c $(RVTEST_SRC) -o $@
+
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvboard: Lebenszeichen auf einem minimalen RISC-V-Board (RAM + 16550-UART).
+# Prueft zwei Wege, die der ISA-Prueflauf NICHT beruehrt: den Geraete-Rueckrufpfad des Kerns
+# (cpu_register_device) und dass wir eigene Gastprogramme durchgaengig bauen koennen.
+# Speicherkarte nach QEMU "virt" (UART0 0x10000000, RAM 0x80000000) -- damit sind spaeter
+# dieselben Abbilder und ein Gegenvergleich mit qemu-system-riscv32 moeglich.
+# Braucht die RISC-V-Toolchain; ohne sie wird der Test uebersprungen statt fehlzuschlagen.
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVGCC       ?= riscv64-elf-gcc
+RVGUEST_DIR  = test/riscv/hello
+RVGUEST_ELF  = $(BUILD)/riscv-tests/hello.elf
+RVBOARD_SRC  = test/rvboard_hello.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c
+
+test-rvboard:
+	@if ! command -v $(RVGCC) >/dev/null 2>&1; then \
+	    echo "warn  test-rvboard: $(RVGCC) fehlt -- uebersprungen"; \
+	    echo "      macOS: brew install riscv64-elf-gcc riscv64-elf-binutils"; \
+	    exit 0; \
+	fi; \
+	mkdir -p $(BUILD)/riscv-tests $(BUILD)/$(PLATFORM_DIR); \
+	$(RVGCC) -march=rv32im -mabi=ilp32 -static -mcmodel=medany -nostdlib -nostartfiles -O2 \
+	    -T $(RVGUEST_DIR)/link.ld $(RVGUEST_DIR)/start.S $(RVGUEST_DIR)/hello.c \
+	    -o $(RVGUEST_ELF) || exit 1; \
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 \
+	    -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVBOARD_SRC) $(RVTEST_SRC) -o $(BUILD)/$(PLATFORM_DIR)/rvboard_hello || exit 1; \
+	out=$$($(BUILD)/$(PLATFORM_DIR)/rvboard_hello $(RVGUEST_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "Summe 1..100 = 5050" && echo "$$out" | grep -q "angehalten (wfi)"; then \
+	    echo "ok    test-rvboard: Gastprogramm laeuft, UART-Ausgabe und Rechenergebnis stimmen"; \
+	else \
+	    echo "FAIL  test-rvboard: erwartete Ausgabe fehlt"; exit 1; \
+	fi
 
 clean:
 	@# build/riscv-tests/ bleibt bewusst stehen: das ist GEHOLTES Fremdmaterial, dessen
@@ -239,7 +273,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: host native q9fat test test-cf-sector test-riscv clean distclean
+.PHONY: host native q9fat test test-cf-sector test-riscv test-rvboard clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00
