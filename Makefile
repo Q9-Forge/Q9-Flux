@@ -2,9 +2,9 @@
 # File:   Makefile                                                                        Ver. 3.40
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k).
-#         Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc), test, clean.
+#         Targets: host (Wirtssystem-Build, gcc/w64devkit oder clang/gcc), test, clean.
 #
-# Call:   make native | make test | make test-cf-sector | make clean
+# Call:   make host | make test | make test-cf-sector | make clean   (make native = Alias)
 #
 # Edition History
 #─────────┬──────┬─────────────────────────────────────────────────────────────────────────┬──────
@@ -56,15 +56,18 @@ else
 endif
 PLATFORM_DIR = $(PLATFORM)
 
-# native-HAL nach Betriebssystem waehlen: Windows (w64devkit setzt $OS=Windows_NT) = conio,
+# Host-HAL nach Wirtssystem waehlen: Windows (w64devkit setzt $OS=Windows_NT) = conio,
 # alles andere (macOS/Linux) = POSIX/termios.
+# "Host" statt "native" (2026-08-12): wir bauen fuer mindestens drei Wirtssysteme UND
+# mindestens drei Zielarchitekturen -- "nativ" laesst offen, welches von beiden gemeint ist.
+# Host = die Maschine, auf der der Emulator laeuft; Target = die Architektur, die er emuliert.
 # Windows-Build: unter Windows brauchen die Netz-Terminals (m68krt.c) und die Video-Bridge (videobridge.c)
 # Winsock2 statt BSD-Sockets (s. src/kernel/q9_sockcompat.h) -- -lws2_32 fuer WSAStartup/socket/...
 ifeq ($(PLATFORM),windows)
-    NATIVE_HAL_SRC = src/hal/native/hal_native.c
-    NATIVE_EXTRA_LIBS = -lws2_32 -lwinmm
+    HOST_HAL_SRC = src/hal/windows/hal_windows.c
+    HOST_EXTRA_LIBS = -lws2_32 -lwinmm
 else
-    NATIVE_HAL_SRC = src/hal/posix/hal_posix.c
+    HOST_HAL_SRC = src/hal/posix/hal_posix.c
 endif
 
 # 5.1: eingebettete Musashi-68000-Emulation (third_party/musashi, Entscheidung E12). Musashi hat
@@ -165,20 +168,22 @@ $(BUILD)/tools/q9fat: tools/q9fat.c
 	$(CC) $(CFLAGS) $< -o $@
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
-# native: PC-Build (Windows w64devkit oder macOS/Linux, HAL wird automatisch gewaehlt) --
-# landet plattform-spezifisch unter build/windows|macos|linux/.
+# host: Build fuer das Wirtssystem, auf dem gerade gebaut wird (Windows w64devkit oder
+# macOS/Linux, HAL wird automatisch gewaehlt) -- landet unter build/windows|macos|linux/.
+# "native" bleibt als stiller Alias erhalten, damit bestehende Skripte und Gewohnheiten
+# weiterlaufen.
 #───────────────────────────────────────────────────────────────────────────────────────────────
-native: $(BUILD)/$(PLATFORM_DIR)/q9.exe
+host native: $(BUILD)/$(PLATFORM_DIR)/q9.exe
 	@echo "-> $(BUILD)/$(PLATFORM_DIR)/q9.exe"
 
 $(BUILD)/$(PLATFORM_DIR)/q9.exe: $(M68KRT_SRC) $(M68KRT_HDR) \
                         $(BOARD_SRC) $(BOARD_HDR) $(BOARD_NET_SRC) $(BOARD_NET_HDR) \
                         $(SLIRP_SRC) $(SLIRP_HDR) \
-                        $(NATIVE_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
+                        $(HOST_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(BOARD_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
-	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(NATIVE_HAL_SRC) \
-	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(NATIVE_EXTRA_LIBS) -o $@
+	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(HOST_HAL_SRC) \
+	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(HOST_EXTRA_LIBS) -o $@
 ifneq ($(SLIRP_RUNTIME_DLLS),)
 	@cp $(SLIRP_RUNTIME_DLLS) $(BUILD)/$(PLATFORM_DIR)/
 endif
@@ -199,7 +204,7 @@ test-cf-sector:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: native q9fat test test-cf-sector clean
+.PHONY: host native q9fat test test-cf-sector clean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00

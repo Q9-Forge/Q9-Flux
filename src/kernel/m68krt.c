@@ -42,7 +42,7 @@
 //         │      │ filtert die IAC-Antwortsequenzen des Clients aus dem RX-Bytestrom            │
 // 26-08-07│ 1.39 │ Ctrl-Q (konfigurierbar, Q9_NET_DISCONNECT_CTRL) trennt nur die eigene       │ AF
 //         │      │ Telnet-Verbindung sauber -- Andreas' Wunsch nach einem Pendant zum lokalen   │
-//         │      │ Ctrl-Q-Host-Escape (hal_native.c/hal_posix.c), aber mit Kanal- statt          │
+//         │      │ Ctrl-Q-Host-Escape (hal_windows.c/hal_posix.c), aber mit Kanal- statt          │
 //         │      │ Prozess-Reichweite                                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
@@ -129,7 +129,7 @@ static const unsigned char g_telnet_negotiate[] = {
 
 /* Andreas' Wunsch (2026-08-07): ein Strg-Zeichen soll NUR die eigene Telnet-Verbindung sauber
    trennen (wie ein Logout), ohne den Rest des Emulators anzufassen -- anders als der lokale
-   Ctrl-Q-Host-Escape (hal_native.c/hal_posix.c), der den GANZEN Prozess beendet. Gleicher Buchstabe
+   Ctrl-Q-Host-Escape (hal_windows.c/hal_posix.c), der den GANZEN Prozess beendet. Gleicher Buchstabe
    (Ctrl-Q) als Default wie dort, bewusst: Andreas hatte instinktiv genau das in einer Telnet-Session
    probiert, "mein Exit-Reflex" soll ueberall gleich funktionieren (nur die Reichweite unterscheidet
    sich: lokal = ganzer Prozess, hier = nur die eine Verbindung). Per Env-Var
