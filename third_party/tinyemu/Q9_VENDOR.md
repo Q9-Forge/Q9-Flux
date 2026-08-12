@@ -104,7 +104,53 @@ ours to maintain. That was a conscious decision: the RISC-V base ISA is ratified
 and frozen, so a complete core does not rot, and at 6146 lines it is small
 enough to own. The situation with Musashi is the same.
 
+## Measured against the official ISA suite (2026-08-12)
+
+`make test-riscv` runs the RISC-V `riscv-tests` suite against this core — with
+no board at all, just RAM and the HTIF report word. If something fails there you
+know the *instruction*, not merely "does not boot".
+
+RV32, baseline groups: **95 of 104**.
+
+| Group | | Group | |
+|---|---|---|---|
+| `rv32ui` base integer | **42/42** | `rv32uf` float | 10/11 |
+| `rv32um` mul/div | **8/8** | `rv32ud` double | 9/10 |
+| `rv32uc` compressed | **1/1** | `rv32mi` machine mode | 11/16 |
+| `rv32ua` atomics | 9/10 | `rv32si` supervisor | 5/6 |
+
+The user-mode integer ISA is complete. Every failure sits in a **feature that is
+simply not implemented**, not in wrong instruction semantics — checked in the
+source:
+
+| Failing test | Cause in the core |
+|---|---|
+| `rv32mi-p-pmpaddr` | PMP does not exist (0 mentions of `pmpaddr`/`pmpcfg`) |
+| `rv32mi-p-breakpoint` | debug triggers `tdata1`/`tselect` missing |
+| `rv32mi-p-mcsr`, `-instret_overflow` | `mcountinhibit` missing |
+| `rv32si-p-dirty` | `PTE_A`/`PTE_D` present but incomplete |
+| `rv32ua-p-lrsc` | no reservation bookkeeping for LR/SC |
+
+**Relevant for later steps**: the incomplete `PTE_A`/`PTE_D` handling will matter
+as soon as a real OS with paging runs (xv6), and LR/SC matters for multi-core.
+The others (PMP, debug triggers, counter inhibit) are irrelevant for Q9 for now.
+
+The extension groups Zba/Zbb/Zbc/Zbs/Zbkb/Zbkx/Zfh/Zicond (52 further tests) fail
+wholesale with "illegal instruction" — this core predates them (2017). They are
+deliberately **not** part of the baseline, because a suite that is permanently
+red gets ignored. `test/riscv/run-isa-tests.sh` therefore pins the state above and
+only reports *changes*, in both directions.
+
 ## Q9-specific changes to the vendor code
 
-None so far. Any change should be marked with `Q9` in the code and listed here,
-the way it is done in `third_party/musashi/Q9_VENDOR.md`.
+1. **`riscv_cpu.c` — `case 64:` in `riscv_cpu_init()` made conditional**
+   (2026-08-12). The `case 128:` below it was already guarded by
+   `#if CONFIG_RISCV_MAX_XLEN == 128`, this one was not. Consequence: a pure
+   32-bit build (`CONFIG_RISCV_MAX_XLEN=32`) **compiled but did not link** —
+   the dispatcher referenced `riscv_cpu_class64`, which is not produced in that
+   build. So the small RV32-only build promised above did not actually work
+   until this fix. Purely additive condition, behaviour for
+   `CONFIG_RISCV_MAX_XLEN >= 64` unchanged. Marked `Q9` in the code.
+
+Any further change should be marked with `Q9` in the code and listed here, the
+way it is done in `third_party/musashi/Q9_VENDOR.md`.

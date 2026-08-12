@@ -1359,9 +1359,17 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map, int max_xlen)
     case 32:
         c = &riscv_cpu_class32;
         break;
+/* Q9 2026-08-12: Fall 64 bedingt gemacht -- der Fall 128 darunter war es schon,
+   dieser nicht. Folge: ein reiner 32-Bit-Bau (CONFIG_RISCV_MAX_XLEN=32) liess
+   sich nicht LINKEN, weil hier auf riscv_cpu_class64 verwiesen wurde, das in
+   diesem Bau gar nicht entsteht. Uebersetzt hat er, nur gebunden nicht -- der
+   Fehler faellt daher erst beim Zusammenbau auf. Rein additive Bedingung,
+   Verhalten fuer CONFIG_RISCV_MAX_XLEN >= 64 unveraendert. */
+#if CONFIG_RISCV_MAX_XLEN >= 64
     case 64:
         c = &riscv_cpu_class64;
         break;
+#endif
 #if CONFIG_RISCV_MAX_XLEN == 128
     case 128:
         c = &riscv_cpu_class128;
