@@ -262,6 +262,38 @@ test-rvboard:
 	    echo "FAIL  test-rvboard: erwartete Ausgabe fehlt"; exit 1; \
 	fi
 
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvtimer: Stufe 2b des RISC-V-Bring-up -- CLINT-Timer-Interrupt sauber abfangen.
+# Bewusst noch KEIN fremdes Betriebssystem: ein eigenes Testprogramm, das einen Trap-Handler
+# einrichtet und funfmal per "wfi" auf einen periodischen Timer-Interrupt wartet. Prueft die
+# Interrupt-Maschinerie isoliert, bevor xv6/FreeRTOS/... dazukommen (Arbeitsplan Phase 6).
+# Braucht die RISC-V-Toolchain; ohne sie wird der Test uebersprungen statt fehlzuschlagen.
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVTIMER_DIR  = test/riscv/timer
+RVTIMER_ELF  = $(BUILD)/riscv-tests/timer_test.elf
+RVTIMER_SRC  = test/rvboard_timer.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c \
+               src/devices/clint/clint.c
+
+test-rvtimer:
+	@if ! command -v $(RVGCC) >/dev/null 2>&1; then \
+	    echo "warn  test-rvtimer: $(RVGCC) fehlt -- uebersprungen"; \
+	    exit 0; \
+	fi; \
+	mkdir -p $(BUILD)/riscv-tests $(BUILD)/$(PLATFORM_DIR); \
+	$(RVGCC) -march=rv32im_zicsr -mabi=ilp32 -static -mcmodel=medany -nostdlib -nostartfiles -O2 \
+	    -T $(RVTIMER_DIR)/link.ld $(RVTIMER_DIR)/start.S $(RVTIMER_DIR)/trap.S \
+	    $(RVTIMER_DIR)/timer_test.c -o $(RVTIMER_ELF) || exit 1; \
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 -Isrc/devices/clint \
+	    -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVTIMER_SRC) $(RVTEST_SRC) -o $(BUILD)/$(PLATFORM_DIR)/rvboard_timer || exit 1; \
+	out=$$($(BUILD)/$(PLATFORM_DIR)/rvboard_timer $(RVTIMER_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "Interrupts behandelt: 5" && echo "$$out" | grep -q "Stromsparzustand"; then \
+	    echo "ok    test-rvtimer: genau 5 Timer-Interrupts behandelt, sauber angehalten"; \
+	else \
+	    echo "FAIL  test-rvtimer: erwartete Ausgabe fehlt (Interrupt-Sturm oder Haenger?)"; exit 1; \
+	fi
+
 clean:
 	@# build/riscv-tests/ bleibt bewusst stehen: das ist GEHOLTES Fremdmaterial, dessen
 	@# Neubeschaffung eine Netzverbindung braucht. Ein Aufraeumlauf darf einen spaeteren
@@ -273,7 +305,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: host native q9fat test test-cf-sector test-riscv test-rvboard clean distclean
+.PHONY: host native q9fat test test-cf-sector test-riscv test-rvboard test-rvtimer clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00
