@@ -502,11 +502,19 @@ throwing off the OS-9 clock. The real boot ROM is proprietary and stays
 local — `.gitignore` covers `boardrom*.bin`/`*.rom`.
 
 **Windows terminal input:** the native Windows HAL normalizes extended
-`_getch()` keys to ANSI sequences so that OS-9 programs like `umacs` can
-interpret them via `termcap`. Example: cursor-up arrives from Windows as
-`0xE0 0x48`, gets turned into `ESC [ A` by the HAL, and `SYS/termcap`
-describes `ku=\E[A` for `q9|q9term` accordingly. `Ctrl-C` is intercepted
-by the Windows HAL so it doesn't terminate the host process.
+`_getch()` keys. **As of 2026-08-09** the default is no longer ANSI, but
+**WinEd's own Emacs bindings**: WinEd 3.9 (and `umacs`) don't process ANSI
+cursor sequences as single keystrokes — they expect their own control codes
+for the four directions instead (`Up=^P`, `Down=^N`, `Left=^B`,
+`Right=^F`), which is now the Windows default. For a program that needs
+classic ANSI sequences, set `Q9_KEYMODE=ansi` (or `vt100`); example in ANSI
+mode: cursor-up arrives from Windows as `0xE0 0x48`, gets turned into
+`ESC [ A` by the HAL, and `SYS/termcap` describes `ku=\E[A` for `q9|q9term`
+accordingly — `q9term` itself is unaffected by this switch. Windows
+Terminal handles mouse selection, `Ctrl+V`, and some function keys itself,
+so those host functions are deliberately not remapped to WinEd commands
+inside the emulator. `Ctrl-C` is intercepted by the Windows HAL so it
+doesn't terminate the host process.
 
 **OS9SYS CF boot and `os9gen`:** the local working image
 `local_images/OS9SYS.hda` boots directly from CompactFlash and then runs
