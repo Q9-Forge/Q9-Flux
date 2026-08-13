@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.39
+// File:   m68krt.c                                                                        Ver. 1.40
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -44,6 +44,9 @@
 //         │      │ Telnet-Verbindung sauber -- Andreas' Wunsch nach einem Pendant zum lokalen   │
 //         │      │ Ctrl-Q-Host-Escape (hal_windows.c/hal_posix.c), aber mit Kanal- statt          │
 //         │      │ Prozess-Reichweite                                                           │
+// 26-08-13│ 1.40 │ 6.5: q9_m68krt_get_backend -- befuellt eine q9_cpu_backend_t (cpu_backend.h) │ Cld
+//         │      │ mit duennen Wrappern um reset/execute/set_irq/is_stopped, damit             │
+//         │      │ q9boardrun.c nur noch ueber die Vtable auf die 68k-CPU zugreift              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
@@ -1200,6 +1203,42 @@ int q9_m68krt_is_stopped(void)
     return m68k_is_stopped();
 }
 
+/* 6.5: Wrapper mit der generischen q9_cpu_backend_t-Signatur -- reichen nur an die vorhandenen
+   q9_m68krt_*-Funktionen durch. ctx wird dabei ueberwiegend NICHT gebraucht (Musashi ist ein
+   Singleton mit eigenen Globals, s. Typkommentar in m68krt.h), ist aber Teil der Vtable-Signatur,
+   damit ein kuenftiges Nicht-Singleton-Backend (z.B. TinyEMU/RISC-V, s.
+   third_party/tinyemu/Q9_VENDOR.md) ohne Vtable-Aenderung moeglich bleibt. */
+static void cpu_backend_reset(void *ctx)
+{
+    q9_m68krt_reset((q9_m68krt_t *)ctx);
+}
+
+static int cpu_backend_execute(void *ctx, int cycles)
+{
+    return q9_m68krt_execute((q9_m68krt_t *)ctx, cycles);
+}
+
+static void cpu_backend_set_irq(void *ctx, int level)
+{
+    (void)ctx;
+    q9_m68krt_set_irq(level);
+}
+
+static int cpu_backend_is_stopped(void *ctx)
+{
+    (void)ctx;
+    return q9_m68krt_is_stopped();
+}
+
+void q9_m68krt_get_backend(q9_m68krt_t *rt, q9_cpu_backend_t *backend)
+{
+    backend->reset      = cpu_backend_reset;
+    backend->execute    = cpu_backend_execute;
+    backend->set_irq    = cpu_backend_set_irq;
+    backend->is_stopped = cpu_backend_is_stopped;
+    backend->ctx        = rt;
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF m68krt.c                                                                            Ver. 1.39
+// EOF m68krt.c                                                                            Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
