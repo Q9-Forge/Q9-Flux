@@ -210,7 +210,7 @@ Q9-Flux/
 │   ├── musashi/             vendored 68000/68030 CPU emulator (MIT, unmodified)
 │   ├── slirp/               vendored Windows libslirp, resp. hookup to the system libslirp
 │   └── tvision/              launcher prototype (see git history)
-├── test/                    test scripts/programs, runnable from the project root after `make native`
+├── test/                    test scripts/programs, runnable from the project root after `make host`
 ├── tools/                   host-side helper tools (patch/diagnostic scripts)
 ├── userland/                first Q9 userland tools (Codex's work area, see ARBEITSPLAN.md Phase U)
 └── docs/                    specialist documents (this handbook + detailed specs)
@@ -253,7 +253,7 @@ publication-ready document.
 Everything goes through the `Makefile` at the project root:
 
 ```bash
-make native   # -> build/<platform>/q9.exe  (Windows: conio HAL; macOS/Linux: POSIX HAL, chosen automatically)
+make host   # -> build/<platform>/q9.exe   ("make native" still works as a silent alias)  (Windows: conio HAL; macOS/Linux: POSIX HAL, chosen automatically)
 make test     # builds native + runs the test programs from test/
 make clean    # removes build/
 ```
@@ -270,7 +270,7 @@ files/binaries don't overwrite each other.
 ### 4.1 Trying Out the Native Build
 
 ```bash
-make native
+make host
 ./build/<platform>/q9.exe mysystem.q9                                  # board config file
 ./build/<platform>/q9.exe --rom <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>|slirp]
 ```
@@ -285,7 +285,7 @@ Windows PowerShell on the local AF-PC:
 cd D:\projekts\Q9
 $env:PATH = "C:\Users\AF\w64devkit\bin;$env:PATH"
 $env:OS = "Windows_NT"
-make native
+make host
 .\build\native\q9.exe --rom .\local_images\roms\romimage.dev.running.BIN --cf .\local_images\OS9SYS.hda
 ```
 
@@ -657,7 +657,8 @@ legal status:
 | **NitrOS-9** ([github.com/nitros9project/nitros9](https://github.com/nitros9project/nitros9)) | community OS-9/6809, RBF in 6809 assembler | **GPL** | so far only noted as an idea (idea backlog, ARBEITSPLAN.md) | Yes (GPL, mind the copyleft) |
 | **ToolShed** (part of the NitrOS-9 project) | PC tools for reading/writing RBF images, in C | presumably GPL (needs checking in the NitrOS-9 context) | actively used for image editing (WSL/Toolshed, see section 5.4) | to be checked |
 | **OS9exec** (Lukas Zeller/Beat Forster) | 68k emulator + an OS-9 kernel reimplementation in C, syscall level | **GPL** | so far only noted as an idea: reference for future syscall-bridge questions | Yes (GPL, mind the copyleft) |
-| **Musashi** ([github.com/kstenerud/Musashi](https://github.com/kstenerud/Musashi), commit `313ebf1`) | 68000/68030 emulator, C | **MIT** | only the core interpreter + code generator + softfloat vendored as `third_party/musashi/` (no disassembler, no test drivers), built as part of `make native` (decision E12) | Yes (MIT, license text in `m68k.h` among others) |
+| **Musashi** ([github.com/kstenerud/Musashi](https://github.com/kstenerud/Musashi), commit `313ebf1`) | 68000/68030 emulator, C | **MIT** | only the core interpreter + code generator + softfloat vendored as `third_party/musashi/` (no disassembler, no test drivers), built as part of `make host` (decision E12) | Yes (MIT, license text in `m68k.h` among others) |
+| **TinyEMU** ([github.com/fernandotcl/TinyEMU](https://github.com/fernandotcl/TinyEMU), commit `56ba49b`) | RISC-V emulator, C (Fabrice Bellard) | **MIT** | only the CPU core vendored as `third_party/tinyemu/` (no board/devices/x86) — the RISC-V counterpart to Musashi's role, see `docs/RISCV.md` | Yes (MIT, license header in every source file) |
 | **libslirp** | user-mode network stack, C | **BSD-2-Clause** | `--net slirp` backend: vendored for Windows under `third_party/slirp/windows/`, linked against the system libslirp via pkg-config on macOS/Linux | Yes |
 
 **Consequence for a future release:** Q9's own source tree (`src/`,

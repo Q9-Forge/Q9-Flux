@@ -16,7 +16,7 @@
 //         Eingabemodus fuer ihre eigene Zeileneingabe laufend zurueck — als dauerhafter
 //         "Einschalter" fuer fremde Programme taugt das daher nur bedingt (s. Diskussion
 //         2026-07-05). Der eigentliche Zweck ist Anschauung/Diagnose; Q9 selbst setzt die
-//         Flags spaeter selbst in q9_hal_init() (hal_native.c).
+//         Flags spaeter selbst in q9_hal_init() (hal_windows.c).
 //
 // Build:  Windows, MinGW:  gcc -std=c99 -Wall -Wextra vtmode.c -o vtmode.exe
 //         Windows, MSVC:   cl vtmode.c

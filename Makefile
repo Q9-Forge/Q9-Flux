@@ -2,9 +2,9 @@
 # File:   Makefile                                                                        Ver. 3.40
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k).
-#         Targets: native (PC, gcc/w64devkit oder macOS/Linux clang/gcc), test, clean.
+#         Targets: host (Wirtssystem-Build, gcc/w64devkit oder clang/gcc), test, clean.
 #
-# Call:   make native | make test | make test-cf-sector | make clean
+# Call:   make host | make test | make test-cf-sector | make clean   (make native = Alias)
 #
 # Edition History
 #─────────┬──────┬─────────────────────────────────────────────────────────────────────────┬──────
@@ -56,15 +56,18 @@ else
 endif
 PLATFORM_DIR = $(PLATFORM)
 
-# native-HAL nach Betriebssystem waehlen: Windows (w64devkit setzt $OS=Windows_NT) = conio,
+# Host-HAL nach Wirtssystem waehlen: Windows (w64devkit setzt $OS=Windows_NT) = conio,
 # alles andere (macOS/Linux) = POSIX/termios.
+# "Host" statt "native" (2026-08-12): wir bauen fuer mindestens drei Wirtssysteme UND
+# mindestens drei Zielarchitekturen -- "nativ" laesst offen, welches von beiden gemeint ist.
+# Host = die Maschine, auf der der Emulator laeuft; Target = die Architektur, die er emuliert.
 # Windows-Build: unter Windows brauchen die Netz-Terminals (m68krt.c) und die Video-Bridge (videobridge.c)
 # Winsock2 statt BSD-Sockets (s. src/kernel/q9_sockcompat.h) -- -lws2_32 fuer WSAStartup/socket/...
 ifeq ($(PLATFORM),windows)
-    NATIVE_HAL_SRC = src/hal/native/hal_native.c
-    NATIVE_EXTRA_LIBS = -lws2_32 -lwinmm
+    HOST_HAL_SRC = src/hal/windows/hal_windows.c
+    HOST_EXTRA_LIBS = -lws2_32 -lwinmm
 else
-    NATIVE_HAL_SRC = src/hal/posix/hal_posix.c
+    HOST_HAL_SRC = src/hal/posix/hal_posix.c
 endif
 
 # 5.1: eingebettete Musashi-68000-Emulation (third_party/musashi, Entscheidung E12). Musashi hat
@@ -165,20 +168,22 @@ $(BUILD)/tools/q9fat: tools/q9fat.c
 	$(CC) $(CFLAGS) $< -o $@
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
-# native: PC-Build (Windows w64devkit oder macOS/Linux, HAL wird automatisch gewaehlt) --
-# landet plattform-spezifisch unter build/windows|macos|linux/.
+# host: Build fuer das Wirtssystem, auf dem gerade gebaut wird (Windows w64devkit oder
+# macOS/Linux, HAL wird automatisch gewaehlt) -- landet unter build/windows|macos|linux/.
+# "native" bleibt als stiller Alias erhalten, damit bestehende Skripte und Gewohnheiten
+# weiterlaufen.
 #───────────────────────────────────────────────────────────────────────────────────────────────
-native: $(BUILD)/$(PLATFORM_DIR)/q9.exe
+host native: $(BUILD)/$(PLATFORM_DIR)/q9.exe
 	@echo "-> $(BUILD)/$(PLATFORM_DIR)/q9.exe"
 
 $(BUILD)/$(PLATFORM_DIR)/q9.exe: $(M68KRT_SRC) $(M68KRT_HDR) \
                         $(BOARD_SRC) $(BOARD_HDR) $(BOARD_NET_SRC) $(BOARD_NET_HDR) \
                         $(SLIRP_SRC) $(SLIRP_HDR) \
-                        $(NATIVE_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
+                        $(HOST_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(BOARD_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
-	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(NATIVE_HAL_SRC) \
-	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(NATIVE_EXTRA_LIBS) -o $@
+	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(HOST_HAL_SRC) \
+	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(HOST_EXTRA_LIBS) -o $@
 ifneq ($(SLIRP_RUNTIME_DLLS),)
 	@cp $(SLIRP_RUNTIME_DLLS) $(BUILD)/$(PLATFORM_DIR)/
 endif
@@ -196,10 +201,176 @@ test-cf-sector:
 	    src/kernel/q9board.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 	$(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
+# Bewusst OHNE Board -- nur RAM und das HTIF-Meldewort; damit prueft der Lauf ausschliesslich die
+# CPU. Schlaegt hier etwas fehl, kennt man die INSTRUKTION statt nur "bootet nicht".
+# Die Testbinaerdateien sind Fremdmaterial und NICHT eingecheckt:
+#     test/riscv/fetch-isa-tests.sh 32     (einmalig, holt+baut riscv-tests)
+#     make test-riscv
+# RVXLEN=64 baut den Kern in 64 Bit (dann auch fetch-isa-tests.sh 64 laufen lassen).
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVXLEN      ?= 32
+TINYEMU_DIR  = third_party/tinyemu
+RVTEST_SRC   = $(TINYEMU_DIR)/riscv_cpu.c $(TINYEMU_DIR)/iomem.c \
+               $(TINYEMU_DIR)/cutils.c $(TINYEMU_DIR)/softfp.c
+RVTEST_DIR   = $(BUILD)/riscv-tests/rv$(RVXLEN)
+
+test-riscv: $(BUILD)/$(PLATFORM_DIR)/rvtest_runner
+	@if [ ! -d "$(RVTEST_DIR)" ]; then \
+	    echo "  Testbinaerdateien fehlen -- zuerst: test/riscv/fetch-isa-tests.sh $(RVXLEN)"; \
+	    exit 1; \
+	fi
+	@test/riscv/run-isa-tests.sh $(RVXLEN)
+
+$(BUILD)/$(PLATFORM_DIR)/rvtest_runner: test/rvtest_runner.c $(RVTEST_SRC)
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -DMAX_XLEN=$(RVXLEN) -DCONFIG_RISCV_MAX_XLEN=$(RVXLEN) \
+	    test/rvtest_runner.c test/riscv/rvelf.c $(RVTEST_SRC) -o $@
+
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvboard: Lebenszeichen auf einem minimalen RISC-V-Board (RAM + 16550-UART).
+# Prueft zwei Wege, die der ISA-Prueflauf NICHT beruehrt: den Geraete-Rueckrufpfad des Kerns
+# (cpu_register_device) und dass wir eigene Gastprogramme durchgaengig bauen koennen.
+# Speicherkarte nach QEMU "virt" (UART0 0x10000000, RAM 0x80000000) -- damit sind spaeter
+# dieselben Abbilder und ein Gegenvergleich mit qemu-system-riscv32 moeglich.
+# Braucht die RISC-V-Toolchain; ohne sie wird der Test uebersprungen statt fehlzuschlagen.
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVGCC       ?= riscv64-elf-gcc
+RVGUEST_DIR  = test/riscv/hello
+RVGUEST_ELF  = $(BUILD)/riscv-tests/hello.elf
+RVBOARD_SRC  = test/rvboard_hello.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c
+
+test-rvboard:
+	@if ! command -v $(RVGCC) >/dev/null 2>&1; then \
+	    echo "warn  test-rvboard: $(RVGCC) fehlt -- uebersprungen"; \
+	    echo "      macOS: brew install riscv64-elf-gcc riscv64-elf-binutils"; \
+	    exit 0; \
+	fi; \
+	mkdir -p $(BUILD)/riscv-tests $(BUILD)/$(PLATFORM_DIR); \
+	$(RVGCC) -march=rv32im -mabi=ilp32 -static -mcmodel=medany -nostdlib -nostartfiles -O2 \
+	    -T $(RVGUEST_DIR)/link.ld $(RVGUEST_DIR)/start.S $(RVGUEST_DIR)/hello.c \
+	    -o $(RVGUEST_ELF) || exit 1; \
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 \
+	    -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVBOARD_SRC) $(RVTEST_SRC) -o $(BUILD)/$(PLATFORM_DIR)/rvboard_hello || exit 1; \
+	out=$$($(BUILD)/$(PLATFORM_DIR)/rvboard_hello $(RVGUEST_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "Summe 1..100 = 5050" && echo "$$out" | grep -q "angehalten (wfi)"; then \
+	    echo "ok    test-rvboard: Gastprogramm laeuft, UART-Ausgabe und Rechenergebnis stimmen"; \
+	else \
+	    echo "FAIL  test-rvboard: erwartete Ausgabe fehlt"; exit 1; \
+	fi
+
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvtimer: Stufe 2b des RISC-V-Bring-up -- CLINT-Timer-Interrupt sauber abfangen.
+# Bewusst noch KEIN fremdes Betriebssystem: ein eigenes Testprogramm, das einen Trap-Handler
+# einrichtet und funfmal per "wfi" auf einen periodischen Timer-Interrupt wartet. Prueft die
+# Interrupt-Maschinerie isoliert, bevor xv6/FreeRTOS/... dazukommen (Arbeitsplan Phase 6).
+# Braucht die RISC-V-Toolchain; ohne sie wird der Test uebersprungen statt fehlzuschlagen.
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVTIMER_DIR  = test/riscv/timer
+RVTIMER_ELF  = $(BUILD)/riscv-tests/timer_test.elf
+RVTIMER_SRC  = test/rvboard_timer.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c \
+               src/devices/clint/clint.c
+
+test-rvtimer:
+	@if ! command -v $(RVGCC) >/dev/null 2>&1; then \
+	    echo "warn  test-rvtimer: $(RVGCC) fehlt -- uebersprungen"; \
+	    exit 0; \
+	fi; \
+	mkdir -p $(BUILD)/riscv-tests $(BUILD)/$(PLATFORM_DIR); \
+	$(RVGCC) -march=rv32im_zicsr -mabi=ilp32 -static -mcmodel=medany -nostdlib -nostartfiles -O2 \
+	    -T $(RVTIMER_DIR)/link.ld $(RVTIMER_DIR)/start.S $(RVTIMER_DIR)/trap.S \
+	    $(RVTIMER_DIR)/timer_test.c -o $(RVTIMER_ELF) || exit 1; \
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 -Isrc/devices/clint \
+	    -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVTIMER_SRC) $(RVTEST_SRC) -o $(BUILD)/$(PLATFORM_DIR)/rvboard_timer || exit 1; \
+	out=$$($(BUILD)/$(PLATFORM_DIR)/rvboard_timer $(RVTIMER_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "Interrupts behandelt: 5" && echo "$$out" | grep -q "Stromsparzustand"; then \
+	    echo "ok    test-rvtimer: genau 5 Timer-Interrupts behandelt, sauber angehalten"; \
+	else \
+	    echo "FAIL  test-rvtimer: erwartete Ausgabe fehlt (Interrupt-Sturm oder Haenger?)"; exit 1; \
+	fi
+
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvnuttx: Stufe 3 des RISC-V-Bring-up -- ein echtes, fremdes Betriebssystem (NuttX,
+# rv-virt:nsh) interaktiv zum Laufen bringen. Braucht RAM + UART + CLINT + PLIC (test-rvtimer
+# beweist nur CLINT, hier kommt PLIC als viertes Geraet dazu, s. docs/RISCV.md).
+#
+# NuttX selbst wird NICHT automatisch geholt (mehrstufige Toolchain-/Werkzeugkette, s. Kopf von
+# test/riscv/fetch-nuttx.sh) -- einmalig von Hand:
+#     test/riscv/fetch-nuttx.sh
+#     make test-rvnuttx
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVNUTTX_ELF  = $(BUILD)/riscv-tests/nuttx_nsh.elf
+RVNUTTX_SRC  = test/rvboard_nuttx.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c \
+               src/devices/clint/clint.c src/devices/plic/plic.c
+
+test-rvnuttx: $(BUILD)/$(PLATFORM_DIR)/rvboard_nuttx
+	@if [ ! -f "$(RVNUTTX_ELF)" ]; then \
+	    echo "  $(RVNUTTX_ELF) fehlt -- zuerst: test/riscv/fetch-nuttx.sh"; \
+	    exit 1; \
+	fi
+	@out=$$(printf 'uname -a\nhello\nexit\n' | $(BUILD)/$(PLATFORM_DIR)/rvboard_nuttx $(RVNUTTX_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "NuttShell (NSH)" && echo "$$out" | grep -q "risc-v rv-virt" \
+	   && echo "$$out" | grep -q "Hello, World"; then \
+	    echo "ok    test-rvnuttx: NuttX bootet, Shell antwortet, ein echtes Programm laeuft"; \
+	else \
+	    echo "FAIL  test-rvnuttx: erwartete Ausgabe fehlt"; exit 1; \
+	fi
+
+$(BUILD)/$(PLATFORM_DIR)/rvboard_nuttx: test/rvboard_nuttx.c $(RVNUTTX_SRC) $(RVTEST_SRC)
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 -Isrc/devices/clint \
+	    -Isrc/devices/plic -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVNUTTX_SRC) $(RVTEST_SRC) -o $@
+
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvextirq: eigenstaendige Regressionsabsicherung fuer den in Stufe 3 gefundenen Kernfehler
+# (mie-Schreibmaske ohne MIP_MEIP, s. docs/RISCV.md und test/riscv/extirq/extirq_test.c). BEWUSST
+# OHNE NuttX -- braucht nur die normale riscv64-elf-gcc-Toolchain, laeuft in Millisekunden. Die
+# einzige Absicherung dieses Fehlers, die nicht an der schweren NuttX-Werkzeugkette haengt.
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVEXTIRQ_DIR  = test/riscv/extirq
+RVEXTIRQ_ELF  = $(BUILD)/riscv-tests/extirq_test.elf
+RVEXTIRQ_SRC  = test/rvboard_extirq.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c \
+                src/devices/plic/plic.c
+
+test-rvextirq:
+	@if ! command -v $(RVGCC) >/dev/null 2>&1; then \
+	    echo "warn  test-rvextirq: $(RVGCC) fehlt -- uebersprungen"; \
+	    exit 0; \
+	fi; \
+	mkdir -p $(BUILD)/riscv-tests $(BUILD)/$(PLATFORM_DIR); \
+	$(RVGCC) -march=rv32im_zicsr -mabi=ilp32 -static -mcmodel=medany -nostdlib -nostartfiles -O2 \
+	    -T $(RVEXTIRQ_DIR)/link.ld $(RVEXTIRQ_DIR)/start.S $(RVEXTIRQ_DIR)/trap.S \
+	    $(RVEXTIRQ_DIR)/extirq_test.c -o $(RVEXTIRQ_ELF) || exit 1; \
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 -Isrc/devices/plic \
+	    -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVEXTIRQ_SRC) $(RVTEST_SRC) -o $(BUILD)/$(PLATFORM_DIR)/rvboard_extirq || exit 1; \
+	out=$$(printf 'abcde' | $(BUILD)/$(PLATFORM_DIR)/rvboard_extirq $(RVEXTIRQ_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "Interrupts behandelt: 5"; then \
+	    echo "ok    test-rvextirq: externer PLIC-Interrupt (mie.MEIE) funktioniert"; \
+	else \
+	    echo "FAIL  test-rvextirq: mie.MEIE-Regression -- externe Interrupts kommen nicht an"; exit 1; \
+	fi
+
 clean:
+	@# build/riscv-tests/ bleibt bewusst stehen: das ist GEHOLTES Fremdmaterial, dessen
+	@# Neubeschaffung eine Netzverbindung braucht. Ein Aufraeumlauf darf einen spaeteren
+	@# "make test-riscv" nicht offline unmoeglich machen. "make distclean" raeumt auch das weg.
+	@if [ -d $(BUILD) ]; then \
+	    find $(BUILD) -mindepth 1 -maxdepth 1 ! -name riscv-tests -exec rm -rf {} + ; \
+	fi
+
+distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: native q9fat test test-cf-sector clean
+.PHONY: host native q9fat test test-cf-sector test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00

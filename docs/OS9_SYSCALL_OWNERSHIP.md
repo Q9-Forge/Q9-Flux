@@ -1,5 +1,12 @@
 # Live-Verifikation: welches Modul bearbeitet welchen Syscall? (Kernel/IOMan/SysCache/SSM)
 
+**Nachtrag 2026-08-12:** Diese Live-Stichprobe (~40 tatsächlich ausgeführte
+Aufrufe) wurde inzwischen auf **alle** ~90 im Kernel-Build definierten
+Callcodes erweitert — per Adressvergleich gegen die vollständige
+Syscall-Tabelle aus der Kernel-Disassemblierung, ohne Widerspruch zu den
+hier gemessenen Werten. Vollständige Tabelle:
+[`Q9-OS/modules/SYSCALL_MODULE_MAP.md`](../../Q9-OS/modules/SYSCALL_MODULE_MAP.md).
+
 Live-Gegenprobe im laufenden Q9-Flux-Emulator (echtes OS-9/68K-Boot-Image, nicht Q9s eigene
 Reimplementierung — dafür siehe `docs/SYSCALLS.md`/`docs/MODULES.md`) zur Frage: als frühere
 Recherchen versuchten, alle Syscalls im **statischen Kernel-Modul** zu finden, fehlten einige —
