@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   08_test_devschema.c                                                             Ver. 1.00
+// File:   08_test_devschema.c                                                             Ver. 1.10
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Rauchtest fuer devschema.h/.c -- kein Board, keine CPU, reine Datenstruktur-
 //         Pruefung (Registry-Lookup, Int-Grenzen, Enum-Mitgliedschaft, Feld-Suche).
@@ -66,11 +66,38 @@ int main(void)
     idx = q9_devschema_find_field(cf, "base");
     check("base ist optional", cf->fields[idx].required ? -1 : 0, 1);
 
+    printf("=== devschema: Schema 'memory' (RAM/ROM/NVRAM) ===\n");
+    {
+        const q9_devschema_t *mem = q9_devschema_lookup("memory");
+        if (!mem) {
+            printf("    FAIL Schema 'memory' nicht gefunden\n");
+            g_fails++;
+        } else {
+            printf("    OK   Schema 'memory' gefunden (%d Felder)\n", mem->field_count);
+
+            idx = q9_devschema_find_field(mem, "writable");
+            check("writable ist Q9_FIELD_BOOL", mem->fields[idx].kind == Q9_FIELD_BOOL ? 0 : -1, 1);
+            check("'yes' ist gueltig", q9_devschema_check_bool(&mem->fields[idx], "yes", err, sizeof(err)), 1);
+            check("'no' ist gueltig", q9_devschema_check_bool(&mem->fields[idx], "no", err, sizeof(err)), 1);
+            check("'Yes' (Grossschreibung) ist ungueltig",
+                  q9_devschema_check_bool(&mem->fields[idx], "Yes", err, sizeof(err)), 0);
+            check("'1' ist ungueltig (kein yes/no)",
+                  q9_devschema_check_bool(&mem->fields[idx], "1", err, sizeof(err)), 0);
+
+            idx = q9_devschema_find_field(mem, "color_id");
+            check("color_id: 15 ist gueltig", q9_devschema_check_int(&mem->fields[idx], 15, err, sizeof(err)), 1);
+            check("color_id: 16 ist ungueltig", q9_devschema_check_int(&mem->fields[idx], 16, err, sizeof(err)), 0);
+
+            idx = q9_devschema_find_field(mem, "start_address");
+            check("start_address ist Pflichtfeld", mem->fields[idx].required ? 0 : -1, 1);
+        }
+    }
+
     printf("\n=== Zusammenfassung ===\n");
     printf("  Gesamt: %d Checks fehlgeschlagen\n", g_fails);
     return g_fails ? 1 : 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 08_test_devschema.c                                                                 Ver. 1.00
+// EOF 08_test_devschema.c                                                                 Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
