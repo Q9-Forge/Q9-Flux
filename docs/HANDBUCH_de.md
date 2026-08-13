@@ -184,7 +184,7 @@ Q9-Flux/
 ├── src/
 │   ├── hal/                Host-Abstraktion — WELCHE Maschine der Emulator selbst läuft
 │   │   ├── q9_hal.h           gemeinsames Interface (Konsole, Timer, Block-Device, Zeit)
-│   │   ├── native/            Windows (conio, Winsock2)
+│   │   ├── windows/           Windows (conio, Winsock2)
 │   │   └── posix/             macOS/Linux (termios, BSD-Sockets)
 │   ├── kernel/              CPU-Kern + Board-Bus + Orchestrierung — alles, was KEIN
 │   │   │                     eigenständiges Gerät ist, bleibt hier (Abschnitt 5.4)
@@ -316,7 +316,7 @@ Ausgabe `PASS`/`FAIL` je Prüfung plus Zusammenfassung.
 ### 4.3 68k-Target (Vinculum) — noch nicht umgesetzt
 
 Ab geplanter Vinculum-Phase vorgesehen: `src/hal/m68k/` (analog zu
-`native/`/`posix/`) für einen nativen Build auf echter 68360-Hardware. Siehe
+`windows/`/`posix/`) für einen nativen Build auf echter 68360-Hardware. Siehe
 Q9-Forge/ROADMAP.md, Abschnitt "Vinculum".
 
 ---
@@ -342,7 +342,7 @@ Q9-Forge/ROADMAP.md, Abschnitt "Vinculum".
 ├───────────────────────────────────────────────────────────────┤
 │  HAL (pro Host-Betriebssystem, src/hal/)                        │
 ├──────────────────────────────┬────────────────────────────────┤
-│  native/ — Windows             │  posix/ — macOS/Linux          │
+│  windows/ — Windows             │  posix/ — macOS/Linux          │
 │  (conio, Winsock2)              │  (termios, BSD-Sockets)         │
 └──────────────────────────────┴────────────────────────────────┘
 ```
@@ -407,6 +407,18 @@ uint32_t q9_m68krt_get_d(q9_m68krt_t *rt, int n);   // Dn, n=0..7
 void     q9_m68krt_free(q9_m68krt_t *rt);
 int      q9_m68krt_is_stopped(void);                // CPU per STOP angehalten?
 ```
+
+**6.5: `src/kernel/cpu_backend.h`** ist eine kleine Vtable (`reset`/`execute`/
+`set_irq`/`is_stopped`/`ctx`), analog zu `devreg.h`'s Geräte-Vtable.
+`q9_m68krt_get_backend(rt, &backend)` befüllt eine solche mit dünnen
+Wrappern um die obigen Funktionen; `q9boardrun.c`s Hauptschleife ruft nur
+noch über diese Vtable, nie direkt `q9_m68krt_*`. Reine Diagnosefunktionen
+(`q9_m68krt_debug_state`, `q9_m68krt_quicc_acks`) bleiben bewusst außerhalb
+der Vtable — sie sind 68k-spezifisch (Status-Register, QUICC-Zähler), keine
+allgemeine CPU-Eigenschaft. Das ist Vorbereitung für eine zweite
+Zielarchitektur, noch nicht an eine angeschlossen (s. den vendorten
+TinyEMU-RISC-V-Kern, `third_party/tinyemu/Q9_VENDOR_de.md`, dessen API fast
+1:1 auf diese Vtable-Form passt).
 
 Mit `M68K_SEPARATE_READS` aus (third_party/musashi/m68kconf.h) genügen genau
 diese sechs Speicherfunktionen — Musashis interne

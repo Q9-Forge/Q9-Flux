@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.h                                                                        Ver. 1.21
+// File:   m68krt.h                                                                        Ver. 1.31
 // Owner:  AF
 // Desc.:  Schmaler Q9-Wrapper um die eingebettete Musashi-68000-Emulation (third_party/musashi,
 //         Entscheidung E12 in PROJECT.md). Native-Build-only — Grundbaustein fuer Phase 5 (Prozesse
@@ -29,12 +29,15 @@
 // 26-07-10│ 1.30 │ 5.9: q9_m68krt_is_stopped — Wrapper um Musashis m68k_is_stopped()        │ CF
 //         │      │ (Vendor-Patch) fuer die Idle-Drossel                              │
 // 26-08-03│ 1.21 │ 5.26: q9_m68krt_attach_framebuf (framebuf.h, VRAM-Geraet)               │ Ada
+// 26-08-13│ 1.31 │ 6.5: q9_m68krt_get_backend -- befuellt cpu_backend.h's q9_cpu_backend_t   │ Cld
+//         │      │ mit reset/execute/set_irq/is_stopped-Wrappern                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_M68KRT_H
 #define Q9_M68KRT_H
 
 #include <stdint.h>
 #include "q9board.h"
+#include "cpu_backend.h"                                /* 6.5: q9_cpu_backend_t                   */
 #include "../devices/mc6845/mc6845.h"                  /* 5.24: q9_mc6845_t                       */
 #include "../devices/framebuf/framebuf.h"              /* 5.26: q9_framebuf_t                     */
 #include "../devices/clut/clut.h"                      /* 5.29-Nachtrag: q9_clut_t                 */
@@ -199,6 +202,19 @@ uint32_t q9_m68krt_quicc_acks(void);
 // Call:     if (q9_m68krt_is_stopped()) ...
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_m68krt_is_stopped(void);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_m68krt_get_backend
+// Desc.:    6.5: Befuellt eine q9_cpu_backend_t (cpu_backend.h) mit Wrapper-Funktionen um
+//           q9_m68krt_reset/execute/set_irq/is_stopped -- ab jetzt der einzige Weg, wie
+//           q9boardrun.c die 68k-CPU antreibt (statt die vier Funktionen einzeln beim Namen zu
+//           kennen). backend->ctx zeigt auf rt; die Wrapper selbst reichen rt grossteils gar nicht
+//           weiter, weil Musashi ohnehin ein Singleton mit eigenen Globals ist (s. Typkommentar
+//           oben) -- das ist reine Anpassung an die generische Vtable-Signatur, kein neuer
+//           Zustand. rt muss die gesamte Laufzeit des Backends ueberleben.
+// Call:     q9_cpu_backend_t cpu; q9_m68krt_get_backend(&rt, &cpu);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_m68krt_get_backend(q9_m68krt_t *rt, q9_cpu_backend_t *backend);
 
 #endif // Q9_M68KRT_H
 
