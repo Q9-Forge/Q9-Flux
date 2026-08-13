@@ -1,10 +1,10 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_native.c                                                                    Ver. 1.29
+// File:   hal_windows.c                                                                   Ver. 1.30
 // Owner:  AF
-// Desc.:  HAL-Implementierung für den nativen PC-Build (Windows, w64devkit/gcc).
+// Desc.:  HAL-Implementierung für den Windows-Host-Build (w64devkit/gcc, conio).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
 //
-// Call:   build\native\q9.exe [--selftest]
+// Call:   build\windows\q9.exe [--selftest]   (gebaut per "make host")
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -395,5 +395,5 @@ int main(int argc, char **argv)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF hal_native.c                                                                        Ver. 1.23
+// EOF hal_windows.c                                                                       Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
