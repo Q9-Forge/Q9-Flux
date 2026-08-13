@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.40
+// File:   m68krt.c                                                                        Ver. 1.41
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -47,6 +47,11 @@
 // 26-08-13│ 1.40 │ 6.5: q9_m68krt_get_backend -- befuellt eine q9_cpu_backend_t (cpu_backend.h) │ Cld
 //         │      │ mit duennen Wrappern um reset/execute/set_irq/is_stopped, damit             │
 //         │      │ q9boardrun.c nur noch ueber die Vtable auf die 68k-CPU zugreift              │
+// 26-08-13│ 1.41 │ 5.18 (erster Teilschritt): RAM-Fast-Path (ram_fast_hit) in allen sechs       │ Cld
+//         │      │ m68k_read/write_memory_*-Funktionen -- faengt RAM-Zugriffe im remapped-      │
+//         │      │ Zustand VOR der Geraete-Registry-Suche (devreg_hit, bisher O(n) bei JEDEM    │
+//         │      │ Zugriff) ab. Verifiziert per Boot-Gegenprobe: Boot-Transkript mit/ohne den    │
+//         │      │ Fast-Path byte-identisch (git stash der Aenderung, neu gebaut, diff)          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
@@ -414,10 +419,37 @@ static q9_device_t *devreg_hit(uint32_t address)
     return NULL;
 }
 
+/* 5.18: RAM-Fast-Path -- die weit ueberwiegende Mehrheit aller Zugriffe (praktisch jeder
+   Opcode-Fetch, dazu der meiste Datenverkehr) geht an ganz normales RAM, nachdem OS-9 einmal
+   den REMAP-Trigger ausgeloest hat. Bisher lief JEDER dieser Zugriffe trotzdem erst durch die
+   komplette Geraete-Registry-Suche (devreg_hit, O(n) ueber alle registrierten Geraete) UND durch
+   den Board-Fallback, bevor ueberhaupt RAM prueft wurde. Diese Funktion faengt den haeufigsten
+   Fall VORHER mit einer einzigen billigen Pruefung ab.
+   WICHTIG fuer Korrektheit (Boot-kritisch, s. q9board.c board_read_byte): nur anwenden, wenn
+   g_board->remapped WIRKLICH gesetzt ist -- im Reset-Zustand (vor dem REMAP-Trigger) liegt bei
+   denselben Adressen der ROM-Spiegel, nicht RAM (b->rom[addr % b->rom_len]). Ohne diese Pruefung
+   wuerde der Fast-Path im Reset-Zustand falsches/uninitialisiertes RAM statt des Boot-ROMs
+   liefern -- der Emulator wuerde nicht mehr booten. Kein Ueberschneidungsrisiko mit Geraeten:
+   alle heutigen Geraetefenster liegen weit oberhalb von RAM (niedrigstes $FFFF1010 bzw.
+   Framebuffer $FD000000/ROM-Remap $FE000000, RAM nur 16 MByte ab 0, s. BOARD_RAM_BYTES). */
+static inline int ram_fast_hit(uint32_t address, uint32_t span)
+{
+    /* address < ram_len zuerst geprueft, DANACH die Subtraktion ram_len - address (garantiert
+       kein Unterlauf) statt address + span zu bilden -- eine direkte address+span-Addition
+       koennte fuer address nahe UINT32_MAX ueberlaufen (address=0xFFFFFFFF, span=1 wird zu 0,
+       0 < ram_len waere faelschlich wahr) und wuerde dann eine Adresse ausserhalb des RAM
+       faelschlich als Treffer werten. */
+    return g_board && g_board->remapped && address < g_board->ram_len &&
+           span < (g_board->ram_len - address);
+}
+
 unsigned int m68k_read_memory_8(unsigned int address)
 {
     q9_device_t *dev;
 
+    if (ram_fast_hit(address, 0)) {
+        return g_board->ram[address];
+    }
     if ((dev = devreg_hit(address)) != NULL) {
         return q9_device_read8(dev, (uint32_t)address);
     }
@@ -431,6 +463,9 @@ unsigned int m68k_read_memory_16(unsigned int address)
 {
     q9_device_t *dev;
 
+    if (ram_fast_hit(address, 1)) {
+        return ((unsigned int)g_board->ram[address] << 8) | g_board->ram[address + 1];
+    }
     if ((dev = devreg_hit(address)) != NULL) {
         return q9_device_read16(dev, (uint32_t)address);
     }
@@ -447,6 +482,12 @@ unsigned int m68k_read_memory_32(unsigned int address)
 {
     q9_device_t *dev;
 
+    if (ram_fast_hit(address, 3)) {
+        return ((unsigned int)g_board->ram[address]     << 24) |
+               ((unsigned int)g_board->ram[address + 1] << 16) |
+               ((unsigned int)g_board->ram[address + 2] <<  8) |
+                (unsigned int)g_board->ram[address + 3];
+    }
     if ((dev = devreg_hit(address)) != NULL) {
         return q9_device_read32(dev, (uint32_t)address);
     }
@@ -464,6 +505,10 @@ void m68k_write_memory_8(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
 
+    if (ram_fast_hit(address, 0)) {
+        g_board->ram[address] = (uint8_t)value;
+        return;
+    }
     if ((dev = devreg_hit(address)) != NULL) {
         q9_device_write8(dev, (uint32_t)address, (uint8_t)value);
         return;
@@ -481,6 +526,11 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
 
+    if (ram_fast_hit(address, 1)) {
+        g_board->ram[address]     = (uint8_t)(value >> 8);
+        g_board->ram[address + 1] = (uint8_t)value;
+        return;
+    }
     if ((dev = devreg_hit(address)) != NULL) {
         q9_device_write16(dev, (uint32_t)address, (uint16_t)value);
         return;
@@ -500,6 +550,13 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
 
+    if (ram_fast_hit(address, 3)) {
+        g_board->ram[address]     = (uint8_t)(value >> 24);
+        g_board->ram[address + 1] = (uint8_t)(value >> 16);
+        g_board->ram[address + 2] = (uint8_t)(value >> 8);
+        g_board->ram[address + 3] = (uint8_t)value;
+        return;
+    }
     if ((dev = devreg_hit(address)) != NULL) {
         q9_device_write32(dev, (uint32_t)address, (uint32_t)value);
         return;
