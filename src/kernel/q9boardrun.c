@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9boardrun.c                                                                      Ver. 1.80
+// File:   q9boardrun.c                                                                      Ver. 1.81
 // Owner:  AF
 // Desc.:  Implementierung des Board-Boot-Runners, siehe q9boardrun.h.
 //
@@ -26,6 +26,11 @@
 //         │      │ Runde gepollt                                                              │
 // 26-08-07│ 1.80 │ 5.14: slirp_config/slirp_hostfwd an q9_quicc_net_mode -- net_hostfwd aus    │ AF
 //         │      │ der Config wird per q9_parse_hostfwd zerlegt                               │
+// 26-08-13│ 1.81 │ 6.5: CPU-Zugriffe (reset/execute/set_irq/is_stopped) auf die neue           │ Cld
+//         │      │ q9_cpu_backend_t-Vtable (cpu_backend.h) umgestellt, statt m68krt-Funktionen  │
+//         │      │ direkt zu rufen -- Vorbereitung fuer eine zweite Zielarchitektur, reines     │
+//         │      │ Refactoring (debug_state/quicc_acks bleiben bewusst direkt, s. dortige       │
+//         │      │ Kommentare)                                                                 │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9boardrun.h"
 #include "q9board.h"
@@ -274,6 +279,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
     q9_slirp_hostfwd_t slirp_hostfwd[Q9_MAX_HOSTFWD];
     int                 slirp_hostfwd_count = 0;
     q9_m68krt_t       rt;
+    q9_cpu_backend_t  cpu;                              /* 6.5: reset/execute/set_irq/is_stopped   */
     uint32_t          rom_len = 0;
     int               cf2_used   = 0;
     int               onboard_from_cfg = 0;
@@ -384,6 +390,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
     fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
 
     q9_m68krt_init(&rt, board_ram, sizeof(board_ram));
+    q9_m68krt_get_backend(&rt, &cpu);                  /* 6.5: ab hier nur noch ueber die Vtable  */
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     if (cf2_used) {
         for (int i = 0; i < cf_extra_count; i++)
@@ -416,7 +423,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                     vb_tcp_port, vb_udp_port);
         }
     }
-    q9_m68krt_reset(&rt);                              /* Reset-Vektoren kommen aus dem ROM      */
+    cpu.reset(cpu.ctx);                                 /* Reset-Vektoren kommen aus dem ROM      */
 
     {
         /* Q9_BOARD_DEBUG=1 in der Umgebung: alle ~3s CPU-Zustand auf stderr (PC/SR/IACK-Zaehler
@@ -428,7 +435,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
             int      irq;
             uint32_t now_ms;
 
-            q9_m68krt_execute(&rt, BOARD_SLICE_CYCLES);
+            cpu.execute(cpu.ctx, BOARD_SLICE_CYCLES);
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
             if (q9_dbg_dump_requested) {                    /* Debug-Sondertaste, s. q9boardrun.h     */
                 q9_dbg_dump_requested = 0;
@@ -441,8 +448,9 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                Geraete-Registry ersetzt: erst poll() (falls vorhanden), danach irq_pending()
                unmittelbar im Anschluss (wichtig fuer den Timer -- s. q9board.c timer_dev_poll/
                timer_dev_irq_pending: der Merker gilt nur fuer GENAU diese Runde).
-               WICHTIG fuer die Reihenfolge: q9_m68krt_set_irq() bildet nur EINE kombinierte
-               Leitung nach (kein Bus mit unabhaengigen Level-Leitungen, s. m68krt.c-Kommentar bei
+               WICHTIG fuer die Reihenfolge: cpu.set_irq() (6.5: Vtable-Wrapper um
+               q9_m68krt_set_irq()) bildet nur EINE kombinierte Leitung nach (kein Bus mit
+               unabhaengigen Level-Leitungen, s. m68krt.c-Kommentar bei
                m68krt_reassert_pending_irq) -- der LETZTE Aufruf in dieser Runde gewinnt. Die
                Registrierungsreihenfolge (m68krt.c: DUART 3, Netz-Terminals 4, QUICC 5, Timer 6 --
                s. Kommentare in q9_m68krt_attach_board/attach_quicc) ist deshalb bewusst
@@ -455,7 +463,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                     q9_device_t *d = q9_devreg_get(i);
                     q9_device_poll(d, now_ms);
                     if (q9_device_irq_pending(d)) {
-                        q9_m68krt_set_irq((unsigned int)d->irq_level);
+                        cpu.set_irq(cpu.ctx, d->irq_level);
                         irq = 1;
                     }
                 }
@@ -469,7 +477,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                ein DUART-Interrupt) die CPU sowieso weckt -- also kurz schlafen statt sofort
                weiterzudrehen. q9_hal_ticks_ms() bleibt Wanduhr-basiert, die OS-9-Uhr geht also
                nicht falsch. */
-            if (!irq && q9_m68krt_is_stopped()) {
+            if (!irq && cpu.is_stopped(cpu.ctx)) {
                 q9_hal_sleep_ms(1);
             }
 
