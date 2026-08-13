@@ -160,7 +160,11 @@ macOS/Linux, `USERPROFILE` unter Windows (kein natives "~" dort) — sonst inhal
 - **Neu anlegen vs. nur bearbeiten** — ob der Editor auch komplett neue Configs von Grund auf
   erzeugen kann (braeuchte Zugriff auf die Geraete-Typ-Registry aus `devreg.c`, nicht nur auf
   `devschema.c`) ist nicht gesondert bestaetigt, aber implizit durch "Hardware hinzufuegen" nahegelegt.
-- **Speicher-Schema in devschema.c** — noch nicht angelegt (nur "cf" existiert bisher).
+- ~~**Speicher-Schema in devschema.c**~~ — 2026-08-13 erledigt: Schema `memory` angelegt (9 Felder,
+  s. `q9_field_kind_t` Q9_FIELD_BOOL fuer die Ja/Nein-Felder), vorausschauend ohne C-Struct-
+  Gegenstueck (haengt an 5.19). **Dabei gefunden:** `descriptor` bedeutet bei `cf` etwas anderes
+  (String, Descriptor-NAME) als hier vorgesehen (Bool, Info-Flagge) — beide Bedeutungen bestehen
+  aktuell nebeneinander in `devschema.c`, noch nicht vereinheitlicht.
 - **ANSI-Testfall** (Positions-/Farbkontrolle nachweisen) — vorgeschlagen, auf Wunsch verschoben.
 - **Aufraeumen von `tools/q9-launcher-prototype/` + `third_party/tvision`** — erst wenn ein
   Nachfolger steht.
