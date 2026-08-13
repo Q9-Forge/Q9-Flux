@@ -1,10 +1,13 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 3.40
+# File:   Makefile                                                                        Ver. 3.50
 # Owner:  AF
-# Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k).
-#         Targets: host (Wirtssystem-Build, gcc/w64devkit oder clang/gcc), test, clean.
+# Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
+#         Bring-up-Vorbereitung).
+#         Targets: host (Wirtssystem-Build, gcc/w64devkit oder clang/gcc), test, build TARGET=...,
+#         clean.
 #
 # Call:   make host | make test | make test-cf-sector | make clean   (make native = Alias)
+#         make build TARGET=m68k|riscv32|x86_32   (Default m68k, 6.8)
 #
 # Edition History
 #─────────┬──────┬─────────────────────────────────────────────────────────────────────────┬──────
@@ -29,6 +32,12 @@
 #         │      │ Unterordner pro Modul, Mehrarchitektur-Vorbereitung); q9board.c/m68krt.c/   │
 #         │      │ q9boardrun.c/devreg.c/boardcfg.c bleiben bewusst in src/kernel/ (Bus/CPU-    │
 #         │      │ Wrapper/Framework, keine eigenstaendigen Geraete)                            │
+# 26-08-13│ 3.50 │ 6.8: TARGET=m68k\|riscv32\|x86_32-Variable + "make build"-Dispatch. Default   │ Cld
+#         │      │ m68k=make host (unveraendert). riscv32=test-rvboard+test-rvtimer+           │
+#         │      │ test-rvextirq (Rauchtest ohne Fetch-Vorlauf); test-riscv/test-rvnuttx        │
+#         │      │ bleiben bewusst separat (brauchen vorheriges Fetch-Skript). x86_32 meldet    │
+#         │      │ sauber "noch nicht implementiert". KEIN common/+<arch>/-Umbau, KEINE          │
+#         │      │ build/<platform>/<target>/-Verschachtelung (6.2-Klaerung: noch offen)         │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -359,6 +368,42 @@ test-rvextirq:
 	    echo "FAIL  test-rvextirq: mie.MEIE-Regression -- externe Interrupts kommen nicht an"; exit 1; \
 	fi
 
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# 6.8: TARGET waehlt die GAST-Zielarchitektur (nicht zu verwechseln mit PLATFORM, der
+# Wirtsmaschine, s.o.) -- Default m68k = heutiges "make host"-Verhalten voellig unveraendert.
+# Bewusst KEIN Umbau von src/kernel/ in common/+<arch>/-Unterordner und KEINE
+# build/<platform>/<target>/-Verschachtelung: zwischen dem 68k-Board und den RISC-V-Bring-up-
+# Stufen gibt es noch keine echte gemeinsame Basis (s. docs/RISCV.md) und die bestehenden
+# Artefaktnamen (q9.exe, rvboard_*) kollidieren nicht -- weitere Aufspaltung waere reine
+# Vorratshaltung ohne heutigen Nutzen. "build" ist deshalb ein duenner Dispatch auf die
+# bestehenden, unveraenderten Targets, kein struktureller Umbau (6.2-Klaerung 2026-08-13: ob
+# TARGET je Ziel spaeter eigene Binaries/Pfade braucht, ist bewusst offen -- Andreas selbst noch
+# unsicher).
+#
+# TARGET=riscv32 baut bewusst NUR die drei Bring-up-Stufen, die ohne vorheriges manuelles Holen
+# von Fremdmaterial auskommen (test-rvboard/test-rvtimer/test-rvextirq -- brauchen nur die
+# riscv64-elf-gcc-Toolchain, sonst warn+uebersprungen statt Fehler, genau wie bei fehlendem
+# gcc/w64devkit fuer TARGET=m68k). test-riscv (ISA-Suite) und test-rvnuttx (NuttX-Boot) brauchen
+# vorher je ein einmaliges Fetch-Skript (test/riscv/fetch-isa-tests.sh bzw. fetch-nuttx.sh) und
+# blieben deshalb bewusst ausserhalb des Default-Dispatches -- separat aufrufbar wie bisher.
+#───────────────────────────────────────────────────────────────────────────────────────────────
+TARGET ?= m68k
+
+.PHONY: build
+build:
+ifeq ($(TARGET),m68k)
+	@$(MAKE) host
+else ifeq ($(TARGET),riscv32)
+	@$(MAKE) test-rvboard test-rvtimer test-rvextirq
+	@echo "-> TARGET=riscv32: Bring-up-Rauchtest gebaut/gelaufen (RAM+UART, CLINT-Timer, PLIC-Interrupt)."
+	@echo "   Weitere Stufen von Hand: test/riscv/fetch-isa-tests.sh 32 && make test-riscv (ISA-Suite),"
+	@echo "   test/riscv/fetch-nuttx.sh && make test-rvnuttx (echtes Betriebssystem)."
+else ifeq ($(TARGET),x86_32)
+	@echo "TARGET=x86_32: noch nicht implementiert (ARBEITSPLAN 6.4/6.8)"; exit 1
+else
+	@echo "Unbekanntes TARGET='$(TARGET)' -- erwartet: m68k (Default) | riscv32 | x86_32"; exit 1
+endif
+
 clean:
 	@# build/riscv-tests/ bleibt bewusst stehen: das ist GEHOLTES Fremdmaterial, dessen
 	@# Neubeschaffung eine Netzverbindung braucht. Ein Aufraeumlauf darf einen spaeteren
@@ -370,7 +415,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: host native q9fat test test-cf-sector test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00
