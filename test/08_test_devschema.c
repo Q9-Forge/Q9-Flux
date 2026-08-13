@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   08_test_devschema.c                                                             Ver. 1.10
+// File:   08_test_devschema.c                                                             Ver. 1.20
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Rauchtest fuer devschema.h/.c -- kein Board, keine CPU, reine Datenstruktur-
 //         Pruefung (Registry-Lookup, Int-Grenzen, Enum-Mitgliedschaft, Feld-Suche).
@@ -50,8 +50,8 @@ int main(void)
     check("1000 ist gueltig", q9_devschema_check_int(&cf->fields[idx], 1000, err, sizeof(err)), 1);
     check("-1 ist ungueltig", q9_devschema_check_int(&cf->fields[idx], -1, err, sizeof(err)), 0);
 
-    printf("=== devschema: Enum-Mitgliedschaft (format: auto|rbf|pcf) ===\n");
-    idx = q9_devschema_find_field(cf, "format");
+    printf("=== devschema: Enum-Mitgliedschaft (type: auto|rbf|pcf|fat) ===\n");
+    idx = q9_devschema_find_field(cf, "type");
     check("'rbf' ist gueltig", q9_devschema_check_enum(&cf->fields[idx], "rbf", err, sizeof(err)), 1);
     check("'RBF' (Grossschreibung) ist ungueltig",
           q9_devschema_check_enum(&cf->fields[idx], "RBF", err, sizeof(err)), 0);
@@ -61,10 +61,41 @@ int main(void)
     }
 
     printf("=== devschema: Pflichtfeld-Kennzeichnung ===\n");
-    idx = q9_devschema_find_field(cf, "path");
-    check("path ist Pflichtfeld", cf->fields[idx].required ? 0 : -1, 1);
+    idx = q9_devschema_find_field(cf, "image");
+    check("image ist Pflichtfeld", cf->fields[idx].required ? 0 : -1, 1);
     idx = q9_devschema_find_field(cf, "base");
     check("base ist optional", cf->fields[idx].required ? -1 : 0, 1);
+
+    printf("=== devschema: Ground-Truth gegen ALLE echten .q9-Dateien im Repo (2026-08-14) ===\n");
+    printf("    (per grep ermittelte tatsaechlich verwendete [cfN]-Schluessel/Werte-Paare --\n");
+    printf("     faengt genau die Art Schema/Parser-Drift, die diese Korrektur ausgeloest hat)\n");
+    {
+        /* bus: alle real genutzten Werte (onboard, secondary -- rc2014/cf/sc145 sind Synonyme,
+           die kein reales File nutzt, aber der Parser akzeptiert -- s. devschema.c-Kommentar). */
+        static const char *const real_bus[]  = { "onboard", "secondary", NULL };
+        static const char *const real_unit[] = { "master", NULL };            /* kein File nutzt slave/0/1 */
+        static const char *const real_type[] = { "rbf", "pcf", NULL };
+        int i;
+
+        idx = q9_devschema_find_field(cf, "bus");
+        for (i = 0; real_bus[i]; i++) {
+            char label[64];
+            snprintf(label, sizeof(label), "bus='%s' (real genutzt) ist gueltig", real_bus[i]);
+            check(label, q9_devschema_check_enum(&cf->fields[idx], real_bus[i], err, sizeof(err)), 1);
+        }
+        idx = q9_devschema_find_field(cf, "unit");
+        for (i = 0; real_unit[i]; i++) {
+            char label[64];
+            snprintf(label, sizeof(label), "unit='%s' (real genutzt) ist gueltig", real_unit[i]);
+            check(label, q9_devschema_check_enum(&cf->fields[idx], real_unit[i], err, sizeof(err)), 1);
+        }
+        idx = q9_devschema_find_field(cf, "type");
+        for (i = 0; real_type[i]; i++) {
+            char label[64];
+            snprintf(label, sizeof(label), "type='%s' (real genutzt) ist gueltig", real_type[i]);
+            check(label, q9_devschema_check_enum(&cf->fields[idx], real_type[i], err, sizeof(err)), 1);
+        }
+    }
 
     printf("=== devschema: Schema 'memory' (RAM/ROM/NVRAM) ===\n");
     {
@@ -99,5 +130,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 08_test_devschema.c                                                                 Ver. 1.10
+// EOF 08_test_devschema.c                                                                 Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

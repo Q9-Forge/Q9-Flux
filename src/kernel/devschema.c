@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.c                                                                     Ver. 1.10
+// File:   devschema.c                                                                     Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe devschema.h. Pilot-Schema fuer "cf" -- die Feldnamen/Wertebereiche
 //         entsprechen 1:1 q9_cfg_cf_t (boardcfg.h) und Q9_CF_FMT_*/Q9_CFG_BUS_* (q9board.h/
@@ -13,6 +13,10 @@
 // 26-08-13│ 1.00 │ 6.7-Pilot: Erster Wurf                                                  │ Cld
 // 26-08-13│ 1.10 │ q9_devschema_check_bool + Schema "memory" (RAM/ROM/NVRAM, Andreas'      │ Cld
 //         │      │ Editor-Beispiel, noch ohne C-Struct-Gegenstueck -- vorausschauend)       │
+// 26-08-14│ 1.20 │ Bugfix "cf"-Schema: Feldnamen auf tatsaechliche .q9-Schluesselwoerter    │ Cld
+//         │      │ (image/type statt path/format) korrigiert, Bus/Unit/Format-Synonyme      │
+//         │      │ ergaenzt (secondary/0/1/fat) -- beides per grep gegen alle *.q9-Dateien    │
+//         │      │ im Repo verifiziert (s. dortiger Fund im Kommentar bei g_cf_bus_values)   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devschema.h"
 #include <string.h>
@@ -20,13 +24,39 @@
 
 /* Enum-Werte entsprechen den .q9-seitigen Bezeichnern, nicht den internen Zahlenwerten
    (Q9_CF_FMT_.., Q9_CFG_BUS_.. in q9board.h/boardcfg.h) -- die Zuordnung Text<->Zahl bleibt
-   Aufgabe des Aufrufers (boardcfg.c), dieses Modul kennt nur die gueltigen Texte. */
-static const char *const g_cf_bus_values[]    = { "onboard", "rc2014", NULL };
-static const char *const g_cf_unit_values[]   = { "master", "slave", NULL };
-static const char *const g_cf_format_values[] = { "auto", "rbf", "pcf", NULL };
+   Aufgabe des Aufrufers (boardcfg.c), dieses Modul kennt nur die gueltigen Texte.
+
+   KORREKTUR (2026-08-14, beim Anschluss an boardcfg.c gefunden): der urspruengliche Pilot-Stand
+   kannte nur die KANONISCHEN Werte, nicht die Synonyme, die boardcfg.c's cfg_parse_bus/unit/format
+   TATSAECHLICH akzeptieren -- ein Schema-Validator haette damit echte, im Repo vorhandene Configs
+   falsch abgelehnt (emu.claude-work.q9 u.a. nutzen z.B. "bus = secondary", nicht "rc2014").
+   ELEMENT [0] JEDER LISTE IST DER KANONISCHE WERT (Konvention ab jetzt: ein kuenftiger Editor
+   zeigt/schreibt immer nur diesen, akzeptiert aber beim Einlesen bestehender Dateien alle).
+
+   Bekannte, bewusst NICHT behobene Vereinfachung: boardcfg.c vergleicht diese Werte
+   GROSS-/KLEINSCHREIBUNGS-UNABHAENGIG (cfg_ieq), waehrend q9_devschema_check_enum() unten exakt
+   (Case-sensitiv) vergleicht -- ein Editor schreibt ohnehin immer kanonische Kleinschreibung, echte
+   Repo-Dateien tun das ebenfalls (verifiziert), daher aktuell nur ein theoretisches, kein
+   beobachtetes Auseinanderklaffen. Nicht "repariert", um Case-sensitive Enums nicht generell fuer
+   alle kuenftigen Schemata aufzuweichen. */
+static const char *const g_cf_bus_values[]    = { "onboard", "cf", "rc2014", "sc145", "secondary", NULL };
+static const char *const g_cf_unit_values[]   = { "master", "0", "slave", "1", NULL };
+static const char *const g_cf_format_values[] = { "auto", "rbf", "pcf", "fat", NULL };
 
 static const q9_field_schema_t g_cf_fields[] = {
-    { "path", Q9_FIELD_STR, 1, 0, 0, 0, NULL,
+    /* KORREKTUR (2026-08-14): Feldnamen sind jetzt die .q9-DATEI-Schluesselwoerter (wie sie in
+       JEDER echten Config im Repo tatsaechlich stehen -- verifiziert per grep ueber alle *.q9),
+       NICHT mehr die internen C-Struct-Feldnamen aus q9_cfg_cf_t (boardcfg.h). Der urspruengliche
+       Pilot-Stand hatte hier "path"/"format" -- die tatsaechliche .q9-Syntax ist "image"/"type" (s.
+       cfg_ieq(key,"image")||cfg_ieq(key,"file") bzw. cfg_ieq(key,"type")||cfg_ieq(key,"format") in
+       boardcfg.c). Ein Schema, das die INTERNEN Namen zeigt, waere fuer einen Config-Editor (der
+       ja genau DIESE Datei-Syntax anzeigen/erzeugen soll) irrefuehrend gewesen. boardcfg.c
+       akzeptiert zusaetzlich die synonymen Schluesselnamen "file"/"format"/"drive"/
+       "offset_sector"/"part_size"/"lsn_offset" -- die sind hier NICHT als Alternative modelliert
+       (kein Feldname-Synonym-Mechanismus in q9_field_schema_t, anders als bei Enum-WERTEN), weil
+       keine einzige reale Config im Repo sie nutzt; bewusste Vereinfachung, kein Anspruch auf
+       Vollstaendigkeit der Parser-Akzeptanz. */
+    { "image", Q9_FIELD_STR, 1, 0, 0, 0, NULL,
       "Pfad zum Image (relativ zur Config-Datei aufgeloest)" },
     { "descriptor", Q9_FIELD_STR, 0, 0, 0, 0, NULL,
       "optionaler OS-9-Descriptorname fuer den ROM-Generator" },
@@ -34,7 +64,7 @@ static const q9_field_schema_t g_cf_fields[] = {
       "welches emulierte CF-Interface (Default onboard)" },
     { "unit", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_unit_values,
       "Master/Slave am ATA-Bus (Default master)" },
-    { "format", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_format_values,
+    { "type", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_format_values,
       "Image-Format, auto erkennt RBF/PCF an der Groesse (Default auto)" },
     { "base", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
       "ATA-Basisadresse; 0 = Standard-Base anhand von bus" },

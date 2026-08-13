@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.h                                                                     Ver. 1.10
+// File:   devschema.h                                                                     Ver. 1.20
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Selbstbeschreibende Feld-Schemata je Geraetetyp (Feldname, Typ, Min/Max oder
 //         Enum-Werte, Freitext-Beschreibung) -- Andreas' Idee (2026-08-13): "ein kleines
@@ -45,6 +45,12 @@
 //         int idx = q9_devschema_find_field(s, "start_sector");
 //         q9_devschema_check_int(&s->fields[idx], 42, err, sizeof(err));
 //
+// WICHTIG (2026-08-14 in boardcfg.c-Anschluss gefunden): Feldnamen sind die .q9-DATEI-
+// Schluesselwoerter (wie in echten Config-Dateien geschrieben), NICHT die internen C-Struct-
+// Feldnamen (q9_cfg_cf_t & Co., boardcfg.h) -- der urspruengliche Pilot-Stand verwechselte das
+// (hatte "path"/"format" statt der tatsaechlich ueberall genutzten .q9-Syntax "image"/"type"), s.
+// Korrektur-Kommentar in devschema.c.
+//
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
@@ -52,6 +58,10 @@
 // 26-08-13│ 1.00 │ 6.7-Pilot: Erster Wurf -- Schema-Typen, Registry, Validierung fuer "cf"  │ Cld
 // 26-08-13│ 1.10 │ Q9_FIELD_BOOL + q9_devschema_check_bool ergaenzt; Schema "memory" (RAM/  │ Cld
 //         │      │ ROM, Andreas' Editor-Beispiel) in devschema.c hinzugefuegt               │
+// 26-08-14│ 1.20 │ Bugfix: "cf"-Feldnamen waren die internen C-Struct-Namen (path/format)   │ Cld
+//         │      │ statt der tatsaechlichen .q9-Datei-Schluesselwoerter (image/type) --     │
+//         │      │ korrigiert, plus fehlende Bus/Unit/Format-Synonyme (secondary/0/1/fat)   │
+//         │      │ ergaenzt, per grep gegen ALLE echten .q9-Dateien im Repo verifiziert      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVSCHEMA_H
 #define Q9_DEVSCHEMA_H
