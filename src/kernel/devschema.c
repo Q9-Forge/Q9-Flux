@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.c                                                                     Ver. 1.00
+// File:   devschema.c                                                                     Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe devschema.h. Pilot-Schema fuer "cf" -- die Feldnamen/Wertebereiche
 //         entsprechen 1:1 q9_cfg_cf_t (boardcfg.h) und Q9_CF_FMT_*/Q9_CFG_BUS_* (q9board.h/
@@ -11,6 +11,8 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-13│ 1.00 │ 6.7-Pilot: Erster Wurf                                                  │ Cld
+// 26-08-13│ 1.10 │ q9_devschema_check_bool + Schema "memory" (RAM/ROM/NVRAM, Andreas'      │ Cld
+//         │      │ Editor-Beispiel, noch ohne C-Struct-Gegenstueck -- vorausschauend)       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devschema.h"
 #include <string.h>
@@ -45,8 +47,37 @@ static const q9_field_schema_t g_cf_fields[] = {
 };
 #define Q9_CF_FIELD_COUNT (int)(sizeof(g_cf_fields) / sizeof(g_cf_fields[0]))
 
+/* "memory": Andreas' Beispiel-Feldsatz aus der Editor-Planung (docs/Q9FLUX_EDITOR_de.md) fuer
+   RAM/ROM/NVRAM-Bereiche -- entspricht noch keinem bestehenden C-Struct (boardcfg.h hat bisher
+   keine Speicher-Config, s. ARBEITSPLAN 5.19 "Speicher-/Geraete-Abschnitte", haengt an 5.18) --
+   rein vorausschauend beschrieben, wie schon "cf" additiv und ohne Parser-Anschluss. RAM/ROM ist
+   EIN Typ mit einem "writable"-Bool statt zwei getrennter Typen (Andreas: "Schreibzugriff:
+   Ja/Nein fuer RAM-Simulation sonst ROM"). */
+static const q9_field_schema_t g_memory_fields[] = {
+    { "name", Q9_FIELD_STR, 1, 0, 0, 0, NULL,
+      "Instanzname (z.B. \"sysram\")" },
+    { "description", Q9_FIELD_STR, 0, 0, 0, 0, NULL,
+      "Kurzbeschreibung, z.B. \"Systemspeicher mit direktem CPU-Zugriff\"" },
+    { "start_address", Q9_FIELD_INT, 1, 1, 0, 0xFFFFFFFFL, NULL,
+      "Startadresse des Fensters (32 Bit)" },
+    { "end_address", Q9_FIELD_INT, 1, 1, 0, 0xFFFFFFFFL, NULL,
+      "Endadresse des Fensters (32 Bit, einschliesslich)" },
+    { "color_id", Q9_FIELD_INT, 0, 1, 0, 15, NULL,
+      "Farb-ID fuer OS-9s MemList (ARBEITSPLAN 5.19 \"colored RAM\")" },
+    { "writable", Q9_FIELD_BOOL, 1, 0, 0, 0, NULL,
+      "yes = RAM-Simulation (beschreibbar), no = ROM-Simulation (nur lesend)" },
+    { "init_image", Q9_FIELD_STR, 0, 0, 0, 0, NULL,
+      "Preload-Image fuer ROM-Simulation (Pfad relativ zur Config-Datei)" },
+    { "save_after_session", Q9_FIELD_BOOL, 0, 0, 0, 0, NULL,
+      "yes = Inhalt nach Sitzungsende zuruecksichern (NVRAM-Simulation)" },
+    { "descriptor", Q9_FIELD_BOOL, 0, 0, 0, 0, NULL,
+      "wird fuer dieses Geraet ein OS-9-Descriptor gebraucht -- reine Info, bei Speicher meist no" },
+};
+#define Q9_MEMORY_FIELD_COUNT (int)(sizeof(g_memory_fields) / sizeof(g_memory_fields[0]))
+
 static const q9_devschema_t g_device_schemas[] = {
-    { "cf", g_cf_fields, Q9_CF_FIELD_COUNT },
+    { "cf",     g_cf_fields,     Q9_CF_FIELD_COUNT },
+    { "memory", g_memory_fields, Q9_MEMORY_FIELD_COUNT },
 };
 #define Q9_DEVSCHEMA_COUNT (int)(sizeof(g_device_schemas) / sizeof(g_device_schemas[0]))
 
@@ -124,6 +155,20 @@ int q9_devschema_check_enum(const q9_field_schema_t *f, const char *val, char *e
     return -1;
 }
 
+int q9_devschema_check_bool(const q9_field_schema_t *f, const char *val, char *err, unsigned err_max)
+{
+    if (!f || !val) {
+        return -1;
+    }
+    if (strcmp(val, "yes") == 0 || strcmp(val, "no") == 0) {
+        return 0;
+    }
+    if (err && err_max) {
+        snprintf(err, err_max, "%s: '%s' ist kein gueltiger Bool-Wert (erwartet yes/no)", f->name, val);
+    }
+    return -1;
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF devschema.c                                                                         Ver. 1.00
+// EOF devschema.c                                                                         Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

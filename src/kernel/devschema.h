@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.h                                                                     Ver. 1.00
+// File:   devschema.h                                                                     Ver. 1.10
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Selbstbeschreibende Feld-Schemata je Geraetetyp (Feldname, Typ, Min/Max oder
 //         Enum-Werte, Freitext-Beschreibung) -- Andreas' Idee (2026-08-13): "ein kleines
@@ -15,8 +15,19 @@
 //
 //         Reine Beschreibungs-/Validierungs-Infrastruktur, bewusst additiv: boardcfg.c's
 //         tatsaechliches Parsing/Verhalten ist von diesem Schritt NOCH NICHT betroffen (kommt erst,
-//         wenn Andreas den Ansatz freigibt). Pilot-Abdeckung: nur "cf" (reichhaltigstes Beispiel:
-//         Enum-Felder bus/unit/format, Int-Felder mit Min/Max, Pflicht-/Optionalfelder).
+//         wenn Andreas den Ansatz freigibt). Abdeckung bisher: "cf" (Enum-Felder bus/unit/format,
+//         Int-Felder mit Min/Max, Pflicht-/Optionalfelder) und "memory" (Andreas' Speicher-
+//         Beispiel aus der Editor-Planung, docs/Q9FLUX_EDITOR_de.md -- RAM/ROM ueber ein
+//         Bool-Feld "writable" statt zwei getrennter Typen, s. dortige Diskussion "Schreibzugriff:
+//         Ja/Nein fuer RAM-Simulation sonst ROM").
+//
+//         Hinweis fuer spaeter (2026-08-13, beim Bau des "memory"-Schemas aufgefallen, NICHT
+//         geloest): das bestehende "cf"-Schema hat ein Feld "descriptor" als STRING
+//         (Descriptor-NAME fuer den ROM-Generator, 1:1 aus q9_cfg_cf_t uebernommen). Andreas'
+//         spaetere Editor-Planung meint mit "Descriptor" dagegen ein reines Ja/Nein-Infofeld ("wird
+//         fuer dieses Geraet ueberhaupt einer gebraucht"). Beide Bedeutungen bestehen aktuell
+//         nebeneinander (cf=String-Name, memory=Bool-Flag) -- bewusst nicht vereinheitlicht, bis
+//         Andreas entscheidet, was er tatsaechlich will.
 //
 //         ZWEITER, staerkerer Verwendungszweck (Andreas, 2026-08-13): nicht nur Validierung beim
 //         Einlesen, sondern Grundlage fuer einen KUENFTIGEN CONFIG-EDITOR -- der kann dann rein aus
@@ -39,17 +50,24 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-08-13│ 1.00 │ 6.7-Pilot: Erster Wurf -- Schema-Typen, Registry, Validierung fuer "cf"  │ Cld
+// 26-08-13│ 1.10 │ Q9_FIELD_BOOL + q9_devschema_check_bool ergaenzt; Schema "memory" (RAM/  │ Cld
+//         │      │ ROM, Andreas' Editor-Beispiel) in devschema.c hinzugefuegt               │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVSCHEMA_H
 #define Q9_DEVSCHEMA_H
 
 /* INT: Ganzzahl, optional mit Min/Max (has_range=0 -> unbegrenzt). STR: freier Text (z.B. Pfad,
    keine weitere Pruefung ausser "vorhanden, wenn required"). ENUM: einer von enum_values
-   (NULL-terminiertes Array von Strings, Vergleich Case-sensitiv wie der Rest von boardcfg.c). */
+   (NULL-terminiertes Array von Strings, Vergleich Case-sensitiv wie der Rest von boardcfg.c).
+   BOOL: eigener Typ statt Zwei-Werte-Enum (Andreas' Editor-Vision unterscheidet ausdruecklich
+   "Boolean Ja/Nein"-Felder von freien Auswahllisten -- ein kuenftiger Editor rendert das
+   unterschiedlich, Checkbox statt Dropdown). Kanonische Token wie bei den bestehenden Enum-Werten
+   auf Englisch: "yes"/"no" (s. q9_devschema_check_bool). */
 typedef enum {
     Q9_FIELD_INT,
     Q9_FIELD_STR,
-    Q9_FIELD_ENUM
+    Q9_FIELD_ENUM,
+    Q9_FIELD_BOOL
 } q9_field_kind_t;
 
 typedef struct {
@@ -96,6 +114,13 @@ int q9_devschema_find_field(const q9_devschema_t *schema, const char *name);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_devschema_check_int (const q9_field_schema_t *f, long val,        char *err, unsigned err_max);
 int q9_devschema_check_enum(const q9_field_schema_t *f, const char *val, char *err, unsigned err_max);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_devschema_check_bool
+// Desc.:    Prueft einen Wert gegen ein Q9_FIELD_BOOL-Feld -- gueltig sind nur "yes"/"no" (Case-
+//           sensitiv, wie die bestehenden Enum-Werte). 0 bei Erfolg, sonst -1 + Meldung in err.
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_devschema_check_bool(const q9_field_schema_t *f, const char *val, char *err, unsigned err_max);
 
 #endif /* Q9_DEVSCHEMA_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
