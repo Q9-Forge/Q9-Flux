@@ -1,0 +1,129 @@
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// File:   devschema.c                                                                     Ver. 1.00
+// Owner:  Claudia
+// Desc.:  Implementierung, siehe devschema.h. Pilot-Schema fuer "cf" -- die Feldnamen/Wertebereiche
+//         entsprechen 1:1 q9_cfg_cf_t (boardcfg.h) und Q9_CF_FMT_*/Q9_CFG_BUS_* (q9board.h/
+//         boardcfg.h), nur jetzt als geprueftes, selbstbeschreibendes Datum statt implizitem
+//         Wissen im Parser.
+//
+// Edition History
+//─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
+// Date    │ Ver. │ Description                                                            │ By
+//─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
+// 26-08-13│ 1.00 │ 6.7-Pilot: Erster Wurf                                                  │ Cld
+//═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
+#include "devschema.h"
+#include <string.h>
+#include <stdio.h>
+
+/* Enum-Werte entsprechen den .q9-seitigen Bezeichnern, nicht den internen Zahlenwerten
+   (Q9_CF_FMT_.., Q9_CFG_BUS_.. in q9board.h/boardcfg.h) -- die Zuordnung Text<->Zahl bleibt
+   Aufgabe des Aufrufers (boardcfg.c), dieses Modul kennt nur die gueltigen Texte. */
+static const char *const g_cf_bus_values[]    = { "onboard", "rc2014", NULL };
+static const char *const g_cf_unit_values[]   = { "master", "slave", NULL };
+static const char *const g_cf_format_values[] = { "auto", "rbf", "pcf", NULL };
+
+static const q9_field_schema_t g_cf_fields[] = {
+    { "path", Q9_FIELD_STR, 1, 0, 0, 0, NULL,
+      "Pfad zum Image (relativ zur Config-Datei aufgeloest)" },
+    { "descriptor", Q9_FIELD_STR, 0, 0, 0, 0, NULL,
+      "optionaler OS-9-Descriptorname fuer den ROM-Generator" },
+    { "bus", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_bus_values,
+      "welches emulierte CF-Interface (Default onboard)" },
+    { "unit", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_unit_values,
+      "Master/Slave am ATA-Bus (Default master)" },
+    { "format", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_format_values,
+      "Image-Format, auto erkennt RBF/PCF an der Groesse (Default auto)" },
+    { "base", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
+      "ATA-Basisadresse; 0 = Standard-Base anhand von bus" },
+    { "start_sector", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
+      "Host-Startsektor, der als Gast-LBA 0 erscheint (Default 0)" },
+    { "length_sectors", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
+      "logische Partitionslaenge fuer Descriptor/Pruefung" },
+    { "descriptor_lsn", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
+      "PD_LSNOffs im OS-9-Descriptor -- fuer spaeteren Descriptor-Abgleich" },
+};
+#define Q9_CF_FIELD_COUNT (int)(sizeof(g_cf_fields) / sizeof(g_cf_fields[0]))
+
+static const q9_devschema_t g_device_schemas[] = {
+    { "cf", g_cf_fields, Q9_CF_FIELD_COUNT },
+};
+#define Q9_DEVSCHEMA_COUNT (int)(sizeof(g_device_schemas) / sizeof(g_device_schemas[0]))
+
+const q9_devschema_t *q9_devschema_lookup(const char *type)
+{
+    int i;
+    if (!type) {
+        return NULL;
+    }
+    for (i = 0; i < Q9_DEVSCHEMA_COUNT; i++) {
+        if (strcmp(g_device_schemas[i].type, type) == 0) {
+            return &g_device_schemas[i];
+        }
+    }
+    return NULL;
+}
+
+int q9_devschema_count(void)
+{
+    return Q9_DEVSCHEMA_COUNT;
+}
+
+const q9_devschema_t *q9_devschema_get(int index)
+{
+    if (index < 0 || index >= Q9_DEVSCHEMA_COUNT) {
+        return NULL;
+    }
+    return &g_device_schemas[index];
+}
+
+int q9_devschema_find_field(const q9_devschema_t *schema, const char *name)
+{
+    int i;
+    if (!schema || !name) {
+        return -1;
+    }
+    for (i = 0; i < schema->field_count; i++) {
+        if (strcmp(schema->fields[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int q9_devschema_check_int(const q9_field_schema_t *f, long val, char *err, unsigned err_max)
+{
+    if (!f) {
+        return -1;
+    }
+    if (f->has_range && (val < f->min || val > f->max)) {
+        if (err && err_max) {
+            snprintf(err, err_max, "%s: %ld ausserhalb [%ld..%ld]", f->name, val, f->min, f->max);
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int q9_devschema_check_enum(const q9_field_schema_t *f, const char *val, char *err, unsigned err_max)
+{
+    int i;
+    if (!f || !val) {
+        return -1;
+    }
+    if (f->enum_values) {
+        for (i = 0; f->enum_values[i] != NULL; i++) {
+            if (strcmp(f->enum_values[i], val) == 0) {
+                return 0;
+            }
+        }
+    }
+    if (err && err_max) {
+        snprintf(err, err_max, "%s: '%s' ist kein gueltiger Wert", f->name, val);
+    }
+    return -1;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF devschema.c                                                                         Ver. 1.00
+//────────────────────────────────────────────────────────────────────────────────────────────────
