@@ -18,6 +18,18 @@
 //         wenn Andreas den Ansatz freigibt). Pilot-Abdeckung: nur "cf" (reichhaltigstes Beispiel:
 //         Enum-Felder bus/unit/format, Int-Felder mit Min/Max, Pflicht-/Optionalfelder).
 //
+//         ZWEITER, staerkerer Verwendungszweck (Andreas, 2026-08-13): nicht nur Validierung beim
+//         Einlesen, sondern Grundlage fuer einen KUENFTIGEN CONFIG-EDITOR -- der kann dann rein aus
+//         dieser Tabelle generisch ableiten, was er anzeigen/abfragen muss (Enum -> Auswahlliste,
+//         Int -> Eingabe mit Min/Max-Pruefung, desc -> Hilfetext/Tooltip), ohne dass ein neuer
+//         Geraetetyp eine Aenderung am Editor selbst braucht -- nur ein neues Schema hier.
+//
+//         Bewusst KEIN JSON, auch nicht als Export-Zwischenschritt (Andreas, 2026-08-13, nach
+//         eigener Ueberlegung verworfen: C ist nicht dynamisch, ein Editor koennte die Objekte aus
+//         JSON ohnehin nur umstaendlich UND unvollstaendig zugreifbar rekonstruieren -- lohnt den
+//         Aufwand nicht). Der kuenftige Editor liest diese Tabelle direkt (verlinkt gegen
+//         devschema.c) oder ueber eine noch zu bauende C-API, NICHT ueber eine Zwischendatei.
+//
 // Call:   const q9_devschema_t *s = q9_devschema_lookup("cf");
 //         int idx = q9_devschema_find_field(s, "start_sector");
 //         q9_devschema_check_int(&s->fields[idx], 42, err, sizeof(err));
