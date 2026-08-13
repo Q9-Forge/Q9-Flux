@@ -403,20 +403,110 @@ static const q9_device_vtable_t q9_devtype_nettty = {
     .irq_vector_fn = nettty_dev_irq_vector,
 };
 
+/* 5.18 (zweiter Teilschritt, 2026-08-14): direkt indizierte Tabelle fuer den festen I/O-Cluster
+   $FFFF0000-$FFFFFFFF (64 KByte) -- ALLE heutigen Geraete ausser dem Framebuffer ($FD000000,
+   ausserhalb dieses Bereichs) liegen hier. Statt bei jedem Zugriff linear ueber die Registry zu
+   suchen (devreg_hit()s alter Weg, unten als Fallback erhalten), zeigt table[(addr-$FFFF0000)>>8]
+   direkt auf das zustaendige Geraet -- ein Tabellenzugriff (256 Eintraege à 1 Zeiger = 2 KByte)
+   statt einer Schleife ueber bis zu Q9_DEVREG_MAX Eintraege.
+
+   MEHRERE GERAETE IM SELBEN 256-BYTE-SLOT (heute: MC6845 $FFFFA000 + CLUT $FFFFA010, nur 16 Byte
+   auseinander, s. ARBEITSPLAN 5.18-Nachtrag 2026-08-13): fuer genau diesen Fall kann ein
+   Tabelleneintrag nicht eindeutig sein. Absichtlich NICHT geraten oder eine Adresskarten-
+   Migration erzwungen (das Index/Daten-Registermuster fuer sowas ist eine groessere, eigene
+   Entscheidung, s. ARBEITSPLAN) -- solche Slots werden mit g_io_ambiguous markiert und fallen
+   exakt auf den alten linearen Scan zurueck. Funktional bit-identisch zu vorher: schneller nur
+   dort, wo ein Slot eindeutig ist, korrekt ueberall.
+   KLEINERES FENSTER ALS DER SLOT (z.B. RTC 16 von 256 Byte, CF2 8 von 256 Byte): der Tabellen-
+   Eintrag zeigt trotzdem auf das (einzige) Geraet dieses Slots; q9_device_hit() prueft danach
+   weiterhin das ECHTE Fenster -- Adressen ausserhalb liefern wie bisher "kein Geraet" (Board-
+   Fallback), nur ohne den unnoetigen Scan ueber alle anderen Geraete davor.
+   NICHT REGISTRIERTE BEREICHE (z.B. REMAP-Register $FFFF8000-$FFFF8FFF -- reiner Adress-Trigger,
+   wird direkt im Board-Fallback behandelt, s. q9board.c board_is_remap_reg): Tabelleneintrag NULL,
+   Cluster-Abdeckung ist vollstaendig -> sofort "kein Geraet" statt jeder Schleife.
+
+   Aufbau EINMALIG, lazy beim ersten Zugriff (nicht bei jedem q9_devreg_add -- die Registry fuellt
+   sich erst ueber mehrere q9_m68krt_attach_*-Aufrufe in q9boardrun.c, ein fruehzeitiger Aufbau
+   wuerde spaeter hinzukommende Geraete verpassen). g_io_table_built wird in q9_m68krt_init()
+   zusammen mit q9_devreg_clear() zurueckgesetzt -- sonst bliebe bei einem zweiten Boot im selben
+   Prozess (z.B. Tests) die Tabelle des VORHERIGEN Laufs stehen. */
+#define Q9_IO_CLUSTER_BASE  0xFFFF0000u
+#define Q9_IO_CLUSTER_SLOTS 256u                          /* 0x10000 Byte / 256 Byte je Slot        */
+#define Q9_IO_SLOT_SHIFT    8u
+
+static q9_device_t *g_io_table[Q9_IO_CLUSTER_SLOTS];
+/* Sentinel fuer "mehrere Geraete teilen sich diesen Slot" -- kann nie ein echter Geraete-Zeiger
+   sein (die kommen alle aus dem statischen Registry-Array in devreg.c, niemals aus Adresse 1). */
+static q9_device_t *const g_io_ambiguous = (q9_device_t *)(uintptr_t)1;
+static int g_io_table_built;
+
+static void io_table_build(void)
+{
+    int i, n;
+
+    memset(g_io_table, 0, sizeof(g_io_table));
+    n = q9_devreg_count();
+    for (i = 0; i < n; i++) {
+        q9_device_t *d = q9_devreg_get(i);
+        uint32_t lo, hi, slot, end;
+
+        if (!d || d->size == 0) {
+            continue;
+        }
+        lo = d->base;
+        hi = d->base + d->size - 1u;                      /* size>0 geprueft, kein Unterlauf         */
+        if (hi < lo) {
+            continue;                                      /* Ueberlauf -- fehlerhaftes Fenster, ignorieren (sollte nie eintreten) */
+        }
+        if (hi < Q9_IO_CLUSTER_BASE) {
+            continue;                                      /* komplett unterhalb des Clusters (z.B. Framebuffer) */
+        }
+        if (lo < Q9_IO_CLUSTER_BASE) {
+            lo = Q9_IO_CLUSTER_BASE;                        /* defensiv: heutige Geraete ueberschneiden die Cluster-Grenze nie */
+        }
+        slot = (lo - Q9_IO_CLUSTER_BASE) >> Q9_IO_SLOT_SHIFT;
+        end  = (hi - Q9_IO_CLUSTER_BASE) >> Q9_IO_SLOT_SHIFT;  /* hi <= 0xFFFFFFFF, passt immer in 0..255 */
+        for (; slot <= end; slot++) {
+            if (g_io_table[slot] == NULL) {
+                g_io_table[slot] = d;
+            } else if (g_io_table[slot] != d) {
+                g_io_table[slot] = g_io_ambiguous;
+            }
+        }
+    }
+    g_io_table_built = 1;
+}
+
 /* 5.17: Geraete-Registry -- Geraete, die bereits umgezogen sind (s. devreg.h/q9board.h), werden HIER
    vor dem alten Board-Fallback geprueft; noch nicht migrierte Geraete (Netz-Terminals, QUICC, sowie
    innerhalb von q9_board_read8/write8: CF/Timer/RTC) bleiben bis zu ihrem eigenen 5.17-Schritt in
    den bisherigen, direkt danebenstehenden Pruefungen bzw. im Board-Fallback. */
 static q9_device_t *devreg_hit(uint32_t address)
 {
-    int i, n = q9_devreg_count();
-    for (i = 0; i < n; i++) {
-        q9_device_t *d = q9_devreg_get(i);
-        if (q9_device_hit(d, address)) {
-            return d;
+    if (address >= Q9_IO_CLUSTER_BASE) {
+        q9_device_t *fast;
+        if (!g_io_table_built) {
+            io_table_build();
         }
+        fast = g_io_table[(address - Q9_IO_CLUSTER_BASE) >> Q9_IO_SLOT_SHIFT];
+        if (fast != g_io_ambiguous) {
+            /* fast==NULL: Tabelle deckt den GESAMTEN Cluster ab -- kein Eintrag heisst wirklich
+               kein Geraet (kein Fall-through auf den Scan noetig). fast!=NULL: q9_device_hit()
+               prueft weiterhin das echte, moeglicherweise kleinere Fenster (s.o. RTC/CF2). */
+            return (fast && q9_device_hit(fast, address)) ? fast : NULL;
+        }
+        /* ambiguous: faellt bewusst durch auf den unveraenderten linearen Scan unten. */
     }
-    return NULL;
+    {
+        int i, n = q9_devreg_count();
+        for (i = 0; i < n; i++) {
+            q9_device_t *d = q9_devreg_get(i);
+            if (q9_device_hit(d, address)) {
+                return d;
+            }
+        }
+        return NULL;
+    }
 }
 
 /* 5.18: RAM-Fast-Path -- die weit ueberwiegende Mehrheit aller Zugriffe (praktisch jeder
@@ -942,6 +1032,10 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
     g_ram_len   = ram_len;
     g_board     = 0;                                  /* RAM-Modus, bis attach_board (5.3) folgt */
     q9_devreg_clear();                                /* 5.17: frische Geraete-Registry je Boot  */
+    g_io_table_built = 0;                             /* 5.18: I/O-Tabelle muss neu aufgebaut werden,
+                                                          sonst blieben Zeiger eines VORHERIGEN Laufs
+                                                          stehen (z.B. bei mehreren Boots im selben
+                                                          Prozess/Test) */
 
     /* Keep the real Q9-CPU as the default.  The EC030 switch is a
      * diagnostic-only comparison run: it disables Musashi's PMMU so we can
