@@ -200,7 +200,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch
+test: test-cf-sector test-devschema test-io-dispatch test-ansi
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -231,6 +231,19 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
 	$(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
+
+# Editor-Grundstein (tools/q9-flux-editor/, docs/Q9FLUX_EDITOR_de.md): Selbsttest fuer die rohen
+# ANSI-/VT100-Escape-Primitive (q9_ansi.h/.c) -- Byte-Vergleich + Ruecklese-Parse gegen den
+# Standard, kein echtes Terminal noetig. Bewusst OHNE rekursives "$(MAKE) -C" (2026-08-14
+# gefunden: bricht mit derselben MAKE=os9make -e-Umgebungsvergiftung wie beim NuttX-Fetch-Skript,
+# s. test/riscv/fetch-nuttx.sh-Kommentar) -- direkter Aufruf wie bei den anderen test-*-Zielen.
+# "make -C tools/q9-flux-editor demo" fuer die interaktive Sichtpruefung (separat, kein Teil von
+# "make test" -- braucht ein echtes Terminal, dort ist rekursives Make als manueller Aufruf ok).
+test-ansi:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) tools/q9-flux-editor/test/ansi_selftest.c tools/q9-flux-editor/src/q9_ansi.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/ansi_selftest
+	$(BUILD)/$(PLATFORM_DIR)/ansi_selftest
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
@@ -437,7 +450,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00
