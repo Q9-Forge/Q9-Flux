@@ -156,5 +156,30 @@ meldet nur *Veränderungen*, in beide Richtungen.
    zu dieser Korrektur gar nicht. Rein additive Bedingung, Verhalten für
    `CONFIG_RISCV_MAX_XLEN >= 64` unverändert. Im Code mit `Q9` markiert.
 
+2. **`riscv_cpu.c` — `MIP_MEIP` zur Schreibmaske von CSR 0x304 (`mie`)
+   ergänzt** (2026-08-12). Die Maske lautete `MIP_MSIP | MIP_MTIP | MIP_SSIP
+   | MIP_STIP | MIP_SEIP` — jedes Freigabebit außer dem für externe
+   Machine-Interrupts (Bit 11). Ein Gast konnte externe Interrupts damit NIE
+   per `mie`-Schreibzugriff freigeben: jeder Versuch (`csrs mie, ...`/`csrw
+   mie, ...`, dieses Bit zu setzen, wurde stillschweigend verworfen. Die
+   Maske des PENDING-Registers (`mip`, CSR 0x344) schließt `MIP_MEIP` bewusst
+   aus — das ist dort korrekt, eine echte Maschine setzt das
+   Anliegend-Bit für externe Interrupts hardwareseitig (hier:
+   `riscv_cpu_set_mip()`), nicht per Gast-Schreibzugriff. Das FREIGABE-Bit in
+   `mie` ist aber immer softwaregesteuert und muss schreibbar sein.
+
+   Gefunden beim Booten von NuttX (`rv-virt:nsh`, s. `docs/RISCV_de.md`): das
+   System bootete bis zum Shell-Prompt, PLIC/CLINT auf der Q9-Seite waren
+   nachweislich korrekt (`mip` zeigte Bit 11 genau dann gesetzt, wenn
+   erwartet), aber keine Tastatureingabe kam an. Eine einzeilige
+   Testausgabe in `raise_interrupt()` zeigte `mip=0x880` (MTIP UND MEIP
+   anliegend) neben `mie=0x80` (nur MTIE freigegeben) — die obige Sperre war
+   die Ursache, kein Fehler im Board-Code. Rein additiv zur Maske; jeder
+   zuvor bestandene Fall (`mie`-Werte, die Bit 11 nie berührten) bleibt
+   bitgleich. Im Code mit `Q9` markiert. Regressionsabsicherung, die nicht
+   die volle NuttX-Werkzeugkette braucht: `make test-rvextirq`
+   (`test/riscv/extirq/`), gegengeprüft, dass sie genau diesen Fehler
+   tatsächlich fängt, sollte er wiederkehren.
+
 Jede weitere Änderung sollte im Code mit `Q9` markiert und hier aufgeführt
 werden, so wie es `third_party/musashi/Q9_VENDOR.md` vormacht.

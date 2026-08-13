@@ -645,6 +645,7 @@ Quellen dienen als fachliche Referenz — mit unterschiedlicher Rechtslage:
 | **ToolShed** (Teil des NitrOS-9-Projekts) | PC-Tools zum Lesen/Schreiben von RBF-Images, in C | vermutlich GPL (im Kontext von NitrOS-9 zu prüfen) | aktiv genutzt zur Image-Bearbeitung (WSL/Toolshed, s. Abschnitt 5.4) | zu prüfen |
 | **OS9exec** (Lukas Zeller/Beat Forster) | 68k-Emulator + OS-9-Kernel-Nachbau in C, Syscall-Ebene | **GPL** | bislang nur als Idee vorgemerkt: Referenz für spätere Syscall-Bridge-Fragen | Ja (GPL, Copyleft beachten) |
 | **Musashi** ([github.com/kstenerud/Musashi](https://github.com/kstenerud/Musashi), Commit `313ebf1`) | 68000/68030-Emulator, C | **MIT** | Nur Kern-Interpreter + Codegenerator + Softfloat vendored als `third_party/musashi/` (kein Disassembler, keine Testtreiber), in `make host` mitgebaut (Entscheidung E12) | Ja (MIT, Lizenztext in `m68k.h` u.a.) |
+| **TinyEMU** ([github.com/fernandotcl/TinyEMU](https://github.com/fernandotcl/TinyEMU), Commit `56ba49b`) | RISC-V-Emulator, C (Fabrice Bellard) | **MIT** | Nur der CPU-Kern vendored als `third_party/tinyemu/` (kein Board/Geräte/x86) — das RISC-V-Gegenstück zu Musashis Rolle, s. `docs/RISCV_de.md` | Ja (MIT, Lizenzkopf in jeder Quelldatei) |
 | **libslirp** | User-Mode-Netzwerkstack, C | **BSD-2-Clause** | `--net slirp`-Backend: Windows vendored unter `third_party/slirp/windows/`, macOS/Linux gegen System-libslirp per pkg-config | Ja |
 
 **Konsequenz für eine künftige Veröffentlichung:** Der Q9-eigene Quellbaum
