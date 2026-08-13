@@ -984,7 +984,19 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
         s->mideleg = (s->mideleg & ~mask) | (val & mask);
         break;
     case 0x304:
-        mask = MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP | MIP_SEIP;
+        /* Q9 2026-08-12: MIP_MEIP (Machine External Interrupt Enable, Bit 11) fehlte in dieser
+           Maske -- ein Gast konnte mie.MEIE also NIE per CSR-Schreibzugriff setzen, jeder
+           Versuch (csrs/csrw mie, ...) wurde stillschweigend verworfen. mip's Schreibmaske bei
+           CSR 0x344 (s.u.) enthaelt MEIP absichtlich NICHT -- dort ist das korrekt, denn eine
+           echte Maschine setzt das PENDING-Bit fuer externe Interrupts hardwareseitig (hier:
+           riscv_cpu_set_mip()), nicht per Gast-Schreibzugriff. Das ENABLE-Bit in mie ist aber
+           IMMER Software-gesteuert -- ohne MIP_MEIP hier blieb externe Interrupt-Freigabe fuer
+           JEDEN Gast in dieser Betriebsart unerreichbar.
+           GEFUNDEN: NuttX (rv-virt:nsh) bootete bis zum Shell-Prompt, PLIC-Quelle und
+           set_mip(MIP_MEIP) funktionierten nachweislich (mip zeigte Bit 11 korrekt gesetzt),
+           aber keine Tastatureingabe kam an. Kern-Debugausgabe zeigte mie=0x80 (nur MTIE) trotz
+           mip=0x880 (MTIP+MEIP) -- der Guard hier war die Ursache, kein Fehler im Board-Code. */
+        mask = MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP | MIP_SEIP | MIP_MEIP;
         s->mie = (s->mie & ~mask) | (val & mask);
         break;
     case 0x305:

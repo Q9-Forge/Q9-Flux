@@ -294,6 +294,71 @@ test-rvtimer:
 	    echo "FAIL  test-rvtimer: erwartete Ausgabe fehlt (Interrupt-Sturm oder Haenger?)"; exit 1; \
 	fi
 
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvnuttx: Stufe 3 des RISC-V-Bring-up -- ein echtes, fremdes Betriebssystem (NuttX,
+# rv-virt:nsh) interaktiv zum Laufen bringen. Braucht RAM + UART + CLINT + PLIC (test-rvtimer
+# beweist nur CLINT, hier kommt PLIC als viertes Geraet dazu, s. docs/RISCV.md).
+#
+# NuttX selbst wird NICHT automatisch geholt (mehrstufige Toolchain-/Werkzeugkette, s. Kopf von
+# test/riscv/fetch-nuttx.sh) -- einmalig von Hand:
+#     test/riscv/fetch-nuttx.sh
+#     make test-rvnuttx
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVNUTTX_ELF  = $(BUILD)/riscv-tests/nuttx_nsh.elf
+RVNUTTX_SRC  = test/rvboard_nuttx.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c \
+               src/devices/clint/clint.c src/devices/plic/plic.c
+
+test-rvnuttx: $(BUILD)/$(PLATFORM_DIR)/rvboard_nuttx
+	@if [ ! -f "$(RVNUTTX_ELF)" ]; then \
+	    echo "  $(RVNUTTX_ELF) fehlt -- zuerst: test/riscv/fetch-nuttx.sh"; \
+	    exit 1; \
+	fi
+	@out=$$(printf 'uname -a\nhello\nexit\n' | $(BUILD)/$(PLATFORM_DIR)/rvboard_nuttx $(RVNUTTX_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "NuttShell (NSH)" && echo "$$out" | grep -q "risc-v rv-virt" \
+	   && echo "$$out" | grep -q "Hello, World"; then \
+	    echo "ok    test-rvnuttx: NuttX bootet, Shell antwortet, ein echtes Programm laeuft"; \
+	else \
+	    echo "FAIL  test-rvnuttx: erwartete Ausgabe fehlt"; exit 1; \
+	fi
+
+$(BUILD)/$(PLATFORM_DIR)/rvboard_nuttx: test/rvboard_nuttx.c $(RVNUTTX_SRC) $(RVTEST_SRC)
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 -Isrc/devices/clint \
+	    -Isrc/devices/plic -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVNUTTX_SRC) $(RVTEST_SRC) -o $@
+
+#───────────────────────────────────────────────────────────────────────────────────────────────
+# test-rvextirq: eigenstaendige Regressionsabsicherung fuer den in Stufe 3 gefundenen Kernfehler
+# (mie-Schreibmaske ohne MIP_MEIP, s. docs/RISCV.md und test/riscv/extirq/extirq_test.c). BEWUSST
+# OHNE NuttX -- braucht nur die normale riscv64-elf-gcc-Toolchain, laeuft in Millisekunden. Die
+# einzige Absicherung dieses Fehlers, die nicht an der schweren NuttX-Werkzeugkette haengt.
+#───────────────────────────────────────────────────────────────────────────────────────────────
+RVEXTIRQ_DIR  = test/riscv/extirq
+RVEXTIRQ_ELF  = $(BUILD)/riscv-tests/extirq_test.elf
+RVEXTIRQ_SRC  = test/rvboard_extirq.c test/riscv/rvelf.c src/devices/uart16550/uart16550.c \
+                src/devices/plic/plic.c
+
+test-rvextirq:
+	@if ! command -v $(RVGCC) >/dev/null 2>&1; then \
+	    echo "warn  test-rvextirq: $(RVGCC) fehlt -- uebersprungen"; \
+	    exit 0; \
+	fi; \
+	mkdir -p $(BUILD)/riscv-tests $(BUILD)/$(PLATFORM_DIR); \
+	$(RVGCC) -march=rv32im_zicsr -mabi=ilp32 -static -mcmodel=medany -nostdlib -nostartfiles -O2 \
+	    -T $(RVEXTIRQ_DIR)/link.ld $(RVEXTIRQ_DIR)/start.S $(RVEXTIRQ_DIR)/trap.S \
+	    $(RVEXTIRQ_DIR)/extirq_test.c -o $(RVEXTIRQ_ELF) || exit 1; \
+	$(CC) $(CFLAGS) -I$(TINYEMU_DIR) -Itest/riscv -Isrc/devices/uart16550 -Isrc/devices/plic \
+	    -DMAX_XLEN=32 -DCONFIG_RISCV_MAX_XLEN=32 \
+	    $(RVEXTIRQ_SRC) $(RVTEST_SRC) -o $(BUILD)/$(PLATFORM_DIR)/rvboard_extirq || exit 1; \
+	out=$$(printf 'abcde' | $(BUILD)/$(PLATFORM_DIR)/rvboard_extirq $(RVEXTIRQ_ELF) 2>&1); \
+	echo "$$out" | sed 's/^/      /'; \
+	if echo "$$out" | grep -q "Interrupts behandelt: 5"; then \
+	    echo "ok    test-rvextirq: externer PLIC-Interrupt (mie.MEIE) funktioniert"; \
+	else \
+	    echo "FAIL  test-rvextirq: mie.MEIE-Regression -- externe Interrupts kommen nicht an"; exit 1; \
+	fi
+
 clean:
 	@# build/riscv-tests/ bleibt bewusst stehen: das ist GEHOLTES Fremdmaterial, dessen
 	@# Neubeschaffung eine Netzverbindung braucht. Ein Aufraeumlauf darf einen spaeteren
@@ -305,7 +370,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: host native q9fat test test-cf-sector test-riscv test-rvboard test-rvtimer clean distclean
+.PHONY: host native q9fat test test-cf-sector test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00

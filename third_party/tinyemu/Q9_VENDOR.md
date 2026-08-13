@@ -152,5 +152,29 @@ only reports *changes*, in both directions.
    until this fix. Purely additive condition, behaviour for
    `CONFIG_RISCV_MAX_XLEN >= 64` unchanged. Marked `Q9` in the code.
 
+2. **`riscv_cpu.c` — `MIP_MEIP` added to the write mask of CSR 0x304 (`mie`)**
+   (2026-08-12). The mask read `MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP |
+   MIP_SEIP` — every enable bit except the Machine External Interrupt Enable
+   bit (bit 11). A guest could therefore never enable external interrupts by
+   writing `mie`: every `csrs mie, ...`/`csrw mie, ...` attempt to set that
+   bit was silently dropped, no matter what the guest wrote. The mask on the
+   *pending* register (`mip`, CSR 0x344) deliberately excludes `MIP_MEIP` —
+   that is correct, a real machine sets the external-pending bit from
+   hardware (here: `riscv_cpu_set_mip()`), not from a guest write — but the
+   *enable* bit in `mie` is always software-controlled and has to be
+   writable.
+
+   Found running NuttX (`rv-virt:nsh`, see `docs/RISCV.md`): the system
+   booted to the shell prompt and the PLIC/CLINT wiring on the Q9 side was
+   confirmed correct (`mip` showed bit 11 set exactly when expected), but no
+   keystroke was ever delivered. A one-line trace inside `raise_interrupt()`
+   showed `mip=0x880` (both MTIP and MEIP pending) next to `mie=0x80` (only
+   MTIE enabled) — the guard above was the cause, not a bug in the board
+   code. Purely additive to the mask; every previously-passing case (`mie`
+   values that never touched bit 11) is bit-for-bit unchanged. Marked `Q9` in
+   the code. Regression coverage that does not need the full NuttX toolchain:
+   `make test-rvextirq` (`test/riscv/extirq/`), counter-probed to actually
+   catch this exact bug if it reappears.
+
 Any further change should be marked with `Q9` in the code and listed here, the
 way it is done in `third_party/musashi/Q9_VENDOR.md`.
