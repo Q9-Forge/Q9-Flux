@@ -200,7 +200,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema
+test: test-cf-sector test-devschema test-io-dispatch
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -217,6 +217,20 @@ test-devschema:
 	$(CC) $(CFLAGS) test/08_test_devschema.c src/kernel/devschema.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_devschema
 	$(BUILD)/$(PLATFORM_DIR)/test_devschema
+
+# 5.18 (zweiter Teilschritt): gezielte Absicherung fuer die neue I/O-Dispatch-Tabelle in m68krt.c
+# (eindeutiger Slot / kleineres Fenster als der Slot / mehrdeutiger Slot MC6845+CLUT / komplett
+# unregistrierter Slot) -- direkt ueber die echten m68k_read/write_memory_*-Funktionen, s.
+# test/09_test_io_dispatch.c Kopfkommentar. Braucht dieselben Musashi-Objekte wie "host".
+test-io-dispatch: $(MUSASHI_OBJS)
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) -DQ9_HAVE_M68K -I$(MUSASHI_DIR) -I$(MUSASHI_GEN) \
+	    test/09_test_io_dispatch.c test/07_hal_stub.c \
+	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/devreg.c \
+	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
+	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
+	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
+	$(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
@@ -423,7 +437,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.00
