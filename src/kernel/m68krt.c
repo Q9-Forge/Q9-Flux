@@ -212,8 +212,31 @@ static void init_network_terminals(void) {
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons((uint16_t)listen_port);
 
-    bind(main_server_fd, (struct sockaddr *)&addr, sizeof(addr));
-    listen(main_server_fd, 5);
+    /* 2026-08-14 (beim Bau von test/09_test_io_dispatch.c gefunden, s. ARBEITSPLAN 5.18): bind()/
+       listen() wurden bisher UNGEPRUEFT aufgerufen -- bei einem belegten Port (z.B. eine zweite
+       q9.exe-Instanz oder ein eigener Testlauf auf demselben Port) blieb main_server_fd trotzdem
+       ein gueltiger, aber NICHT lauschender Socket-Deskriptor, und die "gestartet"-Meldung log
+       unveraendert weiter -- update_network_terminals()s spaetere accept()-Aufrufe (dort schon
+       gegen main_server_fd>=0 abgesichert) liefen dann fuer immer sinnlos ins Leere, ohne dass das
+       je sichtbar geworden waere. Jetzt: bei Fehlschlag Socket wieder schliessen UND
+       main_server_fd auf -1 zuruecksetzen -- der bestehende main_server_fd>=0-Schutz in
+       update_network_terminals() greift dann automatisch, keine weitere Aenderung dort noetig. */
+    if (bind(main_server_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        fprintf(stderr, "[OS-9 Net] WARNUNG: bind() auf Port %d fehlgeschlagen (Port belegt?) -- "
+                         "Netz-Terminals x1-x8 bleiben in dieser Sitzung nicht erreichbar.\r\n",
+                listen_port);
+        Q9_SOCK_CLOSE(main_server_fd);
+        main_server_fd = -1;
+        return;
+    }
+    if (listen(main_server_fd, 5) != 0) {
+        fprintf(stderr, "[OS-9 Net] WARNUNG: listen() auf Port %d fehlgeschlagen -- "
+                         "Netz-Terminals x1-x8 bleiben in dieser Sitzung nicht erreichbar.\r\n",
+                listen_port);
+        Q9_SOCK_CLOSE(main_server_fd);
+        main_server_fd = -1;
+        return;
+    }
     printf("[OS-9 Net] Multi-Terminal Server gestartet auf Mac-Port %d\r\n", listen_port);
 }
 
