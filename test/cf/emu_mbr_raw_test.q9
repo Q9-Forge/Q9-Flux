@@ -14,7 +14,7 @@ start_sector = 0
 length_sectors = 0x800000
 descriptor_lsn = 0
 descriptor = yes
-descriptor_name = ../../local_images/c0
+descriptorName = ../../local_images/c0
 image = ../../local_images/OS9SYS.cf_mbr_test.hda
 
 [d0]
@@ -26,5 +26,5 @@ start_sector = 0
 length_sectors = 0x3FF800
 descriptor_lsn = 64
 descriptor = yes
-descriptor_name = ../../local_images/d0
+descriptorName = ../../local_images/d0
 image = ../../local_images/q9-d0-pcf-mbr-test.img

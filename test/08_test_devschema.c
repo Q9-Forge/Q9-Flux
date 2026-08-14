@@ -105,16 +105,16 @@ int main(void)
         check("cf.descriptor: 'yes' ist gueltig",
               q9_devschema_check_bool(&cf->fields[desc_idx], "yes", err, sizeof(err)), 1);
 
-        name_idx = q9_devschema_find_field(cf, "descriptor_name");
-        check("cf.descriptor_name gefunden", name_idx >= 0 ? 0 : -1, 1);
-        check("cf.descriptor_name ist Q9_FIELD_STR", cf->fields[name_idx].kind == Q9_FIELD_STR ? 0 : -1, 1);
+        name_idx = q9_devschema_find_field(cf, "descriptorName");
+        check("cf.descriptorName gefunden", name_idx >= 0 ? 0 : -1, 1);
+        check("cf.descriptorName ist Q9_FIELD_STR", cf->fields[name_idx].kind == Q9_FIELD_STR ? 0 : -1, 1);
 
         printf("=== devschema: q9_devschema_field_relevant (depends_on) ===\n");
-        check("descriptor_name relevant wenn descriptor='yes'",
+        check("descriptorName relevant wenn descriptor='yes'",
               q9_devschema_field_relevant(&cf->fields[name_idx], "yes") ? 0 : -1, 1);
-        check("descriptor_name NICHT relevant wenn descriptor='no'",
+        check("descriptorName NICHT relevant wenn descriptor='no'",
               q9_devschema_field_relevant(&cf->fields[name_idx], "no") ? -1 : 0, 1);
-        check("descriptor_name NICHT relevant wenn aktueller Wert unbekannt (NULL)",
+        check("descriptorName NICHT relevant wenn aktueller Wert unbekannt (NULL)",
               q9_devschema_field_relevant(&cf->fields[name_idx], NULL) ? -1 : 0, 1);
         check("image (kein depends_on) ist IMMER relevant, unabhaengig vom uebergebenen Wert",
               q9_devschema_field_relevant(&cf->fields[q9_devschema_find_field(cf, "image")], NULL) ? 0 : -1, 1);
@@ -149,10 +149,10 @@ int main(void)
             check("memory.descriptor ist Q9_FIELD_BOOL (dieselbe Bedeutung wie bei cf)",
                   mem->fields[idx].kind == Q9_FIELD_BOOL ? 0 : -1, 1);
             {
-                int name_idx = q9_devschema_find_field(mem, "descriptor_name");
-                check("memory.descriptor_name gefunden (\"fuer alle\" -- Andreas' Vorgabe)",
+                int name_idx = q9_devschema_find_field(mem, "descriptorName");
+                check("memory.descriptorName gefunden (\"fuer alle\" -- Andreas' Vorgabe)",
                       name_idx >= 0 ? 0 : -1, 1);
-                check("memory.descriptor_name nur relevant wenn descriptor='yes'",
+                check("memory.descriptorName nur relevant wenn descriptor='yes'",
                       q9_devschema_field_relevant(&mem->fields[name_idx], "yes") ? 0 : -1, 1);
             }
         }

@@ -322,14 +322,19 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cfg_resolve_rel(dir, val, cur_cf->path, sizeof(cur_cf->path));
             } else if (cfg_ieq(key, "descriptor")) {
                 /* 2026-08-14: jetzt Bool statt Pfad (s. boardcfg.h) -- der bisherige Pfad-Wert
-                   heisst jetzt descriptor_name (naechster Zweig unten). */
+                   heisst jetzt descriptorName (naechster Zweig unten). */
                 if (cfg_parse_bool(val, &cur_cf->has_descriptor) != 0) {
                     snprintf(err, err_max, "Zeile %d: ungueltiger descriptor-Wert '%s' (yes|no)",
                              lineno, val);
                     fclose(f);
                     return -1;
                 }
-            } else if (cfg_ieq(key, "descriptor_name")) {
+            } else if (cfg_ieq(key, "descriptorName")) {
+                /* .q9-seitiger Schluessel bewusst camelCase (Andreas' Vorgabe 2026-08-14, s.
+                   devschema.c-Kommentar) -- der C-Struct-Feldname bleibt descriptor_name, passend
+                   zum sonstigen snake_case-C-Stil dieser Codebasis (z.B. start_sector); beide
+                   Namensraeume duerfen bewusst auseinanderlaufen, das eine ist Datei-Syntax, das
+                   andere Implementierungsdetail. */
                 cfg_resolve_rel(dir, val, cur_cf->descriptor_name, sizeof(cur_cf->descriptor_name));
             } else if (cfg_ieq(key, "type") || cfg_ieq(key, "format")) {
                 int fmt = cfg_parse_format(val);

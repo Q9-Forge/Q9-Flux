@@ -44,10 +44,13 @@ typedef struct {
     /* 2026-08-14: "descriptor" ist projektweit (auch bei kuenftigen Nicht-CF-Geraeten, s.
        devschema.c "memory") ein Bool -- braucht dieses Geraet ueberhaupt einen OS-9-Descriptor
        (bei CF Default yes). Der bisherige Descriptor-NAME-String (fuer den ROM-Generator, s.
-       ARBEITSPLAN 5.20, noch nicht gebaut) heisst jetzt descriptor_name und ist nur relevant, wenn
-       has_descriptor gesetzt ist -- ersetzt das alte, gleichnamige Feld "descriptor" (String). */
+       ARBEITSPLAN 5.20, noch nicht gebaut) heisst .q9-seitig jetzt "descriptorName" (Andreas'
+       camelCase-Vorgabe fuer neue Keys) und ist nur relevant, wenn has_descriptor gesetzt ist --
+       ersetzt das alte, gleichnamige Feld "descriptor" (String). Der C-Struct-Feldname bleibt
+       bewusst snake_case (descriptor_name), passend zum sonstigen C-Stil dieser Codebasis --
+       beide Namensraeume (Datei-Syntax/C-Implementierung) duerfen auseinanderlaufen. */
     int  has_descriptor;                     /* .q9-Key "descriptor" = yes/no, Default yes           */
-    char descriptor_name[Q9_CFG_PATH_MAX];   /* .q9-Key "descriptor_name" (ersetzt altes "descriptor")*/
+    char descriptor_name[Q9_CFG_PATH_MAX];   /* .q9-Key "descriptorName" (ersetzt altes "descriptor") */
     int  bus;                                /* Q9_CFG_BUS_*                                        */
     int  unit;                               /* 0 = Master, 1 = Slave                              */
     int  format;                             /* Q9_CF_FMT_* (q9board.h): AUTO/RBF/PCF                 */
