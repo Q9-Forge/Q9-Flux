@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.c                                                                     Ver. 1.30
+// File:   devschema.c                                                                     Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe devschema.h. Pilot-Schema fuer "cf" -- die Feldnamen/Wertebereiche
 //         entsprechen 1:1 q9_cfg_cf_t (boardcfg.h) und Q9_CF_FMT_*/Q9_CFG_BUS_* (q9board.h/
@@ -22,6 +22,9 @@
 //         │      │ Designated Initializers umgestellt (Projektstil, s. Vtables) -- bei 9      │
 //         │      │ Feldern je Eintrag wurden positionelle Initializer unuebersichtlich/       │
 //         │      │ fehleranfaellig fuer kuenftige Erweiterungen                               │
+// 26-08-14│ 1.40 │ "cf": useSlot (Bool) + slot (Int 0-255) ergaenzt -- Config-seitige Wahl    │ Cld
+//         │      │ zwischen automatisch zugeteiltem I/O-Tabellenplatz (5.18 g_io_table) und   │
+//         │      │ freier Adresse, vorausschauend, noch ohne boardcfg.c-Anschluss             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devschema.h"
 #include <string.h>
@@ -89,9 +92,27 @@ static const q9_field_schema_t g_cf_fields[] = {
         .name = "type", .kind = Q9_FIELD_ENUM, .enum_values = g_cf_format_values,
         .desc = "Image-Format, auto erkennt RBF/PCF an der Groesse (Default auto)",
     },
+    /* 2026-08-14 (Andreas' Vorschlag, Fortsetzung von ARBEITSPLAN 5.18 "Config-seitig bewusst
+       BEIDES anbieten"): Wahl zwischen einem automatisch zugeteilten I/O-Tabellenplatz (schneller
+       Dispatch, s. m68krt.c g_io_table) und einer frei gewaehlten Adresse. Nur additiv beschrieben,
+       NOCH KEIN boardcfg.c-Anschluss (die eigentliche Config-gesteuerte Instanziierung ueber die
+       Tabelle ist selbst noch nicht gebaut, s. 5.18 "Weiterhin offen"). Gehoert nur zu Geraeten im
+       festen 64-KB-I/O-Cluster ($FFFF0000-$FFFFFFFF) -- NICHT zu "memory" (RAM liegt ausserhalb). */
+    {
+        .name = "useSlot", .kind = Q9_FIELD_BOOL,
+        .desc = "vordefinierten I/O-Tabellenplatz nutzen (schneller Dispatch, 256-Byte-Raster ab "
+                "$FFFF0000) statt einer frei gewaehlten Adresse -- Default no",
+    },
+    {
+        .name = "slot", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 255,
+        .depends_on = "useSlot", .depends_on_value = "yes",
+        .desc = "I/O-Tabellenplatz-Nummer (0-255); Adresse = $FFFF0000 + slot*256 -- nur relevant "
+                "wenn useSlot=yes",
+    },
     {
         .name = "base", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
-        .desc = "ATA-Basisadresse; 0 = Standard-Base anhand von bus",
+        .desc = "ATA-Basisadresse; 0 = Standard-Base anhand von bus. Wenn useSlot=yes wird dieser "
+                "Wert automatisch aus slot berechnet (Editor: nur anzeigen, nicht eingeben lassen)",
     },
     {
         .name = "start_sector", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
