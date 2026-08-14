@@ -33,6 +33,7 @@ base = 0xFFFFE000
 start_sector = 0
 length_sectors = 0x800000
 descriptor_lsn = 0
-descriptor = .q9-flux/c0
+descriptor = yes
+descriptor_name = .q9-flux/c0
 image = .q9-flux/OS9SYS.hda
 

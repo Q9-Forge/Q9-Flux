@@ -176,6 +176,19 @@ static int cfg_parse_unit(const char *v)
     return -1;
 }
 
+/* 2026-08-14: fuer den "descriptor"-Key (jetzt Bool statt Pfad, s. boardcfg.h). BEWUSST NUR
+   "yes"/"no" -- exakt die Werte, die devschema.c's q9_devschema_check_bool() als gueltig kennt.
+   Keine zusaetzlichen Synonyme (true/false/1/0) ohne konkreten Bedarf: genau SO ein
+   unbegruendetes Auseinanderdriften zwischen Parser-Akzeptanz und Schema-Beschreibung war der
+   Fehler, der in dieser Session bei bus/unit/type gefunden und behoben wurde (s. devschema.c
+   Kommentar bei g_cf_bus_values) -- hier von Anfang an vermieden statt spaeter wieder einzufangen. */
+static int cfg_parse_bool(const char *v, int *out)
+{
+    if (cfg_ieq(v, "yes")) { *out = 1; return 0; }
+    if (cfg_ieq(v, "no"))  { *out = 0; return 0; }
+    return -1;
+}
+
 static int cfg_parse_u32(const char *v, uint32_t *out)
 {
     char *end;
@@ -248,7 +261,10 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                     return -1;
                 }
                 cur_cf = &cfg->cf[cfg->cf_count++];
-                /* Defaults je CF-Abschnitt: Onboard-Master, Format automatisch erkennen. */
+                /* Defaults je CF-Abschnitt: Onboard-Master, Format automatisch erkennen. 2026-08-14:
+                   has_descriptor Default 1 (yes) -- CF-Geraete brauchen im Regelfall einen
+                   Descriptor (Andreas: "alle andere brauchen im Regelfall einen", im Unterschied
+                   zu memory-Geraeten, deren kuenftiger Default no waere). */
                 cur_cf->bus    = Q9_CFG_BUS_ONBOARD;
                 cur_cf->unit   = 0;
                 cur_cf->format = Q9_CF_FMT_AUTO;
@@ -257,7 +273,8 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cur_cf->length_sectors = 0;
                 cur_cf->descriptor_lsn = 0;
                 cur_cf->path[0] = '\0';
-                cur_cf->descriptor[0] = '\0';
+                cur_cf->has_descriptor = 1;
+                cur_cf->descriptor_name[0] = '\0';
                 sec = SEC_CF;
             } else {
                 snprintf(err, err_max, "Zeile %d: unbekannter Abschnitt '[%s]'", lineno, sec_name);
@@ -304,7 +321,16 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
             if (cfg_ieq(key, "image") || cfg_ieq(key, "file")) {
                 cfg_resolve_rel(dir, val, cur_cf->path, sizeof(cur_cf->path));
             } else if (cfg_ieq(key, "descriptor")) {
-                cfg_resolve_rel(dir, val, cur_cf->descriptor, sizeof(cur_cf->descriptor));
+                /* 2026-08-14: jetzt Bool statt Pfad (s. boardcfg.h) -- der bisherige Pfad-Wert
+                   heisst jetzt descriptor_name (naechster Zweig unten). */
+                if (cfg_parse_bool(val, &cur_cf->has_descriptor) != 0) {
+                    snprintf(err, err_max, "Zeile %d: ungueltiger descriptor-Wert '%s' (yes|no)",
+                             lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+            } else if (cfg_ieq(key, "descriptor_name")) {
+                cfg_resolve_rel(dir, val, cur_cf->descriptor_name, sizeof(cur_cf->descriptor_name));
             } else if (cfg_ieq(key, "type") || cfg_ieq(key, "format")) {
                 int fmt = cfg_parse_format(val);
                 if (fmt < 0) {

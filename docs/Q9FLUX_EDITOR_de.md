@@ -134,6 +134,16 @@ Descriptoren im Image vorhanden sind. Damit entfaellt auch die zuvor befuerchtet
 im Schema-Format bedingte Folgefelder ("wenn Descriptor=yes, zeige weitere Felder") abzubilden —
 zumindest fuer diesen Fall.
 
+**Nachtrag (2026-08-14):** Doch bedingte Folgefelder gebraucht — Andreas wollte zusaetzlich einen
+Descriptor-NAMEN je Geraet ("descriptor_name") einfuehren, fuer ALLE Geraetetypen, nicht nur CF.
+`devschema.c` bekam dafuer einen minimalen, generischen `depends_on`/`depends_on_value`-
+Mechanismus (`q9_devschema_field_relevant()`) -- "descriptor_name" ist nur relevant, wenn
+"descriptor"=yes. Dabei aufgefallen: `descriptor` war bei CF schon LANGE ein echtes, geparstes
+`.q9`-Schluesselwort mit STRING-Bedeutung (Descriptor-Name, nicht Ja/Nein) -- die projektweite
+Bool-Vereinheitlichung musste deshalb `boardcfg.c` UND alle 9 betroffenen `.q9`-Dateien im Repo
+mitziehen (nicht nur das Schema), s. ARBEITSPLAN 6.7. `.q9`-Dateien ausserhalb dieses Repos mit
+der alten Syntax brauchen manuelle Nacharbeit.
+
 ## 6. Autostart
 
 Zusaetzlich zum interaktiven Launcher soll es einen Weg geben, ihn zu UEBERSPRINGEN und direkt zu
