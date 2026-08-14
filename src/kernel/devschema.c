@@ -18,7 +18,7 @@
 //         │      │ ergaenzt (secondary/0/1/fat) -- beides per grep gegen alle *.q9-Dateien    │
 //         │      │ im Repo verifiziert (s. dortiger Fund im Kommentar bei g_cf_bus_values)   │
 // 26-08-14│ 1.30 │ descriptor-Konflikt geloest: projektweit einheitlich Q9_FIELD_BOOL +      │ Cld
-//         │      │ neues descriptor_name (depends_on descriptor=yes). Feldtabellen auf       │
+//         │      │ neues descriptorName (depends_on descriptor=yes). Feldtabellen auf       │
 //         │      │ Designated Initializers umgestellt (Projektstil, s. Vtables) -- bei 9      │
 //         │      │ Feldern je Eintrag wurden positionelle Initializer unuebersichtlich/       │
 //         │      │ fehleranfaellig fuer kuenftige Erweiterungen                               │
@@ -48,9 +48,9 @@ static const char *const g_cf_bus_values[]    = { "onboard", "cf", "rc2014", "sc
 static const char *const g_cf_unit_values[]   = { "master", "0", "slave", "1", NULL };
 static const char *const g_cf_format_values[] = { "auto", "rbf", "pcf", "fat", NULL };
 
-/* descriptor/descriptor_name (2026-08-14, mit Andreas geklaert): "descriptor" ist PROJEKTWEIT
+/* descriptor/descriptorName (2026-08-14, mit Andreas geklaert): "descriptor" ist PROJEKTWEIT
    einheitlich Q9_FIELD_BOOL ("braucht dieses Geraet einen Descriptor" -- bei cf i.d.R. yes). Der
-   bisherige String-Wert (Descriptor-NAME fuer den ROM-Generator) heisst jetzt "descriptor_name"
+   bisherige String-Wert (Descriptor-NAME fuer den ROM-Generator) heisst jetzt "descriptorName"
    und ist nur relevant, wenn descriptor=yes (depends_on). ECHTES boardcfg.c-Schluesselwort, s.
    dortige Kommentare -- alle 9 betroffenen .q9-Dateien im Repo wurden mitmigriert. */
 static const q9_field_schema_t g_cf_fields[] = {
@@ -73,7 +73,7 @@ static const q9_field_schema_t g_cf_fields[] = {
         .desc = "braucht dieses Geraet einen OS-9-Descriptor (Default: yes)",
     },
     {
-        .name = "descriptor_name", .kind = Q9_FIELD_STR,
+        .name = "descriptorName", .kind = Q9_FIELD_STR,
         .depends_on = "descriptor", .depends_on_value = "yes",
         .desc = "Descriptorname fuer den ROM-Generator -- nur relevant wenn descriptor=yes",
     },
@@ -154,7 +154,7 @@ static const q9_field_schema_t g_memory_fields[] = {
         .desc = "braucht dieses Geraet einen OS-9-Descriptor (Default: no -- Speicher braucht i.d.R. keinen)",
     },
     {
-        .name = "descriptor_name", .kind = Q9_FIELD_STR,
+        .name = "descriptorName", .kind = Q9_FIELD_STR,
         .depends_on = "descriptor", .depends_on_value = "yes",
         .desc = "Descriptorname -- nur relevant wenn descriptor=yes",
     },

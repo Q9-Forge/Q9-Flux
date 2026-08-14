@@ -21,7 +21,7 @@ start_sector = 0
 length_sectors = 0x800000
 descriptor_lsn = 0
 descriptor = yes
-descriptor_name = local_images/c0
+descriptorName = local_images/c0
 image = local_images/OS9SYS.claude-work.hda
 
 [d0]
@@ -33,7 +33,7 @@ start_sector = 0
 length_sectors = 0x6183c
 descriptor_lsn = 0
 descriptor = yes
-descriptor_name = local_images/d0
+descriptorName = local_images/d0
 image = local_images/hd1.claude-work.hda
 
 [e0]
@@ -45,5 +45,5 @@ start_sector = 0
 length_sectors = 0x800000
 descriptor_lsn = 0
 descriptor = yes
-descriptor_name = local_images/e0
+descriptorName = local_images/e0
 image = local_images/hd2.claude-work.hda

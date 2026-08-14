@@ -24,7 +24,7 @@
 //         GELOEST (2026-08-14, mit Andreas): "descriptor" ist jetzt PROJEKTWEIT einheitlich ein
 //         Q9_FIELD_BOOL ("braucht dieses Geraet ueberhaupt einen Descriptor" -- bei "memory" i.d.R.
 //         no, bei allen anderen i.d.R. yes). Der bisherige String-Wert (bei "cf": Descriptor-NAME
-//         fuer den ROM-Generator) heisst jetzt ueberall "descriptor_name" und ist nur relevant,
+//         fuer den ROM-Generator) heisst jetzt ueberall "descriptorName" und ist nur relevant,
 //         wenn descriptor=yes -- dafuer der neue depends_on-Mechanismus (s.u.). Betraf ein ECHTES,
 //         bereits von boardcfg.c geparstes .q9-Schluesselwort (in 9 realen Config-Dateien im Repo
 //         genutzt) -- boardcfg.c UND alle betroffenen .q9-Dateien wurden mitgezogen (nicht nur das
@@ -65,7 +65,7 @@
 //         │      │ ergaenzt, per grep gegen ALLE echten .q9-Dateien im Repo verifiziert      │
 // 26-08-14│ 1.30 │ descriptor-Konflikt geloest: projektweit einheitlich Q9_FIELD_BOOL, neues │ Cld
 //         │      │ depends_on/depends_on_value + q9_devschema_field_relevant() fuer bedingt   │
-//         │      │ relevante Felder (descriptor_name nur wenn descriptor=yes). boardcfg.c +   │
+//         │      │ relevante Felder (descriptorName nur wenn descriptor=yes). boardcfg.c +     │
 //         │      │ alle 9 echten .q9-Dateien im Repo mitgezogen (kein reines Schema-Update)   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVSCHEMA_H
@@ -94,7 +94,7 @@ typedef struct {
     const char *const     *enum_values;   /* nur Q9_FIELD_ENUM: NULL-terminiertes Array           */
     const char             *desc;          /* Freitext -- Diagnose, spaeter evtl. Doku-Generierung */
     /* 2026-08-14: bedingte Relevanz -- dieses Feld ist nur relevant/sinnvoll ausfuellbar, wenn das
-       Feld NAMENS depends_on aktuell den Wert depends_on_value hat (z.B. "descriptor_name" ist nur
+       Feld NAMENS depends_on aktuell den Wert depends_on_value hat (z.B. "descriptorName" ist nur
        relevant, wenn "descriptor"=="yes"). depends_on==NULL (Default) heisst "immer relevant". Ein
        kuenftiger Editor kann das Feld dann ausgegraut/versteckt lassen, bis die Bedingung erfuellt
        ist -- s. q9_devschema_field_relevant(). Bewusst KEIN allgemeiner Ausdrucks-/Formel-
