@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 3.50
+# File:   Makefile                                                                        Ver. 3.60
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
 #         Bring-up-Vorbereitung).
@@ -38,6 +38,10 @@
 #         │      │ bleiben bewusst separat (brauchen vorheriges Fetch-Skript). x86_32 meldet    │
 #         │      │ sauber "noch nicht implementiert". KEIN common/+<arch>/-Umbau, KEINE          │
 #         │      │ build/<platform>/<target>/-Verschachtelung (6.2-Klaerung: noch offen)         │
+# 26-08-14│ 3.60 │ Nachtrag (Versionskopf war seit 3.50 nicht mehr erhoeht worden, obwohl        │ Cld
+#         │      │ vier neue Testziele dazukamen): test-devschema, test-io-dispatch, test-ansi   │
+#         │      │ (alle 6.7/5.18-Fortsetzung + Editor-Grundstein) und jetzt test-useslot        │
+#         │      │ (5.18-Fortsetzung useSlot/slot) -- alle Teil von "make test"                  │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -200,7 +204,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi
+test: test-cf-sector test-devschema test-io-dispatch test-ansi test-useslot
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -217,6 +221,15 @@ test-devschema:
 	$(CC) $(CFLAGS) test/08_test_devschema.c src/kernel/devschema.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_devschema
 	$(BUILD)/$(PLATFORM_DIR)/test_devschema
+
+# 5.18-Fortsetzung: useSlot/slot (boardcfg.h/.c) -- Adressberechnung + Parser-Fehlerpfade, reine
+# Datenstruktur-/Parser-Pruefung, kein Board/keine CPU. Schreibt eine wegwerfbare Scratch-.q9-Datei
+# im PLATFORM_DIR (portabel statt /tmp, von "make clean" erfasst).
+test-useslot:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) test/10_test_useslot.c src/kernel/boardcfg.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/test_useslot
+	cd $(BUILD)/$(PLATFORM_DIR) && ./test_useslot
 
 # 5.18 (zweiter Teilschritt): gezielte Absicherung fuer die neue I/O-Dispatch-Tabelle in m68krt.c
 # (eindeutiger Slot / kleineres Fenster als der Slot / mehrdeutiger Slot MC6845+CLUT / komplett
@@ -450,8 +463,8 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 3.00
+# EOF Makefile                                                                            Ver. 3.60
 #─────────────────────────────────────────────────────────────────────────────────────────────────

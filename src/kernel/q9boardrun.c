@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9boardrun.c                                                                      Ver. 1.81
+// File:   q9boardrun.c                                                                      Ver. 1.90
 // Owner:  AF
 // Desc.:  Implementierung des Board-Boot-Runners, siehe q9boardrun.h.
 //
@@ -31,6 +31,11 @@
 //         │      │ direkt zu rufen -- Vorbereitung fuer eine zweite Zielarchitektur, reines     │
 //         │      │ Refactoring (debug_state/quicc_acks bleiben bewusst direkt, s. dortige       │
 //         │      │ Kommentare)                                                                 │
+// 26-08-14│ 1.90 │ 5.18-Fortsetzung: q9_cfg_cf_effective_base() (boardcfg.c) statt zweier hier   │ Cld
+//         │      │ duplizierter Inline-Berechnungen; neue q9_board_validate_no_overlap() prueft │
+//         │      │ NACH allen attach_*-Aufrufen die komplette Registry auf echte Adress-         │
+//         │      │ ueberlappungen (useSlot/slot fuehrt erstmals frei waehlbare Adressen ein,     │
+//         │      │ die mit fest verdrahteten Geraeten kollidieren koennten)                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9boardrun.h"
 #include "q9board.h"
@@ -260,6 +265,52 @@ static int q9_parse_hostfwd(const char *s, q9_slirp_hostfwd_t *out, int max)
     return count;
 }
 
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q9_board_validate_no_overlap
+// Desc.:    5.18-Fortsetzung (2026-08-14): prueft ALLE registrierten Geraete paarweise auf echte
+//           Adressfenster-Ueberlappung (echte Byte-Bereiche, NICHT das 256-Byte-Dispatch-Raster
+//           der I/O-Tabelle in m68krt.c -- MC6845 ($FFFFA000-A001) und CLUT ($FFFFA010-A013)
+//           TEILEN sich zwar denselben 256-Byte-Slot, ueberlappen sich aber NICHT byteweise und
+//           werden hier absichtlich NICHT als Fehler erkannt, s. m68krt.c g_io_ambiguous-
+//           Kommentar). War seit ARBEITSPLAN 5.18 (2026-07-14, busmap-Planungsrunde) als Idee
+//           vorgesehen ("Ueberlappungs-Validierung... Fehlermeldung mit BEIDEN Instanznamen +
+//           Adressen, Abbruch"), aber nie gebaut -- jetzt noetig, weil useSlot/slot (boardcfg.h)
+//           erstmals FREI WAEHLBARE Adressen (0-255) einfuehrt, die versehentlich mit einem
+//           fest verdrahteten Geraet (RTC, QUICC, MC6845/CLUT, UART, ...) kollidieren koennen --
+//           boardcfg.c kann das beim Parsen nicht wissen (Registry existiert da noch nicht),
+//           diese Pruefung laeuft daher NACH allen attach_*-Aufrufen, VOR dem ersten CPU-Zyklus.
+//           O(n^2) ueber die Registry (n <= Q9_DEVREG_MAX = 24) -- trivial billig, laeuft nur
+//           einmal beim Start.
+// Call:     if (q9_board_validate_no_overlap() != 0) return 1;
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static int q9_board_validate_no_overlap(void)
+{
+    int n = q9_devreg_count();
+    for (int i = 0; i < n; i++) {
+        q9_device_t *a = q9_devreg_get(i);
+        if (!a || a->size == 0) {
+            continue;
+        }
+        uint32_t a_lo = a->base, a_hi = a->base + a->size - 1u;
+        for (int j = i + 1; j < n; j++) {
+            q9_device_t *b = q9_devreg_get(j);
+            uint32_t b_lo, b_hi;
+            if (!b || b->size == 0) {
+                continue;
+            }
+            b_lo = b->base;
+            b_hi = b->base + b->size - 1u;
+            if (a_lo <= b_hi && b_lo <= a_hi) {
+                fprintf(stderr,
+                        "q9board: Adressueberlappung -- '%s' ($%08X-$%08X) und '%s' ($%08X-$%08X)\n",
+                        a->name, a_lo, a_hi, b->name, b_lo, b_hi);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
 int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mode,
                   const q9_board_cfg_t *cfg)
 {
@@ -336,8 +387,10 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
     if (cfg) {
         for (int i = 0; i < cfg->cf_count; i++) {
             const q9_cfg_cf_t *e = &cfg->cf[i];
-            uint32_t base = e->base ? e->base :
-                            (e->bus == Q9_CFG_BUS_RC2014 ? Q9_BOARD_CF2_BASE : Q9_BOARD_CF_BASE);
+            /* 2026-08-14 (5.18-Fortsetzung): q9_cfg_cf_effective_base() beruecksichtigt jetzt
+               auch useSlot/slot (boardcfg.h) -- einzige Stelle fuer diese Berechnung, ersetzt
+               die bisher hier UND weiter unten (Duplikat-Erkennung) duplizierte Inline-Logik. */
+            uint32_t base = q9_cfg_cf_effective_base(e);
             q9_cf_t *iface = 0;
             if (base == Q9_BOARD_CF_BASE) {
                 iface = &board.cf;
@@ -358,8 +411,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
             int duplicate = 0;
             for (int j = 0; j < i; j++) {
                 const q9_cfg_cf_t *p = &cfg->cf[j];
-                uint32_t pb = p->base ? p->base :
-                              (p->bus == Q9_CFG_BUS_RC2014 ? Q9_BOARD_CF2_BASE : Q9_BOARD_CF_BASE);
+                uint32_t pb = q9_cfg_cf_effective_base(p);
                 if (pb == base && p->unit == e->unit && strcmp(p->path, e->path) == 0) {
                     duplicate = 1;
                     break;
@@ -408,6 +460,12 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
     q9_m68krt_attach_framebuf(&fb);                     /* 5.26: VRAM-Fenster $FD000000           */
     q9_clut_init(&clut);                                /* 5.29-Nachtrag: CLUT, Identitaets-Graustufe */
     q9_m68krt_attach_clut(&clut);                       /* 5.29-Nachtrag: CLUT-Fenster $FFFFA010  */
+
+    /* 5.18-Fortsetzung: NACH allen attach_*-Aufrufen, VOR dem ersten CPU-Zyklus -- prueft die
+       vollstaendige Registry auf echte Adressueberlappungen (s. Funktionskommentar oben). */
+    if (q9_board_validate_no_overlap() != 0) {
+        return 1;
+    }
     {
         /* Optionaler Port-Override (5.29-Diagnose, Andreas' laufender Terminalserver belegt
            sonst 2001/2000) -- Default bleibt unveraendert 2001/2000, analog Q9_NETTTY_PORT. */
@@ -504,5 +562,5 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9boardrun.c                                                                          Ver. 1.80
+// EOF q9boardrun.c                                                                          Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────
