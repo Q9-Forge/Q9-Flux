@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.c                                                                     Ver. 1.20
+// File:   devschema.c                                                                     Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe devschema.h. Pilot-Schema fuer "cf" -- die Feldnamen/Wertebereiche
 //         entsprechen 1:1 q9_cfg_cf_t (boardcfg.h) und Q9_CF_FMT_*/Q9_CFG_BUS_* (q9board.h/
@@ -17,6 +17,11 @@
 //         │      │ (image/type statt path/format) korrigiert, Bus/Unit/Format-Synonyme      │
 //         │      │ ergaenzt (secondary/0/1/fat) -- beides per grep gegen alle *.q9-Dateien    │
 //         │      │ im Repo verifiziert (s. dortiger Fund im Kommentar bei g_cf_bus_values)   │
+// 26-08-14│ 1.30 │ descriptor-Konflikt geloest: projektweit einheitlich Q9_FIELD_BOOL +      │ Cld
+//         │      │ neues descriptorName (depends_on descriptor=yes). Feldtabellen auf       │
+//         │      │ Designated Initializers umgestellt (Projektstil, s. Vtables) -- bei 9      │
+//         │      │ Feldern je Eintrag wurden positionelle Initializer unuebersichtlich/       │
+//         │      │ fehleranfaellig fuer kuenftige Erweiterungen                               │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devschema.h"
 #include <string.h>
@@ -43,37 +48,63 @@ static const char *const g_cf_bus_values[]    = { "onboard", "cf", "rc2014", "sc
 static const char *const g_cf_unit_values[]   = { "master", "0", "slave", "1", NULL };
 static const char *const g_cf_format_values[] = { "auto", "rbf", "pcf", "fat", NULL };
 
+/* descriptor/descriptorName (2026-08-14, mit Andreas geklaert): "descriptor" ist PROJEKTWEIT
+   einheitlich Q9_FIELD_BOOL ("braucht dieses Geraet einen Descriptor" -- bei cf i.d.R. yes). Der
+   bisherige String-Wert (Descriptor-NAME fuer den ROM-Generator) heisst jetzt "descriptorName"
+   und ist nur relevant, wenn descriptor=yes (depends_on). ECHTES boardcfg.c-Schluesselwort, s.
+   dortige Kommentare -- alle 9 betroffenen .q9-Dateien im Repo wurden mitmigriert. */
 static const q9_field_schema_t g_cf_fields[] = {
-    /* KORREKTUR (2026-08-14): Feldnamen sind jetzt die .q9-DATEI-Schluesselwoerter (wie sie in
-       JEDER echten Config im Repo tatsaechlich stehen -- verifiziert per grep ueber alle *.q9),
-       NICHT mehr die internen C-Struct-Feldnamen aus q9_cfg_cf_t (boardcfg.h). Der urspruengliche
-       Pilot-Stand hatte hier "path"/"format" -- die tatsaechliche .q9-Syntax ist "image"/"type" (s.
+    /* KORREKTUR (2026-08-14): Feldnamen sind die .q9-DATEI-Schluesselwoerter (wie sie in JEDER
+       echten Config im Repo tatsaechlich stehen -- verifiziert per grep ueber alle *.q9), NICHT
+       die internen C-Struct-Feldnamen aus q9_cfg_cf_t (boardcfg.h). Der urspruengliche Pilot-Stand
+       hatte hier "path"/"format" -- die tatsaechliche .q9-Syntax ist "image"/"type" (s.
        cfg_ieq(key,"image")||cfg_ieq(key,"file") bzw. cfg_ieq(key,"type")||cfg_ieq(key,"format") in
-       boardcfg.c). Ein Schema, das die INTERNEN Namen zeigt, waere fuer einen Config-Editor (der
-       ja genau DIESE Datei-Syntax anzeigen/erzeugen soll) irrefuehrend gewesen. boardcfg.c
-       akzeptiert zusaetzlich die synonymen Schluesselnamen "file"/"format"/"drive"/
-       "offset_sector"/"part_size"/"lsn_offset" -- die sind hier NICHT als Alternative modelliert
-       (kein Feldname-Synonym-Mechanismus in q9_field_schema_t, anders als bei Enum-WERTEN), weil
-       keine einzige reale Config im Repo sie nutzt; bewusste Vereinfachung, kein Anspruch auf
-       Vollstaendigkeit der Parser-Akzeptanz. */
-    { "image", Q9_FIELD_STR, 1, 0, 0, 0, NULL,
-      "Pfad zum Image (relativ zur Config-Datei aufgeloest)" },
-    { "descriptor", Q9_FIELD_STR, 0, 0, 0, 0, NULL,
-      "optionaler OS-9-Descriptorname fuer den ROM-Generator" },
-    { "bus", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_bus_values,
-      "welches emulierte CF-Interface (Default onboard)" },
-    { "unit", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_unit_values,
-      "Master/Slave am ATA-Bus (Default master)" },
-    { "type", Q9_FIELD_ENUM, 0, 0, 0, 0, g_cf_format_values,
-      "Image-Format, auto erkennt RBF/PCF an der Groesse (Default auto)" },
-    { "base", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
-      "ATA-Basisadresse; 0 = Standard-Base anhand von bus" },
-    { "start_sector", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
-      "Host-Startsektor, der als Gast-LBA 0 erscheint (Default 0)" },
-    { "length_sectors", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
-      "logische Partitionslaenge fuer Descriptor/Pruefung" },
-    { "descriptor_lsn", Q9_FIELD_INT, 0, 1, 0, 0xFFFFFFFFL, NULL,
-      "PD_LSNOffs im OS-9-Descriptor -- fuer spaeteren Descriptor-Abgleich" },
+       boardcfg.c). boardcfg.c akzeptiert zusaetzlich die synonymen Schluesselnamen "file"/
+       "format"/"drive"/"offset_sector"/"part_size"/"lsn_offset" -- die sind hier NICHT als
+       Alternative modelliert (kein Feldname-Synonym-Mechanismus in q9_field_schema_t, anders als
+       bei Enum-WERTEN), weil keine einzige reale Config im Repo sie nutzt; bewusste
+       Vereinfachung, kein Anspruch auf Vollstaendigkeit der Parser-Akzeptanz. */
+    {
+        .name = "image", .kind = Q9_FIELD_STR, .required = 1,
+        .desc = "Pfad zum Image (relativ zur Config-Datei aufgeloest)",
+    },
+    {
+        .name = "descriptor", .kind = Q9_FIELD_BOOL,
+        .desc = "braucht dieses Geraet einen OS-9-Descriptor (Default: yes)",
+    },
+    {
+        .name = "descriptorName", .kind = Q9_FIELD_STR,
+        .depends_on = "descriptor", .depends_on_value = "yes",
+        .desc = "Descriptorname fuer den ROM-Generator -- nur relevant wenn descriptor=yes",
+    },
+    {
+        .name = "bus", .kind = Q9_FIELD_ENUM, .enum_values = g_cf_bus_values,
+        .desc = "welches emulierte CF-Interface (Default onboard)",
+    },
+    {
+        .name = "unit", .kind = Q9_FIELD_ENUM, .enum_values = g_cf_unit_values,
+        .desc = "Master/Slave am ATA-Bus (Default master)",
+    },
+    {
+        .name = "type", .kind = Q9_FIELD_ENUM, .enum_values = g_cf_format_values,
+        .desc = "Image-Format, auto erkennt RBF/PCF an der Groesse (Default auto)",
+    },
+    {
+        .name = "base", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
+        .desc = "ATA-Basisadresse; 0 = Standard-Base anhand von bus",
+    },
+    {
+        .name = "start_sector", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
+        .desc = "Host-Startsektor, der als Gast-LBA 0 erscheint (Default 0)",
+    },
+    {
+        .name = "length_sectors", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
+        .desc = "logische Partitionslaenge fuer Descriptor/Pruefung",
+    },
+    {
+        .name = "descriptor_lsn", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
+        .desc = "PD_LSNOffs im OS-9-Descriptor -- fuer spaeteren Descriptor-Abgleich",
+    },
 };
 #define Q9_CF_FIELD_COUNT (int)(sizeof(g_cf_fields) / sizeof(g_cf_fields[0]))
 
@@ -84,24 +115,49 @@ static const q9_field_schema_t g_cf_fields[] = {
    EIN Typ mit einem "writable"-Bool statt zwei getrennter Typen (Andreas: "Schreibzugriff:
    Ja/Nein fuer RAM-Simulation sonst ROM"). */
 static const q9_field_schema_t g_memory_fields[] = {
-    { "name", Q9_FIELD_STR, 1, 0, 0, 0, NULL,
-      "Instanzname (z.B. \"sysram\")" },
-    { "description", Q9_FIELD_STR, 0, 0, 0, 0, NULL,
-      "Kurzbeschreibung, z.B. \"Systemspeicher mit direktem CPU-Zugriff\"" },
-    { "start_address", Q9_FIELD_INT, 1, 1, 0, 0xFFFFFFFFL, NULL,
-      "Startadresse des Fensters (32 Bit)" },
-    { "end_address", Q9_FIELD_INT, 1, 1, 0, 0xFFFFFFFFL, NULL,
-      "Endadresse des Fensters (32 Bit, einschliesslich)" },
-    { "color_id", Q9_FIELD_INT, 0, 1, 0, 15, NULL,
-      "Farb-ID fuer OS-9s MemList (ARBEITSPLAN 5.19 \"colored RAM\")" },
-    { "writable", Q9_FIELD_BOOL, 1, 0, 0, 0, NULL,
-      "yes = RAM-Simulation (beschreibbar), no = ROM-Simulation (nur lesend)" },
-    { "init_image", Q9_FIELD_STR, 0, 0, 0, 0, NULL,
-      "Preload-Image fuer ROM-Simulation (Pfad relativ zur Config-Datei)" },
-    { "save_after_session", Q9_FIELD_BOOL, 0, 0, 0, 0, NULL,
-      "yes = Inhalt nach Sitzungsende zuruecksichern (NVRAM-Simulation)" },
-    { "descriptor", Q9_FIELD_BOOL, 0, 0, 0, 0, NULL,
-      "wird fuer dieses Geraet ein OS-9-Descriptor gebraucht -- reine Info, bei Speicher meist no" },
+    {
+        .name = "name", .kind = Q9_FIELD_STR, .required = 1,
+        .desc = "Instanzname (z.B. \"sysram\")",
+    },
+    {
+        .name = "description", .kind = Q9_FIELD_STR,
+        .desc = "Kurzbeschreibung, z.B. \"Systemspeicher mit direktem CPU-Zugriff\"",
+    },
+    {
+        .name = "start_address", .kind = Q9_FIELD_INT, .required = 1, .has_range = 1,
+        .min = 0, .max = 0xFFFFFFFFL,
+        .desc = "Startadresse des Fensters (32 Bit)",
+    },
+    {
+        .name = "end_address", .kind = Q9_FIELD_INT, .required = 1, .has_range = 1,
+        .min = 0, .max = 0xFFFFFFFFL,
+        .desc = "Endadresse des Fensters (32 Bit, einschliesslich)",
+    },
+    {
+        .name = "color_id", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 15,
+        .desc = "Farb-ID fuer OS-9s MemList (ARBEITSPLAN 5.19 \"colored RAM\")",
+    },
+    {
+        .name = "writable", .kind = Q9_FIELD_BOOL, .required = 1,
+        .desc = "yes = RAM-Simulation (beschreibbar), no = ROM-Simulation (nur lesend)",
+    },
+    {
+        .name = "init_image", .kind = Q9_FIELD_STR,
+        .desc = "Preload-Image fuer ROM-Simulation (Pfad relativ zur Config-Datei)",
+    },
+    {
+        .name = "save_after_session", .kind = Q9_FIELD_BOOL,
+        .desc = "yes = Inhalt nach Sitzungsende zuruecksichern (NVRAM-Simulation)",
+    },
+    {
+        .name = "descriptor", .kind = Q9_FIELD_BOOL,
+        .desc = "braucht dieses Geraet einen OS-9-Descriptor (Default: no -- Speicher braucht i.d.R. keinen)",
+    },
+    {
+        .name = "descriptorName", .kind = Q9_FIELD_STR,
+        .depends_on = "descriptor", .depends_on_value = "yes",
+        .desc = "Descriptorname -- nur relevant wenn descriptor=yes",
+    },
 };
 #define Q9_MEMORY_FIELD_COUNT (int)(sizeof(g_memory_fields) / sizeof(g_memory_fields[0]))
 
@@ -199,6 +255,20 @@ int q9_devschema_check_bool(const q9_field_schema_t *f, const char *val, char *e
     return -1;
 }
 
+int q9_devschema_field_relevant(const q9_field_schema_t *f, const char *other_field_current_value)
+{
+    if (!f) {
+        return 0;
+    }
+    if (!f->depends_on) {
+        return 1;                                          /* keine Bedingung -- immer relevant */
+    }
+    if (!other_field_current_value) {
+        return 0;                                          /* Bedingung existiert, Wert unbekannt -> vorsichtig "nicht relevant" */
+    }
+    return strcmp(other_field_current_value, f->depends_on_value) == 0;
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF devschema.c                                                                         Ver. 1.10
+// EOF devschema.c                                                                         Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
