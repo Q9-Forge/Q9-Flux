@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.h                                                                      Ver. 1.20
+// File:   boardcfg.h                                                                      Ver. 1.30
 // Owner:  AF
 // Desc.:  5.19: Board-Konfigurationsdatei fuer den Q9-Emulator (INI-artig, C99-Parser ohne
 //         Fremdbibliothek, s. docs/HWCONFIG.md Abschnitt 3). Erster Positionsparameter der
@@ -23,6 +23,9 @@
 // 26-08-07│ 1.20 │ 5.14: net_hostfwd in [board] -- Host->Gast-Portweiterleitung fuer     │ AF
 //         │      │ net=slirp (vmnet_ip/_gateway/_netmask wiederverwendet, s. dortige      │
 //         │      │ Kommentare)                                                            │
+// 26-08-14│ 1.30 │ q9_cfg_cf_t.descriptor (String) ersetzt durch has_descriptor (Bool) +   │ Cld
+//         │      │ descriptor_name (String) -- projektweit einheitliche descriptor-        │
+//         │      │ Bedeutung (s. devschema.c), alle betroffenen .q9-Dateien mitmigriert    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARDCFG_H
 #define Q9_BOARDCFG_H
@@ -38,7 +41,13 @@
 
 typedef struct {
     char path[Q9_CFG_PATH_MAX];              /* absoluter/relativer Image-Pfad (bereits aufgeloest) */
-    char descriptor[Q9_CFG_PATH_MAX];        /* optionaler OS-9-Descriptor fuer ROM-Generator       */
+    /* 2026-08-14: "descriptor" ist projektweit (auch bei kuenftigen Nicht-CF-Geraeten, s.
+       devschema.c "memory") ein Bool -- braucht dieses Geraet ueberhaupt einen OS-9-Descriptor
+       (bei CF Default yes). Der bisherige Descriptor-NAME-String (fuer den ROM-Generator, s.
+       ARBEITSPLAN 5.20, noch nicht gebaut) heisst jetzt descriptor_name und ist nur relevant, wenn
+       has_descriptor gesetzt ist -- ersetzt das alte, gleichnamige Feld "descriptor" (String). */
+    int  has_descriptor;                     /* .q9-Key "descriptor" = yes/no, Default yes           */
+    char descriptor_name[Q9_CFG_PATH_MAX];   /* .q9-Key "descriptor_name" (ersetzt altes "descriptor")*/
     int  bus;                                /* Q9_CFG_BUS_*                                        */
     int  unit;                               /* 0 = Master, 1 = Slave                              */
     int  format;                             /* Q9_CF_FMT_* (q9board.h): AUTO/RBF/PCF                 */

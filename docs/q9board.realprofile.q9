@@ -17,7 +17,8 @@ base       = 0xFFFFE000
 start_sector = 0
 length_sectors = 0x800000
 descriptor_lsn = 0
-descriptor = ../local_images/c0
+descriptor = yes
+descriptor_name = ../local_images/c0
 image      = ../local_images/OS9SYS.cf_profile_test.hda
 
 [d0]
@@ -28,7 +29,8 @@ base       = 0xFFFFE100
 start_sector = 0
 length_sectors = 0x3FF800
 descriptor_lsn = 64
-descriptor = ../local_images/d0
+descriptor = yes
+descriptor_name = ../local_images/d0
 image      = ../local_images/q9-d0-pcf-2gb.img
 
 [e0]
@@ -39,7 +41,8 @@ base       = 0xFFFFE200
 start_sector = 0
 length_sectors = 0x200000
 descriptor_lsn = 64
-descriptor = ../local_images/e0-pcf
+descriptor = yes
+descriptor_name = ../local_images/e0-pcf
 image      = ../local_images/q9-e-shared-2gb.img
 
 [e1]
@@ -50,5 +53,6 @@ base       = 0xFFFFE200
 start_sector = 0
 length_sectors = 0x1FFFC0
 descriptor_lsn = 0x200040
-descriptor = ../local_images/e1
+descriptor = yes
+descriptor_name = ../local_images/e1
 image      = ../local_images/q9-e-shared-2gb.img

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   08_test_devschema.c                                                             Ver. 1.20
+// File:   08_test_devschema.c                                                             Ver. 1.30
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Rauchtest fuer devschema.h/.c -- kein Board, keine CPU, reine Datenstruktur-
 //         Pruefung (Registry-Lookup, Int-Grenzen, Enum-Mitgliedschaft, Feld-Suche).
@@ -97,6 +97,29 @@ int main(void)
         }
     }
 
+    printf("=== devschema: descriptor-Konflikt geloest (2026-08-14, projektweit Bool) ===\n");
+    {
+        int desc_idx, name_idx;
+        desc_idx = q9_devschema_find_field(cf, "descriptor");
+        check("cf.descriptor ist Q9_FIELD_BOOL", cf->fields[desc_idx].kind == Q9_FIELD_BOOL ? 0 : -1, 1);
+        check("cf.descriptor: 'yes' ist gueltig",
+              q9_devschema_check_bool(&cf->fields[desc_idx], "yes", err, sizeof(err)), 1);
+
+        name_idx = q9_devschema_find_field(cf, "descriptor_name");
+        check("cf.descriptor_name gefunden", name_idx >= 0 ? 0 : -1, 1);
+        check("cf.descriptor_name ist Q9_FIELD_STR", cf->fields[name_idx].kind == Q9_FIELD_STR ? 0 : -1, 1);
+
+        printf("=== devschema: q9_devschema_field_relevant (depends_on) ===\n");
+        check("descriptor_name relevant wenn descriptor='yes'",
+              q9_devschema_field_relevant(&cf->fields[name_idx], "yes") ? 0 : -1, 1);
+        check("descriptor_name NICHT relevant wenn descriptor='no'",
+              q9_devschema_field_relevant(&cf->fields[name_idx], "no") ? -1 : 0, 1);
+        check("descriptor_name NICHT relevant wenn aktueller Wert unbekannt (NULL)",
+              q9_devschema_field_relevant(&cf->fields[name_idx], NULL) ? -1 : 0, 1);
+        check("image (kein depends_on) ist IMMER relevant, unabhaengig vom uebergebenen Wert",
+              q9_devschema_field_relevant(&cf->fields[q9_devschema_find_field(cf, "image")], NULL) ? 0 : -1, 1);
+    }
+
     printf("=== devschema: Schema 'memory' (RAM/ROM/NVRAM) ===\n");
     {
         const q9_devschema_t *mem = q9_devschema_lookup("memory");
@@ -121,6 +144,17 @@ int main(void)
 
             idx = q9_devschema_find_field(mem, "start_address");
             check("start_address ist Pflichtfeld", mem->fields[idx].required ? 0 : -1, 1);
+
+            idx = q9_devschema_find_field(mem, "descriptor");
+            check("memory.descriptor ist Q9_FIELD_BOOL (dieselbe Bedeutung wie bei cf)",
+                  mem->fields[idx].kind == Q9_FIELD_BOOL ? 0 : -1, 1);
+            {
+                int name_idx = q9_devschema_find_field(mem, "descriptor_name");
+                check("memory.descriptor_name gefunden (\"fuer alle\" -- Andreas' Vorgabe)",
+                      name_idx >= 0 ? 0 : -1, 1);
+                check("memory.descriptor_name nur relevant wenn descriptor='yes'",
+                      q9_devschema_field_relevant(&mem->fields[name_idx], "yes") ? 0 : -1, 1);
+            }
         }
     }
 
@@ -130,5 +164,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 08_test_devschema.c                                                                 Ver. 1.20
+// EOF 08_test_devschema.c                                                                 Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
