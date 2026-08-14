@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.c                                                                      Ver. 1.10
+// File:   boardcfg.c                                                                      Ver. 1.30
 // Owner:  AF
 // Desc.:  Implementierung des Board-Config-Parsers, siehe boardcfg.h. INI-artig, C99, ohne
 //         Fremdbibliothek. Bewusst schlank: nur die Abschnitte/Keys, die 5.19a heute braucht
@@ -12,6 +12,14 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-07-16│ 1.00 │ 5.19: Erster Wurf                                                        │ CF
 // 26-08-07│ 1.10 │ 5.14: net_hostfwd-Key (Host->Gast-Portweiterleitung fuer net=slirp)       │ AF
+// 26-08-14│ 1.20 │ descriptor-Key jetzt Bool (yes/no) statt Pfad, neuer descriptorName-Key   │ Cld
+//         │      │ (Nachtrag: Versionskopf war beim urspruenglichen Commit vergessen worden) │
+// 26-08-14│ 1.30 │ useSlot/slot-Keys (5.18-Fortsetzung): waehlen einen automatisch           │ Cld
+//         │      │ zugeteilten I/O-Tabellenplatz statt einer freien "base". Neue Funktion    │
+//         │      │ q9_cfg_cf_effective_base() -- einzige Stelle fuer diese Berechnung, ersetzt│
+//         │      │ drei bisher duplizierte Inline-Berechnungen (hier + zweimal              │
+//         │      │ q9boardrun.c). Nachvalidierung: useSlot=yes ohne slot= ist jetzt ein       │
+//         │      │ Parse-Fehler                                                              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "boardcfg.h"
 #include "q9board.h"                                     /* Q9_CF_FMT_*                            */
@@ -198,6 +206,15 @@ static int cfg_parse_u32(const char *v, uint32_t *out)
     return 0;
 }
 
+uint32_t q9_cfg_cf_effective_base(const q9_cfg_cf_t *cf)
+{
+    if (cf->use_slot) {
+        int slot = (cf->slot >= 0) ? cf->slot : 0;    /* defensiv, s. Kopfkommentar in boardcfg.h */
+        return 0xFFFF0000u + (uint32_t)slot * 256u;
+    }
+    return cf->base ? cf->base : (cf->bus == Q9_CFG_BUS_RC2014 ? Q9_BOARD_CF2_BASE : Q9_BOARD_CF_BASE);
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q9_board_cfg_load
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -269,6 +286,8 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cur_cf->unit   = 0;
                 cur_cf->format = Q9_CF_FMT_AUTO;
                 cur_cf->base = 0;
+                cur_cf->use_slot = 0;
+                cur_cf->slot = -1;                        /* -1 = nicht gesetzt, s. boardcfg.h */
                 cur_cf->start_sector = 0;
                 cur_cf->length_sectors = 0;
                 cur_cf->descriptor_lsn = 0;
@@ -368,6 +387,23 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                     fclose(f);
                     return -1;
                 }
+            } else if (cfg_ieq(key, "useSlot")) {
+                /* 2026-08-14 (ARBEITSPLAN 5.18-Fortsetzung): waehlt zwischen einem automatisch
+                   zugeteilten I/O-Tabellenplatz und der freien "base" oben -- gewinnt bei yes
+                   ueber "base", s. cf_entry_base() in q9boardrun.c und boardcfg.h-Kommentar. */
+                if (cfg_parse_bool(val, &cur_cf->use_slot) != 0) {
+                    snprintf(err, err_max, "Zeile %d: ungueltiger useSlot-Wert '%s' (yes|no)", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+            } else if (cfg_ieq(key, "slot")) {
+                uint32_t v;
+                if (cfg_parse_u32(val, &v) != 0 || v > 255u) {
+                    snprintf(err, err_max, "Zeile %d: ungueltiger slot-Wert '%s' (0-255)", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+                cur_cf->slot = (int)v;
             } else if (cfg_ieq(key, "start_sector") || cfg_ieq(key, "offset_sector")) {
                 if (cfg_parse_u32(val, &cur_cf->start_sector) != 0) {
                     snprintf(err, err_max, "Zeile %d: ungueltiger Startsektor '%s'", lineno, val);
@@ -399,17 +435,21 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
     }
     fclose(f);
 
-    /* Nachvalidierung: jeder CF-Abschnitt braucht ein Image; Bus/Unit-Kollision abfangen. */
+    /* Nachvalidierung: jeder CF-Abschnitt braucht ein Image; useSlot ohne slot abfangen;
+       Bus/Unit-Kollision abfangen (nutzt jetzt q9_cfg_cf_effective_base() -- beruecksichtigt
+       useSlot/slot, s. dortiger Kommentar). */
     for (int i = 0; i < cfg->cf_count; i++) {
         if (cfg->cf[i].path[0] == '\0') {
             snprintf(err, err_max, "CF-Abschnitt #%d ohne 'image ='", i + 1);
             return -1;
         }
+        if (cfg->cf[i].use_slot && cfg->cf[i].slot < 0) {
+            snprintf(err, err_max, "CF-Abschnitt #%d: useSlot=yes aber 'slot =' fehlt", i + 1);
+            return -1;
+        }
         for (int j = 0; j < i; j++) {
-            uint32_t bj = cfg->cf[j].base ? cfg->cf[j].base :
-                          (cfg->cf[j].bus == Q9_CFG_BUS_RC2014 ? 0xFFFFC010u : 0xFFFFE000u);
-            uint32_t bi = cfg->cf[i].base ? cfg->cf[i].base :
-                          (cfg->cf[i].bus == Q9_CFG_BUS_RC2014 ? 0xFFFFC010u : 0xFFFFE000u);
+            uint32_t bj = q9_cfg_cf_effective_base(&cfg->cf[j]);
+            uint32_t bi = q9_cfg_cf_effective_base(&cfg->cf[i]);
             if (bj == bi && cfg->cf[j].unit == cfg->cf[i].unit &&
                 strcmp(cfg->cf[j].path, cfg->cf[i].path) != 0) {
                 snprintf(err, err_max,
@@ -423,5 +463,5 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.c                                                                          Ver. 1.10
+// EOF boardcfg.c                                                                          Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
