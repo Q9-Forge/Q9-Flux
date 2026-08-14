@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.h                                                                     Ver. 1.20
+// File:   devschema.h                                                                     Ver. 1.30
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Selbstbeschreibende Feld-Schemata je Geraetetyp (Feldname, Typ, Min/Max oder
 //         Enum-Werte, Freitext-Beschreibung) -- Andreas' Idee (2026-08-13): "ein kleines
@@ -21,13 +21,14 @@
 //         Bool-Feld "writable" statt zwei getrennter Typen, s. dortige Diskussion "Schreibzugriff:
 //         Ja/Nein fuer RAM-Simulation sonst ROM").
 //
-//         Hinweis fuer spaeter (2026-08-13, beim Bau des "memory"-Schemas aufgefallen, NICHT
-//         geloest): das bestehende "cf"-Schema hat ein Feld "descriptor" als STRING
-//         (Descriptor-NAME fuer den ROM-Generator, 1:1 aus q9_cfg_cf_t uebernommen). Andreas'
-//         spaetere Editor-Planung meint mit "Descriptor" dagegen ein reines Ja/Nein-Infofeld ("wird
-//         fuer dieses Geraet ueberhaupt einer gebraucht"). Beide Bedeutungen bestehen aktuell
-//         nebeneinander (cf=String-Name, memory=Bool-Flag) -- bewusst nicht vereinheitlicht, bis
-//         Andreas entscheidet, was er tatsaechlich will.
+//         GELOEST (2026-08-14, mit Andreas): "descriptor" ist jetzt PROJEKTWEIT einheitlich ein
+//         Q9_FIELD_BOOL ("braucht dieses Geraet ueberhaupt einen Descriptor" -- bei "memory" i.d.R.
+//         no, bei allen anderen i.d.R. yes). Der bisherige String-Wert (bei "cf": Descriptor-NAME
+//         fuer den ROM-Generator) heisst jetzt ueberall "descriptorName" und ist nur relevant,
+//         wenn descriptor=yes -- dafuer der neue depends_on-Mechanismus (s.u.). Betraf ein ECHTES,
+//         bereits von boardcfg.c geparstes .q9-Schluesselwort (in 9 realen Config-Dateien im Repo
+//         genutzt) -- boardcfg.c UND alle betroffenen .q9-Dateien wurden mitgezogen (nicht nur das
+//         Schema), s. dortige Kommentare/Commit.
 //
 //         ZWEITER, staerkerer Verwendungszweck (Andreas, 2026-08-13): nicht nur Validierung beim
 //         Einlesen, sondern Grundlage fuer einen KUENFTIGEN CONFIG-EDITOR -- der kann dann rein aus
@@ -62,6 +63,10 @@
 //         │      │ statt der tatsaechlichen .q9-Datei-Schluesselwoerter (image/type) --     │
 //         │      │ korrigiert, plus fehlende Bus/Unit/Format-Synonyme (secondary/0/1/fat)   │
 //         │      │ ergaenzt, per grep gegen ALLE echten .q9-Dateien im Repo verifiziert      │
+// 26-08-14│ 1.30 │ descriptor-Konflikt geloest: projektweit einheitlich Q9_FIELD_BOOL, neues │ Cld
+//         │      │ depends_on/depends_on_value + q9_devschema_field_relevant() fuer bedingt   │
+//         │      │ relevante Felder (descriptorName nur wenn descriptor=yes). boardcfg.c +     │
+//         │      │ alle 9 echten .q9-Dateien im Repo mitgezogen (kein reines Schema-Update)   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVSCHEMA_H
 #define Q9_DEVSCHEMA_H
@@ -88,6 +93,15 @@ typedef struct {
     long                    min, max;      /* nur wenn has_range                                   */
     const char *const     *enum_values;   /* nur Q9_FIELD_ENUM: NULL-terminiertes Array           */
     const char             *desc;          /* Freitext -- Diagnose, spaeter evtl. Doku-Generierung */
+    /* 2026-08-14: bedingte Relevanz -- dieses Feld ist nur relevant/sinnvoll ausfuellbar, wenn das
+       Feld NAMENS depends_on aktuell den Wert depends_on_value hat (z.B. "descriptorName" ist nur
+       relevant, wenn "descriptor"=="yes"). depends_on==NULL (Default) heisst "immer relevant". Ein
+       kuenftiger Editor kann das Feld dann ausgegraut/versteckt lassen, bis die Bedingung erfuellt
+       ist -- s. q9_devschema_field_relevant(). Bewusst KEIN allgemeiner Ausdrucks-/Formel-
+       Mechanismus (nur "Feld X == Wert Y"), das deckt den heutigen Bedarf; mehr waere Vorratshaltung
+       ohne konkreten Anwendungsfall. */
+    const char             *depends_on;
+    const char             *depends_on_value;
 } q9_field_schema_t;
 
 typedef struct {
@@ -131,6 +145,18 @@ int q9_devschema_check_enum(const q9_field_schema_t *f, const char *val, char *e
 //           sensitiv, wie die bestehenden Enum-Werte). 0 bei Erfolg, sonst -1 + Meldung in err.
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_devschema_check_bool(const q9_field_schema_t *f, const char *val, char *err, unsigned err_max);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_devschema_field_relevant
+// Desc.:    Prueft die bedingte Relevanz eines Feldes (s. depends_on/depends_on_value oben). Gibt 1
+//           zurueck, wenn f->depends_on==NULL (immer relevant) ODER other_field_current_value mit
+//           f->depends_on_value uebereinstimmt; sonst 0. other_field_current_value ist der
+//           AKTUELLE Wert des Feldes, auf das depends_on verweist -- der Aufrufer (Parser/Editor)
+//           kennt diesen Wert bereits (schon eingelesen/eingegeben) und uebergibt ihn direkt; diese
+//           Funktion selbst haelt keinen Formular-/Config-Zustand.
+// Call:     if (q9_devschema_field_relevant(&schema->fields[idx], "yes")) { ... }
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_devschema_field_relevant(const q9_field_schema_t *f, const char *other_field_current_value);
 
 #endif /* Q9_DEVSCHEMA_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
