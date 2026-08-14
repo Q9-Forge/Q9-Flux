@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.h                                                                      Ver. 1.30
+// File:   boardcfg.h                                                                      Ver. 1.40
 // Owner:  AF
 // Desc.:  5.19: Board-Konfigurationsdatei fuer den Q9-Emulator (INI-artig, C99-Parser ohne
 //         Fremdbibliothek, s. docs/HWCONFIG.md Abschnitt 3). Erster Positionsparameter der
@@ -26,6 +26,8 @@
 // 26-08-14│ 1.30 │ q9_cfg_cf_t.descriptor (String) ersetzt durch has_descriptor (Bool) +   │ Cld
 //         │      │ descriptor_name (String) -- projektweit einheitliche descriptor-        │
 //         │      │ Bedeutung (s. devschema.c), alle betroffenen .q9-Dateien mitmigriert    │
+// 26-08-14│ 1.40 │ q9_cfg_cf_t.use_slot/slot -- devschema.c useSlot/slot jetzt tatsaechlich  │ Cld
+//         │      │ wirksam (nicht mehr nur Schema-Beschreibung), s. q9boardrun.c            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARDCFG_H
 #define Q9_BOARDCFG_H
@@ -55,6 +57,15 @@ typedef struct {
     int  unit;                               /* 0 = Master, 1 = Slave                              */
     int  format;                             /* Q9_CF_FMT_* (q9board.h): AUTO/RBF/PCF                 */
     uint32_t base;                           /* ATA-Base; 0 = Standard-Base anhand bus             */
+    /* 2026-08-14 (ARBEITSPLAN 5.18-Fortsetzung, devschema.c useSlot/slot jetzt wirksam): Wahl
+       zwischen einem automatisch zugeteilten I/O-Tabellenplatz (256-Byte-Raster ab $FFFF0000,
+       s. m68krt.c g_io_table) und der freien "base" oben. use_slot=1 GEWINNT ueber "base" --
+       q9boardrun.c berechnet die Adresse dann aus slot statt base zu lesen. slot=-1 bedeutet
+       "nicht gesetzt" (Sentinel, s. boardcfg.c cfg_parse_u32 arbeitet mit uint32_t, daher eigenes
+       int-Feld mit -1-Sentinel statt 0 -- 0 waere ein GUELTIGER Slot und liesse sich nicht von
+       "vergessen" unterscheiden). use_slot=1 UND slot==-1 ist ein Parse-Fehler (s. boardcfg.c). */
+    int      use_slot;                       /* .q9-Key "useSlot" = yes/no, Default no                */
+    int      slot;                           /* .q9-Key "slot" = 0-255, -1 = nicht gesetzt            */
     uint32_t start_sector;                   /* Host-Startsektor fuer Gast-LBA 0 (Default 0)       */
     uint32_t length_sectors;                 /* logische Partitionslaenge fuer Descriptor/Pruefung  */
     uint32_t descriptor_lsn;                 /* PD_LSNOffs im OS-9-Descriptor                   */
@@ -101,7 +112,21 @@ void q9_board_cfg_resolve_path(const char *arg, char *out, unsigned out_max);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsigned err_max);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_cfg_cf_effective_base
+// Desc.:    Berechnet die tatsaechliche ATA-Basisadresse fuer einen CF-Abschnitt -- EINZIGE Stelle
+//           fuer diese Regel (2026-08-14 aus drei duplizierten Inline-Berechnungen zusammengezogen,
+//           boardcfg.c-Nachvalidierung + zweimal q9boardrun.c): use_slot=1 GEWINNT ($FFFF0000 +
+//           slot*256), sonst base (falls != 0), sonst der Bus-Standard (Onboard $FFFFE000,
+//           RC2014 $FFFFC010). Ruft NICHT cf->use_slot/slot auf Gueltigkeit ab (das ist
+//           q9_board_cfg_load()s Aufgabe bei der Nachvalidierung) -- bei use_slot=1 UND slot==-1
+//           (eigentlich ein Config-Fehler, der load() schon abgefangen haben sollte) wird slot als
+//           0 behandelt, rein defensiv, kein Crash.
+// Call:     uint32_t addr = q9_cfg_cf_effective_base(&cfg.cf[i]);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+uint32_t q9_cfg_cf_effective_base(const q9_cfg_cf_t *cf);
+
 #endif /* Q9_BOARDCFG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.h                                                                          Ver. 1.20
+// EOF boardcfg.h                                                                          Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
