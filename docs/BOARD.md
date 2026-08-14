@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   BOARD.md                                                                        Ver. 1.00
+# File:   BOARD.md                                                                        Ver. 1.10
 # Owner:  AF
 # Desc.:  Hardware-Referenz fuer das CB030-Board (68030-SBC) — Speicherkarte + Peripherie-Register.
 #         Grundlage fuer Schritt 5.2 (ARBEITSPLAN.md): Musashi-Board-Emulation zur Bootstrap-
@@ -10,6 +10,14 @@
 # Date    │ Ver. │ Description                                                             │ By
 #─────────┼──────┼─────────────────────────────────────────────────────────────────────────┼──────
 # 26-07-04│ 1.00 │ Initiale Version: Speicherkarte, 68681-DUART, CF-Interface (Andreas)     │ AF
+# 26-08-14│ 1.10 │ Nachgepflegt (war seit 1.00 nicht mehr aktualisiert, fehlten 5 seither   │ Cld
+#         │      │ dazugekommene Geraete): Speicherkarte um Netz-Terminals/QUICC/MC6845/    │
+#         │      │ CLUT/RTC72421/CF2 ergaenzt, CF-Fenstergroesse korrigiert (256 Byte statt  │
+#         │      │ faelschlich 4 KByte), Emulations-Architektur-Abschnitt auf den aktuellen  │
+#         │      │ Stand verwiesen (5.17 Geraete-Registry, 5.18 I/O-Tabelle -- Pseudocode    │
+#         │      │ als historischen 5.2a-Ausgangspunkt markiert statt geloescht), Offene-     │
+#         │      │ Punkte-Liste abgehakt, Dateinamen-Tippfehler am Fussende (CB030.md statt  │
+#         │      │ BOARD.md) korrigiert                                                      │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # CB030 — Hardware-Referenz
@@ -40,16 +48,35 @@ Zwei Zustände: **Reset** (unmittelbar nach Reset, Flash-ROM liegt bei Adresse 0
 | — | | `0x0000_0000`–`0x03FF_FFFF` | 64 MByte |
 | — | | `0x0000_0000`–`0x07FF_FFFF` | 128 MByte |
 | Flash-ROM (29F040, 32-pin) | `0x0000_0000`–`0x0007_FFFF`, **gespiegelt bis zum oberen Byte des Adressraums** (`0xFEFF_FFFF`) | **liegt EINMAL bei `0xFE00_0000`–`0xFE07_FFFF`, KEINE Spiegelung mehr** | 512 KByte |
+| VRAM (Q9-Frame-Framebuffer, Emulator-Erweiterung, kein reales CB030-Gerät) | | `0xFD00_0000`–… (Default-Größe 1 MByte, bis 16 MByte) | 1–16 MByte |
 | I/O (gesamt) | `0xFFFF_0000`–`0xFFFF_FFFF` | `0xFFFF_0000`–`0xFFFF_FFFF` | 64 KByte |
+| — Netz-Terminals x1–x8 (Q9-Erweiterung) | `0xFFFF_1010`–`0xFFFF_108F` | gleich | 128 Byte (16 Byte/Kanal) |
+| — QUICC-Ethernet (Q9-Erweiterung) | `0xFFFF_2000`–`0xFFFF_3FFF` | gleich | 8 KByte |
 | — REMAP-Register | `0xFFFF_8000`–`0xFFFF_8FFF` | gleich | 4 KByte |
 | — TI_IRQ_OFF | `0xFFFF_9000`–`0xFFFF_97FF` | gleich | 2 KByte |
 | — TI_IRQ_ON | `0xFFFF_9800`–`0xFFFF_9FFF` | gleich | 2 KByte |
-| — CF-Card | `0xFFFF_E000`–`0xFFFF_EFFF` | gleich | 4 KByte |
+| — MC6845-CRT-Controller (Q9-Frame) | `0xFFFF_A000`–`0xFFFF_A001` | gleich | 2 Byte |
+| — CLUT (Q9-Frame) | `0xFFFF_A010`–`0xFFFF_A013` | gleich | 4 Byte |
+| — RC2014-SC145-Zweitinterface (CF2, Q9-Erweiterung) | `0xFFFF_C010`–`0xFFFF_C017` | gleich | 8 Byte |
+| — RTC72421 (Echtzeituhr) | `0xFFFF_D000`–`0xFFFF_D00F` | gleich | 16 Byte |
+| — Onboard-CF-Card | `0xFFFF_E000`–`0xFFFF_E0FF` | gleich | 256 Byte |
 | — UART (68681 DUART) | `0xFFFF_F000`–`0xFFFF_FFFF` | gleich | 4 KByte |
 
-Die RAM-Größe hängt von der bestückten SIM-Speicherkarte ab (16/32/64/128 MB) —
-kein fester Wert, muss beim Board-Setup konfigurierbar sein (passt zur Idee einer
-Q9-Systemkonfiguration, `src/kernel/config.h`, Schritt 4.9).
+Die RAM-Größe hängt bei der **realen** CB030-Hardware von der bestückten SIM-Speicherkarte ab
+(16/32/64/128 MB). **Der Emulator bildet aktuell nur 16 MByte fest ab**
+(`BOARD_RAM_BYTES`, `src/kernel/q9boardrun.c`) — keine der anderen drei Bestückungen ist
+konfigurierbar; s. „Offene Punkte" unten.
+
+Die drei Q9-Erweiterungen (Netz-Terminals, VRAM/MC6845/CLUT als Q9-Frame-Videopfad, RC2014-
+Zweitinterface) existieren auf der realen CB030-Hardware nicht — sie sind Q9-Flux-eigene
+Zutaten, die denselben Adressraum nutzen wie das reale Board, aber kein Gegenstück in
+Andreas' physischer CB030 haben.
+
+**Vollstaendige Register-Details** fuer die neueren Geraete stehen jeweils in ihrem eigenen
+Header (`src/devices/<name>/<name>.h`), nicht hier verdoppelt (dieses Dokument ist urspruenglich
+vor der Geraete-pro-Unterordner-Konvention entstanden, s. ARBEITSPLAN 6.6) — DUART und
+Onboard-CF unten sind die historische Ausnahme, weil sie bereits vor dieser Konvention
+dokumentiert waren.
 
 ### Reset → Remap-Übergang (Andreas, 2026-07-04)
 
@@ -129,7 +156,10 @@ Basisadresse `0xFFFF_F000`. 2 Ports, Oszillator 3,842 MHz.
 
 ## Compact-Flash-Interface
 
-Basisadresse `0xFFFF_E000`.
+Basisadresse `0xFFFF_E000` (Onboard), Fenster **256 Byte** (`0xFFFF_E000`–`0xFFFF_E0FF`,
+`Q9_BOARD_CF_TOP`, `q9board.h`) — nur die ersten 8 Byte sind tatsaechlich belegte Register,
+der Rest des 256-Byte-Fensters ist ungenutzt (korrigiert 2026-08-14: fruehere Versionen
+dieses Dokuments nannten hier faelschlich 4 KByte).
 
 | Register | Adresse | Bedeutung |
 |----------|---------|-----------|
@@ -142,15 +172,21 @@ Basisadresse `0xFFFF_E000`.
 | CF2427 | `0xFFFF_E006` | CF LBA-Adresse Bits 24–27 |
 | CFstat | `0xFFFF_E007` | CF-Status-/Kommandoregister |
 
+**RC2014-SC145-Zweitinterface (CF2, Q9-Erweiterung, ARBEITSPLAN 5.19a):** dieselbe
+Registerbelegung, nur andere Basisadresse `0xFFFF_C010` (Fenster 8 Byte,
+`0xFFFF_C010`–`0xFFFF_C017`, `Q9_BOARD_CF2_BASE/TOP`) — kein eigenes reales CB030-Gerät,
+nutzt dieselbe Vtable (`q9_devtype_cf`, `q9board.c`) wie das Onboard-Interface, nur mit
+eigener `q9_cf_t`-Instanz und eigener Basisadresse. Wird nur registriert, wenn die
+Board-Config tatsaechlich ein Image dort anhaengt (`q9_m68krt_attach_cf_at`).
+
 ---
 
 ## Emulations-Architektur (Andreas + Claudia, 2026-07-04 abends)
 
-Musashi ruft bei jedem Speicherzugriff eine Host-Funktion auf (`m68k_read_memory_8/16/32`,
-`m68k_write_memory_8/16/32`, s. Schritt 5.1). Diese Funktionen müssen anhand der Adresse
-entscheiden, welches Gerät gemeint ist — als einfache if/else-Kette. **I/O wird zuerst
-geprüft** (der 0xFFFF_xxxx-Bereich ist in beiden REMAP-Zuständen erreichbar — das Boot-ROM
-initialisiert die DUART vor dem Remap), danach die Zustandsweiche:
+**Historischer Ausgangspunkt (5.2a, 2026-07-04) — so NICHT mehr aktuell:** Musashi ruft bei
+jedem Speicherzugriff eine Host-Funktion auf (`m68k_read_memory_8/16/32`,
+`m68k_write_memory_8/16/32`). Der allererste Entwurf entschied anhand der Adresse per
+schlichter if/else-Kette, welches Geraet gemeint ist:
 
 ```
 adr in [0xFFFF_8000, 0xFFFF_8FFF] → REMAP-Trigger (jeder Zugriff, Wert egal)
@@ -161,17 +197,31 @@ adr in [0xFFFF_F000, 0xFFFF_FFFF] → UART (68681)
 wenn NICHT remapped:
     adr <= 0xFEFF_FFFF          → ROM, gespiegelt (adr modulo ROM-Größe) — bis zum
                                   oberen Byte des Adressraums, s. Speicherkarte oben!
-                                  (Korrektur 2026-07-05: der 5.2a-Erstwurf hatte hier
-                                  fälschlich 0x0800_0000 — das echte Boot-ROM springt
-                                  vor dem REMAP-Trigger hoch nach 0xFE00_xxxx, sonst
-                                  würde ihm der Code unter dem PC wegremappt)
 sonst:                          (nach dem einen REMAP-Zugriff)
     adr < RAM_GROESSE           → RAM (häufigster Fall)
     adr in [0xFE00_0000, 0xFE07_FFFF] → ROM, EINMAL (kein Spiegeln mehr)
 ```
 
-Der REMAP-Zustand ("schon umgeschaltet: ja/nein") ist ein einzelner Merker in einer
-neuen Board-Zustandsstruktur — unabhängig von Musashis eigenem CPU-Zustand.
+**Aktueller Stand (2026-08-14), zwei grundlegende Umbauten seither, dieses Dokument
+absichtlich NICHT als zweite, konkurrierende Beschreibung fortgeschrieben — die eine
+massgebliche Quelle ist jetzt der Code selbst (`m68krt.c`) + ARBEITSPLAN 5.17/5.18:**
+
+1. **Geraete-Registry (5.17, 2026-07-14):** die hartkodierte if/else-Kette ist einer
+   generischen `q9_device_t`-Registry gewichen (`devreg.c/.h`) — jedes Geraet meldet
+   Adressfenster + Vtable an, `devreg_hit()` durchsucht die Registry statt einzelner
+   if-Zweige. Neue Geraete (RTC, QUICC, MC6845, CLUT, CF2, Netz-Terminals) kamen seither
+   ausschliesslich ueber diesen Weg dazu, nicht mehr als weitere if-Zweige.
+2. **RAM-Fast-Path + 256-Byte-I/O-Tabelle (5.18, 2026-08-13/14):** `m68krt.c`s
+   `m68k_read/write_memory_*`-Funktionen pruefen zuerst `ram_fast_hit()` (RAM-Zugriff im
+   remapped-Zustand, ein einziger Vergleich, faengt >99% aller Zugriffe ab), dann `devreg_hit()`
+   — das wiederum fuer Adressen ab `$FFFF0000` eine direkt indizierte 256-Byte-Tabelle nutzt
+   (`g_io_table`, `io_table_build()`) statt die Registry linear zu durchlaufen. Nur bei
+   mehreren Geraeten im selben 256-Byte-Slot (heute: MC6845+CLUT) faellt das auf den
+   ursprünglichen linearen Scan zurueck.
+
+Der REMAP-Zustand ("schon umgeschaltet: ja/nein") ist weiterhin ein einzelner Merker in der
+Board-Zustandsstruktur (`q9_board_t.remapped`) — unabhängig von Musashis eigenem CPU-Zustand,
+das hat sich nicht geaendert.
 
 **ROM-Inhalt**: Kommt aus einer Datei (das reale Boot-ROM-Image, proprietär —
 bleibt lokal, NICHT ins Repo, siehe Lizenzhinweis oben), beim Board-Start einmal komplett
@@ -307,13 +357,22 @@ bleiben im Windows-HAL, OS-9-Programme sehen normale Terminalsequenzen.
 
 - ~~REMAP-Verhalten~~ **geklärt** (s.o.): einmaliger Adresszugriff, kein Bit-Layout.
 - ~~TI_IRQ_ON/OFF~~ **geklärt** (s.o.): Adress-Trigger für einen Timer, IRQ3.
-- ~~Adress-Dispatch-Architektur~~ **geklärt** (s.o.): if/else-Kette, RAM zuerst.
-- Welche RAM-Bestückung nimmt das konkrete Boot-ROM an (16/32/64/128 MB)? Default-Annahme
-  für den ersten Versuch: 16 MB (kleinste Bestückung), konfigurierbar.
-- Welche CF-Kommandos (ATA-Subset) das Boot-ROM tatsächlich benutzt.
-- IRQ3-Timer: Frequenz/Periode noch nicht bekannt (nur dass er auf IRQ3 auslöst) — hängt
-  auch am noch offenen Zyklen-Budget pro `q9_kernel_step()`-Aufruf.
+- ~~Adress-Dispatch-Architektur~~ **geklärt, aber seither zweimal grundlegend umgebaut** (5.17
+  Geraete-Registry, 5.18 RAM-Fast-Path + I/O-Tabelle, s.o.) — die urspruengliche if/else-Kette
+  beschreibt nur noch den historischen Ausgangspunkt.
+- ~~RAM-Bestückung~~ **geklärt (2026-08-14): fest 16 MByte im Emulator** (`BOARD_RAM_BYTES`,
+  `q9boardrun.c`), NICHT konfigurierbar -- die reale Hardware unterstuetzt 16/32/64/128 MB
+  je nach SIM-Modul, der Emulator bildet bisher nur die kleinste Bestueckung nach.
+- ~~CF-Kommandos~~ **geklärt (s. `q9board.h` `Q9_BOARD_CF_CMD_*`):** READ SECTOR(S) (`0x20`),
+  WRITE SECTOR(S) (`0x30`), SET FEATURES (`0xEF`, fuer 8-Bit-Mode) -- deckt den vom Boot-ROM
+  tatsaechlich benutzten Befehlsumfang ab.
+- ~~IRQ3-Timer-Frequenz~~ **geklärt** (s.o. Abschnitt "Timer/Interrupt IRQ3"): 100 Hz, 10 ms
+  Periode (`Q9_BOARD_TIMER_PERIOD_MS`, `q9board.h`).
+- **Neu (2026-08-14):** dieses Dokument selbst braucht laufende Pflege bei jedem neuen Geraet
+  im I/O-Cluster -- war seit der Initialversion (2026-07-04) nicht mehr aktualisiert worden,
+  obwohl seither fuenf weitere Geraete dazukamen (RTC, QUICC, MC6845, CLUT, CF2). Kein Prozess
+  dafuer etabliert; ARBEITSPLAN-Eintraege sind die verlaesslichere laufende Quelle.
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF CB030.md                                                                            Ver. 1.00
+# EOF BOARD.md                                                                            Ver. 1.10
 #─────────────────────────────────────────────────────────────────────────────────────────────────
