@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   08_test_devschema.c                                                             Ver. 1.30
+// File:   08_test_devschema.c                                                             Ver. 1.40
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Rauchtest fuer devschema.h/.c -- kein Board, keine CPU, reine Datenstruktur-
 //         Pruefung (Registry-Lookup, Int-Grenzen, Enum-Mitgliedschaft, Feld-Suche).
@@ -120,6 +120,25 @@ int main(void)
               q9_devschema_field_relevant(&cf->fields[q9_devschema_find_field(cf, "image")], NULL) ? 0 : -1, 1);
     }
 
+    printf("=== devschema: cf.useSlot/slot (I/O-Tabellenplatz-Wahl, 5.18-Fortsetzung) ===\n");
+    {
+        int use_idx, slot_idx;
+        use_idx = q9_devschema_find_field(cf, "useSlot");
+        check("cf.useSlot gefunden", use_idx >= 0 ? 0 : -1, 1);
+        check("cf.useSlot ist Q9_FIELD_BOOL", cf->fields[use_idx].kind == Q9_FIELD_BOOL ? 0 : -1, 1);
+
+        slot_idx = q9_devschema_find_field(cf, "slot");
+        check("cf.slot gefunden", slot_idx >= 0 ? 0 : -1, 1);
+        check("cf.slot: 0 ist gueltig", q9_devschema_check_int(&cf->fields[slot_idx], 0, err, sizeof(err)), 1);
+        check("cf.slot: 255 ist gueltig", q9_devschema_check_int(&cf->fields[slot_idx], 255, err, sizeof(err)), 1);
+        check("cf.slot: 256 ist ungueltig (nur 0-255)",
+              q9_devschema_check_int(&cf->fields[slot_idx], 256, err, sizeof(err)), 0);
+        check("cf.slot relevant wenn useSlot='yes'",
+              q9_devschema_field_relevant(&cf->fields[slot_idx], "yes") ? 0 : -1, 1);
+        check("cf.slot NICHT relevant wenn useSlot='no'",
+              q9_devschema_field_relevant(&cf->fields[slot_idx], "no") ? -1 : 0, 1);
+    }
+
     printf("=== devschema: Schema 'memory' (RAM/ROM/NVRAM) ===\n");
     {
         const q9_devschema_t *mem = q9_devschema_lookup("memory");
@@ -164,5 +183,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 08_test_devschema.c                                                                 Ver. 1.30
+// EOF 08_test_devschema.c                                                                 Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
