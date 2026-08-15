@@ -199,7 +199,7 @@ image = local_images/OS9SYS.hda
 
 [xterm]
 type     = nettty
-base     = 0xFFFF1010
+base     = 0xFFFF1000     ; 2026-08-14: 256 Byte je Kanal (eigener I/O-Tabellenplatz), s. q9board.h
 level    = 4
 vector   = 70              ; Kanal n bekommt vector+n (70..77)
 channels = 8
