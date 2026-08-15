@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.10
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.20
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -15,6 +15,8 @@
 #         │      │ "Initialisierung nur bei ROM?" ergaenzt (Abschnitt 4.2); eine parallel  │
 #         │      │ neu angelegte docs/CONFIGURATOR_SPEC_de.md hier eingemergt statt als    │
 #         │      │ eigene Datei fortgefuehrt zu werden (Andreas' Entscheidung)             │
+# 26-08-15│ 1.20 │ 4.1 CPU-Auswahl: Backend-/Config-Seite FERTIG (q9_cpu_type_t, [board]    │ Cld
+#         │      │ cpu-Key, devschema "board"-Schema) -- UI-Auswahlfeld selbst noch offen   │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -93,6 +95,20 @@ Verfuegbare Typen (Musashi-Enum): 68000, 68010, 68EC020, 68020, 68EC030, 68030, 
 erwartet eine PMMU, die z.B. 68000/68010 gar nicht haben) — das ist keine neue Einschraenkung
 (heute schon so bei `Q9_CPU=ec030` gedacht als Diagnose-Vergleich, kein Vollbetrieb), wird durch
 eine echte Auswahl im UI nur sichtbarer.
+
+**Backend-Seite FERTIG (2026-08-15):** `m68krt.h` bekam `q9_cpu_type_t` (eigene, kleine
+Aufzaehlung -- Musashis `M68K_CPU_TYPE_*` bleibt Implementierungsdetail von `m68krt.c`, kein
+Header-Leck), `q9_m68krt_init()` nimmt jetzt einen echten `cpu`-Parameter statt der versteckten
+Env-Var-Abfrage (die bleibt als Diagnose-Override erhalten, greift aber nur noch beim Default).
+Neuer `[board]`-Key `cpu` in `boardcfg.c` (Whitelist-Validierung, klare Parse-Fehlermeldung bei
+Tippfehlern), neues `devschema.c`-Schema `"board"` mit dem `cpu`-Feld (ENUM). Verifiziert: `make
+test` 0 Fails (neue Checks in `test/08_test_devschema.c`), echter Boot-Test mit `cpu = 68030`
+(bootet bis Login, identisch zum bisherigen Default) UND mit `cpu = 68000` (Config wird korrekt
+uebernommen, bootet erwartungsgemaess NICHT bis Login -- PMMU-Vorbehalt s.o., kein Bug) UND mit
+ungueltigem `cpu = 68060` (klare Parse-Fehlermeldung, sauberer Abbruch). **Noch offen:** das
+eigentliche UI-Auswahlfeld selbst (das braucht erst das Dialog-/Bildschirmpuffer-System aus
+Abschnitt 2, s. `tools/q9-flux-editor/` Stand) -- diese Ergaenzung deckt nur die Backend-/Config-
+Seite ab.
 
 ### 4.2 Beispiel-Feldsatz: Speicher (RAM/ROM/NVRAM)
 
