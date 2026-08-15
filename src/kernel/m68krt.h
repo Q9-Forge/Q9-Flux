@@ -31,6 +31,11 @@
 // 26-08-03│ 1.21 │ 5.26: q9_m68krt_attach_framebuf (framebuf.h, VRAM-Geraet)               │ Ada
 // 26-08-13│ 1.31 │ 6.5: q9_m68krt_get_backend -- befuellt cpu_backend.h's q9_cpu_backend_t   │ Cld
 //         │      │ mit reset/execute/set_irq/is_stopped-Wrappern                           │
+// 26-08-15│ 1.32 │ Q9FLUX_EDITOR_de.md 4.1: q9_cpu_type_t + neuer cpu-Parameter fuer         │ Cld
+//         │      │ q9_m68krt_init -- macht die bisher per Q9_CPU=ec030-Env-Var versteckte    │
+//         │      │ CPU-Typ-Wahl zu einem echten, konfigurierbaren Aufrufparameter (Musashis   │
+//         │      │ M68K_CPU_TYPE_*-Enum bleibt intern in m68krt.c, wie bei allen anderen       │
+//         │      │ Wrappern hier -- kein Musashi-Header-Leck nach aussen)                     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_M68KRT_H
 #define Q9_M68KRT_H
@@ -51,16 +56,37 @@ typedef struct q9_m68krt {
     uint32_t  ram_len;
 } q9_m68krt_t;
 
+/* Q9FLUX_EDITOR_de.md 4.1: Q9-seitige Sicht auf Musashis M68K_CPU_TYPE_*-Enum (third_party/musashi/
+   m68k.h) -- absichtlich eine eigene, kleinere Aufzaehlung statt den Musashi-Header hier
+   einzubinden (m68krt.h bindet third_party/musashi bewusst NIRGENDS ein, s. Typkommentar oben).
+   Q9_CPU_68030 = 0 ist der Default (= echte Q9-Hardware, Entscheidung E12) -- ein vergessenes/
+   nicht gesetztes Feld verhaelt sich damit automatisch richtig (memset-Nullwert). SCC68070 aus
+   Musashis Enum bewusst NICHT aufgenommen (kein 680x0, andere CPU-Familie, fuer Q9 irrelevant). */
+typedef enum {
+    Q9_CPU_68030 = 0,                                 /* Default -- echte Q9-Hardware              */
+    Q9_CPU_68000,
+    Q9_CPU_68010,
+    Q9_CPU_68EC020,
+    Q9_CPU_68020,
+    Q9_CPU_68EC030,
+    Q9_CPU_68EC040,
+    Q9_CPU_68LC040,
+    Q9_CPU_68040
+} q9_cpu_type_t;
+
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_init
 // Desc.:    Bindet einen RAM-Block als Speicher der Musashi-Instanz an (m68k_read/write_memory_*
-//           in m68krt.c greifen darauf zu) und legt den CPU-Typ fest (68030, Entscheidung E12).
-//           ram_len muss mindestens 8 Byte sein (Reset-Vektoren: SP bei Adresse 0, PC bei Adresse
-//           4, je 4 Byte big-endian) — der Aufrufer traegt die Vektoren + das Programm selbst ein,
-//           BEVOR q9_m68krt_reset() aufgerufen wird.
-// Call:     err = q9_m68krt_init(&rt, ram, sizeof(ram))
+//           in m68krt.c greifen darauf zu) und legt den CPU-Typ fest. cpu = Q9_CPU_68030 fuer den
+//           bisherigen Default (echte Q9-Hardware, Entscheidung E12); andere Werte sind bewusst
+//           erlaubt, auch wenn nicht jede Wahl das echte OS-9-Image erfolgreich bootet (OS-9/68030
+//           erwartet eine PMMU, die z.B. 68000/68010 gar nicht haben) -- keine neue Einschraenkung,
+//           s. Q9FLUX_EDITOR_de.md 4.1. ram_len muss mindestens 8 Byte sein (Reset-Vektoren: SP bei
+//           Adresse 0, PC bei Adresse 4, je 4 Byte big-endian) — der Aufrufer traegt die Vektoren +
+//           das Programm selbst ein, BEVOR q9_m68krt_reset() aufgerufen wird.
+// Call:     err = q9_m68krt_init(&rt, ram, sizeof(ram), Q9_CPU_68030)
 //════════════════════════════════════════════════════════════════════════════════════════════════
-int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len);
+int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_t cpu);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_reset

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   08_test_devschema.c                                                             Ver. 1.40
+// File:   08_test_devschema.c                                                             Ver. 1.50
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Rauchtest fuer devschema.h/.c -- kein Board, keine CPU, reine Datenstruktur-
 //         Pruefung (Registry-Lookup, Int-Grenzen, Enum-Mitgliedschaft, Feld-Suche).
@@ -177,11 +177,34 @@ int main(void)
         }
     }
 
+    printf("=== devschema: Schema 'board' (cpu, Q9FLUX_EDITOR_de.md 4.1) ===\n");
+    {
+        const q9_devschema_t *brd = q9_devschema_lookup("board");
+        if (!brd) {
+            printf("    FAIL Schema 'board' nicht gefunden\n");
+            g_fails++;
+        } else {
+            printf("    OK   Schema 'board' gefunden (%d Felder)\n", brd->field_count);
+
+            idx = q9_devschema_find_field(brd, "cpu");
+            check("cpu gefunden", idx >= 0 ? 0 : -1, 1);
+            check("cpu ist Q9_FIELD_ENUM", brd->fields[idx].kind == Q9_FIELD_ENUM ? 0 : -1, 1);
+            check("'68030' ist gueltig", q9_devschema_check_enum(&brd->fields[idx], "68030", err, sizeof(err)), 1);
+            check("'68000' ist gueltig", q9_devschema_check_enum(&brd->fields[idx], "68000", err, sizeof(err)), 1);
+            check("'68lc040' ist gueltig", q9_devschema_check_enum(&brd->fields[idx], "68lc040", err, sizeof(err)), 1);
+            check("'68030' (Grossschreibung waere 'ungueltig', hier klein) bleibt gueltig",
+                  q9_devschema_check_enum(&brd->fields[idx], "68030", err, sizeof(err)), 1);
+            check("'68030X' ist ungueltig", q9_devschema_check_enum(&brd->fields[idx], "68030X", err, sizeof(err)), 0);
+            check("'SCC68070' ist ungueltig (andere CPU-Familie, bewusst nicht aufgenommen)",
+                  q9_devschema_check_enum(&brd->fields[idx], "SCC68070", err, sizeof(err)), 0);
+        }
+    }
+
     printf("\n=== Zusammenfassung ===\n");
     printf("  Gesamt: %d Checks fehlgeschlagen\n", g_fails);
     return g_fails ? 1 : 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 08_test_devschema.c                                                                 Ver. 1.40
+// EOF 08_test_devschema.c                                                                 Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

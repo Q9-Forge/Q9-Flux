@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.h                                                                      Ver. 1.40
+// File:   boardcfg.h                                                                      Ver. 1.50
 // Owner:  AF
 // Desc.:  5.19: Board-Konfigurationsdatei fuer den Q9-Emulator (INI-artig, C99-Parser ohne
 //         Fremdbibliothek, s. docs/HWCONFIG.md Abschnitt 3). Erster Positionsparameter der
@@ -28,6 +28,8 @@
 //         │      │ Bedeutung (s. devschema.c), alle betroffenen .q9-Dateien mitmigriert    │
 // 26-08-14│ 1.40 │ q9_cfg_cf_t.use_slot/slot -- devschema.c useSlot/slot jetzt tatsaechlich  │ Cld
 //         │      │ wirksam (nicht mehr nur Schema-Beschreibung), s. q9boardrun.c            │
+// 26-08-15│ 1.50 │ Q9FLUX_EDITOR_de.md 4.1: [board]-Key "cpu" -- CPU-Typ-Auswahl, bisher nur │ Cld
+//         │      │ per Q9_CPU=ec030-Env-Var versteckt (s. m68krt.h q9_cpu_type_t)            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARDCFG_H
 #define Q9_BOARDCFG_H
@@ -83,6 +85,9 @@ typedef struct {
                                                  5.14 (slirp): Host-Port -> Gast-Port, kommasepariert,
                                                  gilt fuer net=slirp UND (wiederverwendet) vmnet_ip/
                                                  _gateway/_netmask fuer slirp's Subnetz-Konfiguration */
+    char        cpu[16];                     /* [board] cpu = 68030|68000|68010|68020|68ec020|
+                                                 68ec030|68040|68ec040|68lc040 (leer = 68030-Default,
+                                                 s. m68krt.h q9_cpu_type_t) -- Q9FLUX_EDITOR_de.md 4.1 */
     q9_cfg_cf_t cf[Q9_CFG_MAX_CF];
     int         cf_count;
 } q9_board_cfg_t;
@@ -128,5 +133,5 @@ uint32_t q9_cfg_cf_effective_base(const q9_cfg_cf_t *cf);
 
 #endif /* Q9_BOARDCFG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.h                                                                          Ver. 1.40
+// EOF boardcfg.h                                                                          Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
