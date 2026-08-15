@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9boardrun.c                                                                      Ver. 1.90
+// File:   q9boardrun.c                                                                      Ver. 2.00
 // Owner:  AF
 // Desc.:  Implementierung des Board-Boot-Runners, siehe q9boardrun.h.
 //
@@ -36,6 +36,10 @@
 //         │      │ NACH allen attach_*-Aufrufen die komplette Registry auf echte Adress-         │
 //         │      │ ueberlappungen (useSlot/slot fuehrt erstmals frei waehlbare Adressen ein,     │
 //         │      │ die mit fest verdrahteten Geraeten kollidieren koennten)                       │
+// 26-08-15│ 2.00 │ Q9FLUX_EDITOR_de.md 4.1: neue q9_board_resolve_cpu() bildet den [board]-Key    │ Cld
+//         │      │ "cpu" (boardcfg.h) auf q9_cpu_type_t ab und reicht ihn an q9_m68krt_init()      │
+//         │      │ durch -- macht die CPU-Typ-Wahl config-steuerbar statt nur per versteckter      │
+//         │      │ Q9_CPU=ec030-Env-Var                                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9boardrun.h"
 #include "q9board.h"
@@ -266,6 +270,31 @@ static int q9_parse_hostfwd(const char *s, q9_slirp_hostfwd_t *out, int max)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: q9_board_resolve_cpu
+// Desc.:    Q9FLUX_EDITOR_de.md 4.1: bildet den rohen [board]-Key "cpu" (boardcfg.h, bereits von
+//           boardcfg.c gegen die Whitelist geprueft) auf m68krt.h's q9_cpu_type_t ab. Leerer/nicht
+//           gesetzter String -> Q9_CPU_68030 (bisheriger Default, echte Q9-Hardware). Bewusst HIER
+//           statt in boardcfg.c: boardcfg.c bleibt schlank und kennt m68krt.h nicht (s. dortiger
+//           Kopfkommentar) -- diese Funktion ist der einzige Ort, der beide Seiten kennt.
+// Call:     q9_cpu_type_t t = q9_board_resolve_cpu(cfg ? cfg->cpu : "");
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static q9_cpu_type_t q9_board_resolve_cpu(const char *cpu_str)
+{
+    if (!cpu_str || !cpu_str[0]) { return Q9_CPU_68030; }
+    if (q9_streq_ci(cpu_str, "68000"))   { return Q9_CPU_68000;   }
+    if (q9_streq_ci(cpu_str, "68010"))   { return Q9_CPU_68010;   }
+    if (q9_streq_ci(cpu_str, "68020"))   { return Q9_CPU_68020;   }
+    if (q9_streq_ci(cpu_str, "68ec020")) { return Q9_CPU_68EC020; }
+    if (q9_streq_ci(cpu_str, "68ec030")) { return Q9_CPU_68EC030; }
+    if (q9_streq_ci(cpu_str, "68040"))   { return Q9_CPU_68040;   }
+    if (q9_streq_ci(cpu_str, "68ec040")) { return Q9_CPU_68EC040; }
+    if (q9_streq_ci(cpu_str, "68lc040")) { return Q9_CPU_68LC040; }
+    return Q9_CPU_68030;                              /* "68030" und jeder unbekannte Rest (kann
+                                                          dank boardcfg.c-Whitelist eigentlich nur
+                                                          "68030" oder leer sein) */
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q9_board_validate_no_overlap
 // Desc.:    5.18-Fortsetzung (2026-08-14): prueft ALLE registrierten Geraete paarweise auf echte
 //           Adressfenster-Ueberlappung (echte Byte-Bereiche, NICHT das 256-Byte-Dispatch-Raster
@@ -439,9 +468,13 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
         q9_board_cf_attach(&board, BOARD_CF_IMAGE);
     }
 
+    if (cfg && cfg->cpu[0]) {
+        printf("q9board: CPU <- %s (Config)\r\n", cfg->cpu);
+    }
+
     fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
 
-    q9_m68krt_init(&rt, board_ram, sizeof(board_ram));
+    q9_m68krt_init(&rt, board_ram, sizeof(board_ram), q9_board_resolve_cpu(cfg ? cfg->cpu : ""));
     q9_m68krt_get_backend(&rt, &cpu);                  /* 6.5: ab hier nur noch ueber die Vtable  */
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     if (cf2_used) {

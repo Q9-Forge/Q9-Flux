@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.c                                                                      Ver. 1.30
+// File:   boardcfg.c                                                                      Ver. 1.40
 // Owner:  AF
 // Desc.:  Implementierung des Board-Config-Parsers, siehe boardcfg.h. INI-artig, C99, ohne
 //         Fremdbibliothek. Bewusst schlank: nur die Abschnitte/Keys, die 5.19a heute braucht
@@ -20,6 +20,8 @@
 //         │      │ drei bisher duplizierte Inline-Berechnungen (hier + zweimal              │
 //         │      │ q9boardrun.c). Nachvalidierung: useSlot=yes ohne slot= ist jetzt ein       │
 //         │      │ Parse-Fehler                                                              │
+// 26-08-15│ 1.40 │ Q9FLUX_EDITOR_de.md 4.1: neuer [board]-Key "cpu" (Whitelist-Validierung),  │ Cld
+//         │      │ macht die CPU-Typ-Wahl aus m68krt.h q9_cpu_type_t config-steuerbar         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "boardcfg.h"
 #include "q9board.h"                                     /* Q9_CF_FMT_*                            */
@@ -331,6 +333,29 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cfg_copy(cfg->vmnet_dhcp_end, sizeof(cfg->vmnet_dhcp_end), val);
             } else if (cfg_ieq(key, "net_hostfwd")) {
                 cfg_copy(cfg->net_hostfwd, sizeof(cfg->net_hostfwd), val);
+            } else if (cfg_ieq(key, "cpu")) {
+                /* Q9FLUX_EDITOR_de.md 4.1: Whitelist statt freiem String -- Tippfehler sollen
+                   beim Parsen auffallen, nicht erst als "bootet nicht" beim Aufrufer. Bewusst
+                   KEIN #include von m68krt.h hier (boardcfg.c bleibt schlank/eigenstaendig, s.
+                   Kopfkommentar) -- q9boardrun.c macht die eigentliche String->q9_cpu_type_t-
+                   Abbildung, hier wird nur validiert + roh gespeichert. */
+                static const char *cpu_names[] = {
+                    "68000", "68010", "68020", "68ec020", "68030", "68ec030",
+                    "68040", "68ec040", "68lc040"
+                };
+                unsigned i, n = sizeof(cpu_names) / sizeof(cpu_names[0]);
+                int ok = 0;
+                for (i = 0; i < n; i++) {
+                    if (cfg_ieq(val, cpu_names[i])) { ok = 1; break; }
+                }
+                if (!ok) {
+                    snprintf(err, err_max,
+                             "Zeile %d: ungueltiger cpu-Wert '%s' (68000|68010|68020|68ec020|"
+                             "68030|68ec030|68040|68ec040|68lc040)", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+                cfg_copy(cfg->cpu, sizeof(cfg->cpu), val);
             } else {
                 snprintf(err, err_max, "Zeile %d: unbekannter [board]-Key '%s'", lineno, key);
                 fclose(f);
@@ -463,5 +488,5 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.c                                                                          Ver. 1.30
+// EOF boardcfg.c                                                                          Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

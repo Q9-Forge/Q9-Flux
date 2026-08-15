@@ -52,6 +52,11 @@
 //         │      │ Zustand VOR der Geraete-Registry-Suche (devreg_hit, bisher O(n) bei JEDEM    │
 //         │      │ Zugriff) ab. Verifiziert per Boot-Gegenprobe: Boot-Transkript mit/ohne den    │
 //         │      │ Fast-Path byte-identisch (git stash der Aenderung, neu gebaut, diff)          │
+// 26-08-15│ 1.42 │ Q9FLUX_EDITOR_de.md 4.1: q9_m68krt_init bekommt echten cpu-Parameter          │ Cld
+//         │      │ (q9_cpu_type_t) statt der bisher versteckten Q9_CPU=ec030-Env-Var-Abfrage --  │
+//         │      │ Env-Var bleibt als Diagnose-Override ERHALTEN, greift aber nur noch, wenn      │
+//         │      │ der Aufrufer den Default (Q9_CPU_68030) uebergeben hat (kein stiller           │
+//         │      │ Ueberschreiber einer expliziten Wahl)                                          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
@@ -1043,8 +1048,10 @@ static void m68krt_watch_pc_callback(unsigned int pc)
     }
 }
 
-int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
+int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_t cpu)
 {
+    unsigned musashi_type;
+
     if (!ram || ram_len < 8) {
         return Q9_M68KRT_ERR_RAM;
     }
@@ -1061,14 +1068,30 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len)
                                                           stehen (z.B. bei mehreren Boots im selben
                                                           Prozess/Test) */
 
-    /* Keep the real Q9-CPU as the default.  The EC030 switch is a
-     * diagnostic-only comparison run: it disables Musashi's PMMU so we can
-     * separate an OS-9/ftpdc failure from a PMMU-emulation failure. */
-    if (getenv("Q9_CPU") && strcmp(getenv("Q9_CPU"), "ec030") == 0) {
-        m68k_set_cpu_type(M68K_CPU_TYPE_68EC030);
-    } else {
-        m68k_set_cpu_type(M68K_CPU_TYPE_68030);
+    /* Q9FLUX_EDITOR_de.md 4.1: cpu ist jetzt ein echter Aufrufparameter statt einer versteckten
+       Env-Var-Abfrage. Q9_CPU_68030 bleibt der Default (echte Q9-Hardware, Entscheidung E12). */
+    switch (cpu) {
+        case Q9_CPU_68000:   musashi_type = M68K_CPU_TYPE_68000;   break;
+        case Q9_CPU_68010:   musashi_type = M68K_CPU_TYPE_68010;   break;
+        case Q9_CPU_68EC020: musashi_type = M68K_CPU_TYPE_68EC020; break;
+        case Q9_CPU_68020:   musashi_type = M68K_CPU_TYPE_68020;   break;
+        case Q9_CPU_68EC030: musashi_type = M68K_CPU_TYPE_68EC030; break;
+        case Q9_CPU_68EC040: musashi_type = M68K_CPU_TYPE_68EC040; break;
+        case Q9_CPU_68LC040: musashi_type = M68K_CPU_TYPE_68LC040; break;
+        case Q9_CPU_68040:   musashi_type = M68K_CPU_TYPE_68040;   break;
+        case Q9_CPU_68030:
+        default:
+            musashi_type = M68K_CPU_TYPE_68030;
+            break;
     }
+    /* Diagnose-Override bleibt erhalten (5.x-Vergleichslaeufe, deaktiviert Musashis PMMU, um
+       einen OS-9/ftpdc-Fehler von einem PMMU-Emulationsfehler zu trennen) -- greift aber NUR noch,
+       wenn der Aufrufer den Default uebergeben hat, damit eine explizite cpu-Wahl (z.B. aus der
+       .q9-Config) nicht still von einer alten Diagnose-Env-Var ueberschrieben wird. */
+    if (cpu == Q9_CPU_68030 && getenv("Q9_CPU") && strcmp(getenv("Q9_CPU"), "ec030") == 0) {
+        musashi_type = M68K_CPU_TYPE_68EC030;
+    }
+    m68k_set_cpu_type(musashi_type);
     m68k_init();
     m68k_set_int_ack_callback(0);
 
