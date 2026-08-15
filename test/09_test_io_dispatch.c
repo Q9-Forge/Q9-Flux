@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   09_test_io_dispatch.c                                                           Ver. 1.00
+// File:   09_test_io_dispatch.c                                                           Ver. 1.10
 // Owner:  Claudia
 // Desc.:  5.18 (zweiter Teilschritt): gezielte Absicherung fuer die neue I/O-Dispatch-Tabelle in
 //         m68krt.c (Q9_IO_CLUSTER_BASE/g_io_table/devreg_hit) -- der allgemeine Boot-Diff-Test
@@ -21,6 +21,11 @@
 //         (4) Slot komplett unregistriert (in diesem schlanken Testaufbau z.B. der QUICC-Bereich,
 //             da attach_quicc hier bewusst NICHT aufgerufen wird): muss weiterhin "kein Geraet"
 //             liefern, kein Crash, kein falscher Treffer.
+//         (5) NEU 2026-08-14 (ARBEITSPLAN 5.18-Fortsetzung): Netz-Terminals x1-x8 wurden von 16-
+//             auf 256-Byte-Abstand umgestellt (eigener I/O-Tabellenplatz je Kanal statt geteiltem
+//             Slot). Prueft: neue Basisadressen antworten korrekt und unabhaengig voneinander,
+//             die ALTE x1-Adresse liefert jetzt "kein Geraet", Schreibzugriffe bleiben zwischen
+//             Kanaelen isoliert.
 //
 //         Bewusst OHNE q9_m68krt_reset()/cpu.execute() -- reine Register-Dispatch-Pruefung ohne
 //         CPU-Ausfuehrung, board.remapped bleibt 0 (Reset-Zustand), rom_len=0, damit jeder
@@ -136,11 +141,33 @@ int main(void)
     check_u8("CLUT nach MC6845-Schreibzugriff unveraendert ($FFFFA010)",
              m68k_read_memory_8(0xFFFFA010u), 0x00u);
 
+    printf("=== (5) Netz-Terminals: 256-Byte-Slots je Kanal (2026-08-14, ARBEITSPLAN 5.18) ===\n");
+    /* channels[]-Reset-Default ist status=0x02 (Bit 1 = TX Empty, kein Client verbunden -> RX nie
+       bereit, s. os9_uart_t/channels[]-Init in m68krt.c) -- Status-Register liegt an Offset +0. */
+    check_u8("x1-Status $FFFF1000 (neue Basis, war $FFFF1010)",
+             m68k_read_memory_8(Q9_BOARD_NET_X1_BASE), 0x02u);
+    check_u8("x2-Status $FFFF1100 (eigener Slot $11, unabhaengig von x1)",
+             m68k_read_memory_8(Q9_BOARD_NET_X2_BASE), 0x02u);
+    check_u8("x8-Status $FFFF1700 (letzter Kanal, eigener Slot $17)",
+             m68k_read_memory_8(Q9_BOARD_NET_X8_BASE), 0x02u);
+    /* Die ALTE x1-Adresse ($FFFF1010, vor der Umstellung) darf jetzt NICHT mehr treffen -- sie
+       liegt weiterhin in Slot $10 (x1s NEUER Slot geht von $FFFF1000-$FFFF10FF), aber ausserhalb
+       des tatsaechlichen 5-Byte-Registerfensters (+0/+2/+4) von x1s NEUER Basis $FFFF1000 --
+       "kein Geraet" (Board-Fallback, deterministisch 0 dank rom_len=0), NICHT etwa faelschlich x1. */
+    check_u8("alte x1-Adresse $FFFF1010 liefert jetzt 'kein Geraet'",
+             m68k_read_memory_8(0xFFFF1010u), 0x00u);
+    /* Isolation: Schreiben in x1s TX-Register (Offset +4) darf x2 nicht beeinflussen -- jeder
+       Kanal hat sein EIGENES os9_uart_t-Element in channels[], das war schon vor der 256-Byte-
+       Umstellung so, hier zur Sicherheit nach der Adressaenderung erneut bestaetigt. */
+    m68k_write_memory_8(Q9_BOARD_NET_X1_BASE + 4u, 0x55u);
+    check_u8("x2-Status nach x1-TX-Schreibzugriff unveraendert ($FFFF1100)",
+             m68k_read_memory_8(Q9_BOARD_NET_X2_BASE), 0x02u);
+
     printf("\n=== Zusammenfassung ===\n");
     printf("  Gesamt: %d Checks fehlgeschlagen\n", g_fails);
     return g_fails ? 1 : 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 09_test_io_dispatch.c                                                               Ver. 1.00
+// EOF 09_test_io_dispatch.c                                                               Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
