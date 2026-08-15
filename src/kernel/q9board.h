@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9board.h                                                                         Ver. 2.10
+// File:   q9board.h                                                                         Ver. 2.20
 // Owner:  AF
 // Desc.:  Board-Emulation (Schritt 5.2, docs/BOARD.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit einem originalen, proprietaeren OS-9-Boot-ROM.
@@ -54,6 +54,10 @@
 //         │      │ Einheiten je Interface (Master/Slave via DEV-Bit in LBA3), Image-Format     │
 //         │      │ rbf/pcf aus der Board-Config (s. boardcfg.h) steuert die Sektor-Heuristik   │
 // 26-08-06│ 2.10 │ os9_uart_t: neues Feld telnet_state (Doppel-Echo-Bugfix, s. m68krt.c 1.38)  │ AF
+// 26-08-14│ 2.20 │ 5.18-Fortsetzung: Q9_BOARD_NET_X1..X8_BASE von 16- auf 256-Byte-Abstand      │ Cld
+//         │      │ umgestellt (eigener I/O-Tabellenplatz je Kanal, Andreas' Entscheidung).      │
+//         │      │ NUR die Basisadressen -- Register-Offsets/Dispatch-Logik unveraendert. Muss  │
+//         │      │ mit systype.d im Q9-Port-Repo synchron bleiben, s. Kommentar bei den Defines │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARD_H
 #define Q9_BOARD_H
@@ -86,17 +90,31 @@
    ROM-Spiegelgrenze (bis 0xFFFF_0000 frei, s. Q9_BOARD_ROM_MIRROR_TOP) und REMAP-Register
    (Q9_BOARD_REMAP_REG_BASE ab 0xFFFF_8000) — kollidiert bewusst NICHT mit dem RAM (anders als
    die urspruengliche 0x00FF00xx-Adressierung, die mitten im 16-MByte-RAM lag).
-   5.10: OS-9-Geraetenamen sind /x1../x8 (t1.. existiert im MWOS-Port schon anderweitig). */
-#define Q9_BOARD_NET_X1_BASE       0xFFFF1010u
-#define Q9_BOARD_NET_X2_BASE       0xFFFF1020u
-#define Q9_BOARD_NET_X3_BASE       0xFFFF1030u
-#define Q9_BOARD_NET_X4_BASE       0xFFFF1040u
-#define Q9_BOARD_NET_X5_BASE       0xFFFF1050u
-#define Q9_BOARD_NET_X6_BASE       0xFFFF1060u
-#define Q9_BOARD_NET_X7_BASE       0xFFFF1070u
-#define Q9_BOARD_NET_X8_BASE       0xFFFF1080u
+   5.10: OS-9-Geraetenamen sind /x1../x8 (t1.. existiert im MWOS-Port schon anderweitig).
+
+   2026-08-14 (ARBEITSPLAN 5.18-Fortsetzung, Andreas' Entscheidung: eigener 256-Byte-Bereich statt
+   Index/Daten-Registerpaar -- "denke das ist erst mal einfacher"): Abstand von 16 auf 256 Byte
+   erhoeht, damit jeder Kanal seinen EIGENEN Slot in der I/O-Dispatch-Tabelle bekommt (s. m68krt.c
+   g_io_table, ARBEITSPLAN 5.18) -- vorher teilten sich alle acht Kanaele einen einzigen 256-Byte-
+   Slot ($FFFF1000-$FFFF10FF), was fuer die Tabelle kein Problem war (EIN gemeinsamer devreg-
+   Eintrag fuer alle acht, s.u.), aber keine Trennung auf Registry-Ebene erlaubte. Die eigentliche
+   Registerdispatch-Logik (m68krt.c network_read8/write8) vergleicht ausschliesslich gegen
+   channels[i].base_addr -- KEINE Annahme ueber den Abstand im Code, daher genuegt hier die reine
+   Konstantenaenderung, keine Logikaenderung. NUR die x1..x8-Basisadressen selbst haben sich
+   geaendert (x1 z.B. $FFFF1010 -> $FFFF1000) -- die Register-OFFSETS innerhalb eines Kanals
+   (+0/+2/+4) sind unveraendert. MUSS mit den entsprechenden Konstanten in der OS-9-seitigen
+   systype.d (Q9-Port-Repo, _NETX1_Base.._NETX8_Base/_NETX_Spacing) synchron gehalten werden --
+   sonst findet der Treiber die Kanaele nicht mehr. */
+#define Q9_BOARD_NET_X1_BASE       0xFFFF1000u
+#define Q9_BOARD_NET_X2_BASE       0xFFFF1100u
+#define Q9_BOARD_NET_X3_BASE       0xFFFF1200u
+#define Q9_BOARD_NET_X4_BASE       0xFFFF1300u
+#define Q9_BOARD_NET_X5_BASE       0xFFFF1400u
+#define Q9_BOARD_NET_X6_BASE       0xFFFF1500u
+#define Q9_BOARD_NET_X7_BASE       0xFFFF1600u
+#define Q9_BOARD_NET_X8_BASE       0xFFFF1700u
 #define Q9_BOARD_NET_BASE          Q9_BOARD_NET_X1_BASE
-#define Q9_BOARD_NET_TOP           0xFFFF108Fu
+#define Q9_BOARD_NET_TOP           0xFFFF17FFu             /* X8_BASE + 0xFF: letzter Kanal-Slot voll erfasst */
 
 typedef struct {
     int client_fd;
@@ -356,5 +374,5 @@ extern const q9_device_vtable_t q9_devtype_rtc72421;        /* 5.17: RTC72421-Ec
 #endif // Q9_BOARD_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9board.h                                                                             Ver. 2.10
+// EOF q9board.h                                                                             Ver. 2.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

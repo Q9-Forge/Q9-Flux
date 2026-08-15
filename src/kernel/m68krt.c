@@ -543,8 +543,9 @@ static q9_device_t *devreg_hit(uint32_t address)
    denselben Adressen der ROM-Spiegel, nicht RAM (b->rom[addr % b->rom_len]). Ohne diese Pruefung
    wuerde der Fast-Path im Reset-Zustand falsches/uninitialisiertes RAM statt des Boot-ROMs
    liefern -- der Emulator wuerde nicht mehr booten. Kein Ueberschneidungsrisiko mit Geraeten:
-   alle heutigen Geraetefenster liegen weit oberhalb von RAM (niedrigstes $FFFF1010 bzw.
-   Framebuffer $FD000000/ROM-Remap $FE000000, RAM nur 16 MByte ab 0, s. BOARD_RAM_BYTES). */
+   alle heutigen Geraetefenster liegen weit oberhalb von RAM (niedrigstes $FFFF1000, seit
+   2026-08-14 256-Byte-Netz-Terminal-Slots, s. q9board.h -- bzw. Framebuffer $FD000000/ROM-Remap
+   $FE000000, RAM nur 16 MByte ab 0, s. BOARD_RAM_BYTES). */
 static inline int ram_fast_hit(uint32_t address, uint32_t span)
 {
     /* address < ram_len zuerst geprueft, DANACH die Subtraktion ram_len - address (garantiert
