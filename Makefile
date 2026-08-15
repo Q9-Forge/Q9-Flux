@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 3.60
+# File:   Makefile                                                                        Ver. 3.70
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
 #         Bring-up-Vorbereitung).
@@ -42,6 +42,8 @@
 #         │      │ vier neue Testziele dazukamen): test-devschema, test-io-dispatch, test-ansi   │
 #         │      │ (alle 6.7/5.18-Fortsetzung + Editor-Grundstein) und jetzt test-useslot        │
 #         │      │ (5.18-Fortsetzung useSlot/slot) -- alle Teil von "make test"                  │
+# 26-08-16│ 3.70 │ test-screenbuf dazu (q9_screenbuf.h/.c, Bildschirmpuffer fuer den modalen     │ Cld
+#         │      │ Config-Auswahl-Dialog, Q9FLUX_EDITOR_de.md Abschnitt 2)                       │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -204,7 +206,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi test-useslot
+test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-useslot
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -257,6 +259,16 @@ test-ansi:
 	$(CC) $(CFLAGS) tools/q9-flux-editor/test/ansi_selftest.c tools/q9-flux-editor/src/q9_ansi.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/ansi_selftest
 	$(BUILD)/$(PLATFORM_DIR)/ansi_selftest
+
+# Bildschirmpuffer auf q9_ansi.h aufgesetzt (q9_screenbuf.h/.c, 2026-08-16, Q9FLUX_EDITOR_de.md
+# Abschnitt 2: modaler Dialog braucht Bildschirmbereich-Sichern/Wiederherstellen). Gleiches Muster
+# wie test-ansi: direkter Aufruf, kein rekursives "$(MAKE) -C".
+test-screenbuf:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) tools/q9-flux-editor/test/screenbuf_selftest.c \
+	    tools/q9-flux-editor/src/q9_screenbuf.c tools/q9-flux-editor/src/q9_ansi.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/screenbuf_selftest
+	$(BUILD)/$(PLATFORM_DIR)/screenbuf_selftest
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
@@ -463,7 +475,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.60
