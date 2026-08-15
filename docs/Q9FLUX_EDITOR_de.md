@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.30
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.40
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -20,6 +20,9 @@
 # 26-08-16│ 1.30 │ 2. Config-Auswahl: Bildschirmpuffer-Grundlage FERTIG (q9_screenbuf.h/.c,  │ Cld
 #         │      │ snapshot/restore fuer den modalen Dialog) -- Frame-/Widget-Zeichnung und  │
 #         │      │ Tastatur-/Ereignisschleife noch offen                                     │
+# 26-08-16│ 1.40 │ 2. Config-Auswahl: erster Widget-Baustein FERTIG (q9_widgets.h/.c,        │ Cld
+#         │      │ draw_frame -- ASCII-Rahmen mit Titel) -- Buttons/Textfelder und die        │
+#         │      │ Tastatur-/Ereignisschleife weiterhin offen                                │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -76,9 +79,16 @@ sichern, Dialog druebermalen, Rechteck wiederherstellen), `render()` erzeugt dar
 Byte-Folge (mit optionalem Origin-Versatz, damit nur ein wiederhergestelltes Rechteck neu gezeichnet
 werden muss statt des ganzen Schirms). Verifiziert per `make test-screenbuf` (34 Checks, Teil von
 `make test`) -- Ruecklese-Parse wie beim ANSI-Modul, plus der eigentliche Sichern/Ueberzeichnen/
-Wiederherstellen-Ablauf als expliziter Testfall. **Noch offen:** Frame-/Widget-Zeichenroutinen
-(Rahmen, Buttons, Textfelder) und die eigentliche Tastatur-/Ereignisschleife -- `q9_screenbuf`
-liefert nur den Puffer, keine UI-Elemente. Maus-Unterstuetzung weiterhin nicht angefangen.
+Wiederherstellen-Ablauf als expliziter Testfall.
+
+**Erster Widget-Baustein FERTIG (2026-08-16):** `tools/q9-flux-editor/src/q9_widgets.h/.c`,
+`q9_screenbuf_draw_frame()` -- zeichnet den ASCII-Rahmen ('+'/'-'/'|', bewusst kein Unicode-
+Box-Drawing, s. dortiger Kopfkommentar) mit optionalem mittigen Titel in der oberen Kante,
+bounds-sicher wie alle q9_screenbuf-Funktionen. Verifiziert per `make test-widgets` (21 Checks).
+**Noch offen:** Buttons/Textfelder (Aussehen noch nicht mit Andreas geklaert, s. Abschnitt 3 unten
+"genauer Zuschnitt/Wortlaut nicht final") und die eigentliche Tastatur-/Ereignisschleife --
+`q9_screenbuf`/`q9_widgets` liefern nur Puffer und Zeichenroutinen, keine Interaktion. Maus-
+Unterstuetzung weiterhin nicht angefangen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
