@@ -88,7 +88,7 @@ int main(void)
         printf("FAIL q9_board_init fehlgeschlagen\n");
         return 1;
     }
-    if (q9_m68krt_init(&rt, board_ram, sizeof(board_ram)) != Q9_M68KRT_OK) {
+    if (q9_m68krt_init(&rt, board_ram, sizeof(board_ram), Q9_CPU_68030) != Q9_M68KRT_OK) {
         printf("FAIL q9_m68krt_init fehlgeschlagen\n");
         return 1;
     }

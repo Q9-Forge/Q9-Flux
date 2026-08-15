@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.c                                                                     Ver. 1.40
+// File:   devschema.c                                                                     Ver. 1.50
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe devschema.h. Pilot-Schema fuer "cf" -- die Feldnamen/Wertebereiche
 //         entsprechen 1:1 q9_cfg_cf_t (boardcfg.h) und Q9_CF_FMT_*/Q9_CFG_BUS_* (q9board.h/
@@ -25,6 +25,9 @@
 // 26-08-14│ 1.40 │ "cf": useSlot (Bool) + slot (Int 0-255) ergaenzt -- Config-seitige Wahl    │ Cld
 //         │      │ zwischen automatisch zugeteiltem I/O-Tabellenplatz (5.18 g_io_table) und   │
 //         │      │ freier Adresse, vorausschauend, noch ohne boardcfg.c-Anschluss             │
+// 26-08-15│ 1.50 │ Neues Schema "board" (cpu-Feld, ENUM) -- Q9FLUX_EDITOR_de.md 4.1, ECHTES   │ Cld
+//         │      │ boardcfg.c-Schluesselwort (anders als "memory" oben, das noch vorausschauend│
+//         │      │ ohne Parser-Anschluss ist)                                                  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devschema.h"
 #include <string.h>
@@ -182,9 +185,31 @@ static const q9_field_schema_t g_memory_fields[] = {
 };
 #define Q9_MEMORY_FIELD_COUNT (int)(sizeof(g_memory_fields) / sizeof(g_memory_fields[0]))
 
+/* "board": Q9FLUX_EDITOR_de.md 4.1 (CPU-Auswahl) -- im Unterschied zu "memory" oben entspricht
+   dieses Schema bereits einem ECHTEN, geparsten .q9-Schluesselwort (boardcfg.c [board] "cpu",
+   s. dortige Kommentare). Nur EIN Feld bisher -- die uebrigen [board]-Grundkonfiguration-Punkte
+   (Name/Kurzbeschreibung/Netzwerk) sind laut Editor-Plan noch nicht so weit entschieden, dass sie
+   sich sauber schematisieren liessen (Netzwerk-Backend-Frage insbesondere, s. dortiger Abschnitt
+   8a). Kein Synonym-Mechanismus noetig: boardcfg.c akzeptiert fuer "cpu" ausschliesslich diese
+   neun kanonischen Tokens (kein bus/unit-artiges Synonym-Bedarf wie bei "cf"). */
+static const char *const g_board_cpu_values[] = {
+    "68030", "68000", "68010", "68020", "68ec020", "68ec030", "68040", "68ec040", "68lc040", NULL
+};
+
+static const q9_field_schema_t g_board_fields[] = {
+    {
+        .name = "cpu", .kind = Q9_FIELD_ENUM, .enum_values = g_board_cpu_values,
+        .desc = "CPU-Typ (Musashi-Emulation, Default 68030 = echte Q9-Hardware) -- nicht jede "
+                "Wahl bootet das echte OS-9-Image erfolgreich (OS-9/68030 braucht eine PMMU, die "
+                "z.B. 68000/68010 nicht haben)",
+    },
+};
+#define Q9_BOARD_FIELD_COUNT (int)(sizeof(g_board_fields) / sizeof(g_board_fields[0]))
+
 static const q9_devschema_t g_device_schemas[] = {
     { "cf",     g_cf_fields,     Q9_CF_FIELD_COUNT },
     { "memory", g_memory_fields, Q9_MEMORY_FIELD_COUNT },
+    { "board",  g_board_fields,  Q9_BOARD_FIELD_COUNT },
 };
 #define Q9_DEVSCHEMA_COUNT (int)(sizeof(g_device_schemas) / sizeof(g_device_schemas[0]))
 
@@ -291,5 +316,5 @@ int q9_devschema_field_relevant(const q9_field_schema_t *f, const char *other_fi
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF devschema.c                                                                         Ver. 1.30
+// EOF devschema.c                                                                         Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
