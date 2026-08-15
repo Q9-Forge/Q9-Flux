@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.00
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.10
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -11,6 +11,10 @@
 # Date    │ Ver. │ Description                                                            │ By
 #─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 # 26-08-13│ 1.00 │ Erster Wurf -- Andreas' Startbildschirm-/Hardware-Formular-Vision       │ Cld
+# 26-08-15│ 1.10 │ Netzwerk-Backend-Status geklaert (Abschnitt 8a), Speicher-Feld-Frage    │ Cld
+#         │      │ "Initialisierung nur bei ROM?" ergaenzt (Abschnitt 4.2); eine parallel  │
+#         │      │ neu angelegte docs/CONFIGURATOR_SPEC_de.md hier eingemergt statt als    │
+#         │      │ eigene Datei fortgefuehrt zu werden (Andreas' Entscheidung)             │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -104,6 +108,11 @@ eine echte Auswahl im UI nur sichtbarer.
 | Save after Session | Bool Ja/Nein | fuer NVRAM-Simulation (Inhalt nach Ende zuruecksichern) |
 | Descriptor | (s. Abschnitt 5) | bei Speicher: "no" |
 
+**Offen (2026-08-15):** ist "Initialisierung" nur bei ROM (Schreibzugriff=Nein) sichtbar/
+relevant, oder soll auch RAM mit einem Preload-Image starten koennen? Noch nicht entschieden --
+technisch waere Letzteres kein Mehraufwand (dieselbe Dateiauswahl-Logik), nur die Frage, ob es
+im UI ueberhaupt als sinnvolle Kombination angeboten wird.
+
 ### 4.3 Beispiel-Feldsatz: CF-Interface ("cfide")
 
 | Feld | Typ | Beispielwert |
@@ -161,7 +170,20 @@ macOS/Linux, `USERPROFILE` unter Windows (kein natives "~" dort) — sonst inhal
 ## 8. Ausdruecklich vertagt / noch offen
 
 - **Netzwerk-Konfiguration im Editor** — Andreas: "wird dann wieder komplizierter, muessen wir
-  noch klaeren was wir da genau einsetzen wollen". Kein Entwurf bisher.
+  noch klaeren was wir da genau einsetzen wollen". Kein Entwurf bisher. **Status der Backends
+  geklaert (2026-08-15), Entwurf des Editor-Feldes selbst weiterhin offen:**
+
+  | Backend | macOS | Windows | Linux |
+  |---|---|---|---|
+  | Mini-NAT (slirp) | bestaetigt (Boot-Test 2026-08-15) | Code da (`q9_sockcompat.h` Winsock2-Zweig), ungetestet | Code da (POSIX-Zweig), ungetestet |
+  | vmnet | laeuft | -- (kein Windows-Aequivalent) | -- |
+  | bridge/BPF | Code da, Bridging-Test mit echter 2. NIC noch offen | -- | -- (BSD-spezifisch) |
+  | TAP (Linux) / npcap (Windows) | -- | nicht gebaut | nicht gebaut |
+
+  Mini-NAT (slirp) ist damit das einzige Backend, das im Editor als "laeuft auf allen drei
+  Zielplattformen" angeboten werden sollte (deckt sich mit ARBEITSPLAN 5.21, wo Mini-NAT
+  ebenfalls als portabler Default vorgesehen ist); vmnet/bridge bleiben macOS-Extras. Der
+  eigentliche Windows-/Linux-Testlauf ist weiterhin bewusst vertagt.
 - **"Allgemeine Einstellungen"** — Inhalt unbekannt, Platzhalter.
 - **Start/Speichern/Beenden-Buttons** — genauer Zuschnitt/Wortlaut nicht final.
 - **Umfang: nur Editor oder auch Emulator-Start?** — laut Abschnitt 3 soll "Start" den Emulator
