@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_input.c                                                                      Ver. 1.00
+// File:   q9_input.c                                                                      Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_input.h.
 //
@@ -8,6 +8,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-16│ 1.00 │ Erster Wurf                                                              │ Cld
+// 26-08-16│ 1.10 │ q9_term_size + Q9_KEY_RESIZE (POSIX: SIGWINCH unterbricht read() per EINTR) │ Cld
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_input.h"
 #include <string.h>
@@ -153,12 +154,27 @@ q9_key_t q9_input_read_key(void)
     return k;
 }
 
+int q9_term_size(int *rows, int *cols)
+{
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    if (h == INVALID_HANDLE_VALUE || !GetConsoleScreenBufferInfo(h, &csbi)) {
+        return -1;
+    }
+    if (rows) { *rows = (int)(csbi.srWindow.Bottom - csbi.srWindow.Top + 1); }
+    if (cols) { *cols = (int)(csbi.srWindow.Right - csbi.srWindow.Left + 1); }
+    return 0;
+}
+
 #else /* POSIX */
 
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <sys/ioctl.h>
 
 static struct termios orig_termios;
 static int  termios_saved = 0;
@@ -167,6 +183,32 @@ static char pending_buf[8];                               /* Bytes, die q9_input
                                                                (z.B. das Zeichen nach einem einzelnen,
                                                                nicht sequenzeinleitenden ESC) */
 static int  pending_len = 0;
+static volatile sig_atomic_t g_resize_pending = 0;         /* von on_sigwinch gesetzt, in
+                                                               q9_input_read_key() abgefragt+geleert  */
+
+static void on_sigwinch(int sig)
+{
+    (void)sig;
+    g_resize_pending = 1;                                  /* signalsicher: nur ein sig_atomic_t
+                                                               setzen, keine weitere Arbeit im Handler */
+}
+
+/* Bewusst sigaction() statt signal() fuer SIGWINCH: einige signal()-Implementierungen (u.a. macOS/
+   BSD-Erbe) installieren per Default mit automatischem Syscall-Neustart (SA_RESTART-aequivalent) --
+   ein blockierender read() wuerde dann NICHT mit EINTR abbrechen, sondern transparent weiterlaufen,
+   und das Resize-Ereignis bliebe bis zum naechsten ECHTEN Tastendruck unbemerkt (widerspricht
+   Andreas' Wunsch nach sofortiger Reaktion). sigaction() mit sa_flags=0 (kein SA_RESTART) erzwingt
+   das gewuenschte EINTR-Verhalten explizit, portabel. Real per Pseudo-Terminal-Test gefunden (mit
+   signal() kam RESIZE nie an, bis eine Taste gedrueckt wurde) -- s. Q9FLUX_EDITOR_de.md. */
+static void install_sigwinch_handler(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = on_sigwinch;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;                                       /* explizit OHNE SA_RESTART */
+    sigaction(SIGWINCH, &sa, NULL);
+}
 
 static void restore_termios(void)
 {
@@ -196,6 +238,8 @@ int q9_input_init(void)
     atexit(restore_termios);
     signal(SIGTERM, restore_termios_on_signal);
     signal(SIGHUP,  restore_termios_on_signal);
+    install_sigwinch_handler();
+    g_resize_pending = 0;
 
     raw = orig_termios;
     raw.c_lflag &= (tcflag_t)~(ICANON | ECHO | ISIG | IEXTEN);
@@ -223,12 +267,29 @@ q9_key_t q9_input_read_key(void)
     q9_key_t k;
     ssize_t r;
 
+    if (g_resize_pending) {
+        /* Von einem frueheren SIGWINCH stehengeblieben (s.u.) -- sofort melden, bevor ueberhaupt
+           auf eine Taste gewartet wird. */
+        g_resize_pending = 0;
+        k.kind = Q9_KEY_RESIZE;
+        k.ch   = 0;
+        return k;
+    }
+
     if (pending_len > 0) {
         memcpy(buf, pending_buf, (size_t)pending_len);
         len = pending_len;
         pending_len = 0;
     } else {
         r = read(STDIN_FILENO, buf, 1);
+        if (r < 0 && errno == EINTR) {
+            /* Ein Signal (in der Praxis: SIGWINCH, s.o.) hat den blockierenden read() unterbrochen,
+               BEVOR irgendein Byte ankam -- sofort als Resize melden, kein Byte verloren/geraten. */
+            g_resize_pending = 0;
+            k.kind = Q9_KEY_RESIZE;
+            k.ch   = 0;
+            return k;
+        }
         if (r <= 0) {
             k.kind = Q9_KEY_EOF;
             k.ch   = 0;
@@ -278,8 +339,23 @@ q9_key_t q9_input_read_key(void)
     return k;
 }
 
+int q9_term_size(int *rows, int *cols)
+{
+    struct winsize ws;
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0) {
+        return -1;
+    }
+    if (ws.ws_row == 0 || ws.ws_col == 0) {
+        return -1;                                          /* z.B. stdout umgeleitet/kein TTY        */
+    }
+    if (rows) { *rows = ws.ws_row; }
+    if (cols) { *cols = ws.ws_col; }
+    return 0;
+}
+
 #endif /* _WIN32 */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_input.c                                                                          Ver. 1.00
+// EOF q9_input.c                                                                          Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
