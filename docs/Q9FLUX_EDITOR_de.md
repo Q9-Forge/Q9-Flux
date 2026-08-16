@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.60
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.70
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -28,6 +28,9 @@
 # 26-08-16│ 1.60 │ 2. Tastatur-Rohmodus+-Erkennung FERTIG (q9_input.h/.c) -- letzter Grund-    │ Cld
 #         │      │ baustein, per expect/pty end-to-end verifiziert. Alle Bausteine da, es      │
 #         │      │ fehlt jetzt nur noch das Zusammensetzen zum eigentlichen Programm           │
+# 26-08-16│ 1.70 │ 2. Scrollbare Listenansicht FERTIG (q9_listview.h/.c, inkl. Scrollbalken);   │ Cld
+#         │      │ "Q9TUI"-Bibliothek-Idee (Andreas) notiert, bewusst vertagt bis Grundstock    │
+#         │      │ steht                                                                        │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -111,11 +114,25 @@ Taste erkannt (kein Verschlucken durch den Pending-Byte-Mechanismus). Windows-Zw
 UNGETESTET -- inkl. eines offenen Fragezeichens im Code-Kommentar, ob Strg-C dort ueberhaupt als
 Byte ankommt oder vom Standard-Handler abgefangen wird.
 
+**Scrollbare Listenansicht FERTIG (2026-08-16):** Andreas' Frage "Könnte man einen Bereich
+Scrollbar machen?" (mehr Felder/Hardware-Eintraege als zwischen Titel und den START/SAVE/EXIT-
+Buttons sichtbar) -- `tools/q9-flux-editor/src/q9_listview.h/.c`. `q9_listview_scroll()` ist die
+reine Kernlogik ("Auswahl bleibt immer im Sichtfenster", scrollt nie weiter als noetig), ohne
+echten Bildschirmpuffer testbar (wie `q9_input_decode`). `q9_listview_render()` zeichnet die
+sichtbaren Eintraege in einen `q9_screenbuf_t`, hebt die Auswahl farblich hervor, und zeichnet
+einen echten Ein-Zeichen-Scrollbalken ('|' Spur, '#' Position) -- NUR wenn tatsaechlich mehr
+Eintraege da sind als ins Sichtfenster passen (sonst keine Balken-Zeichnung, nichts zu scrollen).
+Verifiziert per `make test-listview` (34 Checks).
+
 **Noch offen:** Buttons/Textfelder (Aussehen noch nicht mit Andreas geklaert, s. Abschnitt 3 unten
 "genauer Zuschnitt/Wortlaut nicht final") und das eigentliche Zusammensetzen aller Bausteine
-(q9_screenbuf/q9_widgets/q9_procspawn/q9_input) zu echten, bedienbaren Bildschirmen -- alle
-Grundbausteine sind jetzt da, es fehlt noch das Programm selbst. Maus-Unterstuetzung weiterhin
-nicht angefangen.
+(q9_screenbuf/q9_widgets/q9_procspawn/q9_input/q9_listview) zu echten, bedienbaren Bildschirmen --
+alle Grundbausteine sind jetzt da, es fehlt noch das Programm selbst. Maus-Unterstuetzung
+weiterhin nicht angefangen. **Neu (2026-08-16):** Andreas' Idee, die inzwischen 6 Module als
+eigene, wiederverwendbare Bibliothek ("Q9TUI") zu benennen/umzuziehen (`tools/q9tui/` statt
+`tools/q9-flux-editor/src/`) -- bewusst VERTAGT, bis der Editor selbst einen brauchbaren
+Grundstock ergibt ("erst das hier weiter machen, wenn wir fertig sind haben wir vielleicht einen
+guten Grundstock fuer die Lib").
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
