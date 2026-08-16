@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.70
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.80
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -31,6 +31,8 @@
 # 26-08-16│ 1.70 │ 2. Scrollbare Listenansicht FERTIG (q9_listview.h/.c, inkl. Scrollbalken);   │ Cld
 #         │      │ "Q9TUI"-Bibliothek-Idee (Andreas) notiert, bewusst vertagt bis Grundstock    │
 #         │      │ steht                                                                        │
+# 26-08-16│ 1.80 │ Dynamische Groessenanpassung FERTIG (q9_term_size + Q9_KEY_RESIZE, SIGWINCH); │ Cld
+#         │      │ dabei echten macOS-signal()-vs-sigaction()-Bug per Pty-Test gefunden+behoben  │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -123,6 +125,24 @@ sichtbaren Eintraege in einen `q9_screenbuf_t`, hebt die Auswahl farblich hervor
 einen echten Ein-Zeichen-Scrollbalken ('|' Spur, '#' Position) -- NUR wenn tatsaechlich mehr
 Eintraege da sind als ins Sichtfenster passen (sonst keine Balken-Zeichnung, nichts zu scrollen).
 Verifiziert per `make test-listview` (34 Checks).
+
+**Dynamische Grössenanpassung FERTIG (2026-08-16):** Andreas' Wunsch "wäre ja toll wenn es
+halbwegs dynamisch auf die aktuelle Grösse reagiert". `q9_input.h/.c` bekam `q9_term_size()`
+(aktuelle Zeilen/Spalten) + `Q9_KEY_RESIZE` als neues Ereignis im selben `q9_key_t`-Kanal wie
+Tastendruecke. POSIX: ein echtes SIGWINCH unterbricht den blockierenden `read()` SOFORT (kein
+Polling, keine Verzoegerung ueber die Signal-Zustellzeit hinaus) -- die Hauptschleife bekommt
+`Q9_KEY_RESIZE` wie jedes andere Ereignis und kann Groesse neu abfragen + alles neu zeichnen.
+**Dabei ein echter, per Pseudo-Terminal-Test gefundener Bug behoben:** die urspruengliche
+`signal(SIGWINCH, ...)`-Installation liess das Ereignis auf macOS unbemerkt, weil `signal()` dort
+mit automatischem Syscall-Neustart installiert (BSD-Erbe) -- der blockierende `read()` wurde
+NICHT mit EINTR unterbrochen, sondern lief transparent weiter, das Resize-Ereignis kam erst beim
+naechsten ECHTEN Tastendruck an statt sofort. Fix: `sigaction()` mit `sa_flags=0` (explizit ohne
+`SA_RESTART`) statt `signal()`. Verifiziert per `expect`/echtem Pty-Resize (`stty rows/columns`)
+-- zwei aufeinanderfolgende Groessenaenderungen (30x100, dann 40x120) kommen beide sofort und mit
+der exakt richtigen Groesse an, ganz ohne dazwischenliegenden Tastendruck. Windows: kein
+SIGWINCH-Aequivalent, `q9_term_size()` funktioniert dort (`GetConsoleScreenBufferInfo`), aber
+`Q9_KEY_RESIZE` wird nie von sich aus geliefert -- ein kuenftiger Windows-Zweig der Hauptschleife
+muesste selbst regelmaessig nachfragen (mangels Windows-Host hier ungetestet).
 
 **Noch offen:** Buttons/Textfelder (Aussehen noch nicht mit Andreas geklaert, s. Abschnitt 3 unten
 "genauer Zuschnitt/Wortlaut nicht final") und das eigentliche Zusammensetzen aller Bausteine
