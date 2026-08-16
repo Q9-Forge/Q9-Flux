@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 3.80
+# File:   Makefile                                                                        Ver. 3.90
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
 #         Bring-up-Vorbereitung).
@@ -45,6 +45,8 @@
 # 26-08-16│ 3.70 │ test-screenbuf dazu (q9_screenbuf.h/.c, Bildschirmpuffer fuer den modalen     │ Cld
 #         │      │ Config-Auswahl-Dialog, Q9FLUX_EDITOR_de.md Abschnitt 2)                       │
 # 26-08-16│ 3.80 │ test-widgets dazu (q9_widgets.h/.c, draw_frame -- erster UI-Baustein)         │ Cld
+# 26-08-16│ 3.90 │ test-procspawn dazu (q9_procspawn.h/.c, fork/exec/wait fuer den "Start"-      │ Cld
+#         │      │ Button, echter End-to-End-Test mit q9.exe verifiziert, nicht nur Selbsttest)  │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -207,7 +209,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-useslot
+test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-useslot
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -281,6 +283,17 @@ test-widgets:
 	    tools/q9-flux-editor/src/q9_ansi.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/widgets_selftest
 	$(BUILD)/$(PLATFORM_DIR)/widgets_selftest
+
+# Prozess-Spawn-Wrapper (q9_procspawn.h/.c, 2026-08-16) -- Grundlage fuer den "Start"-Button:
+# Emulator als Kindprozess im selben Terminal starten, blockierend warten, danach zurueck zum
+# Editor (Andreas' Entscheidung, s. Q9FLUX_EDITOR_de.md). Gleiches Muster wie die anderen
+# test-*-Ziele: direkter Aufruf, kein rekursives "$(MAKE) -C".
+test-procspawn:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) tools/q9-flux-editor/test/procspawn_selftest.c \
+	    tools/q9-flux-editor/src/q9_procspawn.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/procspawn_selftest
+	$(BUILD)/$(PLATFORM_DIR)/procspawn_selftest
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
@@ -487,7 +500,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.60

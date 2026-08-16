@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.40
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.50
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -23,6 +23,8 @@
 # 26-08-16│ 1.40 │ 2. Config-Auswahl: erster Widget-Baustein FERTIG (q9_widgets.h/.c,        │ Cld
 #         │      │ draw_frame -- ASCII-Rahmen mit Titel) -- Buttons/Textfelder und die        │
 #         │      │ Tastatur-/Ereignisschleife weiterhin offen                                │
+# 26-08-16│ 1.50 │ 3. "Start"-Mechanik geklaert (Andreas: Kindprozess statt exec()) + Grund-  │ Cld
+#         │      │ lage FERTIG (q9_procspawn.h/.c), echter End-to-End-Test mit q9.exe         │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -98,6 +100,20 @@ Unterstuetzung weiterhin nicht angefangen.
 - **Hardware** (s. Abschnitt 4)
 - unten Buttons: **Start / Speichern / Beenden** (Andreas hat sich beim genauen Zuschnitt/
   Wortlaut noch nicht endgueltig festgelegt — "später umentschieden", als offen markiert)
+
+**"Start"-Mechanik GEKLAERT + Grundlage FERTIG (2026-08-16):** Andreas' Entscheidung -- der
+Emulator wird als **Kindprozess im selben Terminal** gestartet (nicht per `exec()` selbst zum
+Emulator werden); nach dessen Ende kehrt die Kontrolle zum Editor zurueck (eigenen Bildschirm
+per `q9_screenbuf` neu zeichnen, statt im nackten Shell-Prompt zu landen). Umgesetzt:
+`tools/q9-flux-editor/src/q9_procspawn.h/.c` (`q9_procspawn_run()`) -- POSIX (`fork`/`execv`/
+`waitpid`) implementiert UND per echtem End-to-End-Test verifiziert (`build/macos/q9.exe` als
+Kindprozess gestartet, bis "8 devices online" gebootet, per SIGTERM beendet, Rueckgabewert `-2`
+[abnormal beendet] korrekt erkannt -- nicht nur der isolierte Selbsttest per Selbstaufruf-Trick,
+`make test-procspawn`, 4 Checks). Terminal-Rohmodus verschachtelt sich dabei von selbst richtig
+(s. Header-Kommentar). **Windows-Zweig** (`CreateProcess`/`WaitForSingleObject`) nach demselben
+Muster wie `src/hal/windows/hal_windows.c` geschrieben, mangels Windows-Host hier UNGETESTET.
+**Noch offen:** die eigentliche Verdrahtung an einen "Start"-Knopf (braucht erst die Tastatur-/
+Ereignisschleife, s.u.), und welchen Config-Pfad/welche Argumente genau uebergeben werden.
 
 ## 4. Hardware-Bereich
 
