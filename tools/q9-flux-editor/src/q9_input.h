@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_input.h                                                                      Ver. 1.00
+// File:   q9_input.h                                                                      Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Tastatur-Eingabe fuer den Q9-Flux-Editor -- Rohmodus + Tastenerkennung (Pfeiltasten,
 //         Enter, Escape, Tab, Backspace, Strg-C). Letzter fehlender Baustein aus
@@ -44,6 +44,12 @@
 // 26-08-16│ 1.00 │ Erster Wurf -- POSIX (termios) implementiert+getestet (decode-Kern),     │ Cld
 //         │      │ Windows-Zweig (_kbhit/_getch, Scan-Codes wie hal_windows.c) geschrieben, │
 //         │      │ mangels Windows-Host hier UNGETESTET                                     │
+// 26-08-16│ 1.10 │ Andreas' Wunsch nach "halbwegs dynamischer" Grössenanpassung: q9_term_size│ Cld
+//         │      │ (aktuelle Zeilen/Spalten) + Q9_KEY_RESIZE (POSIX: echtes SIGWINCH lost   │
+//         │      │ den blockierenden read() sofort aus -- kein Polling noetig, Reaktion so   │
+//         │      │ schnell wie das Terminal das Signal schickt; Windows: kein SIGWINCH-      │
+//         │      │ Aequivalent, dort per Definition nur "beim naechsten Tastendruck neu      │
+//         │      │ nachsehen" moeglich -- s. dortiger Kommentar)                             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_INPUT_H
 #define Q9_INPUT_H
@@ -65,9 +71,20 @@ typedef enum {
     Q9_KEY_CTRL_C,                                          /* 0x03 -- Rohmodus deaktiviert ISIG, kommt
                                                              als normales Byte an statt SIGINT auszuloesen */
     Q9_KEY_EOF,                                            /* stdin geschlossen (z.B. Pipe/Skript-Ende) */
-    Q9_KEY_UNKNOWN                                          /* erkannter, aber nicht behandelter Byte-Wert
+    Q9_KEY_UNKNOWN,                                         /* erkannter, aber nicht behandelter Byte-Wert
                                                              (z.B. andere Steuerzeichen) -- wird verworfen,
                                                              read_key() liest automatisch weiter          */
+    Q9_KEY_RESIZE                                            /* Terminal-Groesse hat sich geaendert (POSIX:
+                                                             SIGWINCH) -- kein echter Tastendruck, aber
+                                                             ueber denselben q9_key_t-Kanal gemeldet, damit
+                                                             die Hauptschleife es wie jedes andere Ereignis
+                                                             behandeln kann (Groesse neu abfragen, Layout
+                                                             neu berechnen, komplett neu zeichnen). ch bleibt
+                                                             0 -- die neue Groesse selbst kommt separat ueber
+                                                             q9_term_size() (nicht in q9_key_t verpackt, um
+                                                             die Struktur nicht mit einem Sonderfall-Feld
+                                                             aufzublasen, das bei jeder anderen Q9_KEY_*-Art
+                                                             ungenutzt waere) */
 } q9_key_kind_t;
 
 typedef struct {
@@ -106,13 +123,31 @@ void q9_input_shutdown(void);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_input_read_key
-// Desc.:    Blockiert, bis eine vollstaendige Taste vorliegt (echtes stdin-I/O -- NICHT
-//           automatisiert testbar, duenne Huelle um q9_input_decode). Braucht q9_input_init() vorher.
+// Desc.:    Blockiert, bis eine vollstaendige Taste ODER ein Q9_KEY_RESIZE-Ereignis vorliegt (echtes
+//           stdin-I/O -- NICHT automatisiert testbar, duenne Huelle um q9_input_decode). Braucht
+//           q9_input_init() vorher. POSIX: ein waehrend des Wartens eintreffendes SIGWINCH
+//           unterbricht den blockierenden read() sofort (EINTR) -- die Funktion liefert dann
+//           umgehend Q9_KEY_RESIZE, OHNE auf eine tatsaechliche Taste zu warten (kein Polling, keine
+//           Verzoegerung ueber die Signal-Zustellzeit des Terminals hinaus). Windows kennt kein
+//           SIGWINCH-Aequivalent -- dort liefert q9_input_read_key() NIE von sich aus
+//           Q9_KEY_RESIZE; der Aufrufer muss dort selbst regelmaessig (z.B. nach jeder verarbeiteten
+//           Taste) q9_term_size() gegen die zuletzt bekannte Groesse vergleichen, wenn er auch unter
+//           Windows reagieren will (s. Q9FLUX_EDITOR_de.md fuer den aktuellen Stand).
 // Call:     q9_key_t k = q9_input_read_key()
 //════════════════════════════════════════════════════════════════════════════════════════════════
 q9_key_t q9_input_read_key(void);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_term_size
+// Desc.:    Liefert die aktuelle Terminal-Groesse in Zeilen/Spalten. Rueckgabe 0 = ok, -1 = Groesse
+//           konnte nicht ermittelt werden (z.B. stdout umgeleitet, kein echtes Terminal) -- rows/cols
+//           bleiben dann unveraendert, Aufrufer sollte auf einen sinnvollen Default zurueckfallen
+//           (z.B. 24x80, das klassische Standardmass). Braucht KEIN vorheriges q9_input_init().
+// Call:     int rows, cols; if (q9_term_size(&rows, &cols) != 0) { rows = 24; cols = 80; }
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_term_size(int *rows, int *cols);
+
 #endif /* Q9_INPUT_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_input.h                                                                          Ver. 1.00
+// EOF q9_input.h                                                                          Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
