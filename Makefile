@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 4.00
+# File:   Makefile                                                                        Ver. 4.10
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
 #         Bring-up-Vorbereitung).
@@ -50,6 +50,8 @@
 # 26-08-16│ 4.00 │ test-input dazu (q9_input.h/.c, Tastatur-Rohmodus + Pfeiltasten/Enter/Escape/  │ Cld
 #         │      │ Strg-C -- letzter Grundbaustein des Editor-Plans, per expect/pty end-to-end    │
 #         │      │ verifiziert)                                                                   │
+# 26-08-16│ 4.10 │ test-listview dazu (q9_listview.h/.c, scrollbare Listenansicht inkl.           │ Cld
+#         │      │ Scrollbalken)                                                                  │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -212,7 +214,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-useslot
+test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-useslot
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -310,6 +312,18 @@ test-input:
 	    tools/q9-flux-editor/src/q9_input.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/input_selftest
 	$(BUILD)/$(PLATFORM_DIR)/input_selftest
+
+# Scrollbare Listenansicht (q9_listview.h/.c, 2026-08-16) -- Andreas' Frage "Koennte man einen
+# Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/Hardware-Eintraege als
+# sichtbar). Gleiches Muster wie die anderen test-*-Ziele: direkter Aufruf, kein rekursives
+# "$(MAKE) -C".
+test-listview:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) tools/q9-flux-editor/test/listview_selftest.c \
+	    tools/q9-flux-editor/src/q9_listview.c tools/q9-flux-editor/src/q9_screenbuf.c \
+	    tools/q9-flux-editor/src/q9_ansi.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/listview_selftest
+	$(BUILD)/$(PLATFORM_DIR)/listview_selftest
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
@@ -516,7 +530,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.60
