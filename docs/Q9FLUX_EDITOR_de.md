@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.50
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.60
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -25,6 +25,9 @@
 #         │      │ Tastatur-/Ereignisschleife weiterhin offen                                │
 # 26-08-16│ 1.50 │ 3. "Start"-Mechanik geklaert (Andreas: Kindprozess statt exec()) + Grund-  │ Cld
 #         │      │ lage FERTIG (q9_procspawn.h/.c), echter End-to-End-Test mit q9.exe         │
+# 26-08-16│ 1.60 │ 2. Tastatur-Rohmodus+-Erkennung FERTIG (q9_input.h/.c) -- letzter Grund-    │ Cld
+#         │      │ baustein, per expect/pty end-to-end verifiziert. Alle Bausteine da, es      │
+#         │      │ fehlt jetzt nur noch das Zusammensetzen zum eigentlichen Programm           │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -87,10 +90,32 @@ Wiederherstellen-Ablauf als expliziter Testfall.
 `q9_screenbuf_draw_frame()` -- zeichnet den ASCII-Rahmen ('+'/'-'/'|', bewusst kein Unicode-
 Box-Drawing, s. dortiger Kopfkommentar) mit optionalem mittigen Titel in der oberen Kante,
 bounds-sicher wie alle q9_screenbuf-Funktionen. Verifiziert per `make test-widgets` (21 Checks).
+
+**Tastatur-Rohmodus + Tastenerkennung FERTIG (2026-08-16):** `tools/q9-flux-editor/src/
+q9_input.h/.c` -- letzter fehlender Grundbaustein, um die bisherigen Teile zu echten, bedienbaren
+Bildschirmen zusammenzusetzen. Eigener, vom Emulator-`src/hal/*` UNABHAENGIGER Rohmodus (dort
+transparente Durchreichung an OS-9, hier Navigations-Tastenerkennung -- andere Verwendung trotz
+gleicher termios-Grundtechnik, s. dortiger Kopfkommentar). Erkennt Zeichen, Enter, Tab, Backspace,
+Pfeiltasten (ANSI-Sequenzen), Strg-C (als Byte, ISIG aus) und EOF. Die eigentliche
+Sequenz-Erkennung (`q9_input_decode`) ist eine REINE Funktion (Byte-Puffer rein, Taste raus) --
+loest insbesondere die klassische ESC-Mehrdeutigkeit (einzelnes Escape vs. Beginn einer
+Pfeiltasten-Sequenz) ueber einen kurzen Timeout (100ms) in der I/O-Huelle, waehrend die
+Entscheidungslogik selbst ohne echtes Terminal testbar bleibt (`make test-input`, 26 Checks).
+**Zusaetzlich echter End-to-End-Test** (ueber die reinen Selbsttests hinaus, wie schon bei
+q9_procspawn): ein Wegwerf-Testprogramm ueber `expect`/ein echtes Pseudo-Terminal gefahren --
+echte ANSI-Pfeiltasten-Sequenzen kommen korrekt als UP/DOWN/RIGHT/LEFT an, ein einzelnes ESC ohne
+Folgebytes wird nach Ablauf des Timeouts korrekt als Escape erkannt, Strg-C kommt als Byte an
+(kein SIGINT-Absturz), und ein Zeichen direkt nach einem einzelnen ESC wird sauber als eigene
+Taste erkannt (kein Verschlucken durch den Pending-Byte-Mechanismus). Windows-Zweig (`_kbhit`/
+`_getch`, Scan-Codes wie `src/hal/windows/hal_windows.c`) geschrieben, mangels Windows-Host hier
+UNGETESTET -- inkl. eines offenen Fragezeichens im Code-Kommentar, ob Strg-C dort ueberhaupt als
+Byte ankommt oder vom Standard-Handler abgefangen wird.
+
 **Noch offen:** Buttons/Textfelder (Aussehen noch nicht mit Andreas geklaert, s. Abschnitt 3 unten
-"genauer Zuschnitt/Wortlaut nicht final") und die eigentliche Tastatur-/Ereignisschleife --
-`q9_screenbuf`/`q9_widgets` liefern nur Puffer und Zeichenroutinen, keine Interaktion. Maus-
-Unterstuetzung weiterhin nicht angefangen.
+"genauer Zuschnitt/Wortlaut nicht final") und das eigentliche Zusammensetzen aller Bausteine
+(q9_screenbuf/q9_widgets/q9_procspawn/q9_input) zu echten, bedienbaren Bildschirmen -- alle
+Grundbausteine sind jetzt da, es fehlt noch das Programm selbst. Maus-Unterstuetzung weiterhin
+nicht angefangen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
