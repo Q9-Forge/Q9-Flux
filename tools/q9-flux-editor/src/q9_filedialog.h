@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.h                                                                 Ver. 1.20
+// File:   q9_filedialog.h                                                                 Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Modaler Datei-Auswahl-Dialog -- komponiert q9_filelist (Verzeichnis-Scan), q9_listview
 //         (scrollbare Liste) und q9_screenbuf (Bildschirmpuffer) zu einem echten interaktiven
@@ -8,19 +8,32 @@
 //
 //             ┌ Kopfzeile: Titel in Kopfzeilenfarbe, rechts ein rein dekoratives "X" (kein
 //             │  Maus-Support, s. q9_input.h Kopfkommentar -- Mausklick ist zurueckgestellt)
-//             ├ Spaltentitel-Zeile: "Name  Datum  Groesse", leicht andere Farbe
-//             ├ Dateiliste (q9_listview, scrollbar, Zeilen vorformatiert -- s.u.)
+//             ├ Spaltentitel-Zeile "Name  Datum  Groesse" -- GENAU so breit wie die Tabelle
+//             │  darunter (Andreas' Wunsch, 2026-08-17), NICHT die volle Dialogbreite. Groesse
+//             │  ganz rechts, Datum links davon (feste Breiten), Name nimmt den REST ein
+//             │  (dynamisch, s. name_col_width in q9_filedialog_t)
+//             │┌──────────────────────────────────────────────────────────────────────────┐
+//             │  Dateiliste (q9_listview, Zeilen vorformatiert -- s.u.) -- LINKS eine feste  │
+//             │  Linie (von diesem Modul gezeichnet, q9_listview kennt nur seine EIGENE      │
+//             │  rechte Spalte), RECHTS die Bildlaufleiste/Linie von q9_listview selbst       │
+//             │  (Andreas' Wunsch: "wird keine Laufleiste benoetigt ist es einfach der        │
+//             │  normale Strich" -- IMMER eine Linie, der Griff kommt nur bei Bedarf dazu)     │
+//             │└──────────────────────────────────────────────────────────────────────────┘
 //             ├──────────────────────────── FUSSBEREICH, eigene Hintergrundfarbe (footer_bg) ──────
-//             ├ Auswahl-/Filterzeile: links die aktuell ausgewaehlte Datei, rechts ein kompakter
+//             ├ Auswahl-/Filterzeile: links "Datei: " + der Name in einem eigenen, abgesetzten
+//             │  Kaestchen (sub_fg/bg, wie die Spaltentitel-Zeile); rechts ein kompakter
 //             │  Extensions-Umschalter (4-5 Buchstaben + ▾) -- ▾ oeffnet ein kleines Aufklapp-Menue
-//             │  mit ALLEN Filtern (s.u.), kein reines Durchschalten mehr
+//             │  mit ALLEN Filtern (s.u.), kein reines Durchschalten mehr. Filter UND Buttons
+//             │  enden buendig mit der rechten Linie der Dateiliste darueber (nicht mehr am
+//             │  absoluten Dialogrand -- "Platz fuer den Rahmen/die Bildlaufleiste")
 //             ├ (Halbblock-Kappe oberhalb der Buttons, s.u.)
 //             ├ Buttons OK / Abbrechen -- "richtige" Buttons in Spaltentitel-Farbe (sub_fg/bg),
-//             │  rechtsbuendig, gleich breit, per Q9_GLYPH_UPPER_HALF/LOWER_HALF nach oben+unten
-//             │  "aufgeblasen" (klassischer Halbblock-Trick: eine Zeile UEBER dem Button zeigt in
-//             │  der unteren Haelfte die Button-Farbe, eine Zeile UNTER dem Button in der oberen
-//             │  Haelfte -- der Button wirkt dadurch anderthalb Zeilen hoch, obwohl er nur eine
-//             │  einzige Textzeile belegt)
+//             │  rechtsbuendig (buendig mit der Linie der Dateiliste, s.o.), gleich breit, per
+//             │  Q9_GLYPH_UPPER_HALF/LOWER_HALF nach oben+unten "aufgeblasen" (klassischer
+//             │  Halbblock-Trick: eine Zeile UEBER dem Button zeigt in der unteren Haelfte die
+//             │  Button-Farbe, eine Zeile UNTER dem Button in der oberen Haelfte -- der Button
+//             │  wirkt dadurch anderthalb Zeilen hoch, obwohl er nur eine einzige Textzeile
+//             │  belegt)
 //             └ (Halbblock-Kappe unterhalb der Buttons, s.u.)
 //
 //         RAHMENLOS -- nur ueber eine eigene Hintergrundfarbe vom Rest des Bildschirms abgegrenzt
@@ -76,6 +89,10 @@
 //         │      │ Filterzeile, "richtige" Buttons (sub_fg/bg, Halbblock-Kappen, gleich     │
 //         │      │ breit, rechtsbuendig), Filter-Pfeil jetzt ▾ + oeffnet ein Aufklapp-Menue │
 //         │      │ mit ALLEN Filtern statt nur einzeln durchzuschalten                      │
+// 26-08-17│ 1.30 │ Dritte Feedback-Runde: linke Linie fuer die Dateiliste, Spaltentitel-Zeile│ Cld
+//         │      │ jetzt exakt so breit wie die Tabelle, Name-Spalte dynamisch (neues Feld   │
+//         │      │ name_col_width statt fester Konstante), Filter/Buttons/Popup buendig mit  │
+//         │      │ der rechten Linie, "Datei:"-Wert in eigenem Kaestchen                     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_FILEDIALOG_H
 #define Q9_FILEDIALOG_H
@@ -90,9 +107,11 @@
                                                                 fuer Punkt/Stern/Nullbyte             */
 #define Q9_FILEDIALOG_TITLE_MAX   64
 #define Q9_FILEDIALOG_DIR_MAX     512
-#define Q9_FILEDIALOG_NAME_COL    20                        /* Spaltenbreite "Name" in der vorformat-
-                                                                ierten Zeile (Listview-Item-String)   */
-#define Q9_FILEDIALOG_ROW_MAX     48                         /* " %-20.20s %8s %7s" -> reichlich Luft */
+#define Q9_FILEDIALOG_DATE_COL    8                         /* "DD.MM.YY", s. q9_filelist.h           */
+#define Q9_FILEDIALOG_SIZE_COL    7                          /* "999.9G" o.ae., s. q9_filelist.h        */
+#define Q9_FILEDIALOG_ROW_MAX     128                        /* Name (dynamisch, s. name_col_width) +
+                                                                 Trennzeichen + Datum + Groesse -- auch
+                                                                 fuer sehr breite Dialoge reichlich Luft */
 
 typedef enum {
     Q9_FILEDIALOG_FOCUS_LIST = 0,
@@ -150,6 +169,12 @@ typedef struct {
     char row_text[Q9_FILELIST_MAX_ENTRIES][Q9_FILEDIALOG_ROW_MAX];      /* vorformatierte Listenzeilen */
     const char *row_ptr[Q9_FILELIST_MAX_ENTRIES];           /* Zeiger darauf, fuer q9_listview_render */
     q9_listview_t list;
+    int name_col_width;                                     /* Breite der Name-Spalte -- EINMAL in
+                                                                init() aus der tatsaechlichen Listen-
+                                                                breite berechnet (Rest nach Datum/
+                                                                Groesse/Trennzeichen, Andreas' Wunsch,
+                                                                2026-08-17: "Dateiname dann so lang wie
+                                                                der Rest"), s. .c layout_rows()          */
 
     q9_filedialog_focus_t focus;
     q9_filedialog_palette_t pal;
@@ -215,5 +240,5 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
 
 #endif /* Q9_FILEDIALOG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.h                                                                     Ver. 1.20
+// EOF q9_filedialog.h                                                                     Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

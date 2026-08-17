@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.20
+// File:   q9_filedialog.c                                                                 Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
 //         des Dialogs, s. layout_rows() -- EINZIGE Stelle, die diese Aufteilung kennt, init() und
@@ -25,6 +25,11 @@
 // 26-08-17│ 1.20 │ Zweite Feedback-Runde: layout_rows() als gemeinsame Geometrie-Quelle,    │ Cld
 //         │      │ eigener Fussbereich (footer_bg), "richtige" Buttons per Halbblock-Kappen,│
 //         │      │ Filter-Aufklapp-Menue (filter_popup_open/-index) statt reinem Durchschalten│
+// 26-08-17│ 1.30 │ Dritte Feedback-Runde: linke Linie fuer die Dateiliste dazu (q9_listview  │ Cld
+//         │      │ zeichnet nur die rechte), Spaltentitel-Zeile jetzt exakt so breit wie die │
+//         │      │ Tabelle, Name-Spalte dynamisch (name_col_width statt fester Konstante),   │
+//         │      │ Filter/Buttons/Popup buendig mit der rechten Linie statt Dialogrand,       │
+//         │      │ "Datei:"-Wert in eigenem sub_fg/bg-Kaestchen                               │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -57,14 +62,17 @@ static void layout_rows(int rows, int *list_height, int *status_row, int *cap_ab
 
 /* Formatiert alle aktuell in dlg->files stehenden Eintraege zu spaltenausgerichteten Zeilen fuer
    q9_listview_render (s. Kopfkommentar q9_filedialog.h -- flaches String-Array, kein eigenes
-   Mehrspalten-Feature in q9_listview.c). */
+   Mehrspalten-Feature in q9_listview.c). Name-Spalte in dlg->name_col_width (dynamisch, EINMAL in
+   init() berechnet, s. dort) -- Groesse ganz rechts, Datum davor, Name fuellt den Rest
+   (Andreas' Wunsch, 2026-08-17). */
 static void format_rows(q9_filedialog_t *dlg)
 {
     int i;
     for (i = 0; i < dlg->files.count; i++) {
         const q9_fileentry_t *e = &dlg->files.entry[i];
-        snprintf(dlg->row_text[i], sizeof(dlg->row_text[i]), "%-*.*s %8s %7s",
-                 Q9_FILEDIALOG_NAME_COL, Q9_FILEDIALOG_NAME_COL, e->name, e->date, e->size);
+        snprintf(dlg->row_text[i], sizeof(dlg->row_text[i]), "%-*.*s %*s %*s",
+                 dlg->name_col_width, dlg->name_col_width, e->name,
+                 Q9_FILEDIALOG_DATE_COL, e->date, Q9_FILEDIALOG_SIZE_COL, e->size);
         dlg->row_ptr[i] = dlg->row_text[i];
     }
 }
@@ -109,13 +117,26 @@ int q9_filedialog_init(q9_filedialog_t *dlg, int row, int col, int rows, int col
     dlg->done = 0;
 
     /* Listen-Geometrie EINMAL berechnen (s. layout_rows()) -- rescan() aendert nur noch item_count,
-       nie row/col/height/width. */
+       nie row/col/height/width. Spaltenaufteilung (Andreas' Wunsch, 2026-08-17): links EINE Spalte
+       fuer die vom Dialog selbst gezeichnete Linie (render()), dann die Liste (deren eigene rechte
+       Spalte q9_listview.c IMMER als Linie/Bildlaufleiste zeichnet), dann EINE Spalte Rand zum
+       Dialogrand -- macht insgesamt 3 Spalten "Verwaltung" statt bisher 2 (nur der linke Rand). */
     layout_rows(dlg->rows, &list_height, NULL, NULL, NULL, NULL);
     dlg->list.row    = dlg->row + 2;
-    dlg->list.col    = dlg->col + 1;
+    dlg->list.col    = dlg->col + 2;
     dlg->list.height = list_height;
-    dlg->list.width  = dlg->cols - 2;
+    dlg->list.width  = dlg->cols - 3;
     if (dlg->list.width < 1) { dlg->list.width = 1; }
+
+    /* Name-Spaltenbreite: der Rest der Listenbreite, nachdem q9_listview's eigene rechte Spalte (1
+       Zeichen, s.o.) sowie Trennzeichen/Datum/Groesse abgezogen sind -- "Dateiname so lang wie der
+       Rest". */
+    {
+        int content_width = dlg->list.width - 1;             /* -1 == q9_listview's eigene Linie/Leiste */
+        int name_w = content_width - 1 - Q9_FILEDIALOG_DATE_COL - 1 - Q9_FILEDIALOG_SIZE_COL;
+        if (name_w < 1) { name_w = 1; }
+        dlg->name_col_width = name_w;
+    }
 
     rescan(dlg);
     return 0;
@@ -293,7 +314,9 @@ static void render_filter_popup(const q9_filedialog_t *dlg, q9_screenbuf_t *sb, 
     if (popup_w < 1)     { popup_w = 1; }
 
     popup_row = status_row_abs - popup_h;
-    popup_col = dlg->col + dlg->cols - 1 - popup_w;
+    /* Rechtsbuendig mit der rechten Linie der Dateiliste (nicht mehr am absoluten Dialogrand,
+       s. q9_filedialog_render() -- "Buttons und Filter wandern etwas nach links"). */
+    popup_col = (dlg->list.col + dlg->list.width - 1) - popup_w + 1;
     if (popup_col < dlg->col + 1) { popup_col = dlg->col + 1; }
 
     q9_screenbuf_fill_rect(sb, popup_row, popup_col, popup_h, popup_w, ' ',
@@ -350,13 +373,40 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                            p->header_fg_r, p->header_fg_g, p->header_fg_b);
     }
 
-    /* Spaltentitel-Zeile. */
-    q9_screenbuf_fill_rect(sb, dlg->row + 1, dlg->col, 1, dlg->cols, ' ',
-                            p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
-                            1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
-    snprintf(line, sizeof(line), "%-*.*s %8s %7s",
-             Q9_FILEDIALOG_NAME_COL, Q9_FILEDIALOG_NAME_COL, "Name", "Datum", "Groesse");
-    q9_screenbuf_puts(sb, dlg->row + 1, dlg->col + 1, line, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
+    /* Tabellen-Rahmen (Andreas' Wunsch, 2026-08-17): links eine feste Linie (dieses Modul, q9_listview
+       kennt nur seine EIGENE rechte Spalte), rechts die von q9_listview.c IMMER gezeichnete
+       Linie/Bildlaufleiste -- beide spannen exakt die Listenhoehe, nicht den Fussbereich (der hat
+       eine eigene Abgrenzung ueber footer_bg statt Linien, s.u.). */
+    {
+        int left_border_col  = dlg->list.col - 1;
+        int r;
+        char vline[2];
+        vline[0] = (char)Q9_GLYPH_VLINE; vline[1] = '\0';
+        for (r = 0; r < dlg->list.height; r++) {
+            q9_screenbuf_puts(sb, dlg->list.row + r, left_border_col, vline,
+                               p->list_fg_r, p->list_fg_g, p->list_fg_b);
+        }
+    }
+
+    /* Spaltentitel-Zeile -- GENAU so breit wie die Tabelle darunter (linke Linie bis zur rechten
+       Linie von q9_listview, s.o.), NICHT die volle Dialogbreite (Andreas' Wunsch). Groesse ganz
+       rechts, Datum davor, Name (dynamisch, dlg->name_col_width) fuellt den Rest. Der TEXT beginnt
+       bei dlg->list.col (nicht bei table_left/der Randspalte selbst!) -- sonst stuende "Name" eine
+       Spalte weiter links als die tatsaechlichen Dateinamen darunter. table_left/table_width
+       bestimmen NUR die Hintergrundflaeche (schliesst beide Randspalten farblich mit ein, dort
+       steht auf dieser Zeile aber bewusst kein Zeichen -- die Linien selbst gehoeren nur zu den
+       Listenzeilen, s. Kopfkommentar q9_filedialog.h). */
+    {
+        int table_left  = dlg->list.col - 1;
+        int table_width = (dlg->list.col + dlg->list.width - 1) - table_left + 1;
+        q9_screenbuf_fill_rect(sb, dlg->row + 1, table_left, 1, table_width, ' ',
+                                p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
+                                1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
+        snprintf(line, sizeof(line), "%-*.*s %*s %*s",
+                 dlg->name_col_width, dlg->name_col_width, "Name",
+                 Q9_FILEDIALOG_DATE_COL, "Datum", Q9_FILEDIALOG_SIZE_COL, "Groesse");
+        q9_screenbuf_puts(sb, dlg->row + 1, dlg->list.col, line, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
+    }
 
     /* Dateiliste -- die markierte Zeile bekommt NUR dann die kraeftige sel_fg/sel_bg-Hervorhebung,
        wenn die Liste tatsaechlich den Fokus hat; sonst die gedaempfte unfocus_sel_*-Variante (s.
@@ -382,67 +432,87 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                             p->footer_fg_r, p->footer_fg_g, p->footer_fg_b,
                             1, p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
 
-    /* Auswahl-/Filterzeile -- links die ausgewaehlte Datei, rechts der Extensions-Umschalter mit
-       Dropdown-Pfeil (▾, s. q9_screenbuf.h) -- Enter/Pfeil-runter darauf oeffnet das Aufklapp-Menue
-       mit allen Filtern (render_filter_popup(), ganz am Ende dieser Funktion), Pfeil links/rechts
-       bleibt als Schnellzugriff (einzeln durchschalten) erhalten. */
+    /* Rechte Bezugsspalte fuer Filter UND Buttons (Andreas' Wunsch: "wandern etwas nach links damit
+       Platz fuer den Rahmen/Bildlaufleiste ist") -- buendig mit der rechten Linie der Dateiliste,
+       nicht mehr am absoluten Dialogrand. */
     {
-        const char *sel_name = (dlg->list.selected >= 0 && dlg->list.selected < dlg->files.count)
-                                ? dlg->files.entry[dlg->list.selected].name : "-";
-        snprintf(line, sizeof(line), "Datei: %-*.*s", Q9_FILEDIALOG_NAME_COL, Q9_FILEDIALOG_NAME_COL,
-                 sel_name);
-        q9_screenbuf_puts(sb, status_row, dlg->col + 1, line, p->footer_fg_r, p->footer_fg_g, p->footer_fg_b);
+        int right_border_col = dlg->list.col + dlg->list.width - 1;
 
+        /* Auswahl-/Filterzeile -- links "Datei: " + der Name in einem eigenen, abgesetzten Kaestchen
+           (sub_fg/bg, wie die Spaltentitel-Zeile -- Andreas' Wunsch: "Hintergrundfarbe noch mal
+           abgesetzt... als Kaestchen fuer den Namen"), rechts der Extensions-Umschalter mit Dropdown-
+           Pfeil (▾, s. q9_screenbuf.h) -- Enter/Pfeil-runter darauf oeffnet das Aufklapp-Menue mit
+           allen Filtern (render_filter_popup(), ganz am Ende dieser Funktion), Pfeil links/rechts
+           bleibt als Schnellzugriff (einzeln durchschalten) erhalten. */
         {
-            char filt[Q9_FILEDIALOG_FILTER_MAX + 4];
-            int flen, fcol;
-            snprintf(filt, sizeof(filt), "%s ", dlg->filters[dlg->filter_index]);
-            flen = (int)strlen(filt);
-            filt[flen]     = (char)Q9_GLYPH_DOWN_ARROW;
-            filt[flen + 1] = '\0';
-            flen += 1;
-            fcol = dlg->col + dlg->cols - 1 - flen;
-            if (fcol < dlg->col + 1) { fcol = dlg->col + 1; }
-            if (filter_focus) {
-                q9_screenbuf_fill_rect(sb, status_row, fcol, 1, flen, ' ',
-                                        p->focus_fg_r, p->focus_fg_g, p->focus_fg_b,
-                                        1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
+            const char *sel_name = (dlg->list.selected >= 0 && dlg->list.selected < dlg->files.count)
+                                    ? dlg->files.entry[dlg->list.selected].name : "-";
+            static const char label[] = "Datei: ";
+            int label_len = (int)sizeof(label) - 1;
+            int box_col = dlg->col + 1 + label_len;
+            char namebuf[Q9_FILELIST_NAME_MAX];
+
+            q9_screenbuf_puts(sb, status_row, dlg->col + 1, label,
+                               p->footer_fg_r, p->footer_fg_g, p->footer_fg_b);
+            snprintf(namebuf, sizeof(namebuf), "%-*.*s",
+                     dlg->name_col_width, dlg->name_col_width, sel_name);
+            q9_screenbuf_fill_rect(sb, status_row, box_col, 1, dlg->name_col_width, ' ',
+                                    p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
+                                    1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
+            q9_screenbuf_puts(sb, status_row, box_col, namebuf, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
+
+            {
+                char filt[Q9_FILEDIALOG_FILTER_MAX + 4];
+                int flen, fcol;
+                snprintf(filt, sizeof(filt), "%s ", dlg->filters[dlg->filter_index]);
+                flen = (int)strlen(filt);
+                filt[flen]     = (char)Q9_GLYPH_DOWN_ARROW;
+                filt[flen + 1] = '\0';
+                flen += 1;
+                fcol = right_border_col - flen + 1;          /* letztes Zeichen endet AN der Linie */
+                if (fcol < dlg->col + 1) { fcol = dlg->col + 1; }
+                if (filter_focus) {
+                    q9_screenbuf_fill_rect(sb, status_row, fcol, 1, flen, ' ',
+                                            p->focus_fg_r, p->focus_fg_g, p->focus_fg_b,
+                                            1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
+                }
+                q9_screenbuf_puts(sb, status_row, fcol, filt,
+                                   filter_focus ? p->focus_fg_r : p->footer_fg_r,
+                                   filter_focus ? p->focus_fg_g : p->footer_fg_g,
+                                   filter_focus ? p->focus_fg_b : p->footer_fg_b);
             }
-            q9_screenbuf_puts(sb, status_row, fcol, filt,
-                               filter_focus ? p->focus_fg_r : p->footer_fg_r,
-                               filter_focus ? p->focus_fg_g : p->footer_fg_g,
-                               filter_focus ? p->focus_fg_b : p->footer_fg_b);
         }
-    }
 
-    /* Buttons -- "richtige" Buttons (Andreas' Wunsch, 2026-08-17): sub_fg/bg (Spaltentitel-Farbe)
-       wenn unfokussiert, focus_fg/bg wenn fokussiert, gleich breit, rechtsbuendig, per Halbblock-
-       Kappen "aufgeblasen" (draw_button(), s. Kopfkommentar .h). */
-    {
-        int button_w = (int)strlen("Abbrechen") + 4;
-        int cancel_col = dlg->col + dlg->cols - 1 - button_w;
-        int ok_col = cancel_col - 1 - button_w;
-        if (ok_col < dlg->col + 1) { ok_col = dlg->col + 1; }
+        /* Buttons -- "richtige" Buttons (Andreas' Wunsch, 2026-08-17): sub_fg/bg (Spaltentitel-Farbe)
+           wenn unfokussiert, focus_fg/bg wenn fokussiert, gleich breit, rechtsbuendig (buendig mit
+           der Linie der Dateiliste, s.o.), per Halbblock-Kappen "aufgeblasen" (draw_button(), s.
+           Kopfkommentar .h). */
+        {
+            int button_w = (int)strlen("Abbrechen") + 4;
+            int cancel_col = right_border_col - button_w + 1;   /* letztes Zeichen endet AN der Linie */
+            int ok_col = cancel_col - 1 - button_w;
+            if (ok_col < dlg->col + 1) { ok_col = dlg->col + 1; }
 
-        draw_button(sb, buttons_row, ok_col, button_w, "OK",
-                    ok_focus ? p->focus_fg_r : p->sub_fg_r,
-                    ok_focus ? p->focus_fg_g : p->sub_fg_g,
-                    ok_focus ? p->focus_fg_b : p->sub_fg_b,
-                    ok_focus ? p->focus_bg_r : p->sub_bg_r,
-                    ok_focus ? p->focus_bg_g : p->sub_bg_g,
-                    ok_focus ? p->focus_bg_b : p->sub_bg_b,
-                    cap_above_row, cap_below_row,
-                    p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+            draw_button(sb, buttons_row, ok_col, button_w, "OK",
+                        ok_focus ? p->focus_fg_r : p->sub_fg_r,
+                        ok_focus ? p->focus_fg_g : p->sub_fg_g,
+                        ok_focus ? p->focus_fg_b : p->sub_fg_b,
+                        ok_focus ? p->focus_bg_r : p->sub_bg_r,
+                        ok_focus ? p->focus_bg_g : p->sub_bg_g,
+                        ok_focus ? p->focus_bg_b : p->sub_bg_b,
+                        cap_above_row, cap_below_row,
+                        p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
 
-        draw_button(sb, buttons_row, cancel_col, button_w, "Abbrechen",
-                    cancel_focus ? p->focus_fg_r : p->sub_fg_r,
-                    cancel_focus ? p->focus_fg_g : p->sub_fg_g,
-                    cancel_focus ? p->focus_fg_b : p->sub_fg_b,
-                    cancel_focus ? p->focus_bg_r : p->sub_bg_r,
-                    cancel_focus ? p->focus_bg_g : p->sub_bg_g,
-                    cancel_focus ? p->focus_bg_b : p->sub_bg_b,
-                    cap_above_row, cap_below_row,
-                    p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+            draw_button(sb, buttons_row, cancel_col, button_w, "Abbrechen",
+                        cancel_focus ? p->focus_fg_r : p->sub_fg_r,
+                        cancel_focus ? p->focus_fg_g : p->sub_fg_g,
+                        cancel_focus ? p->focus_fg_b : p->sub_fg_b,
+                        cancel_focus ? p->focus_bg_r : p->sub_bg_r,
+                        cancel_focus ? p->focus_bg_g : p->sub_bg_g,
+                        cancel_focus ? p->focus_bg_b : p->sub_bg_b,
+                        cap_above_row, cap_below_row,
+                        p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+        }
     }
 
     if (dlg->filter_popup_open) {
@@ -451,5 +521,5 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.20
+// EOF q9_filedialog.c                                                                     Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

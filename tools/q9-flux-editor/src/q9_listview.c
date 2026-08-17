@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.20
+// File:   q9_listview.c                                                                   Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -12,6 +12,8 @@
 //         │      │ ASCII                                                                      │
 // 26-08-17│ 1.20 │ Ein Zeichen Abstand zwischen markierter Zeile und Scrollbalken (Andreas:   │ Cld
 //         │      │ "verschmilzt sonst")                                                       │
+// 26-08-17│ 1.30 │ Rechte Spalte zeigt jetzt IMMER die Linie (Andreas: "wird keine Laufleiste │ Cld
+//         │      │ benoetigt ist es einfach der normale Strich") -- ersetzt die -2-Sonderregel │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -72,15 +74,20 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
     int i;
     int content_width;
     int has_scrollbar;
+    int line_col;
 
     if (!lv || !sb || !items) { return; }
 
     has_scrollbar = (lv->item_count > lv->height) ? 1 : 0;
-    /* -2 statt nur -1 (Andreas' Wunsch, 2026-08-17): ein Zeichen Abstand zwischen der markierten
-       Zeile und dem Scrollbalken, damit die Auswahl-Hervorhebung nicht direkt an den Balken
-       anstoesst ("verschmilzt"). */
-    content_width = has_scrollbar ? lv->width - 2 : lv->width;
+    /* Rechte Spalte IMMER fuer die Bildlaufleiste reserviert (Andreas' Wunsch, 2026-08-17: "wird
+       keine Laufleiste benoetigt ist es einfach der normale Strich" -- die Spalte zeigt IMMER
+       mindestens die Linie, unabhaengig davon, ob tatsaechlich etwas zu scrollen ist, sowohl im
+       Hauptfenster als auch im Datei-Dialog). Ersetzt die fruehere "-2 nur wenn Scrollbalken
+       noetig"-Sonderregel (Luecken-Spalte vor dem Balken) -- die durchgehende Linie ist jetzt
+       selbst die Abgrenzung zur markierten Zeile, keine separate Luecke mehr noetig. */
+    content_width = lv->width - 1;
     if (content_width < 1) { content_width = 1; }
+    line_col = lv->col + lv->width - 1;
 
     for (i = 0; i < lv->height; i++) {
         int idx = lv->scroll_offset + i;
@@ -100,18 +107,22 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
         }
     }
 
+    /* Die rechte Spalte -- IMMER die Linie (auch ohne Scrollbedarf), der Griff (falls noetig) wird
+       zusaetzlich darauf gelegt. */
+    {
+        char track_str[2];
+        track_str[0] = Q9_GLYPH_VLINE; track_str[1] = '\0';
+        for (i = 0; i < lv->height; i++) {
+            q9_screenbuf_puts(sb, lv->row + i, line_col, track_str, fg_r, fg_g, fg_b);
+        }
+    }
+
     if (has_scrollbar) {
-        int sb_col = lv->col + lv->width - 1;
         int max_offset = lv->item_count - lv->height;      /* > 0 garantiert, s. has_scrollbar oben  */
         int thumb_height, thumb_start, max_thumb_start;
-        char track_str[2], thumb_str[2];
-        track_str[0] = Q9_GLYPH_VLINE; track_str[1] = '\0';
+        char thumb_str[2];
         thumb_str[0] = Q9_GLYPH_BLOCK; thumb_str[1] = '\0';
         if (max_offset < 1) { max_offset = 1; }             /* defensiv, Divisionsschutz              */
-
-        for (i = 0; i < lv->height; i++) {
-            q9_screenbuf_puts(sb, lv->row + i, sb_col, track_str, fg_r, fg_g, fg_b);
-        }
 
         /* Proportionale Griffgroesse (Andreas' Wunsch, 2026-08-17): der Griff nimmt denselben Anteil
            der Balkenhoehe ein wie der sichtbare Anteil der Liste (height/item_count) -- bei 50%
@@ -131,12 +142,12 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
         if (thumb_start < 0)                          { thumb_start = 0; }
 
         for (i = 0; i < thumb_height; i++) {
-            q9_screenbuf_puts(sb, lv->row + thumb_start + i, sb_col, thumb_str,
+            q9_screenbuf_puts(sb, lv->row + thumb_start + i, line_col, thumb_str,
                                sel_bg_r, sel_bg_g, sel_bg_b);
         }
     }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.20
+// EOF q9_listview.c                                                                       Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

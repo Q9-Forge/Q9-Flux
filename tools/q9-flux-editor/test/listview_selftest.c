@@ -1,13 +1,21 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.10
+// File:   listview_selftest.c                                                             Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
-//         richtigen Eintraege an die richtige Stelle, hebt die Auswahl hervor, und der Scrollbalken
-//         erscheint nur, wenn tatsaechlich etwas zu scrollen ist.
+//         richtigen Eintraege an die richtige Stelle, hebt die Auswahl hervor, und die rechte Spalte
+//         zeigt IMMER die Linie (Griff nur zusaetzlich, wenn tatsaechlich etwas zu scrollen ist).
 //
 // Call:   build/listview_selftest
-//════════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Edition History
+//─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
+// Date    │ Ver. │ Description                                                            │ By
+//─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
+// 26-08-16│ 1.10 │ Erster Wurf (vorherige Historie s. q9_listview.h/.c)                    │ Cld
+// 26-08-17│ 1.20 │ Test fuer "kein Scrollbedarf" angepasst -- Spalte zeigt jetzt IMMER die  │ Cld
+//         │      │ Linie statt leer zu bleiben (Andreas' Wunsch, s. q9_listview.h/.c)       │
+//═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
 
@@ -120,14 +128,15 @@ int main(void)
     check_int("ausgewaehlte Zeile: fg stimmt (sel_fg, hier 0,0,0)", sb.cell[5][10].fg_r, 0);
     check_int("nicht ausgewaehlte Zeile: fg stimmt (normales fg, hier 200)", sb.cell[6][10].fg_r, 200);
 
-    printf("=== q9_listview_render: Scrollbalken NUR wenn tatsaechlich etwas zu scrollen ist ===\n");
+    printf("=== q9_listview_render: rechte Spalte zeigt IMMER eine Linie (Andreas' Wunsch, 2026-08-17) ===\n");
     check_int("Scrollbalken-Spalte (col+width-1 = 29) zeigt '|' oder '#' -- nicht leer",
               sb.cell[5][29].ch != ' ', 1);
 
     q9_screenbuf_init(&sb, 24, 80);
     q9_listview_init(&lv, 5, 10, 20, 20, 10);               /* Viewport GROESSER als item_count */
     q9_listview_render(&lv, &sb, items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
-    check_int("kein Scrollbalken, wenn alles reinpasst -- Spalte 29 bleibt leer", sb.cell[5][29].ch, ' ');
+    check_int("kein Scrollbedarf -- Spalte 29 zeigt trotzdem die durchgehende Linie (kein Griff)",
+              sb.cell[5][29].ch, Q9_GLYPH_VLINE);
 
     printf("=== q9_listview_render: Scrollbalken-Griff ist PROPORTIONAL zum sichtbaren Anteil ===\n");
     {
@@ -169,5 +178,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.10
+// EOF listview_selftest.c                                                                 Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
