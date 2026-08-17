@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.00
+// File:   q9_filedialog.c                                                                 Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
 //         des Dialogs):
@@ -18,6 +18,8 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-17│ 1.00 │ Erster Wurf                                                              │ Cld
+// 26-08-17│ 1.10 │ Dateiliste zeigt jetzt gedaempfte unfocus_sel_*-Farben, wenn sie NICHT   │ Cld
+//         │      │ den Fokus hat (s. q9_filedialog.h)                                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -216,11 +218,21 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
              Q9_FILEDIALOG_NAME_COL, Q9_FILEDIALOG_NAME_COL, "Name", "Datum", "Groesse");
     q9_screenbuf_puts(sb, dlg->row + 1, dlg->col + 1, line, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
 
-    /* Dateiliste. */
-    q9_listview_render(&dlg->list, sb, dlg->row_ptr,
-                        p->list_fg_r, p->list_fg_g, p->list_fg_b,
-                        p->sel_fg_r, p->sel_fg_g, p->sel_fg_b,
-                        p->sel_bg_r, p->sel_bg_g, p->sel_bg_b);
+    /* Dateiliste -- die markierte Zeile bekommt NUR dann die kraeftige sel_fg/sel_bg-Hervorhebung,
+       wenn die Liste tatsaechlich den Fokus hat; sonst die gedaempfte unfocus_sel_*-Variante (s.
+       .h Kopfkommentar zu diesem Feld -- sonst ist ein Fokuswechsel auf/von der Liste unsichtbar,
+       weil die Markierung vorher immer gleich aussah). */
+    {
+        int list_focus = (dlg->focus == Q9_FILEDIALOG_FOCUS_LIST);
+        q9_listview_render(&dlg->list, sb, dlg->row_ptr,
+                            p->list_fg_r, p->list_fg_g, p->list_fg_b,
+                            list_focus ? p->sel_fg_r : p->unfocus_sel_fg_r,
+                            list_focus ? p->sel_fg_g : p->unfocus_sel_fg_g,
+                            list_focus ? p->sel_fg_b : p->unfocus_sel_fg_b,
+                            list_focus ? p->sel_bg_r : p->unfocus_sel_bg_r,
+                            list_focus ? p->sel_bg_g : p->unfocus_sel_bg_g,
+                            list_focus ? p->sel_bg_b : p->unfocus_sel_bg_b);
+    }
 
     /* Auswahl-/Filterzeile -- links die ausgewaehlte Datei, rechts der Extensions-Umschalter mit
        Pfeil (nur der Filter-Teil wird bei Fokus hervorgehoben, der Dateiname links ist nicht
@@ -282,5 +294,5 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.00
+// EOF q9_filedialog.c                                                                     Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

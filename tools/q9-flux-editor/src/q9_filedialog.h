@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.h                                                                 Ver. 1.00
+// File:   q9_filedialog.h                                                                 Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Modaler Datei-Auswahl-Dialog -- komponiert q9_filelist (Verzeichnis-Scan), q9_listview
 //         (scrollbare Liste) und q9_screenbuf (Bildschirmpuffer) zu einem echten interaktiven
@@ -55,6 +55,9 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-17│ 1.00 │ Erster Wurf -- task #20, Andreas' Layout-Vorgabe aus Runde 5 umgesetzt   │ Cld
+// 26-08-17│ 1.10 │ Andreas' Feedback nach dem ersten Test: unfocus_sel_* Farbpaar dazu --   │ Cld
+//         │      │ markierte Zeile war bisher unabhaengig vom Fokus immer gleich hell, ein  │
+//         │      │ Fokuswechsel auf/von der Liste war dadurch unsichtbar                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_FILEDIALOG_H
 #define Q9_FILEDIALOG_H
@@ -93,8 +96,15 @@ typedef struct {
                                                                 Dialogs -- einzige Abgrenzung, s.o.)  */
     int body_bg_r, body_bg_g, body_bg_b;
     int list_fg_r, list_fg_g, list_fg_b;
-    int sel_fg_r, sel_fg_g, sel_fg_b;                       /* markierte Zeile in der Dateiliste      */
-    int sel_bg_r, sel_bg_g, sel_bg_b;
+    int sel_fg_r, sel_fg_g, sel_fg_b;                       /* markierte Zeile, WENN die Liste den    */
+    int sel_bg_r, sel_bg_g, sel_bg_b;                       /* Fokus hat (deutlich hervorgehoben)      */
+    int unfocus_sel_fg_r, unfocus_sel_fg_g, unfocus_sel_fg_b;  /* markierte Zeile, wenn die Liste NICHT
+                                                                der Fokus hat -- gedaempft, s. .c. Ohne
+                                                                diese Unterscheidung war (Andreas'
+                                                                Feedback, 2026-08-17) ein Fokuswechsel
+                                                                auf/von der Liste unsichtbar, weil die
+                                                                Markierung immer gleich aussah */
+    int unfocus_sel_bg_r, unfocus_sel_bg_g, unfocus_sel_bg_b;
     int focus_fg_r, focus_fg_g, focus_fg_b;                 /* fokussiertes Bedienelement (Filter/     */
     int focus_bg_r, focus_bg_g, focus_bg_b;                 /* OK/Abbrechen), s. sel_* fuer die Liste  */
 } q9_filedialog_palette_t;
@@ -173,5 +183,5 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
 
 #endif /* Q9_FILEDIALOG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.h                                                                     Ver. 1.00
+// EOF q9_filedialog.h                                                                     Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
