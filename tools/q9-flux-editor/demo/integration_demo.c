@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.10
+// File:   integration_demo.c                                                             Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -27,6 +27,9 @@
 //         │      │ mit eigenem Hintergrund statt in die untere Rahmenkante gemischt zu       │
 //         │      │ werden (das war die "kleine Linie ganz rechts unten"), warme Amber-/      │
 //         │      │ Beige-Palette statt der bisherigen Zufallsfarben                          │
+// 26-08-17│ 1.20 │ Zweite Feedback-Runde: Statuszeile jetzt ALS untere Rahmenkante (nicht mehr │ Cld
+//         │      │ eigene separate Zeile darueber) -- Resize-Flackern behoben (150ms-Entprel-  │
+//         │      │ lung in q9_input.c), Scrollbalken-Abstand zur markierten Zeile (q9_listview.c)│
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -145,12 +148,12 @@ int main(void)
             q9_screenbuf_draw_frame(&sb, 0, 0, rows, cols,
                                      "Q9-Flux Editor -- Integrations-Demo",
                                      PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
-            q9_screenbuf_puts(&sb, rows - 3, 3, "Pfeiltasten: navigieren   Strg-C: beenden",
+            q9_screenbuf_puts(&sb, rows - 2, 3, "Pfeiltasten: navigieren   Strg-C: beenden",
                                PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
             lv.row    = 2;
             lv.col    = 3;
-            lv.height = rows - 6;                            /* Rand+Border+Hinweis+Statuszeile s.o. */
+            lv.height = rows - 5;                            /* Rand+Hinweis+Statuszeile/-kante s.u. */
             lv.width  = cols - 6;
             if (lv.height < 1) { lv.height = 1; }
             if (lv.width  < 1) { lv.width  = 1; }
@@ -160,16 +163,20 @@ int main(void)
                                 PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
                                 PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B);
 
-            /* Statuszeile: EIGENE Zeile mit eigenem (invertiertem, gedecktem) Hintergrund -- nicht
-               mehr in die untere Rahmenkante gemischt (das war vorher die stoerende Kante-plus-Text-
-               Mischung, s. Edition-History). Innerhalb der Seitenraender (Spalte 1..cols-2). */
-            q9_screenbuf_fill_rect(&sb, rows - 2, 1, 1, cols - 2, ' ',
+            /* Statuszeile ALS untere Rahmenkante (Andreas' Wunsch, 2026-08-17: "quasi der untere
+               Rahmenteil"): draw_frame() hat die letzte Zeile bereits mit der normalen Kante
+               gezeichnet (inkl. der beiden Eckzeichen ganz links/rechts) -- hier wird NUR der
+               Bereich DAZWISCHEN (Spalte 1..cols-2, die Eckzeichen an 0/cols-1 bleiben unberuehrt)
+               mit dem Statuszeilen-Hintergrund ueberschrieben. So bleibt der Rahmen an den Ecken
+               optisch geschlossen, aber die komplette Kante zwischen den Ecken zeigt die
+               Statuszeile statt einer einfachen Linie. */
+            q9_screenbuf_fill_rect(&sb, rows - 1, 1, 1, cols - 2, ' ',
                                     PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B,
                                     1, PAL_STATUS_BG_R, PAL_STATUS_BG_G, PAL_STATUS_BG_B);
             snprintf(status, sizeof(status), " Ausgewaehlt: %s  |  Terminal: %dx%d",
                      (lv.selected >= 0 && lv.selected < ITEM_COUNT) ? g_items[lv.selected] : "-",
                      rows, cols);
-            q9_screenbuf_puts(&sb, rows - 2, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
+            q9_screenbuf_puts(&sb, rows - 1, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
 
             {
                 unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
@@ -218,5 +225,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.10
+// EOF integration_demo.c                                                                  Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
