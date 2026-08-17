@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 4.20
+# File:   Makefile                                                                        Ver. 4.30
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
 #         Bring-up-Vorbereitung).
@@ -54,6 +54,8 @@
 #         │      │ Scrollbalken)                                                                  │
 # 26-08-17│ 4.20 │ test-filelist dazu (q9_filelist.h/.c, Verzeichnis-Scan mit Name/Datum/Groesse   │ Cld
 #         │      │ -- Grundlage fuer den Datei-Auswahl-Dialog)                                    │
+# 26-08-17│ 4.30 │ test-filedialog dazu (q9_filedialog.h/.c, modaler Datei-Auswahl-Dialog -- task  │ Cld
+#         │      │ #20, komponiert filelist+listview+screenbuf)                                   │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -216,7 +218,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-useslot
+test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -337,6 +339,18 @@ test-filelist:
 	    tools/q9-flux-editor/src/q9_filelist.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/filelist_selftest
 	$(BUILD)/$(PLATFORM_DIR)/filelist_selftest
+
+# Modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, 2026-08-17) -- task #20, komponiert
+# q9_filelist+q9_listview+q9_screenbuf zu einem echten Dialog. Prueft nur die Zustandslogik
+# (Fokus-/Filter-Zyklus, Escape/Enter), kein Sichtvergleich (wie widgets/listview).
+test-filedialog:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) tools/q9-flux-editor/test/filedialog_selftest.c \
+	    tools/q9-flux-editor/src/q9_filedialog.c tools/q9-flux-editor/src/q9_filelist.c \
+	    tools/q9-flux-editor/src/q9_listview.c tools/q9-flux-editor/src/q9_screenbuf.c \
+	    tools/q9-flux-editor/src/q9_input.c tools/q9-flux-editor/src/q9_ansi.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/filedialog_selftest
+	$(BUILD)/$(PLATFORM_DIR)/filedialog_selftest
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
@@ -543,7 +557,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.60

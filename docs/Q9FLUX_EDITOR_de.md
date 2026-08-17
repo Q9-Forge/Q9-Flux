@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.40
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.50
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -50,6 +50,8 @@
 # 26-08-17│ 2.40 │ Fuenfte Runde, IN ARBEIT: Design fuer den Datei-Auswahl-Dialog abgestimmt;      │ Cld
 #         │      │ Q9_KEY_SHIFT_TAB + q9_filelist.h/.c (Verzeichnis-Scan) fertig, die eigentliche  │
 #         │      │ Dialog-Zusammensetzung folgt noch                                               │
+# 26-08-17│ 2.50 │ q9_filedialog.h/.c FERTIG (task #20) -- der Dialog selbst ist komplett, logisch │ Cld
+#         │      │ getestet; offen bleibt nur noch die Einbindung ins Integrations-Demo (task #22) │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -331,9 +333,21 @@ bestaetigt, dann von Andreas verfeinert):
   werden uebersprungen. POSIX (opendir/readdir/stat) implementiert+getestet (21 Checks, echtes
   Scratch-Verzeichnis mit echten Testdateien), Windows (FindFirstFile/FindNextFile) geschrieben,
   mangels Windows-Host ungetestet.
-- **Noch offen:** die eigentliche Dialog-Zusammensetzung (`q9_filedialog.h/.c` -- Bildschirmpuffer-
-  Snapshot/Restore + Kopfzeile + Dateiliste + Extensions-Umschalter + Buttons + Fokus-Navigation
-  zu einem echten, bedienbaren Ganzen) und die Einbindung ins Integrations-Demo.
+- `q9_filedialog.h/.c` (NEU): die eigentliche Dialog-Zusammensetzung -- Kopfzeile+`X` (dekorativ),
+  Spaltentitel-Zeile, Dateiliste (`q9_listview`, Zeilen vorformatiert zu einem Spalten-String, da
+  `q9_listview_render` nur ein flaches String-Array kennt), Auswahl-/Filterzeile mit Extensions-
+  Umschalter, OK/Abbrechen-Buttons. TAB/Shift-TAB zyklisch durch Liste -> Filter -> OK -> Abbrechen
+  -> (wieder Liste), Pfeiltasten nur innerhalb des jeweils fokussierten Elements wirksam, Enter auf
+  Liste/OK = Bestaetigen (nur wenn eine Datei ausgewaehlt ist), Escape = immer Abbrechen,
+  unabhaengig vom Fokus. Rahmenlos, nur ueber eine eigene Hintergrundfarbe (Palette komplett vom
+  Aufrufer uebergeben, s. `q9_filedialog_palette_t`) vom Rest des Bildschirms abgegrenzt. Rein
+  logisch getestet (Fokus-/Filter-Zyklus, Escape/Enter-Verhalten, "eingefroren nach Entscheidung",
+  echtes Scratch-Verzeichnis fuer den Filter-Rescan) -- das tatsaechliche Bildschirmbild selbst ist
+  wie bei `q9_widgets`/`q9_listview` kein automatisierter Test, sondern erst im Integrations-Demo
+  sichtpruefbar.
+- **Noch offen:** die Einbindung ins Integrations-Demo (Dialog per Taste ausloesbar machen, echter
+  Pseudo-Terminal-Rauchtest) sowie die von Andreas noch nicht konkretisierten "paar Optionen" fuer
+  die Listenansicht.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
