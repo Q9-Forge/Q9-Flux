@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.40
+// File:   integration_demo.c                                                             Ver. 1.50
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -42,6 +42,12 @@
 //         │      │ Inhalt zurueck. Ist das Fenster dabei (immer noch) zu klein, bleibt das       │
 //         │      │ Overlay dauerhaft sichtbar (plus Zusatzzeile), statt den vollen Inhalt zu     │
 //         │      │ versuchen -- ersetzt die vorherige separate "Fenster zu klein"-Anzeige         │
+// 26-08-17│ 1.50 │ Vierte Feedback-Runde: Overlay zeigt "Columns - Rows" (statt "Rows - Columns"),│ Cld
+//         │      │ Kopfzeile-Titel linksbuendig ab Spalte 3 (statt zentriert), helleres Weiss;    │
+//         │      │ bei anhaltend zu kleinem Fenster EINMALIGER Versuch, per XTWINOPS-Escape-       │
+//         │      │ Sequenz (q9_ansi_resize_window) automatisch auf die Mindestgroesse zu           │
+//         │      │ vergroessern -- nicht universell unterstuetzt, wirkt nur auf Terminals mit      │
+//         │      │ aktivierten "Window Ops" (z.B. xterm)                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -85,9 +91,9 @@ static const char *const g_items[] = {
 #define PAL_STATUS_BG_R   95
 #define PAL_STATUS_BG_G   68
 #define PAL_STATUS_BG_B   25
-#define PAL_HEADER_FG_R  250
-#define PAL_HEADER_FG_G  225
-#define PAL_HEADER_FG_B  180
+#define PAL_HEADER_FG_R  255                                /* Andreas' Wunsch (2026-08-17):      */
+#define PAL_HEADER_FG_G  248                                 /* "das weiss etwas heller" -- naeher */
+#define PAL_HEADER_FG_B  225                                 /* an Weiss, noch leicht warm getoent */
 #define PAL_HEADER_BG_R  140                                /* etwas heller als PAL_STATUS_BG,    */
 #define PAL_HEADER_BG_G  100                                /* gleiche Farbfamilie                */
 #define PAL_HEADER_BG_B   40
@@ -141,7 +147,9 @@ static void render_size_overlay(int rows, int cols, int too_small)
 
     q9_screenbuf_init(&sb, rows, cols);
 
-    snprintf(line1, sizeof(line1), "%d Rows - %d Columns", rows, cols);
+    /* Columns vor Rows (Andreas' Wunsch, 2026-08-17: "Columns und Rows solltest du bitte
+       tauschen") -- entspricht auch der ueblichen "80x24"-Schreibweise (Spalten x Zeilen). */
+    snprintf(line1, sizeof(line1), "%d Columns - %d Rows", cols, rows);
     len1 = (int)strlen(line1);
     mid_row = rows / 2;
     mid_col = (cols - len1) / 2;
@@ -152,7 +160,7 @@ static void render_size_overlay(int rows, int cols, int too_small)
     if (too_small) {
         char line2[64];
         int len2, mid_col2;
-        snprintf(line2, sizeof(line2), "Fenster zu klein (mind. %dx%d)", MIN_ROWS, MIN_COLS);
+        snprintf(line2, sizeof(line2), "Fenster zu klein (mind. %dx%d)", MIN_COLS, MIN_ROWS);
         len2 = (int)strlen(line2);
         mid_col2 = (cols - len2) / 2;
         if (mid_col2 < 0) { mid_col2 = 0; }
@@ -182,18 +190,15 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols)
        ueberschreibt auch die beiden oberen Eckzeichen von draw_frame(), etwas heller als die
        Statuszeile (PAL_HEADER_* statt PAL_STATUS_*), damit man Kopf/Fuss auf einen Blick
        unterscheiden kann, aber in derselben Farbfamilie bleibt. Der Titeltext von draw_frame()
-       wird hier mit demselben Text erneut zentriert geschrieben (draw_frame's eigene Titel-
-       Platzierung wird durch fill_rect vollstaendig ueberschrieben). */
-    {
-        static const char title[] = "Q9-Flux Editor -- Integrations-Demo";
-        int len = (int)(sizeof(title) - 1);
-        int mid_col = (cols - len) / 2;
-        if (mid_col < 0) { mid_col = 0; }
-        q9_screenbuf_fill_rect(&sb, 0, 0, 1, cols, ' ',
-                                PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B,
-                                1, PAL_HEADER_BG_R, PAL_HEADER_BG_G, PAL_HEADER_BG_B);
-        q9_screenbuf_puts(&sb, 0, mid_col, title, PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
-    }
+       wird hier mit demselben Text erneut geschrieben (draw_frame's eigene Titel-Platzierung wird
+       durch fill_rect vollstaendig ueberschrieben) -- LINKSBUENDIG ab Spalte 3 statt zentriert
+       (Andreas' Wunsch, 2026-08-17: "lass uns mal links versuchen, ab dem dritten Zeichen" --
+       Spalte 3 passt auch zur Linksbuendigkeit von Listenansicht/Hinweistext weiter unten). */
+    q9_screenbuf_fill_rect(&sb, 0, 0, 1, cols, ' ',
+                            PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B,
+                            1, PAL_HEADER_BG_R, PAL_HEADER_BG_G, PAL_HEADER_BG_B);
+    q9_screenbuf_puts(&sb, 0, 3, "Q9-Flux Editor -- Integrations-Demo",
+                       PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
 
     q9_screenbuf_puts(&sb, rows - 2, 3, "Pfeiltasten: navigieren   Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
@@ -237,6 +242,9 @@ int main(void)
     q9_listview_t lv;
     int running = 1;
     int showing_overlay = 0;                                /* 1 = Resize-Overlay statt Vollinhalt */
+    int resize_attempted = 0;                                /* s.u.: XTWINOPS-Versuch nur EINMAL
+                                                                  pro zu-klein-Phase, nicht bei jeder
+                                                                  einzelnen 1s-Wiederholung erneut   */
 
     if (q9_term_size(&rows, &cols) != 0) {
         rows = 24;
@@ -273,6 +281,20 @@ int main(void)
                    identisch neu gezeichnet (idempotent, kein Problem). */
                 if (!too_small) {
                     showing_overlay = 0;
+                } else if (!resize_attempted) {
+                    /* Andreas' Wunsch (2026-08-17): bei anhaltend zu kleinem Fenster EINMAL
+                       versuchen, das Terminal per XTWINOPS auf die Mindestgroesse zu bringen
+                       (q9_ansi_resize_window, NICHT universell unterstuetzt, s. dortiger
+                       Kopfkommentar -- wirkt es, kommt ganz normal ein neues Q9_KEY_RESIZE mit
+                       der dann tatsaechlichen Groesse; wirkt es nicht, passiert einfach nichts,
+                       das Overlay bleibt unveraendert stehen). Nur EINMAL pro zu-klein-Phase, nicht
+                       bei jeder 1s-Wiederholung erneut (sonst wuerde ein Terminal, das die
+                       Sequenz konsequent ignoriert, sie trotzdem staendig neu bekommen). */
+                    char rbuf[32];
+                    unsigned rn = q9_ansi_resize_window(rbuf, sizeof(rbuf), MIN_ROWS, MIN_COLS);
+                    fwrite(rbuf, 1, rn, stdout);
+                    fflush(stdout);
+                    resize_attempted = 1;
                 }
                 continue;
             }
@@ -294,6 +316,9 @@ int main(void)
                     }
                     showing_overlay = 1;                     /* sofort ins Overlay, LIVE aktualisiert
                                                                  bei weiteren RESIZE-Ereignissen     */
+                    resize_attempted = 0;                    /* neue zu-klein-Phase (falls es dazu
+                                                                 kommt) darf wieder EINEN Versuch
+                                                                 machen */
                     break;
                 default:
                     break;                                   /* alle anderen Tasten: ignorieren */
@@ -317,5 +342,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.40
+// EOF integration_demo.c                                                                  Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
