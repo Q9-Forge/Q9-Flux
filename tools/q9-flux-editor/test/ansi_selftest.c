@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   ansi_selftest.c                                                                 Ver. 1.00
+// File:   ansi_selftest.c                                                                 Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis, dass q9_ansi.h/.c Zeilen-/Spalten-/Farbwerte MECHANISCH und
 //         VERLUSTFREI in die erzeugten Escape-Bytes uebernimmt -- das war der eigentliche
@@ -120,6 +120,10 @@ int main(int argc, char **argv)
     buf[n] = '\0';
     check_str("Cursor einblenden", buf, "\x1b[?25h");
 
+    n = q9_ansi_resize_window(buf, sizeof(buf), 20, 60);
+    buf[n] = '\0';
+    check_str("XTWINOPS Fenster-Resize auf 20x60", buf, "\x1b[8;20;60t");
+
     printf("=== q9_ansi: Ruecklese-Parse -- 'Zeile X angefordert' == 'Zeile X in den Bytes' ===\n");
     {
         int row, col, i;
@@ -149,6 +153,15 @@ int main(int argc, char **argv)
         check_int("RGB(12,34,56) -> R in den Bytes", r, 12);
         check_int("RGB(12,34,56) -> G in den Bytes", g, 34);
         check_int("RGB(12,34,56) -> B in den Bytes", b, 56);
+    }
+    {
+        int rows, cols;
+        n = q9_ansi_resize_window(buf, sizeof(buf), 20, 60);
+        buf[n] = '\0';
+        rows = cols = -1;
+        sscanf(buf, "\x1b[8;%d;%dt", &rows, &cols);
+        check_int("XTWINOPS 20x60 -> Zeilen in den Bytes", rows, 20);
+        check_int("XTWINOPS 20x60 -> Spalten in den Bytes", cols, 60);
     }
 
     printf("=== q9_ansi: Farbwerte werden auf 0..255 geklemmt (keine UB bei Fehleingabe) ===\n");
@@ -191,5 +204,5 @@ int main(int argc, char **argv)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF ansi_selftest.c                                                                     Ver. 1.00
+// EOF ansi_selftest.c                                                                     Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
