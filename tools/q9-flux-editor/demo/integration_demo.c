@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.20
+// File:   integration_demo.c                                                             Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -30,6 +30,9 @@
 // 26-08-17│ 1.20 │ Zweite Feedback-Runde: Statuszeile jetzt ALS untere Rahmenkante (nicht mehr │ Cld
 //         │      │ eigene separate Zeile darueber) -- Resize-Flackern behoben (150ms-Entprel-  │
 //         │      │ lung in q9_input.c), Scrollbalken-Abstand zur markierten Zeile (q9_listview.c)│
+// 26-08-17│ 1.30 │ Statuszeile jetzt UEBER DIE VOLLE BREITE (Andreas: "aufgeraeumter als dieser │ Cld
+//         │      │ doppelte Strich") -- ueberschreibt auch die beiden unteren Eckzeichen, keine │
+//         │      │ Ecken mehr unten                                                             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -163,14 +166,12 @@ int main(void)
                                 PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
                                 PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B);
 
-            /* Statuszeile ALS untere Rahmenkante (Andreas' Wunsch, 2026-08-17: "quasi der untere
-               Rahmenteil"): draw_frame() hat die letzte Zeile bereits mit der normalen Kante
-               gezeichnet (inkl. der beiden Eckzeichen ganz links/rechts) -- hier wird NUR der
-               Bereich DAZWISCHEN (Spalte 1..cols-2, die Eckzeichen an 0/cols-1 bleiben unberuehrt)
-               mit dem Statuszeilen-Hintergrund ueberschrieben. So bleibt der Rahmen an den Ecken
-               optisch geschlossen, aber die komplette Kante zwischen den Ecken zeigt die
-               Statuszeile statt einer einfachen Linie. */
-            q9_screenbuf_fill_rect(&sb, rows - 1, 1, 1, cols - 2, ' ',
+            /* Statuszeile ALS untere Rahmenkante, jetzt UEBER DIE VOLLE BREITE (Andreas' Wunsch,
+               2026-08-17): ueberschreibt auch die beiden unteren Eckzeichen von draw_frame() --
+               keine Ecken mehr unten, die Statuszeile geht randlos von Spalte 0 bis cols-1 durch.
+               Sah "aufgeraeumter" aus als die vorherige Variante mit stehengebliebenen Ecken
+               ("dieser doppelte Strich"). */
+            q9_screenbuf_fill_rect(&sb, rows - 1, 0, 1, cols, ' ',
                                     PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B,
                                     1, PAL_STATUS_BG_R, PAL_STATUS_BG_G, PAL_STATUS_BG_B);
             snprintf(status, sizeof(status), " Ausgewaehlt: %s  |  Terminal: %dx%d",
@@ -225,5 +226,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.20
+// EOF integration_demo.c                                                                  Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
