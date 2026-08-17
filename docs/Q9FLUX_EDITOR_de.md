@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.00
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.10
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -38,6 +38,8 @@
 #         │      │ echte Unicode-Box-Drawing-Zeichen, warme Farbpalette. Maus bewusst vertagt     │
 # 26-08-17│ 2.00 │ Zweite Feedback-Runde: Statuszeile jetzt ALS untere Rahmenkante, Resize-       │ Cld
 #         │      │ Entprellung (~150ms) gegen Flackern, Scrollbalken-Abstand zur Auswahl          │
+# 26-08-17│ 2.10 │ Statuszeile ueber die VOLLE Breite (keine Ecken mehr unten) -- Andreas: "wenn  │ Cld
+#         │      │ das gut ist, machen wir das vielleicht oben auch"                              │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -200,8 +202,11 @@ naechster Schritt.
   moegliche Reaktion.
 - **Statuszeile ALS untere Rahmenkante** ("quasi der untere Rahmenteil") -- statt einer eigenen
   Zeile ueber der Kante (vorherige Feedback-Runde) ueberschreibt die Statuszeile jetzt direkt die
-  untere Kante SELBST (nur den Bereich zwischen den beiden Eckzeichen, die Ecken bleiben normale
-  Rahmenzeichen) -- der Rahmen wirkt dadurch optisch weiterhin geschlossen.
+  untere Kante SELBST. **Direkt danach noch einmal nachgebessert (Andreas: "aufgeraeumter, besser
+  als dieser doppelte Strich"):** die Statuszeile geht jetzt ueber die VOLLE Breite (Spalte 0 bis
+  cols-1), ueberschreibt auch die beiden unteren Eckzeichen -- keine Ecken mehr unten. Andreas'
+  Ankuendigung: "wenn das gut ist, machen wir das vielleicht oben auch" (Titelzeile) -- noch nicht
+  umgesetzt, wartet auf Rueckmeldung.
 - **Resize-Flackern behoben** -- `q9_input.c` bekam `wait_for_resize_settle()`: ein per Maus
   gezogenes Resize loest viele SIGWINCH kurz hintereinander aus, `Q9_KEY_RESIZE` wird jetzt erst
   ~150ms NACH dem letzten davon geliefert (Entprellung), statt bei jeder Zwischengroesse einzeln
