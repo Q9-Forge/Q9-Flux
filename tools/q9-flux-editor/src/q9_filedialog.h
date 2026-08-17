@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.h                                                                 Ver. 1.60
+// File:   q9_filedialog.h                                                                 Ver. 1.70
 // Owner:  Claudia
 // Desc.:  Modaler Datei-Auswahl-Dialog -- komponiert q9_filelist (Verzeichnis-Scan), q9_listview
 //         (scrollbare Liste) und q9_screenbuf (Bildschirmpuffer) zu einem echten interaktiven
@@ -126,6 +126,10 @@
 //         │      │ statt eigene Zeilen zu belegen (2 Zeilen gespart), Name mit "..." gekuerzt │
 //         │      │ wenn zu lang (auch in der Tabelle), Rahmenlinien bekommen immer body_bg,    │
 //         │      │ "X" 1 Zeichen weiter rechts, Statuszeile gekuerzt + mit Trennstrichen        │
+// 26-08-17│ 1.70 │ Neue Felder status_fg/bg fuer die untere Statuszeile -- eigenstaendig statt   │ Cld
+//         │      │ header_fg/bg wiederzuverwenden (Andreas: "die Statuszeilen sind noch          │
+//         │      │ unterschiedlich" -- Aufrufer kann jetzt dieselbe Farbe wie das Hauptfenster    │
+//         │      │ uebergeben, ohne die Dialog-Kopfzeile mitzuaendern)                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_FILEDIALOG_H
 #define Q9_FILEDIALOG_H
@@ -186,6 +190,16 @@ typedef struct {
                                                                 etwas absetzen") -- eigener Hintergrund,
                                                                 Buttons/Filter-Popup nutzen sub_fg/bg
                                                                 (Spaltentitel-Farbe) DAVOR, s. .c        */
+    int status_fg_r, status_fg_g, status_fg_b;              /* NEUE Statuszeile ganz unten (fuenfte     */
+    int status_bg_r, status_bg_g, status_bg_b;              /* Runde) -- BEWUSST eigene Felder statt    */
+                                                             /* header_fg/bg wiederzuverwenden: Andreas'
+                                                                Feedback, 2026-08-17, elfte Runde: "die
+                                                                Statuszeilen sind noch unterschiedlich"
+                                                                -- der Aufrufer soll hier dieselbe Farbe
+                                                                wie die Hauptfenster-Statuszeile
+                                                                uebergeben koennen, ohne dafuer die
+                                                                Kopfzeilen-Farbe (header_fg/bg, oben im
+                                                                Dialog) mitzuaendern                     */
 } q9_filedialog_palette_t;
 
 typedef struct {
@@ -277,5 +291,5 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
 
 #endif /* Q9_FILEDIALOG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.h                                                                     Ver. 1.60
+// EOF q9_filedialog.h                                                                     Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────
