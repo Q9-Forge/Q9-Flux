@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.30
+// File:   integration_demo.c                                                             Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -33,6 +33,15 @@
 // 26-08-17│ 1.30 │ Statuszeile jetzt UEBER DIE VOLLE BREITE (Andreas: "aufgeraeumter als dieser │ Cld
 //         │      │ doppelte Strich") -- ueberschreibt auch die beiden unteren Eckzeichen, keine │
 //         │      │ Ecken mehr unten                                                             │
+// 26-08-17│ 1.40 │ Dritte Feedback-Runde: Kopfzeile jetzt ebenfalls volle Breite (etwas heller  │ Cld
+//         │      │ als die Statuszeile), feste Feldbreiten in der Statuszeile (kein Hin- und    │
+//         │      │ Herspringen mehr bei unterschiedlich langen Eintragsnamen), neuer Resize-    │
+//         │      │ Overlay-Modus: waehrend/nach einer Groessenaenderung wird HOECHSTENS 1s lang │
+//         │      │ nur "R Rows - C Columns" zentriert angezeigt (LIVE aktualisiert, kein voller  │
+//         │      │ Neuaufbau bei jedem Zwischenschritt) -- erst nach 1s Stille kommt der volle   │
+//         │      │ Inhalt zurueck. Ist das Fenster dabei (immer noch) zu klein, bleibt das       │
+//         │      │ Overlay dauerhaft sichtbar (plus Zusatzzeile), statt den vollen Inhalt zu     │
+//         │      │ versuchen -- ersetzt die vorherige separate "Fenster zu klein"-Anzeige         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -55,7 +64,9 @@ static const char *const g_items[] = {
 };
 #define ITEM_COUNT (int)(sizeof(g_items) / sizeof(g_items[0]))
 
-/* Warme Amber-/Beige-/Braun-Palette, s. Kopfkommentar. */
+/* Warme Amber-/Beige-/Braun-Palette, s. Kopfkommentar. Kopf-/Statuszeile bewusst zwei
+   UNTERSCHIEDLICHE (aber verwandte) Hintergrundtoene -- Kopf etwas heller als Status, damit man sie
+   auf den ersten Blick auseinanderhalten kann, ohne aus der Farbfamilie auszubrechen. */
 #define PAL_FRAME_R      190
 #define PAL_FRAME_G      150
 #define PAL_FRAME_B       70
@@ -74,10 +85,23 @@ static const char *const g_items[] = {
 #define PAL_STATUS_BG_R   95
 #define PAL_STATUS_BG_G   68
 #define PAL_STATUS_BG_B   25
+#define PAL_HEADER_FG_R  250
+#define PAL_HEADER_FG_G  225
+#define PAL_HEADER_FG_B  180
+#define PAL_HEADER_BG_R  140                                /* etwas heller als PAL_STATUS_BG,    */
+#define PAL_HEADER_BG_G  100                                /* gleiche Farbfamilie                */
+#define PAL_HEADER_BG_B   40
 
 #define MIN_ROWS 20                                        /* Andreas' Wunsch (2026-08-17):     */
 #define MIN_COLS 60                                         /* darunter sieht es "sehr komisch"
                                                                 aus -- Hinweis statt Versuch      */
+#define RESIZE_SETTLE_MS 1000                               /* Andreas' Wunsch: waehrend eines
+                                                                Resizes nur die Groesse zeigen,
+                                                                nach 1s Stille zurueck zum Inhalt  */
+
+/* Feste Feldbreiten fuer die Statuszeile (Andreas' Wunsch: "sonst huepfen die Texte hin und her").
+   NAME_FIELD_WIDTH >= der laengste Eintrag in g_items ("CF-Interface (onboard, c0)" = 27 Zeichen). */
+#define NAME_FIELD_WIDTH 30
 
 static void write_ansi(unsigned (*fn)(char *, unsigned))
 {
@@ -101,16 +125,104 @@ static void clamp_dims(int *rows, int *cols)
     if (*cols > Q9_SCREENBUF_MAX_COLS) { *cols = Q9_SCREENBUF_MAX_COLS; }
 }
 
-static void render_too_small(int rows, int cols)
+/* Ersetzt die fruehere separate "Fenster zu klein"-Meldung: EIN einheitliches, zentriertes
+   Overlay fuer zwei Faelle -- (a) waehrend/kurz nach einer Groessenaenderung (too_small=0, wird nach
+   RESIZE_SETTLE_MS Stille wieder durch den vollen Inhalt ersetzt) und (b) das Fenster ist
+   (weiterhin) kleiner als die Mindestgroesse (too_small=1, bleibt dauerhaft sichtbar, zeigt
+   zusaetzlich die Mindestgroesse). Beide Faelle sind bewusst DASSELBE einfache "nur die Groesse"-
+   Layout -- Andreas: "sieht doof aus, wenn man immer versucht den kompletten Inhalt darzustellen". */
+static void render_size_overlay(int rows, int cols, int too_small)
 {
     q9_screenbuf_t sb;
     char out[4096];
-    char msg[64];
+    char line1[64];
+    int mid_row, mid_col;
+    int len1;
 
     q9_screenbuf_init(&sb, rows, cols);
-    snprintf(msg, sizeof(msg), "Fenster zu klein (%dx%d) -- mind. %dx%d noetig",
-             rows, cols, MIN_ROWS, MIN_COLS);
-    q9_screenbuf_puts(&sb, rows / 2, 1, msg, PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
+
+    snprintf(line1, sizeof(line1), "%d Rows - %d Columns", rows, cols);
+    len1 = (int)strlen(line1);
+    mid_row = rows / 2;
+    mid_col = (cols - len1) / 2;
+    if (mid_col < 0) { mid_col = 0; }
+    q9_screenbuf_puts(&sb, too_small ? mid_row - 1 : mid_row, mid_col, line1,
+                       PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
+
+    if (too_small) {
+        char line2[64];
+        int len2, mid_col2;
+        snprintf(line2, sizeof(line2), "Fenster zu klein (mind. %dx%d)", MIN_ROWS, MIN_COLS);
+        len2 = (int)strlen(line2);
+        mid_col2 = (cols - len2) / 2;
+        if (mid_col2 < 0) { mid_col2 = 0; }
+        q9_screenbuf_puts(&sb, mid_row + 1, mid_col2, line2,
+                           PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
+    }
+
+    {
+        unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
+        fwrite(out, 1, n, stdout);
+        fflush(stdout);
+    }
+}
+
+static void render_full_content(q9_listview_t *lv, int rows, int cols)
+{
+    q9_screenbuf_t sb;
+    char out[1 << 16];
+    char status[256];
+
+    q9_screenbuf_init(&sb, rows, cols);
+    q9_screenbuf_draw_frame(&sb, 0, 0, rows, cols,
+                             "Q9-Flux Editor -- Integrations-Demo",
+                             PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
+
+    /* Kopfzeile UEBER DIE VOLLE BREITE (Andreas' Wunsch, 2026-08-17, analog zur Statuszeile) --
+       ueberschreibt auch die beiden oberen Eckzeichen von draw_frame(), etwas heller als die
+       Statuszeile (PAL_HEADER_* statt PAL_STATUS_*), damit man Kopf/Fuss auf einen Blick
+       unterscheiden kann, aber in derselben Farbfamilie bleibt. Der Titeltext von draw_frame()
+       wird hier mit demselben Text erneut zentriert geschrieben (draw_frame's eigene Titel-
+       Platzierung wird durch fill_rect vollstaendig ueberschrieben). */
+    {
+        static const char title[] = "Q9-Flux Editor -- Integrations-Demo";
+        int len = (int)(sizeof(title) - 1);
+        int mid_col = (cols - len) / 2;
+        if (mid_col < 0) { mid_col = 0; }
+        q9_screenbuf_fill_rect(&sb, 0, 0, 1, cols, ' ',
+                                PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B,
+                                1, PAL_HEADER_BG_R, PAL_HEADER_BG_G, PAL_HEADER_BG_B);
+        q9_screenbuf_puts(&sb, 0, mid_col, title, PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
+    }
+
+    q9_screenbuf_puts(&sb, rows - 2, 3, "Pfeiltasten: navigieren   Strg-C: beenden",
+                       PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
+
+    lv->row    = 2;
+    lv->col    = 3;
+    lv->height = rows - 5;                                   /* Rand+Hinweis+Statuszeile/-kante s.u. */
+    lv->width  = cols - 6;
+    if (lv->height < 1) { lv->height = 1; }
+    if (lv->width  < 1) { lv->width  = 1; }
+    lv->scroll_offset = q9_listview_scroll(lv->selected, lv->scroll_offset, lv->height, lv->item_count);
+    q9_listview_render(lv, &sb, g_items,
+                        PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
+                        PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
+                        PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B);
+
+    /* Statuszeile ALS untere Rahmenkante, ueber die volle Breite (vorherige Feedback-Runden) --
+       jetzt zusaetzlich mit FESTEN Feldbreiten (Andreas: "sonst huepfen die Texte hin und her"):
+       der Eintragsname wird auf NAME_FIELD_WIDTH Zeichen aufgefuellt (linksbuendig), die
+       Terminal-Groesse mit fester Breite je Zahl (rows dreistellig rechtsbuendig, cols dreistellig
+       linksbuendig) -- "Terminal:" steht dadurch bei jeder Auswahl/Groesse an derselben Spalte. */
+    q9_screenbuf_fill_rect(&sb, rows - 1, 0, 1, cols, ' ',
+                            PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B,
+                            1, PAL_STATUS_BG_R, PAL_STATUS_BG_G, PAL_STATUS_BG_B);
+    snprintf(status, sizeof(status), " Ausgewaehlt: %-*.*s | Terminal: %3dx%-3d",
+             NAME_FIELD_WIDTH, NAME_FIELD_WIDTH,
+             (lv->selected >= 0 && lv->selected < ITEM_COUNT) ? g_items[lv->selected] : "-",
+             rows, cols);
+    q9_screenbuf_puts(&sb, rows - 1, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
 
     {
         unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
@@ -122,10 +234,9 @@ static void render_too_small(int rows, int cols)
 int main(void)
 {
     int rows, cols;
-    q9_screenbuf_t sb;
     q9_listview_t lv;
-    char out[1 << 16];
     int running = 1;
+    int showing_overlay = 0;                                /* 1 = Resize-Overlay statt Vollinhalt */
 
     if (q9_term_size(&rows, &cols) != 0) {
         rows = 24;
@@ -139,70 +250,50 @@ int main(void)
     }
     write_ansi(wrap_hide);
 
-    q9_listview_init(&lv, 2, 3, 1, 1, ITEM_COUNT);          /* echte Geometrie folgt in der Schleife */
+    q9_listview_init(&lv, 2, 3, 1, 1, ITEM_COUNT);          /* echte Geometrie folgt in render_full_content */
 
     while (running) {
-        char status[256];
+        int too_small = (rows < MIN_ROWS || cols < MIN_COLS);
+        if (too_small) { showing_overlay = 1; }              /* zu klein -> immer Overlay, s.u. */
 
-        if (rows < MIN_ROWS || cols < MIN_COLS) {
-            render_too_small(rows, cols);
+        if (showing_overlay) {
+            render_size_overlay(rows, cols, too_small);
         } else {
-            q9_screenbuf_init(&sb, rows, cols);
-            q9_screenbuf_draw_frame(&sb, 0, 0, rows, cols,
-                                     "Q9-Flux Editor -- Integrations-Demo",
-                                     PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
-            q9_screenbuf_puts(&sb, rows - 2, 3, "Pfeiltasten: navigieren   Strg-C: beenden",
-                               PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
-
-            lv.row    = 2;
-            lv.col    = 3;
-            lv.height = rows - 5;                            /* Rand+Hinweis+Statuszeile/-kante s.u. */
-            lv.width  = cols - 6;
-            if (lv.height < 1) { lv.height = 1; }
-            if (lv.width  < 1) { lv.width  = 1; }
-            lv.scroll_offset = q9_listview_scroll(lv.selected, lv.scroll_offset, lv.height, lv.item_count);
-            q9_listview_render(&lv, &sb, g_items,
-                                PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
-                                PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
-                                PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B);
-
-            /* Statuszeile ALS untere Rahmenkante, jetzt UEBER DIE VOLLE BREITE (Andreas' Wunsch,
-               2026-08-17): ueberschreibt auch die beiden unteren Eckzeichen von draw_frame() --
-               keine Ecken mehr unten, die Statuszeile geht randlos von Spalte 0 bis cols-1 durch.
-               Sah "aufgeraeumter" aus als die vorherige Variante mit stehengebliebenen Ecken
-               ("dieser doppelte Strich"). */
-            q9_screenbuf_fill_rect(&sb, rows - 1, 0, 1, cols, ' ',
-                                    PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B,
-                                    1, PAL_STATUS_BG_R, PAL_STATUS_BG_G, PAL_STATUS_BG_B);
-            snprintf(status, sizeof(status), " Ausgewaehlt: %s  |  Terminal: %dx%d",
-                     (lv.selected >= 0 && lv.selected < ITEM_COUNT) ? g_items[lv.selected] : "-",
-                     rows, cols);
-            q9_screenbuf_puts(&sb, rows - 1, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
-
-            {
-                unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
-                fwrite(out, 1, n, stdout);
-                fflush(stdout);
-            }
+            render_full_content(&lv, rows, cols);
         }
 
         {
-            q9_key_t k = q9_input_read_key();
+            q9_key_t k = showing_overlay ? q9_input_read_key_timeout(RESIZE_SETTLE_MS)
+                                          : q9_input_read_key();
+
+            if (showing_overlay && k.kind == Q9_KEY_NONE) {
+                /* RESIZE_SETTLE_MS ohne weitere Aenderung abgelaufen. Nur zurueck zum vollen
+                   Inhalt, wenn die Groesse tatsaechlich ausreicht -- sonst bleibt das Overlay
+                   (mit "zu klein"-Zusatzzeile) einfach stehen und wird in der naechsten Runde
+                   identisch neu gezeichnet (idempotent, kein Problem). */
+                if (!too_small) {
+                    showing_overlay = 0;
+                }
+                continue;
+            }
+
             switch (k.kind) {
                 case Q9_KEY_CTRL_C:
                 case Q9_KEY_EOF:
                     running = 0;
                     break;
                 case Q9_KEY_UP:
-                    q9_listview_move(&lv, -1);
+                    if (!showing_overlay) { q9_listview_move(&lv, -1); }
                     break;
                 case Q9_KEY_DOWN:
-                    q9_listview_move(&lv, 1);
+                    if (!showing_overlay) { q9_listview_move(&lv, 1); }
                     break;
                 case Q9_KEY_RESIZE:
                     if (q9_term_size(&rows, &cols) == 0) {
                         clamp_dims(&rows, &cols);
                     }
+                    showing_overlay = 1;                     /* sofort ins Overlay, LIVE aktualisiert
+                                                                 bei weiteren RESIZE-Ereignissen     */
                     break;
                 default:
                     break;                                   /* alle anderen Tasten: ignorieren */
@@ -226,5 +317,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.30
+// EOF integration_demo.c                                                                  Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
