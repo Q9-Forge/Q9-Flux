@@ -41,14 +41,14 @@ int main(void)
     printf("=== q9_widgets: draw_frame -- Ecken/Kanten an den richtigen Zellen ===\n");
     q9_screenbuf_init(&sb, 24, 80);
     q9_screenbuf_draw_frame(&sb, 5, 10, 6, 20, NULL, 1, 2, 3);
-    check_int("obere linke Ecke '+'",     sb.cell[5][10].ch, '+');
-    check_int("obere rechte Ecke '+'",    sb.cell[5][29].ch, '+');
-    check_int("untere linke Ecke '+'",    sb.cell[10][10].ch, '+');
-    check_int("untere rechte Ecke '+'",   sb.cell[10][29].ch, '+');
-    check_int("obere Kante '-' (Mitte)",  sb.cell[5][15].ch, '-');
-    check_int("untere Kante '-' (Mitte)", sb.cell[10][15].ch, '-');
-    check_int("linke Kante '|' (Mitte)",  sb.cell[7][10].ch, '|');
-    check_int("rechte Kante '|' (Mitte)", sb.cell[7][29].ch, '|');
+    check_int("obere linke Ecke",     sb.cell[5][10].ch, Q9_GLYPH_TL);
+    check_int("obere rechte Ecke",    sb.cell[5][29].ch, Q9_GLYPH_TR);
+    check_int("untere linke Ecke",    sb.cell[10][10].ch, Q9_GLYPH_BL);
+    check_int("untere rechte Ecke",   sb.cell[10][29].ch, Q9_GLYPH_BR);
+    check_int("obere Kante (Mitte)",  sb.cell[5][15].ch, Q9_GLYPH_HLINE);
+    check_int("untere Kante (Mitte)", sb.cell[10][15].ch, Q9_GLYPH_HLINE);
+    check_int("linke Kante (Mitte)",  sb.cell[7][10].ch, Q9_GLYPH_VLINE);
+    check_int("rechte Kante (Mitte)", sb.cell[7][29].ch, Q9_GLYPH_VLINE);
     check_int("Farbe an der Ecke stimmt (fg_r)", sb.cell[5][10].fg_r, 1);
 
     printf("=== q9_widgets: draw_frame laesst das Innere unangetastet ===\n");
@@ -67,18 +67,18 @@ int main(void)
     check_int("'H' des Titels an der berechneten Position", sb.cell[2][16].ch, 'H');
     check_int("'i' des Titels direkt danach", sb.cell[2][17].ch, 'i');
     check_int("Leerzeichen nach dem Titel", sb.cell[2][18].ch, ' ');
-    /* Kante links/rechts vom Titel bleibt '-' */
-    check_int("Kante vor dem Titelbereich bleibt '-'", sb.cell[2][10].ch, '-');
-    /* Ecken bleiben '+', vom Titel unberuehrt (Titel ist deutlich schmaler als der Rahmen) */
-    check_int("Ecke bleibt '+' (Titel ueberschreibt sie nicht)", sb.cell[2][5].ch, '+');
+    /* Kante links/rechts vom Titel bleibt die Linie */
+    check_int("Kante vor dem Titelbereich bleibt Linie", sb.cell[2][10].ch, Q9_GLYPH_HLINE);
+    /* Ecken bleiben unberuehrt vom Titel (Titel ist deutlich schmaler als der Rahmen) */
+    check_int("Ecke bleibt unveraendert (Titel ueberschreibt sie nicht)", sb.cell[2][5].ch, Q9_GLYPH_TL);
 
     printf("=== q9_widgets: draw_frame ohne Titel (NULL/leer) aendert die obere Kante nicht extra ===\n");
     q9_screenbuf_init(&sb, 24, 80);
     q9_screenbuf_draw_frame(&sb, 0, 0, 3, 10, NULL, 1, 1, 1);
-    check_int("obere Kante bleibt durchgehend '-' (NULL-Titel)", sb.cell[0][5].ch, '-');
+    check_int("obere Kante bleibt durchgehend (NULL-Titel)", sb.cell[0][5].ch, Q9_GLYPH_HLINE);
     q9_screenbuf_init(&sb, 24, 80);
     q9_screenbuf_draw_frame(&sb, 0, 0, 3, 10, "", 1, 1, 1);
-    check_int("obere Kante bleibt durchgehend '-' (leerer Titel)", sb.cell[0][5].ch, '-');
+    check_int("obere Kante bleibt durchgehend (leerer Titel)", sb.cell[0][5].ch, Q9_GLYPH_HLINE);
 
     printf("=== q9_widgets: draw_frame mit degenerierten Massen tut nichts, kein Crash ===\n");
     q9_screenbuf_init(&sb, 24, 80);
@@ -96,7 +96,7 @@ int main(void)
     q9_screenbuf_draw_frame(&sb, 22, 75, 6, 10, NULL, 1, 1, 1);   /* kein Titel -- der wird separat
                                                                        oben getestet, hier geht es
                                                                        nur um die Randklemmung */
-    check_int("oberer Kantenrest innerhalb des Puffers gesetzt", sb.cell[22][79].ch, '-');
+    check_int("oberer Kantenrest innerhalb des Puffers gesetzt", sb.cell[22][79].ch, Q9_GLYPH_HLINE);
     check_int("Zelle jenseits der Pufferkante NICHT gesetzt (kein Speicherzugriff ausserhalb)",
               sb.cell[23][79].ch, ' ');
     check_true("kein Absturz bis hierher", 1);
@@ -106,8 +106,8 @@ int main(void)
     q9_screenbuf_draw_frame(&sb, 0, 0, 3, 12,
                              "Dieser Titel ist deutlich laenger als der Rahmen breit ist",
                              1, 1, 1);
-    check_int("Ecke links bleibt '+' (Titel ueberschreibt sie nicht)", sb.cell[0][0].ch, '+');
-    check_int("Ecke rechts bleibt '+' (Titel ueberschreibt sie nicht)", sb.cell[0][11].ch, '+');
+    check_int("Ecke links bleibt unveraendert (Titel ueberschreibt sie nicht)", sb.cell[0][0].ch, Q9_GLYPH_TL);
+    check_int("Ecke rechts bleibt unveraendert (Titel ueberschreibt sie nicht)", sb.cell[0][11].ch, Q9_GLYPH_TR);
 
     printf("\n=== Zusammenfassung ===\n");
     printf("  Gesamt: %d Checks fehlgeschlagen\n", g_fails);
