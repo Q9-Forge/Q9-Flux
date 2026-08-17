@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   input_selftest.c                                                                Ver. 1.00
+// File:   input_selftest.c                                                                Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_input_decode() -- die reine, plattformunabhaengige
 //         Tastenerkennung (Byte-Puffer rein, q9_key_t raus). Deckt normale Zeichen, Sondertasten,
@@ -78,6 +78,9 @@ int main(void)
     k = q9_input_decode("\x1b[A", 3, 1, &consumed);
     check_kind("ESC [ A mit more_may_follow=1 -> trotzdem Q9_KEY_UP (Sequenz ist vollstaendig)",
                k.kind, Q9_KEY_UP);
+    k = q9_input_decode("\x1b[Z", 3, 0, &consumed);
+    check_kind("ESC [ Z -> Q9_KEY_SHIFT_TAB", k.kind, Q9_KEY_SHIFT_TAB);
+    check_int("ESC [ Z -> consumed == 3", consumed, 3);
 
     printf("=== q9_input_decode: unbekannte Sequenz (ESC [ x) ===\n");
     k = q9_input_decode("\x1b[x", 3, 0, &consumed);
@@ -137,5 +140,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF input_selftest.c                                                                    Ver. 1.00
+// EOF input_selftest.c                                                                    Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

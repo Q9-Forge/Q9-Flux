@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.30
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.40
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -47,6 +47,9 @@
 # 26-08-17│ 2.30 │ Vierte Feedback-Runde: q9_ansi_resize_window (XTWINOPS) fuer automatisches     │ Cld
 #         │      │ Vergroessern bei anhaltend zu kleinem Fenster, Overlay-Reihenfolge Columns/    │
 #         │      │ Rows getauscht, Kopfzeile linksbuendig + heller                                │
+# 26-08-17│ 2.40 │ Fuenfte Runde, IN ARBEIT: Design fuer den Datei-Auswahl-Dialog abgestimmt;      │ Cld
+#         │      │ Q9_KEY_SHIFT_TAB + q9_filelist.h/.c (Verzeichnis-Scan) fertig, die eigentliche  │
+#         │      │ Dialog-Zusammensetzung folgt noch                                               │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -296,6 +299,41 @@ Wuensche, alles umgesetzt:**
   Ruhephase bei anhaltend zu kleinem Fenster (Byte-Vergleich der erzeugten Escape-Sequenz -- ob ein
   ECHTES Terminal darauf tatsaechlich reagiert, kann von hier aus nicht geprueft werden, das muss
   Andreas selbst an seinem Terminal sehen).
+
+**Fuenfte Runde (2026-08-17) -- der eigentliche Datei-Auswahl-Dialog, IN ARBEIT:** Andreas testete
+per SSH von Windows 11/Windows Terminal auf den Mac (laeuft technisch also weiterhin ueber den
+POSIX-Zweig, unabhaengig vom lokalen Windows-Terminal). Rueckmeldung: Grundaussehen bleibt so,
+aber die Listenansicht "braucht noch ein paar Optionen" (noch nicht konkretisiert) und "unbedingt"
+ein Datei-Auswahl-Dialog. Design abgestimmt (Vorschlag per ASCII-Mockup + `AskUserQuestion`
+bestaetigt, dann von Andreas verfeinert):
+- Kopfzeile wie die Hauptseite, oben rechts ein `[X]` als visuelle Geste (mangels Maus nicht
+  eigenstaendig klickbar, Escape schliesst ohnehin immer, unabhaengig vom Fokus)
+- Dateiliste mit ECHTEN Dateien (nicht nur Namen) -- Spalten Name/Datum/Groesse
+- Auswahlzeile ("Ausgewaehlt: ...") + rechts daneben ein KOMPAKTER Extensions-UMSCHALTER (kein
+  Freitext-Filterfeld -- zyklisch durch eine feste Liste vorgegebener Endungen + `*.*`)
+- OK/Abbrechen-Buttons unten auf der Hauptfarbe (nicht der Listenfarbe)
+- Rahmenlos -- nur die dunklere (aber klar von Schwarz unterscheidbare) Hintergrundfarbe grenzt ab
+- Navigation: TAB vorwaerts / Shift-TAB rueckwaerts zyklisch durch Liste -> Extensions-Umschalter
+  -> OK -> Abbrechen; Pfeiltasten navigieren INNERHALB der Liste, wenn sie den Fokus hat; Enter auf
+  der Liste = OK; Escape = immer Abbrechen
+- **Bewusst vertagt (Andreas: "faellt mir gerade ein... aber machen wir es erst mal ohne"):**
+  Anzeige des aktuellen Verzeichnispfads im Dialog -- soll spaeter OPTIONAL moeglich sein
+
+**Bisher fertig:**
+- `q9_input.h/.c`: `Q9_KEY_SHIFT_TAB` (CBT, `ESC[Z`) fuer die rueckwaertige Fokus-Navigation.
+  Ruecklese-Test bestaetigt, dass `decode()` die Sequenz korrekt erkennt -- ob reale Terminals
+  beim Druecken von Shift-Tab tatsaechlich genau diese Sequenz senden, ist (wie bei allen echten
+  Tastatureingaben) nur am echten Terminal durch Andreas selbst pruefbar.
+- `q9_filelist.h/.c` (NEU): echter Verzeichnis-Scan (nur das direkte Verzeichnis, keine
+  Unterordner-Navigation -- der Aufrufer gibt das Verzeichnis fest vor), liefert Name/Datum/
+  Groesse (kompakte Kurzform, z.B. "3.0M") je Datei, alphabetisch sortiert, Erweiterungsfilter
+  case-insensitiv mit/ohne fuehrenden Punkt, `*`/`*.*`/leer = kein Filter, versteckte Dateien
+  werden uebersprungen. POSIX (opendir/readdir/stat) implementiert+getestet (21 Checks, echtes
+  Scratch-Verzeichnis mit echten Testdateien), Windows (FindFirstFile/FindNextFile) geschrieben,
+  mangels Windows-Host ungetestet.
+- **Noch offen:** die eigentliche Dialog-Zusammensetzung (`q9_filedialog.h/.c` -- Bildschirmpuffer-
+  Snapshot/Restore + Kopfzeile + Dateiliste + Extensions-Umschalter + Buttons + Fokus-Navigation
+  zu einem echten, bedienbaren Ganzen) und die Einbindung ins Integrations-Demo.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
