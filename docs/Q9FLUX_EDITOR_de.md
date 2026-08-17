@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.90
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.00
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -36,6 +36,8 @@
 # 26-08-17│ 1.90 │ Integrations-Demo FERTIG (demo/integration_demo.c); Andreas' Feedback danach  │ Cld
 #         │      │ umgesetzt: Mindestgroesse, proportionaler Scrollbalken, eigene Statuszeile,   │
 #         │      │ echte Unicode-Box-Drawing-Zeichen, warme Farbpalette. Maus bewusst vertagt     │
+# 26-08-17│ 2.00 │ Zweite Feedback-Runde: Statuszeile jetzt ALS untere Rahmenkante, Resize-       │ Cld
+#         │      │ Entprellung (~150ms) gegen Flackern, Scrollbalken-Abstand zur Auswahl          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -189,6 +191,24 @@ Reporting muss explizit per Escape-Sequenz angefordert werden). Bereits in Absch
 Zusatzanforderung" markiert (SGR-Mausmodus aktivieren/deaktivieren, Escape-Sequenzen parsen,
 Terminal-Abdeckung pruefen) -- aus Umfangsgruenden nicht Teil dieser Aenderungsrunde, eigener
 naechster Schritt.
+
+**Zweite Feedback-Runde nach dem ersten Ansehen (2026-08-17), alles umgesetzt:**
+- **Fenster-Verkleinerung stoppen** -- Andreas fragte, ob sich das Verkleinern des Terminal-
+  Fensters selbst unterbinden liesse. Antwort: nein, technisch nicht moeglich -- die
+  Fenstergroesse kontrolliert das Terminal-Programm/der Fenstermanager des Hosts, nicht der darin
+  laufende Prozess. Der Hinweistext bei Unterschreitung der Mindestgroesse bleibt die einzig
+  moegliche Reaktion.
+- **Statuszeile ALS untere Rahmenkante** ("quasi der untere Rahmenteil") -- statt einer eigenen
+  Zeile ueber der Kante (vorherige Feedback-Runde) ueberschreibt die Statuszeile jetzt direkt die
+  untere Kante SELBST (nur den Bereich zwischen den beiden Eckzeichen, die Ecken bleiben normale
+  Rahmenzeichen) -- der Rahmen wirkt dadurch optisch weiterhin geschlossen.
+- **Resize-Flackern behoben** -- `q9_input.c` bekam `wait_for_resize_settle()`: ein per Maus
+  gezogenes Resize loest viele SIGWINCH kurz hintereinander aus, `Q9_KEY_RESIZE` wird jetzt erst
+  ~150ms NACH dem letzten davon geliefert (Entprellung), statt bei jeder Zwischengroesse einzeln
+  neu zu zeichnen. Per `expect`/Pseudo-Terminal verifiziert: ein Burst aus 5 schnellen
+  Groessenaenderungen loest nur EINE Aktualisierung nach exakt der Entprellzeit aus.
+- **Scrollbalken-Abstand** -- die markierte Zeile wurde bisher bis direkt an den Scrollbalken
+  herangezeichnet ("verschmilzt"). `q9_listview.c`: ein Zeichen Abstand ergaenzt.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

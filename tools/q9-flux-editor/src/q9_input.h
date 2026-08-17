@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_input.h                                                                      Ver. 1.10
+// File:   q9_input.h                                                                      Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Tastatur-Eingabe fuer den Q9-Flux-Editor -- Rohmodus + Tastenerkennung (Pfeiltasten,
 //         Enter, Escape, Tab, Backspace, Strg-C). Letzter fehlender Baustein aus
@@ -50,6 +50,9 @@
 //         │      │ schnell wie das Terminal das Signal schickt; Windows: kein SIGWINCH-      │
 //         │      │ Aequivalent, dort per Definition nur "beim naechsten Tastendruck neu      │
 //         │      │ nachsehen" moeglich -- s. dortiger Kommentar)                             │
+// 26-08-17│ 1.20 │ Resize-Entprellung (~150ms, Andreas: Zieh-Resize flackerte durch viele    │ Cld
+//         │      │ SIGWINCH kurz hintereinander) -- Q9_KEY_RESIZE kommt jetzt erst NACH einer │
+//         │      │ kurzen Ruhephase, dafuer nur noch einmal pro abgeschlossenem Resize        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_INPUT_H
 #define Q9_INPUT_H
@@ -126,9 +129,13 @@ void q9_input_shutdown(void);
 // Desc.:    Blockiert, bis eine vollstaendige Taste ODER ein Q9_KEY_RESIZE-Ereignis vorliegt (echtes
 //           stdin-I/O -- NICHT automatisiert testbar, duenne Huelle um q9_input_decode). Braucht
 //           q9_input_init() vorher. POSIX: ein waehrend des Wartens eintreffendes SIGWINCH
-//           unterbricht den blockierenden read() sofort (EINTR) -- die Funktion liefert dann
-//           umgehend Q9_KEY_RESIZE, OHNE auf eine tatsaechliche Taste zu warten (kein Polling, keine
-//           Verzoegerung ueber die Signal-Zustellzeit des Terminals hinaus). Windows kennt kein
+//           unterbricht den blockierenden read() sofort (EINTR), OHNE auf eine tatsaechliche Taste
+//           zu warten (kein Polling auf stdin). Bevor Q9_KEY_RESIZE tatsaechlich zurueckgegeben
+//           wird, ENTPRELLT die Funktion aber ~150ms (Q9_RESIZE_DEBOUNCE_MS, s. q9_input.c) --
+//           Andreas' Beobachtung (2026-08-17): ein per Maus gezogenes Resize feuert VIELE SIGWINCH
+//           kurz hintereinander, ohne Entprellung wuerde jede Zwischengroesse eine eigene
+//           Neuzeichnung ausloesen (starkes Flackern). Ein schneller Zieh-Resize liefert dadurch
+//           erst ~150ms NACH der letzten Groessenaenderung genau EIN Q9_KEY_RESIZE. Windows kennt kein
 //           SIGWINCH-Aequivalent -- dort liefert q9_input_read_key() NIE von sich aus
 //           Q9_KEY_RESIZE; der Aufrufer muss dort selbst regelmaessig (z.B. nach jeder verarbeiteten
 //           Taste) q9_term_size() gegen die zuletzt bekannte Groesse vergleichen, wenn er auch unter
@@ -149,5 +156,5 @@ int q9_term_size(int *rows, int *cols);
 
 #endif /* Q9_INPUT_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_input.h                                                                          Ver. 1.10
+// EOF q9_input.h                                                                          Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.10
+// File:   q9_listview.c                                                                   Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -10,6 +10,8 @@
 // 26-08-16│ 1.00 │ Erster Wurf                                                              │ Cld
 // 26-08-17│ 1.10 │ Proportionaler Scrollbalken-Griff (Andreas), Q9_GLYPH_VLINE/BLOCK statt   │ Cld
 //         │      │ ASCII                                                                      │
+// 26-08-17│ 1.20 │ Ein Zeichen Abstand zwischen markierter Zeile und Scrollbalken (Andreas:   │ Cld
+//         │      │ "verschmilzt sonst")                                                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -74,7 +76,10 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
     if (!lv || !sb || !items) { return; }
 
     has_scrollbar = (lv->item_count > lv->height) ? 1 : 0;
-    content_width = has_scrollbar ? lv->width - 1 : lv->width;
+    /* -2 statt nur -1 (Andreas' Wunsch, 2026-08-17): ein Zeichen Abstand zwischen der markierten
+       Zeile und dem Scrollbalken, damit die Auswahl-Hervorhebung nicht direkt an den Balken
+       anstoesst ("verschmilzt"). */
+    content_width = has_scrollbar ? lv->width - 2 : lv->width;
     if (content_width < 1) { content_width = 1; }
 
     for (i = 0; i < lv->height; i++) {
@@ -133,5 +138,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.10
+// EOF q9_listview.c                                                                       Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
