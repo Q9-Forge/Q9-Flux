@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_ansi.c                                                                       Ver. 1.00
+// File:   q9_ansi.c                                                                       Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_ansi.h.
 //
@@ -8,6 +8,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-08-14│ 1.00 │ Erster Wurf                                                              │ Cld
+// 26-08-17│ 1.10 │ q9_ansi_resize_window (XTWINOPS, "ESC[8;rows;colst")                     │ Cld
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_ansi.h"
 #include <stdio.h>
@@ -72,6 +73,11 @@ unsigned q9_ansi_show_cursor(char *out, unsigned out_max)
     return clamp_len(snprintf(out, out_max, "\x1b[?25h"), out_max);
 }
 
+unsigned q9_ansi_resize_window(char *out, unsigned out_max, int rows, int cols)
+{
+    return clamp_len(snprintf(out, out_max, "\x1b[8;%d;%dt", rows, cols), out_max);
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_ansi.c                                                                           Ver. 1.00
+// EOF q9_ansi.c                                                                           Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

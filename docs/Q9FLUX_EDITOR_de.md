@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.20
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.30
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -44,6 +44,9 @@
 #         │      │ Feldbreiten in der Statuszeile, Resize-Overlay-Modus ersetzt die 150ms-        │
 #         │      │ Entprellung komplett (LIVE-Groessenanzeige waehrend des Ziehens,               │
 #         │      │ q9_input_read_key_timeout() neu, Vollansicht erst nach 1s Stille)              │
+# 26-08-17│ 2.30 │ Vierte Feedback-Runde: q9_ansi_resize_window (XTWINOPS) fuer automatisches     │ Cld
+#         │      │ Vergroessern bei anhaltend zu kleinem Fenster, Overlay-Reihenfolge Columns/    │
+#         │      │ Rows getauscht, Kopfzeile linksbuendig + heller                                │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -255,6 +258,44 @@ naechster Schritt.
     Resize, aktualisiert sich live bei einem zweiten Resize waehrend des Ziehens (ohne
     Zwischenwartezeit), und die Vollansicht kehrt exakt nach ~1000ms Stille zurueck (gemessen:
     1000ms). Zu-klein-Fall zeigt Groesse + Zusatzzeile wie vorgesehen.
+
+**Vierte Feedback-Runde (2026-08-17) -- Andreas' Frage von oben genauer geklaert + weitere
+Wuensche, alles umgesetzt:**
+- **"Kannst du es dann auf die Mindestgroesse setzen?" -- jetzt genauer verstanden:** gemeint war
+  ein ECHTER Versuch, das TERMINAL-FENSTER SELBST automatisch zu vergroessern (nicht nur eine
+  interne Darstellungsentscheidung). Das geht tatsaechlich -- ueber die XTWINOPS-Escape-Sequenz
+  `ESC[8;{rows};{cols}t`, die manche Terminals (v.a. xterm mit aktivierten "Window Ops") als
+  Aufforderung verstehen, sich selbst auf die angegebene Zeichen-Groesse zu bringen. NEU:
+  `q9_ansi_resize_window()` (`q9_ansi.h/.c`). `integration_demo.c`: sobald das Overlay wegen
+  Unterschreitung der Mindestgroesse laenger als `RESIZE_SETTLE_MS` stabil bleibt, wird EINMAL
+  (nicht bei jeder Wiederholung) versucht, das Terminal auf `MIN_ROWS`x`MIN_COLS` zu bringen.
+  BEKANNTER KOMPROMISS: nicht universell unterstuetzt -- viele Terminals ignorieren die Sequenz
+  oder haben sie aus Sicherheitsgruenden abgeschaltet (ein Programm, das beliebigen Text ausgibt,
+  koennte sonst ungefragt fremde Fenster verschieben/resizen). Wirkt es, kommt ganz regulaer ein
+  neues `Q9_KEY_RESIZE` mit der dann tatsaechlichen Groesse; wirkt es nicht, bleibt das Overlay
+  unveraendert stehen -- kein Fehler, keine Endlosschleife von Versuchen.
+- **Beobachtung zu einem harten 48-Spalten-Minimum:** Andreas bemerkte, dass sich sein Terminal
+  per Maus nicht unter 48 Spalten ziehen laesst (Zeilen dagegen bis auf 1 zusammenschiebbar). Das
+  ist sehr wahrscheinlich eine Eigenschaft des TERMINAL-PROGRAMMS SELBST (z.B. eine Mindestfenster-
+  breite in den Einstellungen von Terminal.app/iTerm2/etc.), NICHT unseres Codes -- unser eigenes
+  Minimum liegt bei 60 Spalten, unabhaengig davon. Welche genaue Einstellung dafuer verantwortlich
+  ist, haengt vom jeweils verwendeten Terminal-Programm ab (nicht ermittelt, da unbekannt welches
+  Andreas nutzt) -- ausserhalb dessen, was dieses Projekt beeinflussen kann.
+- **Overlay-Reihenfolge getauscht:** "R Rows - C Columns" -> "C Columns - R Rows" (Andreas: "Und
+  Columns und Rows solltest du bitte tauschen") -- entspricht der ueblichen "80x24"-Schreibweise
+  (Spalten x Zeilen). Die "Fenster zu klein"-Zusatzzeile zeigt die Mindestgroesse jetzt ebenfalls
+  in dieser Reihenfolge (`mind. 60x20` statt `mind. 20x60`).
+- **Kopfzeile linksbuendig statt zentriert:** ab Spalte 3 (Andreas: "lass uns mal links versuchen,
+  ab dem dritten Zeichen"), passt zur bestehenden Linksbuendigkeit von Listenansicht/Hinweistext.
+  Zusaetzlich das Weiss der Kopfzeilen-Schrift heller gestellt (naeher an reinem Weiss, noch
+  leicht warm getoent, s. `PAL_HEADER_FG_*`).
+- Verifiziert: `make test` 0 Fails (neuer Test fuer `q9_ansi_resize_window` in `ansi_selftest.c`).
+  Echter Rauchtest per `expect`/Pseudo-Terminal: "Columns - Rows"-Reihenfolge im Overlay bestaetigt,
+  Kopfzeile beginnt nachweislich an Spalte 4 (= 0-indiziert Spalte 3, drei Leerzeichen davor), und
+  die XTWINOPS-Sequenz `ESC[8;20;60t` erscheint nachweislich im Ausgabestrom nach Ablauf der
+  Ruhephase bei anhaltend zu kleinem Fenster (Byte-Vergleich der erzeugten Escape-Sequenz -- ob ein
+  ECHTES Terminal darauf tatsaechlich reagiert, kann von hier aus nicht geprueft werden, das muss
+  Andreas selbst an seinem Terminal sehen).
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
