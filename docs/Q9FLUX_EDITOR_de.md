@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.40
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.50
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -79,6 +79,10 @@
 # 26-08-17│ 3.40 │ Dreizehnte Runde: Kopfzeilen-Text dunkler (Kontrast), neue PAL_DIALOG_SUB_FG fuer  │ Cld
 #         │      │ Tabellenkopf/Buttons, Dialog-Footer referenziert PAL_STATUS_BG direkt, echter Bug │
 #         │      │ behoben (Hauptfenster-Randlinie war zeilenabhaengig unterschiedlich eingefaerbt)   │
+# 26-08-17│ 3.50 │ Vierzehnte Runde: Resize-Overlay-Text auf PAL_STATUS_FG umgestellt (war durch die  │ Cld
+#         │      │ Kopfzeilen-Verdunklung der letzten Runde fast unlesbar geworden), neue             │
+#         │      │ status_fg/bg-Felder fuer die untere Dialog-Statuszeile (Angleich ans Hauptfenster), │
+#         │      │ Resize waehrend offenem Dialog behoben + automatische Neuzentrierung                │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -642,6 +646,42 @@ gruen. Sichtpruefung per pyte bestaetigt: Hauptfenster-Rand jetzt durchgehend `P
 (vorher zeilenabhaengig unterschiedlich), "Name"/"64K"/Buttons zeigen die neue helle `SUB_FG`-Farbe,
 Dialog-Footer und Hauptfenster-Statuszeile exakt derselbe Hex-Wert, Kopfzeilen-Text dunkel auf
 hellem Hintergrund.
+
+**Vierzehnte Runde (2026-08-17) -- ein Farbfehler durch die letzte Runde, Statuszeilen-Abgleich,
+Resize waehrend offenem Dialog:**
+*"die Schrift beim Groesse Aendern ist fast nicht mehr zu lesen, viel zu dunkel. Farben sind
+ansonsten besser, alles ist gut zu lesen, nur die Statuszeilen sind noch unterschiedlich. Fenster
+Groesse aendern waehrend ein Dialog auf ist funktioniert nicht richtig, waere auch gut wenn der
+Dialog nach dem Positionieren immer wieder mittig positioniert wird."*
+
+1. **Resize-Overlay unlesbar** -- `render_size_overlay()` (die "R Rows - C Columns"-Anzeige
+   waehrend/nach einer Groessenaenderung) nutzte `PAL_HEADER_FG`, das in der letzten Runde bewusst
+   DUNKEL wurde (Kontrast auf dem kraeftigen `PAL_HEADER_BG`) -- dort gibt es aber GAR KEINEN
+   eigenen farbigen Hintergrund (nur Terminal-Default, typischerweise dunkel), der Text war
+   dadurch praktisch unsichtbar. Jetzt `PAL_STATUS_FG` (weiterhin hell, unveraendert).
+2. **Statuszeilen angeglichen** -- die Dialog-eigene untere Statuszeile nutzte bisher
+   `header_fg/bg` (an die Dialog-Kopfzeile gekoppelt) und sah dadurch anders aus als die
+   Hauptfenster-Statuszeile. Neue eigene Felder `status_fg/bg` in `q9_filedialog_palette_t`,
+   `integration_demo.c` befuellt sie mit exakt `PAL_STATUS_FG/BG` (denselben Werten wie das
+   Hauptfenster).
+3. **Resize waehrend offenem Dialog** -- vorher eine dokumentierte "Demo-Grenze" (Resize-Ereignisse
+   wurden im Dialog schlicht ignoriert). Jetzt: `run_file_dialog()` bekommt `rows`/`cols` als
+   ZEIGER, fragt bei `Q9_KEY_RESIZE` die Terminal-Groesse neu ab und initialisiert den Dialog MIT
+   DENSELBEN Filtern/Verzeichnis/Palette neu -- `compute_dialog_geometry()` (neu, aus der
+   bisherigen Berechnung ausgelagert) zentriert dabei automatisch neu, erledigt also gleichzeitig
+   den zweiten Wunsch ("immer wieder mittig"). Bewusste Demo-Grenze: das Neu-Initialisieren setzt
+   Fokus/Auswahl/Filter auf ihre Startwerte zurueck (kein Nachziehen des bisherigen Zustands) --
+   ein echter Editor wuerde hier gezielter nur die Geometrie aktualisieren, fuer die Demo ein
+   akzeptabler Kompromiss (Resize mitten in der Dateiauswahl ist ein Randfall).
+
+`q9_filedialog.h/.c` Ver. 1.70/1.80 (neue `status_fg/bg`-Felder), `integration_demo.c` Ver. 2.40
+(`render_size_overlay()`-Fix, `status_fg/bg`-Befuellung, `run_file_dialog()`-Signatur auf Zeiger
+umgestellt + Resize-Behandlung, `compute_dialog_geometry()` neu ausgelagert). `make test` komplett
+gruen. Per echtem Pseudo-Terminal-Test bestaetigt: SIGWINCH waehrend offenem Dialog (simulierte
+Terminal-Vergroesserung `stty rows 35 columns 120`) -- Dialog zeichnet sich bei der neuen Groesse
+neu und zentriert, bleibt bedienbar (Enter bestaetigt weiterhin eine Auswahl), die aktualisierte
+Terminal-Groesse kommt korrekt beim Aufrufer an (Hauptfenster-Statuszeile zeigt "Terminal: 35x120"
+nach dem Schliessen des Dialogs).
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
