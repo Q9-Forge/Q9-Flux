@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_input.c                                                                      Ver. 1.10
+// File:   q9_input.c                                                                      Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_input.h.
 //
@@ -9,6 +9,8 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-16│ 1.00 │ Erster Wurf                                                              │ Cld
 // 26-08-16│ 1.10 │ q9_term_size + Q9_KEY_RESIZE (POSIX: SIGWINCH unterbricht read() per EINTR) │ Cld
+// 26-08-17│ 1.20 │ wait_for_resize_settle() -- ~150ms Entprellung gegen Flackern bei per Maus  │ Cld
+//         │      │ gezogenem Resize (viele SIGWINCH kurz hintereinander)                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_input.h"
 #include <string.h>
@@ -175,6 +177,7 @@ int q9_term_size(int *rows, int *cols)
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <time.h>
 
 static struct termios orig_termios;
 static int  termios_saved = 0;
@@ -191,6 +194,35 @@ static void on_sigwinch(int sig)
     (void)sig;
     g_resize_pending = 1;                                  /* signalsicher: nur ein sig_atomic_t
                                                                setzen, keine weitere Arbeit im Handler */
+}
+
+#define Q9_RESIZE_DEBOUNCE_MS 150
+
+/* Andreas' Beobachtung (2026-08-17): waehrend eines Zieh-Resizes feuert JEDE einzelne
+   Groessenaenderung ein eigenes SIGWINCH -- ohne Entprellung wuerde die Hauptschleife bei jedem
+   einzelnen Zwischenschritt neu zeichnen, was stark flackert. wait_for_resize_settle() wartet, bis
+   fuer Q9_RESIZE_DEBOUNCE_MS KEIN weiteres SIGWINCH mehr eintrifft, bevor ueberhaupt EIN
+   Q9_KEY_RESIZE zurueckgegeben wird -- ein schneller Zieh-Resize erzeugt so nur EINE Neuzeichnung,
+   nachdem die Groesse sich beruhigt hat, statt vieler. Bewusst per nanosleep() statt select()/poll()
+   auf dem stdin-fd -- wir wollen hier NICHT auf Tastatureingabe warten, nur auf das Abklingen der
+   Resize-Bursts. */
+static void wait_for_resize_settle(void)
+{
+    g_resize_pending = 0;
+    for (;;) {
+        struct timespec ts;
+        ts.tv_sec  = 0;
+        ts.tv_nsec = Q9_RESIZE_DEBOUNCE_MS * 1000000L;
+        nanosleep(&ts, NULL);                              /* kann durch ein weiteres SIGWINCH per
+                                                                EINTR vorzeitig enden -- unschaedlich,
+                                                                wir pruefen danach den Zustand statt
+                                                                uns auf die exakte Schlafzeit zu
+                                                                verlassen */
+        if (!g_resize_pending) {
+            return;                                         /* keine weiteren Resizes -- fertig */
+        }
+        g_resize_pending = 0;                               /* neuer Resize -- von vorne warten */
+    }
 }
 
 /* Bewusst sigaction() statt signal() fuer SIGWINCH: einige signal()-Implementierungen (u.a. macOS/
@@ -268,9 +300,9 @@ q9_key_t q9_input_read_key(void)
     ssize_t r;
 
     if (g_resize_pending) {
-        /* Von einem frueheren SIGWINCH stehengeblieben (s.u.) -- sofort melden, bevor ueberhaupt
-           auf eine Taste gewartet wird. */
-        g_resize_pending = 0;
+        /* Von einem frueheren SIGWINCH stehengeblieben (s.u.) -- erst entprellen (s.
+           wait_for_resize_settle()), dann melden. */
+        wait_for_resize_settle();
         k.kind = Q9_KEY_RESIZE;
         k.ch   = 0;
         return k;
@@ -284,8 +316,8 @@ q9_key_t q9_input_read_key(void)
         r = read(STDIN_FILENO, buf, 1);
         if (r < 0 && errno == EINTR) {
             /* Ein Signal (in der Praxis: SIGWINCH, s.o.) hat den blockierenden read() unterbrochen,
-               BEVOR irgendein Byte ankam -- sofort als Resize melden, kein Byte verloren/geraten. */
-            g_resize_pending = 0;
+               BEVOR irgendein Byte ankam -- kein Byte verloren/geraten. Erst entprellen, dann melden. */
+            wait_for_resize_settle();
             k.kind = Q9_KEY_RESIZE;
             k.ch   = 0;
             return k;
@@ -357,5 +389,5 @@ int q9_term_size(int *rows, int *cols)
 #endif /* _WIN32 */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_input.c                                                                          Ver. 1.10
+// EOF q9_input.c                                                                          Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
