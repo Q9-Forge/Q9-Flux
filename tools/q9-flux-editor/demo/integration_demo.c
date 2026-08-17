@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.50
+// File:   integration_demo.c                                                             Ver. 1.60
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -15,7 +15,8 @@
 //         als "Endausbau"-Idee vorgemerkt, hier erstmal nur EIN fest verdrahteter Satz.
 //
 // Call:   make -C tools/q9-flux-editor demo-integration
-//         Pfeiltasten hoch/runter: Auswahl bewegen. Strg-C: beenden.
+//         Pfeiltasten hoch/runter: Auswahl bewegen. O: Datei-Auswahl-Dialog oeffnen (scannt ".",
+//         das Arbeitsverzeichnis der Demo, s. run_file_dialog()). Strg-C: beenden.
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -48,6 +49,11 @@
 //         │      │ Sequenz (q9_ansi_resize_window) automatisch auf die Mindestgroesse zu           │
 //         │      │ vergroessern -- nicht universell unterstuetzt, wirkt nur auf Terminals mit      │
 //         │      │ aktivierten "Window Ops" (z.B. xterm)                                           │
+// 26-08-17│ 1.60 │ Taste 'O' oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c,          │ Cld
+//         │      │ task #20/#22) zentriert ueber dem Bildschirm, scannt "." mit Beispielfiltern     │
+//         │      │ ("*.*"/".c"/".h"); Ergebnis (Datei gewaehlt/Abbruch) ersetzt bis zur naechsten   │
+//         │      │ Dialog-Oeffnung den unteren Hinweistext. DEMO-GRENZE: ein Resize waehrend der    │
+//         │      │ Dialog offen ist, wird ignoriert (kein Nachziehen der Dialog-Geometrie)          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -57,6 +63,7 @@
 #include "../src/q9_widgets.h"
 #include "../src/q9_listview.h"
 #include "../src/q9_input.h"
+#include "../src/q9_filedialog.h"
 
 /* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. */
 static const char *const g_items[] = {
@@ -108,6 +115,19 @@ static const char *const g_items[] = {
 /* Feste Feldbreiten fuer die Statuszeile (Andreas' Wunsch: "sonst huepfen die Texte hin und her").
    NAME_FIELD_WIDTH >= der laengste Eintrag in g_items ("CF-Interface (onboard, c0)" = 27 Zeichen). */
 #define NAME_FIELD_WIDTH 30
+
+/* Zusaetzliche Toene NUR fuer den Datei-Auswahl-Dialog (task #22) -- bewusst in derselben warmen
+   Amber-/Braun-Familie wie der Rest (Andreas' Wunsch nach "aehnlichen" Farben), aber dunkler als
+   PAL_STATUS_BG/PAL_HEADER_BG, damit der Dialog optisch klar "ueber" dem Hauptbildschirm liegt. */
+#define PAL_DIALOG_BODY_BG_R  55
+#define PAL_DIALOG_BODY_BG_G  40
+#define PAL_DIALOG_BODY_BG_B  15
+#define PAL_DIALOG_SUB_BG_R  110
+#define PAL_DIALOG_SUB_BG_G   78
+#define PAL_DIALOG_SUB_BG_B   30
+
+#define DIALOG_ROWS 14                                      /* Wunschgroesse -- wird in            */
+#define DIALOG_COLS 50                                       /* run_file_dialog() an rows/cols geklemmt */
 
 static void write_ansi(unsigned (*fn)(char *, unsigned))
 {
@@ -175,7 +195,10 @@ static void render_size_overlay(int rows, int cols, int too_small)
     }
 }
 
-static void render_full_content(q9_listview_t *lv, int rows, int cols)
+/* hint: NULL/leer -> Standardtext ("Pfeiltasten: ..."); sonst wird STATTDESSEN hint angezeigt --
+   dient der Demo dazu, das Ergebnis des Datei-Auswahl-Dialogs (task #22) sichtbar zu machen, ohne
+   die Statuszeile selbst (feste Feldbreiten, s.o.) umbauen zu muessen. */
+static void render_full_content(q9_listview_t *lv, int rows, int cols, const char *hint)
 {
     q9_screenbuf_t sb;
     char out[1 << 16];
@@ -200,7 +223,9 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols)
     q9_screenbuf_puts(&sb, 0, 3, "Q9-Flux Editor -- Integrations-Demo",
                        PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
 
-    q9_screenbuf_puts(&sb, rows - 2, 3, "Pfeiltasten: navigieren   Strg-C: beenden",
+    q9_screenbuf_puts(&sb, rows - 2, 3,
+                       (hint && hint[0]) ? hint
+                                         : "Pfeiltasten: navigieren   O: Datei oeffnen   Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     lv->row    = 2;
@@ -236,6 +261,90 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols)
     }
 }
 
+/* Oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20) zentriert ueber dem
+   aktuellen Bildschirm, scannt bewusst "." (das Arbeitsverzeichnis der Demo selbst -- reine
+   Vorfuehrung, keine echte Config-Anbindung, s. Kopfkommentar) mit ein paar Beispiel-Filtern.
+   DEMO-GRENZE: ein Terminal-Resize WAEHREND der Dialog offen ist, wird hier bewusst IGNORIERT
+   (Dialog bleibt in seiner urspruenglichen Groesse/Position stehen, kein Nachziehen) -- ein
+   echter Editor muesste hier neu snapshot/restore + den Dialog re-initialisieren, das würde die
+   Demo aber unnoetig verkomplizieren. Strg-C/EOF waehrend des Dialogs wird dagegen NICHT
+   ignoriert (sonst liesse sich das Programm aus dem Dialog heraus nicht mehr beenden) --
+   signalisiert per Rueckgabe 0 an den Aufrufer, der dann seinerseits sauber beendet.
+   Rueckgabe: 1 = Datei ausgewaehlt (result_msg beschreibt sie), -1 = abgebrochen (result_msg
+   entsprechend gesetzt), 0 = Strg-C/EOF (result_msg unveraendert -- Aufrufer beendet ohnehin). */
+static int run_file_dialog(int rows, int cols, char *result_msg, unsigned result_msg_size)
+{
+    static const char *const filters[] = { "*.*", ".c", ".h" };
+    q9_filedialog_palette_t pal;
+    q9_filedialog_t dlg;
+    int dlg_rows = DIALOG_ROWS, dlg_cols = DIALOG_COLS;
+    int dlg_row, dlg_col;
+    int done = 0;
+    int want_quit = 0;
+
+    if (dlg_rows > rows - 2) { dlg_rows = rows - 2; }
+    if (dlg_cols > cols - 2) { dlg_cols = cols - 2; }
+    dlg_row = (rows - dlg_rows) / 2;
+    dlg_col = (cols - dlg_cols) / 2;
+    if (dlg_row < 1) { dlg_row = 1; }
+    if (dlg_col < 1) { dlg_col = 1; }
+
+    memset(&pal, 0, sizeof(pal));
+    pal.header_fg_r = PAL_HEADER_FG_R; pal.header_fg_g = PAL_HEADER_FG_G; pal.header_fg_b = PAL_HEADER_FG_B;
+    pal.header_bg_r = PAL_HEADER_BG_R; pal.header_bg_g = PAL_HEADER_BG_G; pal.header_bg_b = PAL_HEADER_BG_B;
+    pal.sub_fg_r    = PAL_FRAME_R;     pal.sub_fg_g    = PAL_FRAME_G;     pal.sub_fg_b    = PAL_FRAME_B;
+    pal.sub_bg_r    = PAL_DIALOG_SUB_BG_R;  pal.sub_bg_g = PAL_DIALOG_SUB_BG_G;  pal.sub_bg_b = PAL_DIALOG_SUB_BG_B;
+    pal.body_fg_r   = PAL_LIST_FG_R;   pal.body_fg_g   = PAL_LIST_FG_G;   pal.body_fg_b   = PAL_LIST_FG_B;
+    pal.body_bg_r   = PAL_DIALOG_BODY_BG_R; pal.body_bg_g = PAL_DIALOG_BODY_BG_G; pal.body_bg_b = PAL_DIALOG_BODY_BG_B;
+    pal.list_fg_r   = PAL_LIST_FG_R;   pal.list_fg_g   = PAL_LIST_FG_G;   pal.list_fg_b   = PAL_LIST_FG_B;
+    pal.sel_fg_r    = PAL_SEL_FG_R;    pal.sel_fg_g    = PAL_SEL_FG_G;    pal.sel_fg_b    = PAL_SEL_FG_B;
+    pal.sel_bg_r    = PAL_SEL_BG_R;    pal.sel_bg_g    = PAL_SEL_BG_G;    pal.sel_bg_b    = PAL_SEL_BG_B;
+    pal.focus_fg_r  = PAL_SEL_FG_R;    pal.focus_fg_g  = PAL_SEL_FG_G;    pal.focus_fg_b  = PAL_SEL_FG_B;
+    pal.focus_bg_r  = PAL_SEL_BG_R;    pal.focus_bg_g  = PAL_SEL_BG_G;    pal.focus_bg_b  = PAL_SEL_BG_B;
+
+    if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
+                            "Konfigurationsauswahl", ".", filters, 3, &pal) != 0) {
+        snprintf(result_msg, result_msg_size, "Dateidialog: Fehler beim Start (O: erneut versuchen)");
+        return -1;
+    }
+
+    for (;;) {
+        q9_screenbuf_t sb;
+        char out[1 << 16];
+
+        q9_screenbuf_init(&sb, rows, cols);
+        /* Hintergrund hinter dem Dialog -- fuer die Demo reicht eine einfache gefuellte Flaeche
+           (kein echtes snapshot()/restore() des vorherigen Hauptinhalts, s. Funktionskommentar). */
+        q9_screenbuf_fill_rect(&sb, 0, 0, rows, cols, ' ', PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
+                                1, PAL_DIALOG_BODY_BG_R, PAL_DIALOG_BODY_BG_G, PAL_DIALOG_BODY_BG_B);
+        q9_filedialog_render(&dlg, &sb);
+        {
+            unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
+            fwrite(out, 1, n, stdout);
+            fflush(stdout);
+        }
+
+        {
+            q9_key_t k = q9_input_read_key();
+            if (k.kind == Q9_KEY_CTRL_C || k.kind == Q9_KEY_EOF) { want_quit = 1; break; }
+            if (k.kind == Q9_KEY_RESIZE) { continue; }        /* Demo-Grenze, s. Funktionskommentar */
+            done = q9_filedialog_handle_key(&dlg, k);
+            if (done != 0) { break; }
+        }
+    }
+
+    if (want_quit) { return 0; }
+
+    if (done == 1) {
+        char name[Q9_FILELIST_NAME_MAX];
+        q9_filedialog_selected_name(&dlg, name, sizeof(name));
+        snprintf(result_msg, result_msg_size, "Datei gewaehlt: %s   (O: erneut oeffnen)", name);
+        return 1;
+    }
+    snprintf(result_msg, result_msg_size, "Dateiauswahl abgebrochen   (O: erneut oeffnen)");
+    return -1;
+}
+
 int main(void)
 {
     int rows, cols;
@@ -245,6 +354,10 @@ int main(void)
     int resize_attempted = 0;                                /* s.u.: XTWINOPS-Versuch nur EINMAL
                                                                   pro zu-klein-Phase, nicht bei jeder
                                                                   einzelnen 1s-Wiederholung erneut   */
+    char last_dialog_msg[128] = "";                          /* Ergebnis des letzten Datei-Dialogs
+                                                                  (task #22) -- ersetzt den Standard-
+                                                                  Hinweistext, bis 'O' erneut gedrueckt
+                                                                  wird, s. run_file_dialog()          */
 
     if (q9_term_size(&rows, &cols) != 0) {
         rows = 24;
@@ -267,7 +380,7 @@ int main(void)
         if (showing_overlay) {
             render_size_overlay(rows, cols, too_small);
         } else {
-            render_full_content(&lv, rows, cols);
+            render_full_content(&lv, rows, cols, last_dialog_msg);
         }
 
         {
@@ -320,6 +433,14 @@ int main(void)
                                                                  kommt) darf wieder EINEN Versuch
                                                                  machen */
                     break;
+                case Q9_KEY_CHAR:
+                    if (!showing_overlay && (k.ch == 'o' || k.ch == 'O')) {
+                        /* task #22: modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20). */
+                        int r = run_file_dialog(rows, cols, last_dialog_msg, sizeof(last_dialog_msg));
+                        if (r == 0) { running = 0; }         /* Strg-C/EOF waehrend des Dialogs */
+                        /* naechste Schleifenrunde zeichnet automatisch alles neu (inkl. last_dialog_msg) */
+                    }
+                    break;
                 default:
                     break;                                   /* alle anderen Tasten: ignorieren */
             }
@@ -342,5 +463,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.50
+// EOF integration_demo.c                                                                  Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
