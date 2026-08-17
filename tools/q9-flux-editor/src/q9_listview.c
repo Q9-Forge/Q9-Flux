@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.40
+// File:   q9_listview.c                                                                   Ver. 1.50
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -16,6 +16,9 @@
 //         │      │ benoetigt ist es einfach der normale Strich") -- ersetzt die -2-Sonderregel │
 // 26-08-17│ 1.40 │ Fuenfte Feedback-Runde: eine Luftspalte zwischen Inhalt und der Linie dazu  │ Cld
 //         │      │ (Andreas: "wirkt jetzt doch gequetscht") -- content_width jetzt width-2      │
+// 26-08-17│ 1.50 │ Neuer Parameter line_fg -- die rechte Linie/Bildlaufleiste bekommt jetzt    │ Cld
+//         │      │ eine EIGENE Farbe statt die normale Text-fg zu erben (Andreas: "die Striche  │
+//         │      │ links und rechts am Hauptfenster sind unterschiedlich")                     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -71,7 +74,8 @@ void q9_listview_move(q9_listview_t *lv, int delta)
 void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char *const *items,
                          int fg_r, int fg_g, int fg_b,
                          int sel_fg_r, int sel_fg_g, int sel_fg_b,
-                         int sel_bg_r, int sel_bg_g, int sel_bg_b)
+                         int sel_bg_r, int sel_bg_g, int sel_bg_b,
+                         int line_fg_r, int line_fg_g, int line_fg_b)
 {
     int i;
     int content_width;
@@ -111,12 +115,19 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
     }
 
     /* Die rechte Spalte -- IMMER die Linie (auch ohne Scrollbedarf), der Griff (falls noetig) wird
-       zusaetzlich darauf gelegt. */
+       zusaetzlich darauf gelegt. EIGENE Farbe (line_fg statt fg) -- Andreas' Feedback, 2026-08-17:
+       "die Striche links und rechts am Hauptfenster sind unterschiedlich... das oberste rechts ist
+       noch mal anders". Ursache: diese Linie wurde bisher in der normalen Text-Vordergrundfarbe
+       (fg) gezeichnet, waehrend q9_widgets.c's draw_frame() den Rahmen (inkl. der Eckzeichen UND
+       der Randspalten AUSSERHALB des Listenbereichs) in einer eigenen Rahmenfarbe zeichnet -- im
+       Hauptfenster sind das zwei VERSCHIEDENE Farben (fg=Listentext, fg des Rahmens=PAL_FRAME), die
+       zufaellig auf derselben Spalte aufeinandertreffen. Mit einem eigenen line_fg-Parameter kann
+       der Aufrufer beide Linien in DERSELBEN Farbe zeichnen (s. integration_demo.c). */
     {
         char track_str[2];
         track_str[0] = Q9_GLYPH_VLINE; track_str[1] = '\0';
         for (i = 0; i < lv->height; i++) {
-            q9_screenbuf_puts(sb, lv->row + i, line_col, track_str, fg_r, fg_g, fg_b);
+            q9_screenbuf_puts(sb, lv->row + i, line_col, track_str, line_fg_r, line_fg_g, line_fg_b);
         }
     }
 
@@ -152,5 +163,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.40
+// EOF q9_listview.c                                                                       Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

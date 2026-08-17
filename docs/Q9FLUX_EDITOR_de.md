@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.30
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.40
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -76,6 +76,9 @@
 # 26-08-17│ 3.30 │ Zwoelfte Runde: komplette Farbpalette auf durchgehende Gelb-/Orange-Leiter          │ Cld
 #         │      │ umgerechnet (ein Farbton/eine Saettigung, nur Helligkeit unterscheidet die         │
 #         │      │ Ebenen), Tabellenhintergrund dunkler, mehr Kontrast zwischen den Ebenen             │
+# 26-08-17│ 3.40 │ Dreizehnte Runde: Kopfzeilen-Text dunkler (Kontrast), neue PAL_DIALOG_SUB_FG fuer  │ Cld
+#         │      │ Tabellenkopf/Buttons, Dialog-Footer referenziert PAL_STATUS_BG direkt, echter Bug │
+#         │      │ behoben (Hauptfenster-Randlinie war zeilenabhaengig unterschiedlich eingefaerbt)   │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -601,6 +604,44 @@ BRAUNTOENE (aehnlicher Farbton, aber niedrigere/wechselnde Saettigung), jetzt ei
 `make test` komplett gruen (erwartungsgemaess unveraendert). Sichtpruefung per pyte bestaetigt alle
 neuen Hex-Werte exakt an den erwarteten Stellen (Tabellenhintergrund, Spaltentitel-Zeile,
 Fussbereich, Kopfzeile, Auswahl-Hervorhebung, Fliesstext).
+
+**Dreizehnte Runde (2026-08-17) -- Kontrast + ein echter Bug:**
+*"Zwei Sachen sind jetzt noch schlecht zu lesen... in den beiden Kopfzeile das weiss auf dem
+hellen Gelb. Vielleicht die Schrift dunkler machen und im Dialog, im Tabellenheader und unter der
+Tabelle 'Name Datum Groesse' zu wenig Kontrast und '<Dateiname>', OK und Abbrechen zu wenig
+Kontrast. Kannst du bitte noch den Footer des Dialogs in der Farbe des Hauptfensters machen...
+und mir faellt gerade auf, die Striche links und rechts am Hauptfenster sind unterschiedlich...
+das oberste rechts ist noch mal anders."*
+
+1. **Kopfzeilen-Text dunkler** -- `PAL_HEADER_FG` (beide Kopfzeilen, Hauptfenster UND Dialog
+   teilen sich diese Konstante) war fast-weiss auf dem jetzt kraeftigeren `PAL_HEADER_BG` (V=0.80)
+   -- schlechter Kontrast. Jetzt so dunkel wie `PAL_DIALOG_BODY_BG` (V=0.15).
+2. **Tabellenkopf/Namens-Kaestchen/Buttons mehr Kontrast** -- alle drei nutzten `PAL_FRAME`
+   (V=0.72) als Text auf `PAL_DIALOG_SUB_BG` (V=0.44) -- zu nah beieinander. `PAL_FRAME` selbst
+   bewusst NICHT geaendert (dient auch als Rahmenlinienfarbe UND Hinweistext, haette dort
+   unerwuenschte Nebenwirkungen) -- stattdessen neue eigene Konstante `PAL_DIALOG_SUB_FG` (fast-
+   weiss, der alte `PAL_HEADER_FG`-Wert, durch Punkt 1 frei geworden) nur fuer diese Rolle.
+3. **Dialog-Footer in Hauptfenster-Farbe** -- `PAL_DIALOG_FOOTER_BG` traf zufaellig schon
+   `PAL_STATUS_BG` (beide V=0.32, gleiche Zahlen) -- jetzt ueber die Konstante selbst referenziert
+   (`#define PAL_DIALOG_FOOTER_BG_R PAL_STATUS_BG_R` usw.), damit das strukturell garantiert
+   bleibt statt zufaellig zu sein.
+4. **Echter Bug, kein Farbwunsch**: die Rahmenlinien im Hauptfenster waren links (`q9_widgets.c`
+   `draw_frame()`, durchgehend `PAL_FRAME`) und rechts (fuer Kopf-/Statuszeile ebenfalls
+   `draw_frame()`, aber fuer den Listenbereich selbst `q9_listview_render()`, das bisher die
+   normale Text-fg -- `PAL_LIST_FG` -- fuer die Linie mitverwendete) UNTERSCHIEDLICH eingefaerbt,
+   obwohl beide auf derselben Bildschirmspalte liegen. Loesung: `q9_listview_render()` bekommt
+   einen neuen, von der Text-fg UNABHAENGIGEN Parameter `line_fg` (s. `q9_listview.h/.c`) --
+   Hauptfenster uebergibt jetzt `PAL_FRAME` (behebt die Inkonsistenz), der Dialog weiterhin
+   `list_fg` (dort gab es den Bug nicht, die Linie war schon immer konsistent gefaerbt).
+
+`q9_listview.h/.c` Ver. 1.40/1.50 (neuer `line_fg`-Parameter, neuer Selbsttest-Fall bestaetigt die
+Entkopplung von der Text-fg), `q9_filedialog.h/.c` Ver. 1.70 (Aufruf angepasst, `list_fg` als
+`line_fg`), `integration_demo.c` Ver. 2.30 (`PAL_FRAME` als `line_fg`, neue `PAL_DIALOG_SUB_FG`,
+`PAL_HEADER_FG` dunkler, `PAL_DIALOG_FOOTER_BG` referenziert `PAL_STATUS_BG`). `make test` komplett
+gruen. Sichtpruefung per pyte bestaetigt: Hauptfenster-Rand jetzt durchgehend `PAL_FRAME`-farbig
+(vorher zeilenabhaengig unterschiedlich), "Name"/"64K"/Buttons zeigen die neue helle `SUB_FG`-Farbe,
+Dialog-Footer und Hauptfenster-Statuszeile exakt derselbe Hex-Wert, Kopfzeilen-Text dunkel auf
+hellem Hintergrund.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
