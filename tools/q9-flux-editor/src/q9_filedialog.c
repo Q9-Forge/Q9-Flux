@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.30
+// File:   q9_filedialog.c                                                                 Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
 //         des Dialogs, s. layout_rows() -- EINZIGE Stelle, die diese Aufteilung kennt, init() und
@@ -30,6 +30,9 @@
 //         │      │ Tabelle, Name-Spalte dynamisch (name_col_width statt fester Konstante),   │
 //         │      │ Filter/Buttons/Popup buendig mit der rechten Linie statt Dialogrand,       │
 //         │      │ "Datei:"-Wert in eigenem sub_fg/bg-Kaestchen                               │
+// 26-08-17│ 1.40 │ Vierte Feedback-Runde: keine Randspalten mehr -- Linien liegen GENAU auf   │ Cld
+//         │      │ der Dialogkante, rechte Linie verschmilzt mit q9_listview's Bildlaufleiste,│
+//         │      │ Rahmen beginnt schon bei der Spaltentitel-Zeile (nicht erst bei der Liste) │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -117,15 +120,17 @@ int q9_filedialog_init(q9_filedialog_t *dlg, int row, int col, int rows, int col
     dlg->done = 0;
 
     /* Listen-Geometrie EINMAL berechnen (s. layout_rows()) -- rescan() aendert nur noch item_count,
-       nie row/col/height/width. Spaltenaufteilung (Andreas' Wunsch, 2026-08-17): links EINE Spalte
-       fuer die vom Dialog selbst gezeichnete Linie (render()), dann die Liste (deren eigene rechte
-       Spalte q9_listview.c IMMER als Linie/Bildlaufleiste zeichnet), dann EINE Spalte Rand zum
-       Dialogrand -- macht insgesamt 3 Spalten "Verwaltung" statt bisher 2 (nur der linke Rand). */
+       nie row/col/height/width. Spaltenaufteilung (Andreas' Wunsch, 2026-08-17, zweite Runde: "bei
+       Rahmenkanten kommen nach ganz aussen, und rechts zusaetzlich die Bildlaufleiste auf den
+       gleichen Strich"): links EINE Spalte GENAU am Dialogrand fuer die vom Dialog selbst
+       gezeichnete Linie (render()), rechts KEIN eigener Rand mehr -- q9_listview's eigene rechte
+       Spalte (immer Linie, Griff nur bei Bedarf, s. q9_listview.c) liegt jetzt direkt AUF der
+       rechten Dialogkante, keine separate "Fensterkante + danebenliegende Bildlaufleiste" mehr. */
     layout_rows(dlg->rows, &list_height, NULL, NULL, NULL, NULL);
     dlg->list.row    = dlg->row + 2;
-    dlg->list.col    = dlg->col + 2;
+    dlg->list.col    = dlg->col + 1;
     dlg->list.height = list_height;
-    dlg->list.width  = dlg->cols - 3;
+    dlg->list.width  = dlg->cols - 1;
     if (dlg->list.width < 1) { dlg->list.width = 1; }
 
     /* Name-Spaltenbreite: der Rest der Listenbreite, nachdem q9_listview's eigene rechte Spalte (1
@@ -373,29 +378,13 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                            p->header_fg_r, p->header_fg_g, p->header_fg_b);
     }
 
-    /* Tabellen-Rahmen (Andreas' Wunsch, 2026-08-17): links eine feste Linie (dieses Modul, q9_listview
-       kennt nur seine EIGENE rechte Spalte), rechts die von q9_listview.c IMMER gezeichnete
-       Linie/Bildlaufleiste -- beide spannen exakt die Listenhoehe, nicht den Fussbereich (der hat
-       eine eigene Abgrenzung ueber footer_bg statt Linien, s.u.). */
-    {
-        int left_border_col  = dlg->list.col - 1;
-        int r;
-        char vline[2];
-        vline[0] = (char)Q9_GLYPH_VLINE; vline[1] = '\0';
-        for (r = 0; r < dlg->list.height; r++) {
-            q9_screenbuf_puts(sb, dlg->list.row + r, left_border_col, vline,
-                               p->list_fg_r, p->list_fg_g, p->list_fg_b);
-        }
-    }
-
-    /* Spaltentitel-Zeile -- GENAU so breit wie die Tabelle darunter (linke Linie bis zur rechten
-       Linie von q9_listview, s.o.), NICHT die volle Dialogbreite (Andreas' Wunsch). Groesse ganz
-       rechts, Datum davor, Name (dynamisch, dlg->name_col_width) fuellt den Rest. Der TEXT beginnt
-       bei dlg->list.col (nicht bei table_left/der Randspalte selbst!) -- sonst stuende "Name" eine
-       Spalte weiter links als die tatsaechlichen Dateinamen darunter. table_left/table_width
-       bestimmen NUR die Hintergrundflaeche (schliesst beide Randspalten farblich mit ein, dort
-       steht auf dieser Zeile aber bewusst kein Zeichen -- die Linien selbst gehoeren nur zu den
-       Listenzeilen, s. Kopfkommentar q9_filedialog.h). */
+    /* Spaltentitel-Zeile -- GENAU so breit wie die Tabelle darunter (linke bis zur rechten Kante,
+       s.u.), NICHT die volle Dialogbreite (Andreas' Wunsch). Groesse ganz rechts, Datum davor,
+       Name (dynamisch, dlg->name_col_width) fuellt den Rest. Der TEXT beginnt bei dlg->list.col
+       (nicht bei table_left/der Randspalte selbst!) -- sonst stuende "Name" eine Spalte weiter
+       links als die tatsaechlichen Dateinamen darunter. table_left/table_width bestimmen NUR die
+       Hintergrundflaeche (schliesst beide Randspalten farblich mit ein -- die Rahmenlinien selbst
+       kommen gleich danach, s.u., und ueberschreiben die aeussersten beiden Zellen dieser Zeile). */
     {
         int table_left  = dlg->list.col - 1;
         int table_width = (dlg->list.col + dlg->list.width - 1) - table_left + 1;
@@ -406,6 +395,28 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                  dlg->name_col_width, dlg->name_col_width, "Name",
                  Q9_FILEDIALOG_DATE_COL, "Datum", Q9_FILEDIALOG_SIZE_COL, "Groesse");
         q9_screenbuf_puts(sb, dlg->row + 1, dlg->list.col, line, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
+    }
+
+    /* Tabellen-Rahmen (Andreas' Wunsch, 2026-08-17, zweite Runde: "der Strich geht dann allerdings
+       ab dem Header") -- links eine feste Linie (dieses Modul, q9_listview kennt nur seine EIGENE
+       rechte Spalte), rechts fuer die Listenzeilen selbst die von q9_listview.c IMMER gezeichnete
+       Linie/Bildlaufleiste (s.u., liegt jetzt direkt auf der rechten Dialogkante, s. init()) --
+       beide spannen ab der Spaltentitel-Zeile bis zum Ende der Liste (NICHT den Fussbereich, der
+       hat eine eigene Abgrenzung ueber footer_bg statt Linien, s.u.). Fuer die Spaltentitel-Zeile
+       selbst zeichnet dieses Modul die rechte Randzelle mit -- q9_listview kennt diese Zeile gar
+       nicht (sie ist nicht Teil seines Viewports). */
+    {
+        int left_border_col  = dlg->list.col - 1;
+        int right_border_col = dlg->list.col + dlg->list.width - 1;
+        int r;
+        char vline[2];
+        vline[0] = (char)Q9_GLYPH_VLINE; vline[1] = '\0';
+        for (r = 0; r < 1 + dlg->list.height; r++) {
+            q9_screenbuf_puts(sb, dlg->row + 1 + r, left_border_col, vline,
+                               p->list_fg_r, p->list_fg_g, p->list_fg_b);
+        }
+        q9_screenbuf_puts(sb, dlg->row + 1, right_border_col, vline,
+                           p->list_fg_r, p->list_fg_g, p->list_fg_b);
     }
 
     /* Dateiliste -- die markierte Zeile bekommt NUR dann die kraeftige sel_fg/sel_bg-Hervorhebung,
@@ -521,5 +532,5 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.30
+// EOF q9_filedialog.c                                                                     Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
