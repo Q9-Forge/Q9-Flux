@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_input.c                                                                      Ver. 1.30
+// File:   q9_input.c                                                                      Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_input.h.
 //
@@ -13,6 +13,7 @@
 //         │      │ gezogenem Resize (viele SIGWINCH kurz hintereinander)                        │
 // 26-08-17│ 1.30 │ Entprellung entfernt (Andreas will LIVE-Groessenanzeige waehrend des Ziehens)│ Cld
 //         │      │ -- q9_input_read_key_timeout() neu, SIGWINCH liefert wieder sofort/unverzoegert│
+// 26-08-17│ 1.40 │ Q9_KEY_SHIFT_TAB (CBT, "ESC[Z")                                              │ Cld
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_input.h"
 #include <string.h>
@@ -65,6 +66,10 @@ q9_key_t q9_input_decode(const char *buf, int len, int more_may_follow, int *con
             case 'B': k.kind = Q9_KEY_DOWN;  break;
             case 'C': k.kind = Q9_KEY_RIGHT; break;
             case 'D': k.kind = Q9_KEY_LEFT;  break;
+            case 'Z': k.kind = Q9_KEY_SHIFT_TAB; break;      /* CBT, "ESC[Z" -- Shift-Tab, fast
+                                                                 ueberall so gesendet (kein separater
+                                                                 Modifier-Parameter wie bei manchen
+                                                                 anderen Sondertasten) */
             default:  k.kind = Q9_KEY_UNKNOWN; break;
         }
         if (consumed) { *consumed = 3; }
@@ -432,5 +437,5 @@ int q9_term_size(int *rows, int *cols)
 #endif /* _WIN32 */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_input.c                                                                          Ver. 1.30
+// EOF q9_input.c                                                                          Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
