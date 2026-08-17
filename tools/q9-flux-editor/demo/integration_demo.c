@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.80
+// File:   integration_demo.c                                                             Ver. 1.90
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -62,6 +62,9 @@
 //         │      │ bereich mit den "richtigen" Buttons), Scan-Verzeichnis auf getenv("HOME") gestellt │
 //         │      │ (Andreas: "stell den Pfad mal auf das ~ Verzeichnis, dann sieht man das besser"), │
 //         │      │ DIALOG_ROWS/_COLS vergroessert (neuer Fussbereich braucht mehr Platz)             │
+// 26-08-17│ 1.90 │ Dritte Feedback-Runde: Hauptfenster-Liste reicht jetzt bis zur rechten Rahmen-    │ Cld
+//         │      │ kante von draw_frame() -- verschmilzt mit q9_listview's Bildlaufleiste zu EINER   │
+//         │      │ Linie statt "Fensterkante + separate Bildlaufleiste" (Andreas' Wunsch)            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -255,7 +258,11 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
     lv->row    = 2;
     lv->col    = 3;
     lv->height = rows - 5;                                   /* Rand+Hinweis+Statuszeile/-kante s.u. */
-    lv->width  = cols - 6;
+    /* Bis zur rechten Rahmenkante des Fensters (Andreas' Wunsch, 2026-08-17, zweite Runde: "im
+       Hauptfenster haben wir immer noch rechts die Fensterkante UND zusaetzlich die Bildlauf-
+       leiste, das soll jetzt in einem sein" -- q9_listview's eigene rechte Spalte, s. q9_listview.c,
+       liegt jetzt direkt AUF draw_frame()'s eigener rechter Kante statt 3 Spalten davor). */
+    lv->width  = cols - lv->col;
     if (lv->height < 1) { lv->height = 1; }
     if (lv->width  < 1) { lv->width  = 1; }
     lv->scroll_offset = q9_listview_scroll(lv->selected, lv->scroll_offset, lv->height, lv->item_count);
@@ -518,5 +525,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.80
+// EOF integration_demo.c                                                                  Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────

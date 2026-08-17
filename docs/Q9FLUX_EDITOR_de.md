@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.90
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.00
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -64,6 +64,9 @@
 #         │      │ bei Scrollbedarf), linke Rahmenlinie im Dialog dazu, Buttons/Filter/Popup jetzt   │
 #         │      │ buendig mit der rechten Linie, Name-Spalte dynamisch (name_col_width), Spalten-  │
 #         │      │ titel-Zeile exakt so breit wie die Tabelle, Namens-Kaestchen bei "Datei:"          │
+# 26-08-17│ 3.00 │ Neunte Runde: Fensterkante+Bildlaufleiste zu EINER Linie verschmolzen (Haupt-      │ Cld
+#         │      │ fenster UND Dialog), Dialog-Rahmen ohne Randspalten GENAU auf der Kante, beginnt   │
+#         │      │ schon bei der Spaltentitel-Zeile statt erst bei der Liste                          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -458,6 +461,31 @@ Glyphen UND Dropdown-Pfeil tatsaechlich im ANSI-Output nachgewiesen).
 Spaltenausrichtung: "Name" beginnt in derselben Spalte wie die Dateinamen darunter, "Groesse" endet
 eine Spalte vor der Bildlaufleiste, Buttons/Filter enden buendig mit der rechten Linie, das
 Namens-Kaestchen hat exakt `name_col_width` Spalten in `sub_bg`-Farbe.
+
+**Neunte Runde (2026-08-17) -- Bildlaufleiste/Rahmenkante verschmelzen:**
+*"Im Hauptfenster haben wir immer noch rechts die Fensterkante und zusaetzlich die Bildlauf-
+leiste, das soll jetzt in einem sein, die Linie ganz aussen. Genauso beim Dialog, bei
+Rahmenkanten kommen nach ganz aussen, und rechts zusaetzlich die Bildlaufleiste auf den
+gleichen Strich wenn noetig. Die Tabelle bleibt aber so, der Strich geht dann allerdings ab
+dem Header."* -- zwei getrennte Linien mit Luecke dazwischen (Fensterrahmen UND separate
+Bildlaufleiste innen) sollten zu EINER verschmelzen:
+- **Hauptfenster**: `integration_demo.c` -- die Listenbreite reicht jetzt bis zur rechten
+  Rahmenkante von `draw_frame()` (`lv->width = cols - lv->col` statt `cols - 6`). `q9_listview`s
+  eigene Linie/Bildlaufleiste liegt dadurch direkt AUF der Fensterkante, keine Luecke mehr.
+- **Dialog**: `q9_filedialog.c` -- keine eigenen Randspalten mehr (`list.col = dlg->col + 1`,
+  `list.width = dlg->cols - 1` statt vorher `+2`/`-3`), die Linien liegen jetzt GENAU auf der
+  Dialogkante. "Der Strich geht ab dem Header": der Rahmen (links selbst gezeichnet, rechts von
+  `q9_listview` UND fuer die Spaltentitel-Zeile zusaetzlich von diesem Modul) beginnt jetzt schon
+  bei der Spaltentitel-Zeile, nicht erst bei der ersten Listenzeile. "Die Tabelle bleibt so": nur
+  die Rahmen-/Randgeometrie hat sich verschoben, die Spaltenlogik (Name/Datum/Groesse,
+  `name_col_width`) blieb unangetastet und passt sich automatisch an die neue (etwas breitere)
+  Listenbreite an.
+
+`q9_listview.h/.c` unveraendert (die "immer eine Linie"-Logik aus Runde acht traegt bereits),
+`q9_filedialog.h/.c` Ver. 1.40, `integration_demo.c` Ver. 1.90. `make test` weiterhin komplett
+gruen. Sichtpruefung per `pyte` bestaetigt: Hauptfenster zeigt nur noch EINE Linie rechts (vorher
+zwei mit Luecke), Dialog-Rahmen beginnt exakt bei der Spaltentitel-Zeile und liegt an beiden
+Seiten direkt auf der Dialogkante, Buttons-Hintergrund reicht bis genau dorthin.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

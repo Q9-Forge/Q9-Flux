@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.h                                                                 Ver. 1.30
+// File:   q9_filedialog.h                                                                 Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Modaler Datei-Auswahl-Dialog -- komponiert q9_filelist (Verzeichnis-Scan), q9_listview
 //         (scrollbare Liste) und q9_screenbuf (Bildschirmpuffer) zu einem echten interaktiven
@@ -12,23 +12,29 @@
 //             │  darunter (Andreas' Wunsch, 2026-08-17), NICHT die volle Dialogbreite. Groesse
 //             │  ganz rechts, Datum links davon (feste Breiten), Name nimmt den REST ein
 //             │  (dynamisch, s. name_col_width in q9_filedialog_t)
-//             │┌──────────────────────────────────────────────────────────────────────────┐
-//             │  Dateiliste (q9_listview, Zeilen vorformatiert -- s.u.) -- LINKS eine feste  │
-//             │  Linie (von diesem Modul gezeichnet, q9_listview kennt nur seine EIGENE      │
-//             │  rechte Spalte), RECHTS die Bildlaufleiste/Linie von q9_listview selbst       │
-//             │  (Andreas' Wunsch: "wird keine Laufleiste benoetigt ist es einfach der        │
-//             │  normale Strich" -- IMMER eine Linie, der Griff kommt nur bei Bedarf dazu)     │
-//             │└──────────────────────────────────────────────────────────────────────────┘
-//             ├──────────────────────────── FUSSBEREICH, eigene Hintergrundfarbe (footer_bg) ──────
+//             ├ Dateiliste (q9_listview, Zeilen vorformatiert -- s.u.)
+//
+//             Spaltentitel-Zeile UND Dateiliste zusammen bilden die "Tabelle": links/rechts je
+//             eine durchgehende Linie, GENAU auf der Dialogkante (Andreas' Feedback, zweite
+//             Runde, 2026-08-17: "bei Rahmenkanten kommen nach ganz aussen") -- KEINE eigene
+//             Randspalte mehr. Rechts ist es dieselbe Linie, die q9_listview.c fuer die
+//             Bildlaufleiste zeichnet (IMMER eine Linie, der Griff nur bei Bedarf -- "das soll
+//             jetzt in einem sein"); fuer die Spaltentitel-Zeile (die q9_listview gar nicht
+//             kennt, da nicht Teil ihres Viewports) zeichnet dieses Modul die rechte Randzelle
+//             selbst mit -- der Rahmen beginnt also SCHON bei der Spaltentitel-Zeile ("der
+//             Strich geht dann allerdings ab dem Header"), nicht erst bei der Liste. Die linke
+//             Linie zeichnet dieses Modul komplett selbst (q9_listview kennt nur seine eigene
+//             rechte Spalte).
+//
+//             ── FUSSBEREICH, eigene Hintergrundfarbe (footer_bg), KEINE Rahmenlinien mehr ──
 //             ├ Auswahl-/Filterzeile: links "Datei: " + der Name in einem eigenen, abgesetzten
 //             │  Kaestchen (sub_fg/bg, wie die Spaltentitel-Zeile); rechts ein kompakter
 //             │  Extensions-Umschalter (4-5 Buchstaben + ▾) -- ▾ oeffnet ein kleines Aufklapp-Menue
 //             │  mit ALLEN Filtern (s.u.), kein reines Durchschalten mehr. Filter UND Buttons
-//             │  enden buendig mit der rechten Linie der Dateiliste darueber (nicht mehr am
-//             │  absoluten Dialogrand -- "Platz fuer den Rahmen/die Bildlaufleiste")
+//             │  enden buendig mit der rechten Linie der Tabelle darueber
 //             ├ (Halbblock-Kappe oberhalb der Buttons, s.u.)
 //             ├ Buttons OK / Abbrechen -- "richtige" Buttons in Spaltentitel-Farbe (sub_fg/bg),
-//             │  rechtsbuendig (buendig mit der Linie der Dateiliste, s.o.), gleich breit, per
+//             │  rechtsbuendig (buendig mit der Linie der Tabelle, s.o.), gleich breit, per
 //             │  Q9_GLYPH_UPPER_HALF/LOWER_HALF nach oben+unten "aufgeblasen" (klassischer
 //             │  Halbblock-Trick: eine Zeile UEBER dem Button zeigt in der unteren Haelfte die
 //             │  Button-Farbe, eine Zeile UNTER dem Button in der oberen Haelfte -- der Button
@@ -93,6 +99,10 @@
 //         │      │ jetzt exakt so breit wie die Tabelle, Name-Spalte dynamisch (neues Feld   │
 //         │      │ name_col_width statt fester Konstante), Filter/Buttons/Popup buendig mit  │
 //         │      │ der rechten Linie, "Datei:"-Wert in eigenem Kaestchen                     │
+// 26-08-17│ 1.40 │ Vierte Feedback-Runde: keine Randspalten mehr -- linke/rechte Linie liegen│ Cld
+//         │      │ jetzt GENAU auf der Dialogkante (rechts verschmilzt mit q9_listview's     │
+//         │      │ Bildlaufleiste zu EINER Linie), Rahmen beginnt schon bei der Spaltentitel- │
+//         │      │ Zeile (nicht erst bei der Liste)                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_FILEDIALOG_H
 #define Q9_FILEDIALOG_H
@@ -240,5 +250,5 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
 
 #endif /* Q9_FILEDIALOG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.h                                                                     Ver. 1.30
+// EOF q9_filedialog.h                                                                     Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
