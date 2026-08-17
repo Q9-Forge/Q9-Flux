@@ -1,19 +1,22 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.40
+// File:   q9_filedialog.c                                                                 Ver. 1.50
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
 //         des Dialogs, s. layout_rows() -- EINZIGE Stelle, die diese Aufteilung kennt, init() und
 //         render() rufen beide dieselbe Funktion auf):
 //             0            Kopfzeile (Titel + "X")
-//             1            Spaltentitel ("Name  Datum  Groesse")
-//             2..rows-5    Dateiliste (Hoehe = rows-6)
-//             rows-4       Auswahl-/Filterzeile               ┐
-//             rows-3       Halbblock-Kappe UEBER den Buttons   │ FUSSBEREICH, eigene footer_bg-
-//             rows-2       Buttons OK / Abbrechen              │ Hintergrundfarbe (s. render())
-//             rows-1       Halbblock-Kappe UNTER den Buttons   ┘
-//         Macht rows kleiner als das Minimum (8) keinen Sinn mehr -- init klemmt die Listenhoehe
-//         auf mindestens 1, ein winziger Dialog sieht dann einfach gedraengt aus (kein Crash, wie
-//         der Rest der q9_screenbuf-Familie).
+//             1            Spaltentitel ("Name  Datum  Groesse")           ┐
+//             2..rows-9    Dateiliste (Hoehe = rows-8)                     │ Rahmenlinien links+
+//             rows-8       Auswahl-/Namenszeile ("Datei: ...")             │ rechts spannen GENAU
+//             rows-7       Filterzeile ("Filter: ...")                     │ diesen Bereich, s.
+//             rows-6       Halbblock-Kappe UEBER den Buttons               │ render() -- "der
+//             rows-5       Buttons OK / Abbrechen                         ┘  Strich geht ab dem
+//             rows-4       Halbblock-Kappe UNTER den Buttons                 Header bis zur
+//             rows-1       NEUE Statuszeile (voller Breite, wie Hauptfenster) Statuszeile"
+//         Zeilen rows-8..rows-4 = Fussbereich (eigene footer_bg-Hintergrundfarbe). Macht rows
+//         kleiner als das Minimum (10) keinen Sinn mehr -- init klemmt die Listenhoehe auf
+//         mindestens 1, ein winziger Dialog sieht dann einfach gedraengt aus (kein Crash, wie der
+//         Rest der q9_screenbuf-Familie).
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -33,6 +36,11 @@
 // 26-08-17│ 1.40 │ Vierte Feedback-Runde: keine Randspalten mehr -- Linien liegen GENAU auf   │ Cld
 //         │      │ der Dialogkante, rechte Linie verschmilzt mit q9_listview's Bildlaufleiste,│
 //         │      │ Rahmen beginnt schon bei der Spaltentitel-Zeile (nicht erst bei der Liste) │
+// 26-08-17│ 1.50 │ Fuenfte Feedback-Runde ("wirkt jetzt doch gequetscht"): 1 Zeichen Luft     │ Cld
+//         │      │ zwischen Inhalt und Linie (q9_listview.c content_width jetzt width-2),     │
+//         │      │ Buttons 1 Zeichen schmaler je Seite, Filter jetzt eigene Zeile ("Filter: ")│
+//         │      │ statt rechtsbuendig neben "Datei:", neue Statuszeile ganz unten (wie       │
+//         │      │ Hauptfenster), Rahmenlinien gehen jetzt bis zu dieser Statuszeile           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -51,16 +59,21 @@ static void copy_bounded(char *dst, unsigned dst_size, const char *src)
 /* Zentrale Geometrie fuer den Fussbereich -- s. Kopfkommentar. Alle Rueckgabe-Zeiger duerfen NULL
    sein (Aufrufer holt sich nur, was er braucht: init() nur list_height, render() den Rest). Werte
    sind Zeilen-OFFSETS relativ zu dlg->row, noch NICHT damit addiert. */
-static void layout_rows(int rows, int *list_height, int *status_row, int *cap_above_row,
-                         int *buttons_row, int *cap_below_row)
+static void layout_rows(int rows, int *list_height, int *datei_row, int *filter_row,
+                         int *cap_above_row, int *buttons_row, int *cap_below_row,
+                         int *bottom_status_row)
 {
-    int lh = rows - 6;
+    int lh = rows - 8;
     if (lh < 1) { lh = 1; }
-    if (list_height)  { *list_height  = lh; }
-    if (status_row)    { *status_row    = rows - 4; }
-    if (cap_above_row) { *cap_above_row = rows - 3; }
-    if (buttons_row)   { *buttons_row   = rows - 2; }
-    if (cap_below_row) { *cap_below_row = rows - 1; }
+    if (list_height)      { *list_height      = lh; }
+    /* Liste belegt Zeilen 2..(2+lh-1) = 2..(rows-7) -- die folgenden Zeilen schliessen NAHTLOS
+       daran an. */
+    if (datei_row)         { *datei_row         = rows - 6; }
+    if (filter_row)        { *filter_row        = rows - 5; }
+    if (cap_above_row)     { *cap_above_row     = rows - 4; }
+    if (buttons_row)       { *buttons_row       = rows - 3; }
+    if (cap_below_row)     { *cap_below_row     = rows - 2; }
+    if (bottom_status_row) { *bottom_status_row = rows - 1; }
 }
 
 /* Formatiert alle aktuell in dlg->files stehenden Eintraege zu spaltenausgerichteten Zeilen fuer
@@ -120,24 +133,24 @@ int q9_filedialog_init(q9_filedialog_t *dlg, int row, int col, int rows, int col
     dlg->done = 0;
 
     /* Listen-Geometrie EINMAL berechnen (s. layout_rows()) -- rescan() aendert nur noch item_count,
-       nie row/col/height/width. Spaltenaufteilung (Andreas' Wunsch, 2026-08-17, zweite Runde: "bei
-       Rahmenkanten kommen nach ganz aussen, und rechts zusaetzlich die Bildlaufleiste auf den
-       gleichen Strich"): links EINE Spalte GENAU am Dialogrand fuer die vom Dialog selbst
-       gezeichnete Linie (render()), rechts KEIN eigener Rand mehr -- q9_listview's eigene rechte
-       Spalte (immer Linie, Griff nur bei Bedarf, s. q9_listview.c) liegt jetzt direkt AUF der
-       rechten Dialogkante, keine separate "Fensterkante + danebenliegende Bildlaufleiste" mehr. */
-    layout_rows(dlg->rows, &list_height, NULL, NULL, NULL, NULL);
+       nie row/col/height/width. Spaltenaufteilung (Andreas' Wunsch, 2026-08-17, fuenfte Runde:
+       "zum Strich jeweils ein Leerzeichen"): EINE Spalte Randlinie plus EINE Spalte Luft, dann
+       erst der Inhalt -- q9_listview.c reserviert seine rechte Spalte fuer die Linie UND eine
+       Luftspalte davor (content_width = width-2, s. dort), auf der LINKEN Seite macht dieses
+       Modul dasselbe von Hand (Randlinie bei dlg->col, Inhalt ab dlg->col+2). Die Linie selbst
+       bleibt GENAU auf der Dialogkante (Runde vier, "kommen nach ganz aussen"). */
+    layout_rows(dlg->rows, &list_height, NULL, NULL, NULL, NULL, NULL, NULL);
     dlg->list.row    = dlg->row + 2;
-    dlg->list.col    = dlg->col + 1;
+    dlg->list.col    = dlg->col + 2;
     dlg->list.height = list_height;
-    dlg->list.width  = dlg->cols - 1;
+    dlg->list.width  = dlg->cols - 2;
     if (dlg->list.width < 1) { dlg->list.width = 1; }
 
-    /* Name-Spaltenbreite: der Rest der Listenbreite, nachdem q9_listview's eigene rechte Spalte (1
-       Zeichen, s.o.) sowie Trennzeichen/Datum/Groesse abgezogen sind -- "Dateiname so lang wie der
-       Rest". */
+    /* Name-Spaltenbreite: der Rest der Listenbreite, nachdem q9_listview's eigene rechte Spalte
+       PLUS die Luftspalte davor (2 Zeichen, s.o.) sowie Trennzeichen/Datum/Groesse abgezogen
+       sind -- "Dateiname so lang wie der Rest". */
     {
-        int content_width = dlg->list.width - 1;             /* -1 == q9_listview's eigene Linie/Leiste */
+        int content_width = dlg->list.width - 2;             /* -2 == q9_listview's Linie + Luft   */
         int name_w = content_width - 1 - Q9_FILEDIALOG_DATE_COL - 1 - Q9_FILEDIALOG_SIZE_COL;
         if (name_w < 1) { name_w = 1; }
         dlg->name_col_width = name_w;
@@ -265,8 +278,8 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
     return 0;
 }
 
-/* Zentriert label in ein Feld der Breite width (leerzeichenaufgefuellt), z.B. "OK" in einem 13
-   Zeichen breiten Button -> "     OK      ". Schneidet label ab, falls es nicht passt (sollte bei
+/* Zentriert label in ein Feld der Breite width (leerzeichenaufgefuellt), z.B. "OK" in einem 11
+   Zeichen breiten Button -> "    OK     ". Schneidet label ab, falls es nicht passt (sollte bei
    den beiden festen Beschriftungen hier nie vorkommen, s. Aufrufer). */
 static void center_label(char *out, unsigned out_size, const char *label, int width)
 {
@@ -301,14 +314,15 @@ static void draw_button(q9_screenbuf_t *sb, int row, int col, int width, const c
                             bg_r, bg_g, bg_b, 1, footer_bg_r, footer_bg_g, footer_bg_b);
 }
 
-/* Zeichnet das Filter-Aufklapp-Menue (dlg->filter_popup_open) ueber der Statuszeile -- waechst nach
-   OBEN in den Bereich, den sonst die Dateiliste einnimmt (unterhalb der Buttons ist kein Platz
-   mehr, s. Layout-Uebersicht .h), rechtsbuendig unter dem Filterfeld. Wird ganz am Ende von
-   q9_filedialog_render() aufgerufen, ueberzeichnet also bewusst alles darunter. */
-static void render_filter_popup(const q9_filedialog_t *dlg, q9_screenbuf_t *sb, int status_row_abs)
+/* Zeichnet das Filter-Aufklapp-Menue (dlg->filter_popup_open) UEBER der Filterzeile -- waechst nach
+   OBEN in den Bereich, den sonst die Dateiliste einnimmt, linksbuendig unter dem Filterfeld (s.
+   q9_filedialog_render() -- der Filter ist seit der fuenften Runde selbst linksbuendig, nicht mehr
+   rechtsbuendig). Wird ganz am Ende von q9_filedialog_render() aufgerufen, ueberzeichnet also
+   bewusst alles darunter. */
+static void render_filter_popup(const q9_filedialog_t *dlg, q9_screenbuf_t *sb, int filter_row_abs)
 {
     const q9_filedialog_palette_t *p = &dlg->pal;
-    int avail = status_row_abs - (dlg->row + 2);            /* Platz unter der Spaltentitel-Zeile   */
+    int avail = filter_row_abs - (dlg->row + 2);            /* Platz unter der Spaltentitel-Zeile   */
     int popup_h = dlg->filter_count;
     int popup_w = Q9_FILEDIALOG_FILTER_MAX + 2;
     int popup_row, popup_col, i;
@@ -318,10 +332,8 @@ static void render_filter_popup(const q9_filedialog_t *dlg, q9_screenbuf_t *sb, 
     if (popup_w > dlg->cols - 2) { popup_w = dlg->cols - 2; }
     if (popup_w < 1)     { popup_w = 1; }
 
-    popup_row = status_row_abs - popup_h;
-    /* Rechtsbuendig mit der rechten Linie der Dateiliste (nicht mehr am absoluten Dialogrand,
-       s. q9_filedialog_render() -- "Buttons und Filter wandern etwas nach links"). */
-    popup_col = (dlg->list.col + dlg->list.width - 1) - popup_w + 1;
+    popup_row = filter_row_abs - popup_h;
+    popup_col = dlg->list.col;                                /* linksbuendig unter "Filter: ", s.o. */
     if (popup_col < dlg->col + 1) { popup_col = dlg->col + 1; }
 
     q9_screenbuf_fill_rect(sb, popup_row, popup_col, popup_h, popup_w, ' ',
@@ -348,19 +360,31 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 {
     const q9_filedialog_palette_t *p;
     char line[96];
-    int status_row, cap_above_row, buttons_row, cap_below_row;
+    int datei_row, filter_row, cap_above_row, buttons_row, cap_below_row, bottom_status_row;
     int ok_focus, cancel_focus, filter_focus;
+    int right_border_col, content_right, content_left;
 
     if (!dlg || !sb) { return; }
     p = &dlg->pal;
-    layout_rows(dlg->rows, NULL, &status_row, &cap_above_row, &buttons_row, &cap_below_row);
-    status_row    += dlg->row;
-    cap_above_row += dlg->row;
-    buttons_row   += dlg->row;
-    cap_below_row += dlg->row;
+    layout_rows(dlg->rows, NULL, &datei_row, &filter_row, &cap_above_row, &buttons_row,
+                &cap_below_row, &bottom_status_row);
+    datei_row         += dlg->row;
+    filter_row         += dlg->row;
+    cap_above_row      += dlg->row;
+    buttons_row        += dlg->row;
+    cap_below_row      += dlg->row;
+    bottom_status_row  += dlg->row;
     filter_focus = (dlg->focus == Q9_FILEDIALOG_FOCUS_FILTER);
     ok_focus     = (dlg->focus == Q9_FILEDIALOG_FOCUS_OK);
     cancel_focus = (dlg->focus == Q9_FILEDIALOG_FOCUS_CANCEL);
+
+    /* right_border_col ist GENAU die Dialogkante (dlg->list.col+dlg->list.width-1, s. init()) --
+       content_right laesst davor die von Andreas gewuenschte Luftspalte frei ("zum Strich jeweils
+       ein Leerzeichen"), content_left ist die entsprechende linke Bezugsspalte (== dlg->list.col,
+       hat die Luft zur linken Linie schon eingebaut, s. init()). */
+    right_border_col = dlg->list.col + dlg->list.width - 1;
+    content_right     = right_border_col - 1;
+    content_left       = dlg->list.col;
 
     /* Hauptflaeche -- einzige Abgrenzung vom Hintergrund dahinter (rahmenlos, s. .h). */
     q9_screenbuf_fill_rect(sb, dlg->row, dlg->col, dlg->rows, dlg->cols, ' ',
@@ -378,46 +402,18 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                            p->header_fg_r, p->header_fg_g, p->header_fg_b);
     }
 
-    /* Spaltentitel-Zeile -- GENAU so breit wie die Tabelle darunter (linke bis zur rechten Kante,
-       s.u.), NICHT die volle Dialogbreite (Andreas' Wunsch). Groesse ganz rechts, Datum davor,
-       Name (dynamisch, dlg->name_col_width) fuellt den Rest. Der TEXT beginnt bei dlg->list.col
-       (nicht bei table_left/der Randspalte selbst!) -- sonst stuende "Name" eine Spalte weiter
-       links als die tatsaechlichen Dateinamen darunter. table_left/table_width bestimmen NUR die
-       Hintergrundflaeche (schliesst beide Randspalten farblich mit ein -- die Rahmenlinien selbst
-       kommen gleich danach, s.u., und ueberschreiben die aeussersten beiden Zellen dieser Zeile). */
-    {
-        int table_left  = dlg->list.col - 1;
-        int table_width = (dlg->list.col + dlg->list.width - 1) - table_left + 1;
-        q9_screenbuf_fill_rect(sb, dlg->row + 1, table_left, 1, table_width, ' ',
-                                p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
-                                1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
-        snprintf(line, sizeof(line), "%-*.*s %*s %*s",
-                 dlg->name_col_width, dlg->name_col_width, "Name",
-                 Q9_FILEDIALOG_DATE_COL, "Datum", Q9_FILEDIALOG_SIZE_COL, "Groesse");
-        q9_screenbuf_puts(sb, dlg->row + 1, dlg->list.col, line, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
-    }
-
-    /* Tabellen-Rahmen (Andreas' Wunsch, 2026-08-17, zweite Runde: "der Strich geht dann allerdings
-       ab dem Header") -- links eine feste Linie (dieses Modul, q9_listview kennt nur seine EIGENE
-       rechte Spalte), rechts fuer die Listenzeilen selbst die von q9_listview.c IMMER gezeichnete
-       Linie/Bildlaufleiste (s.u., liegt jetzt direkt auf der rechten Dialogkante, s. init()) --
-       beide spannen ab der Spaltentitel-Zeile bis zum Ende der Liste (NICHT den Fussbereich, der
-       hat eine eigene Abgrenzung ueber footer_bg statt Linien, s.u.). Fuer die Spaltentitel-Zeile
-       selbst zeichnet dieses Modul die rechte Randzelle mit -- q9_listview kennt diese Zeile gar
-       nicht (sie ist nicht Teil seines Viewports). */
-    {
-        int left_border_col  = dlg->list.col - 1;
-        int right_border_col = dlg->list.col + dlg->list.width - 1;
-        int r;
-        char vline[2];
-        vline[0] = (char)Q9_GLYPH_VLINE; vline[1] = '\0';
-        for (r = 0; r < 1 + dlg->list.height; r++) {
-            q9_screenbuf_puts(sb, dlg->row + 1 + r, left_border_col, vline,
-                               p->list_fg_r, p->list_fg_g, p->list_fg_b);
-        }
-        q9_screenbuf_puts(sb, dlg->row + 1, right_border_col, vline,
-                           p->list_fg_r, p->list_fg_g, p->list_fg_b);
-    }
+    /* Spaltentitel-Zeile -- die Hintergrundflaeche (sub_bg) spannt GENAU die Dialogbreite (beruehrt
+       also beide Randlinien farblich, Andreas' Wunsch: "da soll noch die dunklere Farbe vom
+       Hintergrund sein"), der TEXT selbst faengt bei content_left an (die Luftspalte zur linken
+       Linie ist damit automatisch mit drin, s. init()). Groesse ganz rechts, Datum davor, Name
+       (dynamisch, dlg->name_col_width) fuellt den Rest bis zur rechten Luftspalte. */
+    q9_screenbuf_fill_rect(sb, dlg->row + 1, dlg->col, 1, dlg->cols, ' ',
+                            p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
+                            1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
+    snprintf(line, sizeof(line), "%-*.*s %*s %*s",
+             dlg->name_col_width, dlg->name_col_width, "Name",
+             Q9_FILEDIALOG_DATE_COL, "Datum", Q9_FILEDIALOG_SIZE_COL, "Groesse");
+    q9_screenbuf_puts(sb, dlg->row + 1, content_left, line, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
 
     /* Dateiliste -- die markierte Zeile bekommt NUR dann die kraeftige sel_fg/sel_bg-Hervorhebung,
        wenn die Liste tatsaechlich den Fokus hat; sonst die gedaempfte unfocus_sel_*-Variante (s.
@@ -435,102 +431,142 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                             list_focus ? p->sel_bg_b : p->unfocus_sel_bg_b);
     }
 
-    /* Fussbereich -- eigene Hintergrundfarbe ab der Statuszeile bis zum Dialogende, damit sich
-       dieser Bereich sichtbar von der Dateiliste absetzt (Andreas' Wunsch, 2026-08-17). Deckt
-       Auswahl-/Filterzeile, beide Halbblock-Kappen UND die Buttons-Zeile ab -- die Buttons selbst
-       (s.u.) uebermalen ihren eigenen Ausschnitt gleich wieder mit sub_ bzw. focus_ Farben. */
-    q9_screenbuf_fill_rect(sb, status_row, dlg->col, cap_below_row - status_row + 1, dlg->cols, ' ',
+    /* Fussbereich -- eigene Hintergrundfarbe von der Namenszeile bis zur unteren Halbblock-Kappe
+       (Andreas' Wunsch, 2026-08-17), damit sich dieser Bereich sichtbar von der Dateiliste absetzt.
+       Die NEUE Statuszeile ganz unten (s.u.) hat bewusst eine EIGENE, andere Farbe (wie die
+       Kopfzeile) -- gehoert farblich NICHT zu diesem Fussbereich. */
+    q9_screenbuf_fill_rect(sb, datei_row, dlg->col, cap_below_row - datei_row + 1, dlg->cols, ' ',
                             p->footer_fg_r, p->footer_fg_g, p->footer_fg_b,
                             1, p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
 
-    /* Rechte Bezugsspalte fuer Filter UND Buttons (Andreas' Wunsch: "wandern etwas nach links damit
-       Platz fuer den Rahmen/Bildlaufleiste ist") -- buendig mit der rechten Linie der Dateiliste,
-       nicht mehr am absoluten Dialogrand. */
+    /* Auswahl-/Namenszeile -- "Datei: " + der Name in einem eigenen, abgesetzten Kaestchen
+       (sub_fg/bg, wie die Spaltentitel-Zeile -- Andreas' Wunsch: "Hintergrundfarbe noch mal
+       abgesetzt... als Kaestchen fuer den Namen"). */
     {
-        int right_border_col = dlg->list.col + dlg->list.width - 1;
+        const char *sel_name = (dlg->list.selected >= 0 && dlg->list.selected < dlg->files.count)
+                                ? dlg->files.entry[dlg->list.selected].name : "-";
+        static const char label[] = "Datei:  ";                /* auf Q9_FILEDIALOG_LABEL_WIDTH   */
+        int box_col = content_left + Q9_FILEDIALOG_LABEL_WIDTH;
+        char namebuf[Q9_FILELIST_NAME_MAX];
 
-        /* Auswahl-/Filterzeile -- links "Datei: " + der Name in einem eigenen, abgesetzten Kaestchen
-           (sub_fg/bg, wie die Spaltentitel-Zeile -- Andreas' Wunsch: "Hintergrundfarbe noch mal
-           abgesetzt... als Kaestchen fuer den Namen"), rechts der Extensions-Umschalter mit Dropdown-
-           Pfeil (▾, s. q9_screenbuf.h) -- Enter/Pfeil-runter darauf oeffnet das Aufklapp-Menue mit
-           allen Filtern (render_filter_popup(), ganz am Ende dieser Funktion), Pfeil links/rechts
-           bleibt als Schnellzugriff (einzeln durchschalten) erhalten. */
-        {
-            const char *sel_name = (dlg->list.selected >= 0 && dlg->list.selected < dlg->files.count)
-                                    ? dlg->files.entry[dlg->list.selected].name : "-";
-            static const char label[] = "Datei: ";
-            int label_len = (int)sizeof(label) - 1;
-            int box_col = dlg->col + 1 + label_len;
-            char namebuf[Q9_FILELIST_NAME_MAX];
+        q9_screenbuf_puts(sb, datei_row, content_left, label,
+                           p->footer_fg_r, p->footer_fg_g, p->footer_fg_b);
+        snprintf(namebuf, sizeof(namebuf), "%-*.*s",
+                 dlg->name_col_width, dlg->name_col_width, sel_name);
+        q9_screenbuf_fill_rect(sb, datei_row, box_col, 1, dlg->name_col_width, ' ',
+                                p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
+                                1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
+        q9_screenbuf_puts(sb, datei_row, box_col, namebuf, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
+    }
 
-            q9_screenbuf_puts(sb, status_row, dlg->col + 1, label,
-                               p->footer_fg_r, p->footer_fg_g, p->footer_fg_b);
-            snprintf(namebuf, sizeof(namebuf), "%-*.*s",
-                     dlg->name_col_width, dlg->name_col_width, sel_name);
-            q9_screenbuf_fill_rect(sb, status_row, box_col, 1, dlg->name_col_width, ' ',
-                                    p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
-                                    1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
-            q9_screenbuf_puts(sb, status_row, box_col, namebuf, p->sub_fg_r, p->sub_fg_g, p->sub_fg_b);
+    /* Filterzeile -- jetzt EIGENE Zeile UNTER der Namenszeile (Andreas' Wunsch, 2026-08-17, fuenfte
+       Runde: "dadrunter Filter: und die Filterauswahl"), linksbuendig wie "Datei: " (statt vorher
+       rechtsbuendig auf derselben Zeile). Dropdown-Pfeil (▾, s. q9_screenbuf.h) -- Enter/Pfeil-
+       runter darauf oeffnet das Aufklapp-Menue mit allen Filtern (render_filter_popup(), ganz am
+       Ende dieser Funktion), Pfeil links/rechts bleibt als Schnellzugriff erhalten. */
+    {
+        static const char label[] = "Filter: ";                /* auf Q9_FILEDIALOG_LABEL_WIDTH   */
+        char filt[Q9_FILEDIALOG_FILTER_MAX + 4];
+        int flen, fcol;
 
-            {
-                char filt[Q9_FILEDIALOG_FILTER_MAX + 4];
-                int flen, fcol;
-                snprintf(filt, sizeof(filt), "%s ", dlg->filters[dlg->filter_index]);
-                flen = (int)strlen(filt);
-                filt[flen]     = (char)Q9_GLYPH_DOWN_ARROW;
-                filt[flen + 1] = '\0';
-                flen += 1;
-                fcol = right_border_col - flen + 1;          /* letztes Zeichen endet AN der Linie */
-                if (fcol < dlg->col + 1) { fcol = dlg->col + 1; }
-                if (filter_focus) {
-                    q9_screenbuf_fill_rect(sb, status_row, fcol, 1, flen, ' ',
-                                            p->focus_fg_r, p->focus_fg_g, p->focus_fg_b,
-                                            1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
-                }
-                q9_screenbuf_puts(sb, status_row, fcol, filt,
-                                   filter_focus ? p->focus_fg_r : p->footer_fg_r,
-                                   filter_focus ? p->focus_fg_g : p->footer_fg_g,
-                                   filter_focus ? p->focus_fg_b : p->footer_fg_b);
-            }
+        q9_screenbuf_puts(sb, filter_row, content_left, label,
+                           p->footer_fg_r, p->footer_fg_g, p->footer_fg_b);
+
+        snprintf(filt, sizeof(filt), "%s ", dlg->filters[dlg->filter_index]);
+        flen = (int)strlen(filt);
+        filt[flen]     = (char)Q9_GLYPH_DOWN_ARROW;
+        filt[flen + 1] = '\0';
+        flen += 1;
+        fcol = content_left + Q9_FILEDIALOG_LABEL_WIDTH;
+        if (filter_focus) {
+            q9_screenbuf_fill_rect(sb, filter_row, fcol, 1, flen, ' ',
+                                    p->focus_fg_r, p->focus_fg_g, p->focus_fg_b,
+                                    1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
         }
+        q9_screenbuf_puts(sb, filter_row, fcol, filt,
+                           filter_focus ? p->focus_fg_r : p->footer_fg_r,
+                           filter_focus ? p->focus_fg_g : p->footer_fg_g,
+                           filter_focus ? p->focus_fg_b : p->footer_fg_b);
+    }
 
-        /* Buttons -- "richtige" Buttons (Andreas' Wunsch, 2026-08-17): sub_fg/bg (Spaltentitel-Farbe)
-           wenn unfokussiert, focus_fg/bg wenn fokussiert, gleich breit, rechtsbuendig (buendig mit
-           der Linie der Dateiliste, s.o.), per Halbblock-Kappen "aufgeblasen" (draw_button(), s.
-           Kopfkommentar .h). */
-        {
-            int button_w = (int)strlen("Abbrechen") + 4;
-            int cancel_col = right_border_col - button_w + 1;   /* letztes Zeichen endet AN der Linie */
-            int ok_col = cancel_col - 1 - button_w;
-            if (ok_col < dlg->col + 1) { ok_col = dlg->col + 1; }
+    /* Buttons -- "richtige" Buttons (Andreas' Wunsch): sub_fg/bg (Spaltentitel-Farbe) wenn
+       unfokussiert, focus_fg/bg wenn fokussiert, je 1 Zeichen schmaler als zuvor (fuenfte Runde),
+       rechtsbuendig mit 1 Zeichen Luft vor der rechten Linie (content_right, s.o.), per Halbblock-
+       Kappen "aufgeblasen" (draw_button(), s. Kopfkommentar .h). */
+    {
+        int button_w = (int)strlen("Abbrechen") + 2;
+        int cancel_col = content_right - button_w + 1;
+        int ok_col = cancel_col - 1 - button_w;
+        if (ok_col < content_left) { ok_col = content_left; }
 
-            draw_button(sb, buttons_row, ok_col, button_w, "OK",
-                        ok_focus ? p->focus_fg_r : p->sub_fg_r,
-                        ok_focus ? p->focus_fg_g : p->sub_fg_g,
-                        ok_focus ? p->focus_fg_b : p->sub_fg_b,
-                        ok_focus ? p->focus_bg_r : p->sub_bg_r,
-                        ok_focus ? p->focus_bg_g : p->sub_bg_g,
-                        ok_focus ? p->focus_bg_b : p->sub_bg_b,
-                        cap_above_row, cap_below_row,
-                        p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+        draw_button(sb, buttons_row, ok_col, button_w, "OK",
+                    ok_focus ? p->focus_fg_r : p->sub_fg_r,
+                    ok_focus ? p->focus_fg_g : p->sub_fg_g,
+                    ok_focus ? p->focus_fg_b : p->sub_fg_b,
+                    ok_focus ? p->focus_bg_r : p->sub_bg_r,
+                    ok_focus ? p->focus_bg_g : p->sub_bg_g,
+                    ok_focus ? p->focus_bg_b : p->sub_bg_b,
+                    cap_above_row, cap_below_row,
+                    p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
 
-            draw_button(sb, buttons_row, cancel_col, button_w, "Abbrechen",
-                        cancel_focus ? p->focus_fg_r : p->sub_fg_r,
-                        cancel_focus ? p->focus_fg_g : p->sub_fg_g,
-                        cancel_focus ? p->focus_fg_b : p->sub_fg_b,
-                        cancel_focus ? p->focus_bg_r : p->sub_bg_r,
-                        cancel_focus ? p->focus_bg_g : p->sub_bg_g,
-                        cancel_focus ? p->focus_bg_b : p->sub_bg_b,
-                        cap_above_row, cap_below_row,
-                        p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+        draw_button(sb, buttons_row, cancel_col, button_w, "Abbrechen",
+                    cancel_focus ? p->focus_fg_r : p->sub_fg_r,
+                    cancel_focus ? p->focus_fg_g : p->sub_fg_g,
+                    cancel_focus ? p->focus_fg_b : p->sub_fg_b,
+                    cancel_focus ? p->focus_bg_r : p->sub_bg_r,
+                    cancel_focus ? p->focus_bg_g : p->sub_bg_g,
+                    cancel_focus ? p->focus_bg_b : p->sub_bg_b,
+                    cap_above_row, cap_below_row,
+                    p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+    }
+
+    /* NEUE Statuszeile ganz unten (Andreas' Wunsch, fuenfte Runde: "auch eine Statuszeile wie im
+       Hauptfenster") -- volle Breite, eigene Farbe (dieselbe wie die Kopfzeile, fuer ein
+       symmetrisches Erscheinungsbild oben/unten), reiner Tastatur-Hinweis (der Dialog hat keine
+       Auswahl/Terminal-Groesse wie das Hauptfenster anzuzeigen). */
+    q9_screenbuf_fill_rect(sb, bottom_status_row, dlg->col, 1, dlg->cols, ' ',
+                            p->header_fg_r, p->header_fg_g, p->header_fg_b,
+                            1, p->header_bg_r, p->header_bg_g, p->header_bg_b);
+    q9_screenbuf_puts(sb, bottom_status_row, dlg->col + 1,
+                       "TAB: naechstes Feld   Enter: bestaetigen   Esc: abbrechen",
+                       p->header_fg_r, p->header_fg_g, p->header_fg_b);
+
+    /* Rahmenlinien -- links (von diesem Modul komplett selbst gezeichnet) UND rechts (fuer die
+       Spaltentitel-/Fusszeilen von diesem Modul, fuer die Listenzeilen selbst von q9_listview.c
+       IMMER als Linie mitgezeichnet, s. dort) -- spannen von der Spaltentitel-Zeile bis zur
+       unteren Halbblock-Kappe, GENAU bis zur neuen Statuszeile (Andreas' Wunsch: "die Seitenstriche
+       gehen bis zur Statusleiste"). Bewusst GANZ AM ENDE gezeichnet (nach allen Hintergrund-
+       Fuellungen UND nach q9_listview_render()) -- puts() laesst den Hintergrund einer Zelle
+       unangetastet (s. q9_screenbuf.h), die Linie erbt also automatisch die jeweils passende
+       Hintergrundfarbe (sub_bg auf der Spaltentitel-Zeile, footer_bg im Fussbereich). Die rechte
+       Linie ueberspringt bewusst den Listenbereich selbst (dlg->list.row..+height-1) -- dort hat
+       q9_listview_render() bereits die richtige Linie (inkl. Scroll-Griff, falls noetig)
+       gezeichnet, ein zweiter Durchgang wuerde den Griff wieder mit einer einfachen Linie
+       ueberschreiben. */
+    {
+        int left_border_col = dlg->col;
+        int span_top    = dlg->row + 1;
+        int span_bottom = cap_below_row;
+        int list_top    = dlg->list.row;
+        int list_bottom = dlg->list.row + dlg->list.height - 1;
+        int r;
+        char vline[2];
+        vline[0] = (char)Q9_GLYPH_VLINE; vline[1] = '\0';
+
+        for (r = span_top; r <= span_bottom; r++) {
+            q9_screenbuf_puts(sb, r, left_border_col, vline, p->list_fg_r, p->list_fg_g, p->list_fg_b);
+            if (r < list_top || r > list_bottom) {
+                q9_screenbuf_puts(sb, r, right_border_col, vline,
+                                   p->list_fg_r, p->list_fg_g, p->list_fg_b);
+            }
         }
     }
 
     if (dlg->filter_popup_open) {
-        render_filter_popup(dlg, sb, status_row);
+        render_filter_popup(dlg, sb, filter_row);
     }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.40
+// EOF q9_filedialog.c                                                                     Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

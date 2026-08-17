@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.90
+// File:   integration_demo.c                                                             Ver. 2.00
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -65,6 +65,8 @@
 // 26-08-17│ 1.90 │ Dritte Feedback-Runde: Hauptfenster-Liste reicht jetzt bis zur rechten Rahmen-    │ Cld
 //         │      │ kante von draw_frame() -- verschmilzt mit q9_listview's Bildlaufleiste zu EINER   │
 //         │      │ Linie statt "Fensterkante + separate Bildlaufleiste" (Andreas' Wunsch)            │
+// 26-08-17│ 2.00 │ Vierte Feedback-Runde ("wirkt jetzt doch gequetscht"): DIALOG_ROWS/_COLS         │ Cld
+//         │      │ vergroessert (neue Filterzeile + Statuszeile im Dialog, plus Luftspalten)         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -144,12 +146,13 @@ static const char *const g_items[] = {
 #define PAL_DIALOG_FOOTER_BG_G  54
 #define PAL_DIALOG_FOOTER_BG_B  20
 
-#define DIALOG_ROWS 17                                      /* Wunschgroesse -- wird in            */
-#define DIALOG_COLS 54                                       /* run_file_dialog() an rows/cols geklemmt.
-                                                                  17 statt 14 (2026-08-17, zweite Runde):
-                                                                  neuer Fussbereich (Halbblock-Buttons,
-                                                                  Filter-Popup) braucht 1 Zeile mehr als
-                                                                  vorher, +2 fuer etwas mehr Luft         */
+#define DIALOG_ROWS 20                                      /* Wunschgroesse -- wird in            */
+#define DIALOG_COLS 56                                       /* run_file_dialog() an rows/cols geklemmt.
+                                                                  20 statt 17 (2026-08-17, fuenfte Runde:
+                                                                  "wirkt jetzt doch gequetscht"): eigene
+                                                                  Filterzeile + neue Statuszeile brauchen
+                                                                  2 Zeilen mehr, COLS +2 fuer die neue
+                                                                  Luftspalte links/rechts an den Linien   */
 
 static void write_ansi(unsigned (*fn)(char *, unsigned))
 {
@@ -525,5 +528,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.90
+// EOF integration_demo.c                                                                  Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────

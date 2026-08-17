@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.00
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.10
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -67,6 +67,9 @@
 # 26-08-17│ 3.00 │ Neunte Runde: Fensterkante+Bildlaufleiste zu EINER Linie verschmolzen (Haupt-      │ Cld
 #         │      │ fenster UND Dialog), Dialog-Rahmen ohne Randspalten GENAU auf der Kante, beginnt   │
 #         │      │ schon bei der Spaltentitel-Zeile statt erst bei der Liste                          │
+# 26-08-17│ 3.10 │ Zehnte Runde ("wirkt jetzt doch gequetscht"): Luftspalte vor beiden Linien,        │ Cld
+#         │      │ schmalere Buttons, Filter jetzt eigene Zeile, neue Statuszeile ganz unten,         │
+#         │      │ Rahmenlinien reichen jetzt bis dorthin (nicht mehr nur um die Liste)               │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -486,6 +489,52 @@ Bildlaufleiste innen) sollten zu EINER verschmelzen:
 gruen. Sichtpruefung per `pyte` bestaetigt: Hauptfenster zeigt nur noch EINE Linie rechts (vorher
 zwei mit Luecke), Dialog-Rahmen beginnt exakt bei der Spaltentitel-Zeile und liegt an beiden
 Seiten direkt auf der Dialogkante, Buttons-Hintergrund reicht bis genau dorthin.
+
+**Zehnte Runde (2026-08-17) -- "wirkt jetzt doch gequetscht", sechs Wuensche:**
+*"bitte zum Strich jeweils ein Leerzeichen. Der Tabellenkopf bitte rechts und links je ein Zeichen
+schmaler machen, inkl. Tabellenkopf, da soll noch die dunklere Farbe vom Hintergrund sein. Die
+beiden Buttons je rechts und links ein Zeichen schmaler und eine Reihe hoeher, links Platz fuer
+den Strich schaffen. Datei mit dem Namen dahinter reicht nur ein Zeichen bis vor dem Button,
+dadrunter Filter: und die Filterauswahl. Komplett um unteren Rand des Dialogs auch eine
+Statuszeile wie im Hauptfenster und die Seitenstriche gehen bis zur Statusleiste."* -- nachdem in
+der letzten Runde alle Randspalten entfielen, wirkte der Inhalt zu eng an den Linien. Sechs
+zusammenhaengende Aenderungen:
+1. **Luftspalte vor der Linie** -- `q9_listview.c`s `content_width` jetzt `width-2` statt
+   `width-1` (Linie bleibt an derselben Stelle, nur der Inhalt bekommt mehr Abstand); im Dialog
+   auf der linken Seite spiegelbildlich von Hand nachgebaut (`list.col = dlg->col + 2` statt `+1`).
+   Wirkt automatisch auch im Hauptfenster mit (dort unproblematisch, da die Linienposition
+   unveraendert bleibt).
+2. **Spaltentitel-Zeile** -- der Text ruckt automatisch mit der neuen Luftspalte mit; die
+   Hintergrundfarbe (`sub_bg`) spannt weiterhin die volle Dialogbreite (beruehrt also weiterhin
+   beide Linien farblich, wie gewuenscht).
+3. **Buttons** -- 1 Zeichen schmaler je Seite (`button_w` jetzt `strlen("Abbrechen")+2` statt
+   `+4`), rechtsbuendig mit der neuen Luftspalte vor der rechten Linie.
+4. **Filterzeile jetzt eigene Zeile** -- vorher rechtsbuendig auf derselben Zeile wie "Datei:",
+   jetzt darunter mit eigener Beschriftung "Filter: ". Beide Beschriftungen ("Datei:"/"Filter:")
+   auf `Q9_FILEDIALOG_LABEL_WIDTH` (8 Zeichen) aufgefuellt, damit ihre Werte (Namens-Kaestchen und
+   Filter-Chip) untereinander in derselben Spalte anfangen.
+5. **Neue Statuszeile ganz unten** -- volle Dialogbreite, eigene Farbe (dieselbe wie die
+   Kopfzeile, fuer ein symmetrisches Erscheinungsbild), zeigt einen Tastatur-Kurzhinweis.
+6. **Rahmenlinien reichen jetzt bis zur Statuszeile** -- vorher endeten sie am unteren Rand der
+   Liste, jetzt laufen sie durch den kompletten Fussbereich (Namens-/Filterzeile, Halbblock-
+   Kappen, Buttons) und enden erst direkt VOR der neuen Statuszeile. Dafuer wird der Rahmen jetzt
+   ganz am Ende von `q9_filedialog_render()` gezeichnet (nach allen Hintergrund-Fuellungen), damit
+   die Linie ueberall die richtige Hintergrundfarbe der jeweiligen Zeile "erbt" (puts() laesst den
+   Hintergrund einer Zelle unangetastet).
+
+**Ein Bug beim ersten Versuch, per pyte gefunden und noch vor dem Commit behoben:** die neuen
+Fussbereich-Zeilen (`datei_row` etc.) waren in `layout_rows()` falsch berechnet und ueberlappten
+mit den letzten beiden Listenzeilen -- die rechte Randlinie fehlte dadurch genau auf der
+Namens-/Filterzeile (die Ausschluss-Logik "das macht schon q9_listview" griff faelschlich auch
+dort). Korrigiert, mit pyte erneut ueberprueft.
+
+`q9_listview.h/.c` Ver. 1.30/1.40 (Luftspalte), `q9_filedialog.h/.c` Ver. 1.50 (neue Statuszeile,
+Filterzeile, durchgehende Rahmenlinien, neue Konstante `Q9_FILEDIALOG_LABEL_WIDTH`),
+`integration_demo.c` Ver. 2.00 (`DIALOG_ROWS`/`_COLS` vergroessert: 20x56 statt 17x54, fuer die
+zwei zusaetzlichen Fusszeilen plus etwas mehr Breite). `make test` komplett gruen. Sichtpruefung
+per pyte bestaetigt: durchgehend 1 Zeichen Abstand zu beiden Linien, "Datei:"/"Filter:"-Werte exakt
+in derselben Spalte, Buttons enden mit Luecke vor der Linie, neue Statuszeile farblich korrekt auf
+die Dialogbreite begrenzt.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
