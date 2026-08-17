@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.00
+// File:   integration_demo.c                                                             Ver. 2.10
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -67,6 +67,8 @@
 //         │      │ Linie statt "Fensterkante + separate Bildlaufleiste" (Andreas' Wunsch)            │
 // 26-08-17│ 2.00 │ Vierte Feedback-Runde ("wirkt jetzt doch gequetscht"): DIALOG_ROWS/_COLS         │ Cld
 //         │      │ vergroessert (neue Filterzeile + Statuszeile im Dialog, plus Luftspalten)         │
+// 26-08-17│ 2.10 │ Fuenfte Feedback-Runde ("zwei Zeilen sparen"): DIALOG_ROWS wieder verkleinert    │ Cld
+//         │      │ (Buttons teilen sich jetzt Namens-/Filterzeile statt eigene Zeilen zu belegen)    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -146,13 +148,13 @@ static const char *const g_items[] = {
 #define PAL_DIALOG_FOOTER_BG_G  54
 #define PAL_DIALOG_FOOTER_BG_B  20
 
-#define DIALOG_ROWS 20                                      /* Wunschgroesse -- wird in            */
+#define DIALOG_ROWS 18                                      /* Wunschgroesse -- wird in            */
 #define DIALOG_COLS 56                                       /* run_file_dialog() an rows/cols geklemmt.
-                                                                  20 statt 17 (2026-08-17, fuenfte Runde:
-                                                                  "wirkt jetzt doch gequetscht"): eigene
-                                                                  Filterzeile + neue Statuszeile brauchen
-                                                                  2 Zeilen mehr, COLS +2 fuer die neue
-                                                                  Luftspalte links/rechts an den Linien   */
+                                                                  18 statt 20 (2026-08-17, sechste Runde:
+                                                                  "ich wollte noch zwei Zeilen sparen") --
+                                                                  Buttons teilen sich jetzt Namens-/
+                                                                  Filterzeile statt eigene Zeilen zu
+                                                                  belegen, 2 Zeilen weniger noetig         */
 
 static void write_ansi(unsigned (*fn)(char *, unsigned))
 {
@@ -528,5 +530,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.00
+// EOF integration_demo.c                                                                  Ver. 2.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
