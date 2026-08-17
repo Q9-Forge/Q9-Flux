@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_screenbuf.h                                                                  Ver. 1.10
+// File:   q9_screenbuf.h                                                                  Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Bildschirmpuffer auf q9_ansi.h aufgesetzt -- der in Q9FLUX_EDITOR_de.md Abschnitt 2
 //         angekuendigte Baustein fuer den modalen Config-Auswahl-Dialog ("liegt UEBER dem Rest,
@@ -38,6 +38,8 @@
 //         │      │ Bildschirmbereich-Sichern/Wiederherstellen)                              │
 // 26-08-17│ 1.10 │ Q9_GLYPH_*-Sentinels (Andreas: "volle Linien statt ASCII") -- echtes      │ Cld
 //         │      │ Unicode-Box-Drawing per Ein-Byte-Marker, nur render() kennt die Bedeutung  │
+// 26-08-17│ 1.20 │ Q9_GLYPH_DOWN_ARROW/UPPER_HALF/LOWER_HALF dazu (q9_filedialog.c -- "echte"  │ Cld
+//         │      │ Buttons per Halbblock-Zeichen + Dropdown-Pfeil beim Filter)                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SCREENBUF_H
 #define Q9_SCREENBUF_H
@@ -65,6 +67,13 @@
 #define Q9_GLYPH_BL     0x05                              /* └ untere linke Ecke                     */
 #define Q9_GLYPH_BR     0x06                              /* ┘ untere rechte Ecke                    */
 #define Q9_GLYPH_BLOCK  0x07                              /* █ voller Block (z.B. Scrollbalken-Griff) */
+/* Nachtrag (2026-08-17, q9_filedialog.c "richtige" Buttons + Dropdown-Pfeil): 0x08/0x0B/0x0C statt
+   der naheliegenden 0x09-0x0A -- TAB/LF sind eher versehentlich in einem String, falls doch mal
+   echter Text statt eines vorformatierten Anzeige-Strings durchrutscht (unwahrscheinlich, aber
+   diese drei Werte vermeiden das Risiko komplett). */
+#define Q9_GLYPH_DOWN_ARROW  0x08                         /* ▾ kleines Dreieck (Dropdown-Hinweis)    */
+#define Q9_GLYPH_UPPER_HALF  0x0B                         /* ▀ obere Haelfte gefuellt                */
+#define Q9_GLYPH_LOWER_HALF  0x0C                         /* ▄ untere Haelfte gefuellt                */
 
 typedef struct {
     char          ch;                                 /* 0/'\0' wird beim Rendern wie ' ' behandelt */
@@ -161,5 +170,5 @@ void q9_screenbuf_restore(q9_screenbuf_t *sb, int row, int col, const q9_screenb
 
 #endif /* Q9_SCREENBUF_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_screenbuf.h                                                                      Ver. 1.10
+// EOF q9_screenbuf.h                                                                      Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

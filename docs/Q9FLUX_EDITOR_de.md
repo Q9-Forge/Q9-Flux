@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.70
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.80
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -57,6 +57,9 @@
 # 26-08-17│ 2.70 │ Sechste Runde: zwei Bugs aus Andreas' erstem echten Test behoben -- Dialog       │ Cld
 #         │      │ zeigt jetzt den echten Hauptbildschirm dahinter (statt Vollbild-Fuellfarbe),     │
 #         │      │ Fokuswechsel auf/von der Dateiliste ist jetzt sichtbar (unfocus_sel_* Farbpaar)  │
+# 26-08-17│ 2.80 │ Siebte Runde: eigener Fussbereich (footer_bg), "richtige" Halbblock-Buttons     │ Cld
+#         │      │ (▀/▄), Filter-Aufklapp-Menue mit ▾ statt reinem Durchschalten, Scan-Verzeichnis  │
+#         │      │ auf HOME gestellt                                                                │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -385,6 +388,37 @@ bestaetigt, dann von Andreas verfeinert):
 
 Beide Fixes in `q9_filedialog.h/.c` Ver. 1.10 und `integration_demo.c` Ver. 1.70, `make test`
 weiterhin komplett gruen.
+
+**Siebte Runde (2026-08-17) -- vier weitere Wuensche nach dem zweiten Test:**
+1. *"Hintergrundfarbe im unteren Bereich noch mal aendern, ab da wo die Dateitabelle aufhoert...
+   so dass sich der untere Teil etwas absetzt"* -- neuer eigenstaendiger Fussbereich (Auswahl-/
+   Filterzeile + Buttons) mit eigener `footer_fg/bg`-Farbe in `q9_filedialog_palette_t`, deutlich
+   sichtbar anders als die Dateiliste, bleibt aber in der Amber-/Braun-Farbfamilie.
+2. *"stell den Pfad bitte mal auf das ~ Verzeichnis"* -- `run_file_dialog()` scannt jetzt
+   `getenv("HOME")` statt `.` (Ruecksprung auf `.` falls `HOME` nicht gesetzt ist).
+3. *"OK und Abbrechen mehr wie Buttons aussehen lassen... mit der Farbe der zweiten Zeile"* +
+   *"Zeichen die etwas ein halbes Zeichen gross sind... den Button einmal nach oben und einmal
+   nach unten vergroessern... gleichlang... rechts anordnen"* -- neue `q9_screenbuf`-Glyphen
+   `Q9_GLYPH_UPPER_HALF`/`LOWER_HALF` (▀/▄, klassischer Halbblock-Button-Trick: eine Zeile ueber
+   dem Button zeigt in der UNTEREN Haelfte die Button-Farbe, eine Zeile darunter in der OBEREN
+   Haelfte -- der Button wirkt dadurch anderthalb Zeilen hoch). Buttons jetzt in der Spaltentitel-
+   Farbe (`sub_fg/bg`, wie gewuenscht), gleich breit (`draw_button()`), rechtsbuendig im
+   Fussbereich statt links.
+4. *"Gibt es einen Pfeil nach unten fuer den Filter? Und da drauf bekommt man die komplette
+   Auswahl des Filters"* -- Rueckfrage per `AskUserQuestion` ergab: RICHTIGES Aufklapp-Menue
+   gewuenscht (nicht nur ein neues Zeichen). Neue Glyphe `Q9_GLYPH_DOWN_ARROW` (▾) ersetzt das
+   bisherige `>`. Enter ODER Pfeil-runter auf dem Filter oeffnet jetzt `filter_popup_open` -- eine
+   kleine Liste ALLER Filter (waechst nach oben in den Bereich der Dateiliste, da unterhalb kein
+   Platz mehr ist), Pfeil hoch/runter navigiert DARIN, Enter uebernimmt + rescanned, Escape
+   schliesst NUR das Popup (nicht gleich den ganzen Dialog -- "oberste Ueberlagerung zuerst").
+   Pfeil links/rechts bleibt als schneller Einzel-Schritt erhalten (ohne Popup zu oeffnen).
+
+`q9_screenbuf.h/.c` Ver. 1.20 (drei neue Glyphen), `q9_filedialog.h/.c` Ver. 1.20 (`layout_rows()`
+als gemeinsame Geometrie-Quelle fuer init()/render(), da der Fussbereich jetzt 4 statt 3 Zeilen
+braucht), `integration_demo.c` Ver. 1.80 (Dialoggroesse 17x54 statt 14x50 fuer den groesseren
+Fussbereich). Neue Selbsttest-Faelle fuer das Aufklapp-Menue (oeffnen/navigieren/uebernehmen/nur-
+Popup-schliessen), `make test` weiterhin komplett gruen, per Rauchtest bestaetigt (Halbblock-
+Glyphen UND Dropdown-Pfeil tatsaechlich im ANSI-Output nachgewiesen).
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

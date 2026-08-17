@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.70
+// File:   integration_demo.c                                                             Ver. 1.80
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -58,9 +58,14 @@
 //         │      │ Hauptbildschirm (build_full_content() ausgelagert) statt einer reinen Fuellfarbe │
 //         │      │ ueber den ganzen Schirm -- vorher sah der (schon immer kleine) Dialog dadurch    │
 //         │      │ wie Vollbild aus                                                                 │
+// 26-08-17│ 1.80 │ Zweite Feedback-Runde: eigene footer_bg-Palette fuer q9_filedialog.c (Fuss-       │ Cld
+//         │      │ bereich mit den "richtigen" Buttons), Scan-Verzeichnis auf getenv("HOME") gestellt │
+//         │      │ (Andreas: "stell den Pfad mal auf das ~ Verzeichnis, dann sieht man das besser"), │
+//         │      │ DIALOG_ROWS/_COLS vergroessert (neuer Fussbereich braucht mehr Platz)             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "../src/q9_ansi.h"
 #include "../src/q9_screenbuf.h"
@@ -129,9 +134,19 @@ static const char *const g_items[] = {
 #define PAL_DIALOG_SUB_BG_R  110
 #define PAL_DIALOG_SUB_BG_G   78
 #define PAL_DIALOG_SUB_BG_B   30
+/* Fussbereich (Andreas' Wunsch, 2026-08-17: "Hintergrundfarbe im unteren Bereich noch mal
+   aendern... so dass sich der untere Teil etwas absetzt") -- zwischen PAL_DIALOG_BODY_BG und
+   PAL_DIALOG_SUB_BG, deutlich sichtbar anders als beide, bleibt aber in derselben Farbfamilie. */
+#define PAL_DIALOG_FOOTER_BG_R  75
+#define PAL_DIALOG_FOOTER_BG_G  54
+#define PAL_DIALOG_FOOTER_BG_B  20
 
-#define DIALOG_ROWS 14                                      /* Wunschgroesse -- wird in            */
-#define DIALOG_COLS 50                                       /* run_file_dialog() an rows/cols geklemmt */
+#define DIALOG_ROWS 17                                      /* Wunschgroesse -- wird in            */
+#define DIALOG_COLS 54                                       /* run_file_dialog() an rows/cols geklemmt.
+                                                                  17 statt 14 (2026-08-17, zweite Runde):
+                                                                  neuer Fussbereich (Halbblock-Buttons,
+                                                                  Filter-Popup) braucht 1 Zeile mehr als
+                                                                  vorher, +2 fuer etwas mehr Luft         */
 
 static void write_ansi(unsigned (*fn)(char *, unsigned))
 {
@@ -277,8 +292,8 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols, const cha
 }
 
 /* Oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20) zentriert ueber dem
-   aktuellen Bildschirm, scannt bewusst "." (das Arbeitsverzeichnis der Demo selbst -- reine
-   Vorfuehrung, keine echte Config-Anbindung, s. Kopfkommentar) mit ein paar Beispiel-Filtern.
+   aktuellen Bildschirm, scannt HOME (s.u.) mit ein paar Beispiel-Filtern -- reine Vorfuehrung,
+   keine echte Config-Anbindung, s. Kopfkommentar.
    Der Dialog ist bewusst NUR DIALOG_ROWS x DIALOG_COLS gross (Andreas' Feedback, 2026-08-17:
    "auf volle Groesse hatte ich mir den jetzt nicht vorgestellt") -- als Hintergrund steht der
    ECHTE Hauptbildschirm (ueber build_full_content(), s.o.), nicht mehr eine reine Fuellfarbe ueber
@@ -331,11 +346,22 @@ static int run_file_dialog(int rows, int cols, q9_listview_t *lv,
        (statt komplett unsichtbarer Markierung), s. q9_filedialog.c list_focus-Unterscheidung. */
     pal.unfocus_sel_fg_r = PAL_LIST_FG_R; pal.unfocus_sel_fg_g = PAL_LIST_FG_G; pal.unfocus_sel_fg_b = PAL_LIST_FG_B;
     pal.unfocus_sel_bg_r = PAL_DIALOG_SUB_BG_R; pal.unfocus_sel_bg_g = PAL_DIALOG_SUB_BG_G; pal.unfocus_sel_bg_b = PAL_DIALOG_SUB_BG_B;
+    /* Fussbereich (zweite Feedback-Runde, 2026-08-17) -- eigener Hintergrund ab der Statuszeile,
+       s. PAL_DIALOG_FOOTER_BG_* oben. Text darauf in derselben Farbe wie der Dialog-Fliesstext. */
+    pal.footer_fg_r = PAL_LIST_FG_R; pal.footer_fg_g = PAL_LIST_FG_G; pal.footer_fg_b = PAL_LIST_FG_B;
+    pal.footer_bg_r = PAL_DIALOG_FOOTER_BG_R; pal.footer_bg_g = PAL_DIALOG_FOOTER_BG_G; pal.footer_bg_b = PAL_DIALOG_FOOTER_BG_B;
 
-    if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
-                            "Konfigurationsauswahl", ".", filters, 3, &pal) != 0) {
-        snprintf(result_msg, result_msg_size, "Dateidialog: Fehler beim Start (O: erneut versuchen)");
-        return -1;
+    /* Andreas' Wunsch (2026-08-17): "stell den Pfad bitte mal auf das ~ Verzeichnis, dann sieht
+       man das besser" -- HOME statt "." fuer den Test (mehr/andere Dateien als im leeren
+       Demo-Arbeitsverzeichnis). Reine Vorfuehrung, keine echte Config-Anbindung, s. Kopfkommentar.
+       Kein HOME gesetzt (z.B. manche minimalen Umgebungen) -> Rueckfall auf ".". */
+    {
+        const char *home = getenv("HOME");
+        if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
+                                "Konfigurationsauswahl", home ? home : ".", filters, 3, &pal) != 0) {
+            snprintf(result_msg, result_msg_size, "Dateidialog: Fehler beim Start (O: erneut versuchen)");
+            return -1;
+        }
     }
 
     for (;;) {
@@ -492,5 +518,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.70
+// EOF integration_demo.c                                                                  Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────
