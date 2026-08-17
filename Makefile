@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 4.10
+# File:   Makefile                                                                        Ver. 4.20
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
 #         Bring-up-Vorbereitung).
@@ -52,6 +52,8 @@
 #         │      │ verifiziert)                                                                   │
 # 26-08-16│ 4.10 │ test-listview dazu (q9_listview.h/.c, scrollbare Listenansicht inkl.           │ Cld
 #         │      │ Scrollbalken)                                                                  │
+# 26-08-17│ 4.20 │ test-filelist dazu (q9_filelist.h/.c, Verzeichnis-Scan mit Name/Datum/Groesse   │ Cld
+#         │      │ -- Grundlage fuer den Datei-Auswahl-Dialog)                                    │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -214,7 +216,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-useslot
+test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-useslot
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -324,6 +326,17 @@ test-listview:
 	    tools/q9-flux-editor/src/q9_ansi.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/listview_selftest
 	$(BUILD)/$(PLATFORM_DIR)/listview_selftest
+
+# Verzeichnis-Scan mit Name/Datum/Groesse (q9_filelist.h/.c, 2026-08-17) -- Grundlage fuer den
+# kommenden Datei-Auswahl-Dialog. Legt/entfernt ein echtes Scratch-Verzeichnis im CWD waehrend des
+# Laufs (wie test/10_test_useslot.c's Scratch-Datei) -- kein Sonderfall, gleiches Muster wie die
+# anderen test-*-Ziele: direkter Aufruf, kein rekursives "$(MAKE) -C".
+test-filelist:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) tools/q9-flux-editor/test/filelist_selftest.c \
+	    tools/q9-flux-editor/src/q9_filelist.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/filelist_selftest
+	$(BUILD)/$(PLATFORM_DIR)/filelist_selftest
 
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test-riscv: ISA-Prueflauf fuer den vendorierten RISC-V-Kern (third_party/tinyemu).
@@ -530,7 +543,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 3.60
