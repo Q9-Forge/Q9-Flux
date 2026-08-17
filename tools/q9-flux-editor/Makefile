@@ -54,9 +54,9 @@ demo: $(BUILD)/ansi_selftest
 demo-integration: $(BUILD)/integration_demo
 	$(BUILD)/integration_demo
 
-$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c
+$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c -o $@
+	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c -o $@
 
 $(BUILD)/ansi_selftest: test/ansi_selftest.c src/q9_ansi.c src/q9_ansi.h
 	@mkdir -p $(BUILD)

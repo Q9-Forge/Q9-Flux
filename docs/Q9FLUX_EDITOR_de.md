@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.50
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.60
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -52,6 +52,8 @@
 #         │      │ Dialog-Zusammensetzung folgt noch                                               │
 # 26-08-17│ 2.50 │ q9_filedialog.h/.c FERTIG (task #20) -- der Dialog selbst ist komplett, logisch │ Cld
 #         │      │ getestet; offen bleibt nur noch die Einbindung ins Integrations-Demo (task #22) │
+# 26-08-17│ 2.60 │ task #22 FERTIG -- Dialog per Taste 'O' im Integrations-Demo, echter Pseudo-    │ Cld
+#         │      │ Terminal-Rauchtest bestanden. Datei-Auswahl-Dialog damit komplett abgeschlossen  │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -345,9 +347,20 @@ bestaetigt, dann von Andreas verfeinert):
   echtes Scratch-Verzeichnis fuer den Filter-Rescan) -- das tatsaechliche Bildschirmbild selbst ist
   wie bei `q9_widgets`/`q9_listview` kein automatisierter Test, sondern erst im Integrations-Demo
   sichtpruefbar.
-- **Noch offen:** die Einbindung ins Integrations-Demo (Dialog per Taste ausloesbar machen, echter
-  Pseudo-Terminal-Rauchtest) sowie die von Andreas noch nicht konkretisierten "paar Optionen" fuer
-  die Listenansicht.
+- `demo/integration_demo.c`: Taste `O` oeffnet den Dialog zentriert ueber dem Bildschirm (scannt
+  `.`, das Arbeitsverzeichnis der Demo selbst, mit Beispielfiltern `*.*`/`.c`/`.h` -- reine
+  Vorfuehrung, keine echte Config-Anbindung). Ergebnis (gewaehlte Datei bzw. Abbruch) ersetzt bis
+  zur naechsten Dialog-Oeffnung den unteren Hinweistext. DEMO-GRENZE (bewusst, s. Kommentar in
+  `run_file_dialog()`): ein Resize WAEHREND der Dialog offen ist, wird ignoriert (kein Nachziehen
+  der Dialog-Geometrie) -- ein echter Editor muesste hier neu snapshot/restore + re-initialisieren.
+  Echter Pseudo-Terminal-Rauchtest (expect, wie bei den fruehen Bausteinen dieser Session): Dialog
+  oeffnen, Escape -> Abbruch, TAB-Zyklus bis Abbrechen + Enter -> Abbruch, Enter direkt auf der
+  Liste -> Bestaetigung mit ECHTEM Dateinamen (alphabetisch erste Datei im Scan-Verzeichnis) --
+  alle Pruefungen bestanden.
+- **Damit ist task #20/#22 abgeschlossen** -- der Datei-Auswahl-Dialog ist fertig und im Demo
+  sichtbar/bedienbar. **Noch offen** bleiben die von Andreas noch nicht konkretisierten "paar
+  Optionen" fuer die Listenansicht (kein eigener Task bisher, s. Runde 5 oben) und die bewusst
+  vertagte Anzeige des aktuellen Verzeichnispfads im Dialog.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
