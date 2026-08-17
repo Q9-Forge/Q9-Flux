@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.80
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.90
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -60,6 +60,10 @@
 # 26-08-17│ 2.80 │ Siebte Runde: eigener Fussbereich (footer_bg), "richtige" Halbblock-Buttons     │ Cld
 #         │      │ (▀/▄), Filter-Aufklapp-Menue mit ▾ statt reinem Durchschalten, Scan-Verzeichnis  │
 #         │      │ auf HOME gestellt                                                                │
+# 26-08-17│ 2.90 │ Achte Runde: Bildlaufleiste im Hauptfenster+Dialog IMMER als Linie (nicht nur    │ Cld
+#         │      │ bei Scrollbedarf), linke Rahmenlinie im Dialog dazu, Buttons/Filter/Popup jetzt   │
+#         │      │ buendig mit der rechten Linie, Name-Spalte dynamisch (name_col_width), Spalten-  │
+#         │      │ titel-Zeile exakt so breit wie die Tabelle, Namens-Kaestchen bei "Datei:"          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -419,6 +423,41 @@ braucht), `integration_demo.c` Ver. 1.80 (Dialoggroesse 17x54 statt 14x50 fuer d
 Fussbereich). Neue Selbsttest-Faelle fuer das Aufklapp-Menue (oeffnen/navigieren/uebernehmen/nur-
 Popup-schliessen), `make test` weiterhin komplett gruen, per Rauchtest bestaetigt (Halbblock-
 Glyphen UND Dropdown-Pfeil tatsaechlich im ANSI-Output nachgewiesen).
+
+**Achte Runde (2026-08-17) -- Bildlaufleiste/Rahmen-Umbau, sechs Wuensche:**
+1. *"Die Bildlaufleiste wird jetzt der ganz rechte Strich... wird keine Laufleiste benoetigt ist es
+   einfach der normale Strich... im Hauptfenster sowie im Dialog"* -- `q9_listview.c` zeichnet die
+   rechte Spalte jetzt IMMER als Linie (`Q9_GLYPH_VLINE`), der Griff (`Q9_GLYPH_BLOCK`) kommt nur
+   ZUSAETZLICH dazu, wenn tatsaechlich etwas zu scrollen ist. Ersetzt die fruehere "-2 nur bei
+   Scrollbedarf"-Sonderregel -- gilt automatisch fuer Hauptfenster UND Dialog (beide nutzen
+   `q9_listview_render`).
+2. *"Im Dialog haben wir links dann auch einen einfachen Strich zwischen der Kopfzeile und der
+   neuen Statuszeile"* -- `q9_filedialog.c` zeichnet jetzt selbst eine LINKE Linie (q9_listview
+   kennt nur seine eigene rechte Spalte), spannt exakt die Listenhoehe (nicht den Fussbereich).
+3. *"Die Buttons und der Dateifilter wandern etwas nach links damit Platz fuer den Rahmen/
+   Bildlaufleiste ist"* -- Filter UND Buttons enden jetzt buendig mit der rechten Linie der
+   Dateiliste (`right_border_col`), nicht mehr am absoluten Dialogrand. Das Filter-Aufklapp-Menue
+   richtet sich ebenfalls danach aus.
+4. *"Hinter 'Datei:' wo der Name erscheint, sollte die Hintergrundfarbe noch mal abgesetzt sein,
+   als Kaestchen fuer den Namen"* -- der Namenswert bekommt jetzt ein eigenes `sub_fg/bg`-Kaestchen
+   (dieselbe Farbe wie die Spaltentitel-Zeile), statt nur Text auf dem Fussbereich-Hintergrund.
+5. *"Die Ueberschrift mit Name Datum Groesse sollte genau breit wie die Tabelle selber sein"* --
+   die Spaltentitel-Zeile spannt jetzt exakt von der linken bis zur rechten Linie (nicht mehr die
+   volle Dialogbreite).
+6. *"Groesse sollte ganz rechts stehen, Datum links daneben, und der Dateiname dann so lang wie
+   der Rest"* -- neues Feld `name_col_width` in `q9_filedialog_t`, EINMAL in `init()` aus der
+   tatsaechlichen Listenbreite berechnet (Rest nach Bildlaufleiste/Trennzeichen/Datum/Groesse) --
+   ersetzt die feste `Q9_FILEDIALOG_NAME_COL`-Konstante. Reine Spaltenreihenfolge (Name/Datum/
+   Groesse links nach rechts) war schon vorher so, nur die Breiten waren fest statt dynamisch.
+
+`q9_listview.h/.c` Ver. 1.20/1.30, `q9_filedialog.h/.c` Ver. 1.30 (neues Feld `name_col_width`,
+`Q9_FILEDIALOG_NAME_COL` entfernt zugunsten dynamischer Berechnung). Ein Selbsttest in
+`listview_selftest.c` musste angepasst werden (pruefte vorher "Spalte bleibt leer ohne Scrollbedarf"
+-- jetzt "Spalte zeigt die Linie ohne Scrollbedarf"). `make test` komplett gruen. Sichtpruefung per
+`pyte` (Terminal-Emulator-Bibliothek, einmalig fuer diese Runde installiert) bestaetigt exakte
+Spaltenausrichtung: "Name" beginnt in derselben Spalte wie die Dateinamen darunter, "Groesse" endet
+eine Spalte vor der Bildlaufleiste, Buttons/Filter enden buendig mit der rechten Linie, das
+Namens-Kaestchen hat exakt `name_col_width` Spalten in `sub_bg`-Farbe.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
