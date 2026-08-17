@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.10
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.20
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -40,6 +40,10 @@
 #         │      │ Entprellung (~150ms) gegen Flackern, Scrollbalken-Abstand zur Auswahl          │
 # 26-08-17│ 2.10 │ Statuszeile ueber die VOLLE Breite (keine Ecken mehr unten) -- Andreas: "wenn  │ Cld
 #         │      │ das gut ist, machen wir das vielleicht oben auch"                              │
+# 26-08-17│ 2.20 │ Dritte Feedback-Runde: Kopfzeile jetzt auch volle Breite (heller), feste       │ Cld
+#         │      │ Feldbreiten in der Statuszeile, Resize-Overlay-Modus ersetzt die 150ms-        │
+#         │      │ Entprellung komplett (LIVE-Groessenanzeige waehrend des Ziehens,               │
+#         │      │ q9_input_read_key_timeout() neu, Vollansicht erst nach 1s Stille)              │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -205,15 +209,52 @@ naechster Schritt.
   untere Kante SELBST. **Direkt danach noch einmal nachgebessert (Andreas: "aufgeraeumter, besser
   als dieser doppelte Strich"):** die Statuszeile geht jetzt ueber die VOLLE Breite (Spalte 0 bis
   cols-1), ueberschreibt auch die beiden unteren Eckzeichen -- keine Ecken mehr unten. Andreas'
-  Ankuendigung: "wenn das gut ist, machen wir das vielleicht oben auch" (Titelzeile) -- noch nicht
-  umgesetzt, wartet auf Rueckmeldung.
-- **Resize-Flackern behoben** -- `q9_input.c` bekam `wait_for_resize_settle()`: ein per Maus
-  gezogenes Resize loest viele SIGWINCH kurz hintereinander aus, `Q9_KEY_RESIZE` wird jetzt erst
-  ~150ms NACH dem letzten davon geliefert (Entprellung), statt bei jeder Zwischengroesse einzeln
-  neu zu zeichnen. Per `expect`/Pseudo-Terminal verifiziert: ein Burst aus 5 schnellen
-  Groessenaenderungen loest nur EINE Aktualisierung nach exakt der Entprellzeit aus.
+  Ankuendigung: "wenn das gut ist, machen wir das vielleicht oben auch" (Titelzeile) -- **erledigt
+  in der dritten Feedback-Runde, s.u.**
+- **Resize-Flackern behoben (ERSTER Ansatz, s. dritte Feedback-Runde fuer die endgueltige
+  Loesung)** -- `q9_input.c` bekam `wait_for_resize_settle()`: ein per Maus gezogenes Resize
+  loest viele SIGWINCH kurz hintereinander aus, `Q9_KEY_RESIZE` wurde erst ~150ms NACH dem
+  letzten davon geliefert (Entprellung), statt bei jeder Zwischengroesse einzeln neu zu zeichnen.
 - **Scrollbalken-Abstand** -- die markierte Zeile wurde bisher bis direkt an den Scrollbalken
   herangezeichnet ("verschmilzt"). `q9_listview.c`: ein Zeichen Abstand ergaenzt.
+
+**Dritte Feedback-Runde (2026-08-17), alles umgesetzt:**
+- **Kopfzeile jetzt ebenfalls ueber die volle Breite** (analog zur Statuszeile, Andreas' eigene
+  Ankuendigung von oben) -- etwas HELLER als die Statuszeile (`PAL_HEADER_BG` statt
+  `PAL_STATUS_BG`), gleiche Farbfamilie, damit man Kopf/Fuss auf einen Blick unterscheidet.
+- **Feste Feldbreiten in der Statuszeile** -- der Eintragsname huepfte je nach Laenge hin und her,
+  das "Terminal:"-Feld sprang mit. `integration_demo.c`: `NAME_FIELD_WIDTH` (30 Zeichen,
+  linksbuendig aufgefuellt/abgeschnitten per `%-*.*s`) + feste Ziffernbreiten fuer Zeilen/Spalten
+  -- "Terminal:" steht jetzt immer an derselben Spalte, unabhaengig von Auswahl/Groesse.
+- **Resize-Overlay-Modus ersetzt die 150ms-Entprellung komplett** -- Andreas: "das sieht einfach
+  bloed aus, wenn man immer versucht den kompletten Inhalt darzustellen" WAEHREND des Ziehens, UND
+  er wollte dabei eine LIVE aktualisierte Groessenanzeige sehen (kein bloss einmaliges Update am
+  Ende). Beides zusammen widerspricht der reinen 150ms-Entprellung (die haette Zwischenwerte
+  komplett verschluckt) -- deshalb grundlegend umgebaut:
+  - `q9_input.c`: `wait_for_resize_settle()`/die 150ms-Entprellung komplett ENTFERNT,
+    `Q9_KEY_RESIZE` kommt wieder sofort/unverzoegert bei JEDEM SIGWINCH (wie im allerersten
+    Wurf). Neue Funktion `q9_input_read_key_timeout(ms)` -- wie `read_key()`, aber mit
+    Zeitschranke (POSIX: `select()` statt blockierendem `read()`; Windows: Busy-Poll mit
+    `_kbhit()`, ungetestet mangels Windows-Host). `q9_input_read_key()` ist jetzt nur noch eine
+    duenne Huelle um `read_key_timeout(-1)`. Die eigentliche "wann ist Ruhe eingekehrt"-
+    Entscheidung liegt damit beim AUFRUFER, nicht mehr in der Bibliothek selbst.
+  - `integration_demo.c`: neuer Zustand `showing_overlay`. Jedes `Q9_KEY_RESIZE` schaltet SOFORT
+    ins Overlay (`render_size_overlay()`, zentriert "R Rows - C Columns") und zeichnet es LIVE bei
+    jedem weiteren Zwischenschritt neu -- kein Warten, keine Verzoegerung. Solange das Overlay
+    aktiv ist, wird mit `q9_input_read_key_timeout(1000)` gewartet: laeuft die Sekunde OHNE
+    weiteres Resize ab (`Q9_KEY_NONE`), kommt der volle Inhalt zurueck. Ist das Fenster dabei
+    (weiterhin) kleiner als die Mindestgroesse, bleibt das Overlay DAUERHAFT stehen (plus
+    "Fenster zu klein (mind. NxM)"-Zusatzzeile) -- ersetzt die fruehere separate
+    `render_too_small()`-Anzeige vollstaendig, beide Faelle (aktives Resize / dauerhaft zu klein)
+    nutzen jetzt dieselbe einfache Darstellung. Andreas' Frage "kannst du es dann auf die
+    Mindestgroesse setzen?" so interpretiert: es wird NICHTS auf eine feste Groesse geklemmt
+    (technisch bliebe das echte Fenster ja ohnehin so klein), sondern das Overlay bleibt einfach
+    stabil sichtbar, bis von Hand wieder vergroessert wird -- falls das nicht die gemeinte
+    Interpretation war, bitte zurueckmelden.
+  - Verifiziert per `expect`/Pseudo-Terminal, inkl. Zeitmessung: Overlay erscheint sofort bei
+    Resize, aktualisiert sich live bei einem zweiten Resize waehrend des Ziehens (ohne
+    Zwischenwartezeit), und die Vollansicht kehrt exakt nach ~1000ms Stille zurueck (gemessen:
+    1000ms). Zu-klein-Fall zeigt Groesse + Zusatzzeile wie vorgesehen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_input.c                                                                      Ver. 1.20
+// File:   q9_input.c                                                                      Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_input.h.
 //
@@ -11,6 +11,8 @@
 // 26-08-16│ 1.10 │ q9_term_size + Q9_KEY_RESIZE (POSIX: SIGWINCH unterbricht read() per EINTR) │ Cld
 // 26-08-17│ 1.20 │ wait_for_resize_settle() -- ~150ms Entprellung gegen Flackern bei per Maus  │ Cld
 //         │      │ gezogenem Resize (viele SIGWINCH kurz hintereinander)                        │
+// 26-08-17│ 1.30 │ Entprellung entfernt (Andreas will LIVE-Groessenanzeige waehrend des Ziehens)│ Cld
+//         │      │ -- q9_input_read_key_timeout() neu, SIGWINCH liefert wieder sofort/unverzoegert│
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_input.h"
 #include <string.h>
@@ -102,6 +104,10 @@ q9_key_t q9_input_decode(const char *buf, int len, int more_may_follow, int *con
 
 #ifdef _WIN32
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #include <conio.h>
 #include <io.h>
 
@@ -118,6 +124,31 @@ int q9_input_init(void)
 void q9_input_shutdown(void)
 {
     /* nichts zurueckzusetzen, s.o. */
+}
+
+/* UNGETESTET (kein Windows-Host hier): Busy-Poll mit kurzen Sleep()-Intervallen, da Windows kein
+   SIGWINCH-Aequivalent kennt und _kbhit()/_getch() selbst keine Zeitschranke unterstuetzen. Fuer
+   den vorgesehenen Zweck (Timeout im Sekundenbereich, kein enger Latenzbedarf) ausreichend. */
+q9_key_t q9_input_read_key_timeout(int timeout_ms)
+{
+    if (timeout_ms < 0) {
+        return q9_input_read_key();
+    }
+    {
+        DWORD start = GetTickCount();
+        for (;;) {
+            if (_kbhit()) {
+                return q9_input_read_key();
+            }
+            if ((DWORD)(GetTickCount() - start) >= (DWORD)timeout_ms) {
+                q9_key_t k;
+                k.kind = Q9_KEY_NONE;
+                k.ch   = 0;
+                return k;
+            }
+            Sleep(10);
+        }
+    }
 }
 
 q9_key_t q9_input_read_key(void)
@@ -177,7 +208,7 @@ int q9_term_size(int *rows, int *cols)
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/ioctl.h>
-#include <time.h>
+#include <sys/select.h>
 
 static struct termios orig_termios;
 static int  termios_saved = 0;
@@ -194,35 +225,6 @@ static void on_sigwinch(int sig)
     (void)sig;
     g_resize_pending = 1;                                  /* signalsicher: nur ein sig_atomic_t
                                                                setzen, keine weitere Arbeit im Handler */
-}
-
-#define Q9_RESIZE_DEBOUNCE_MS 150
-
-/* Andreas' Beobachtung (2026-08-17): waehrend eines Zieh-Resizes feuert JEDE einzelne
-   Groessenaenderung ein eigenes SIGWINCH -- ohne Entprellung wuerde die Hauptschleife bei jedem
-   einzelnen Zwischenschritt neu zeichnen, was stark flackert. wait_for_resize_settle() wartet, bis
-   fuer Q9_RESIZE_DEBOUNCE_MS KEIN weiteres SIGWINCH mehr eintrifft, bevor ueberhaupt EIN
-   Q9_KEY_RESIZE zurueckgegeben wird -- ein schneller Zieh-Resize erzeugt so nur EINE Neuzeichnung,
-   nachdem die Groesse sich beruhigt hat, statt vieler. Bewusst per nanosleep() statt select()/poll()
-   auf dem stdin-fd -- wir wollen hier NICHT auf Tastatureingabe warten, nur auf das Abklingen der
-   Resize-Bursts. */
-static void wait_for_resize_settle(void)
-{
-    g_resize_pending = 0;
-    for (;;) {
-        struct timespec ts;
-        ts.tv_sec  = 0;
-        ts.tv_nsec = Q9_RESIZE_DEBOUNCE_MS * 1000000L;
-        nanosleep(&ts, NULL);                              /* kann durch ein weiteres SIGWINCH per
-                                                                EINTR vorzeitig enden -- unschaedlich,
-                                                                wir pruefen danach den Zustand statt
-                                                                uns auf die exakte Schlafzeit zu
-                                                                verlassen */
-        if (!g_resize_pending) {
-            return;                                         /* keine weiteren Resizes -- fertig */
-        }
-        g_resize_pending = 0;                               /* neuer Resize -- von vorne warten */
-    }
 }
 
 /* Bewusst sigaction() statt signal() fuer SIGWINCH: einige signal()-Implementierungen (u.a. macOS/
@@ -291,7 +293,7 @@ void q9_input_shutdown(void)
     restore_termios();
 }
 
-q9_key_t q9_input_read_key(void)
+q9_key_t q9_input_read_key_timeout(int timeout_ms)
 {
     char buf[8];
     int  len;
@@ -300,9 +302,9 @@ q9_key_t q9_input_read_key(void)
     ssize_t r;
 
     if (g_resize_pending) {
-        /* Von einem frueheren SIGWINCH stehengeblieben (s.u.) -- erst entprellen (s.
-           wait_for_resize_settle()), dann melden. */
-        wait_for_resize_settle();
+        /* Von einem frueheren SIGWINCH stehengeblieben -- sofort melden (keine Entprellung mehr
+           auf dieser Ebene, s. Kopfkommentar). */
+        g_resize_pending = 0;
         k.kind = Q9_KEY_RESIZE;
         k.ch   = 0;
         return k;
@@ -313,12 +315,48 @@ q9_key_t q9_input_read_key(void)
         len = pending_len;
         pending_len = 0;
     } else {
+        if (timeout_ms >= 0) {
+            /* Mit Zeitschranke auf verfuegbare Daten warten, statt blockierend zu lesen -- select()
+               statt read() direkt, damit ein Timeout OHNE jegliche Eingabe erkennbar ist (Q9_KEY_NONE).
+               Aufrufer nutzen das z.B. fuer "nach N ms Stille wieder normal zeichnen". */
+            fd_set fds;
+            struct timeval tv;
+            int sel;
+            tv.tv_sec  = timeout_ms / 1000;
+            tv.tv_usec = (timeout_ms % 1000) * 1000;
+            FD_ZERO(&fds);
+            FD_SET(STDIN_FILENO, &fds);
+            sel = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
+            if (sel < 0 && errno == EINTR) {
+                if (g_resize_pending) {
+                    g_resize_pending = 0;
+                    k.kind = Q9_KEY_RESIZE;
+                    k.ch   = 0;
+                    return k;
+                }
+                k.kind = Q9_KEY_NONE;                      /* anderes/unerwartetes Signal -- wie
+                                                                Timeout behandeln, kein Byte verloren */
+                k.ch   = 0;
+                return k;
+            }
+            if (sel == 0) {
+                k.kind = Q9_KEY_NONE;                       /* Timeout, keine Eingabe               */
+                k.ch   = 0;
+                return k;
+            }
+            /* sel > 0: Daten stehen bereit -- normal weiterlesen wie im unbegrenzten Fall. */
+        }
         r = read(STDIN_FILENO, buf, 1);
         if (r < 0 && errno == EINTR) {
             /* Ein Signal (in der Praxis: SIGWINCH, s.o.) hat den blockierenden read() unterbrochen,
-               BEVOR irgendein Byte ankam -- kein Byte verloren/geraten. Erst entprellen, dann melden. */
-            wait_for_resize_settle();
-            k.kind = Q9_KEY_RESIZE;
+               BEVOR irgendein Byte ankam -- kein Byte verloren/geraten, sofort melden. */
+            if (g_resize_pending) {
+                g_resize_pending = 0;
+                k.kind = Q9_KEY_RESIZE;
+                k.ch   = 0;
+                return k;
+            }
+            k.kind = Q9_KEY_NONE;
             k.ch   = 0;
             return k;
         }
@@ -371,6 +409,11 @@ q9_key_t q9_input_read_key(void)
     return k;
 }
 
+q9_key_t q9_input_read_key(void)
+{
+    return q9_input_read_key_timeout(-1);                  /* -1 = unbegrenzt warten (altes Verhalten) */
+}
+
 int q9_term_size(int *rows, int *cols)
 {
     struct winsize ws;
@@ -389,5 +432,5 @@ int q9_term_size(int *rows, int *cols)
 #endif /* _WIN32 */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_input.c                                                                          Ver. 1.20
+// EOF q9_input.c                                                                          Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
