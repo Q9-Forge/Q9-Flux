@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 1.70
+# File:   Makefile                                                                        Ver. 1.80
 # Owner:  Claudia
 # Desc.:  Q9-Flux-Launcher/Config-Editor -- Grundstein (docs/Q9FLUX_EDITOR_de.md). Bewusst C99 ohne
 #         TUI-Framework, s. src/q9_ansi.h Kopfkommentar (Vorgeschichte: gescheiterter Turbo-Vision-
@@ -29,6 +29,8 @@
 #         │      │ zusammen in einem echten Bildschirm, Andreas wollte sich das ansehen     │
 # 26-08-17│ 1.70 │ filelist_selftest dazu (q9_filelist.h/.c, Verzeichnis-Scan -- Grundlage │ Cld
 #         │      │ fuer den kommenden Datei-Auswahl-Dialog)                                 │
+# 26-08-17│ 1.80 │ filedialog_selftest dazu (q9_filedialog.h/.c, modaler Datei-Auswahl-    │ Cld
+#         │      │ Dialog -- task #20, letzter fehlender UI-Baustein aus dem Plan)          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 CC      ?= gcc
 CFLAGS  := -std=c99 -Wall -Wextra -O2
@@ -36,7 +38,7 @@ BUILD   := build
 
 .PHONY: test demo demo-integration clean
 
-test: $(BUILD)/ansi_selftest $(BUILD)/screenbuf_selftest $(BUILD)/widgets_selftest $(BUILD)/procspawn_selftest $(BUILD)/input_selftest $(BUILD)/listview_selftest $(BUILD)/filelist_selftest
+test: $(BUILD)/ansi_selftest $(BUILD)/screenbuf_selftest $(BUILD)/widgets_selftest $(BUILD)/procspawn_selftest $(BUILD)/input_selftest $(BUILD)/listview_selftest $(BUILD)/filelist_selftest $(BUILD)/filedialog_selftest
 	$(BUILD)/ansi_selftest
 	$(BUILD)/screenbuf_selftest
 	$(BUILD)/widgets_selftest
@@ -44,6 +46,7 @@ test: $(BUILD)/ansi_selftest $(BUILD)/screenbuf_selftest $(BUILD)/widgets_selfte
 	$(BUILD)/input_selftest
 	$(BUILD)/listview_selftest
 	$(BUILD)/filelist_selftest
+	$(BUILD)/filedialog_selftest
 
 demo: $(BUILD)/ansi_selftest
 	$(BUILD)/ansi_selftest --demo
@@ -82,6 +85,14 @@ $(BUILD)/listview_selftest: test/listview_selftest.c src/q9_listview.c src/q9_li
 $(BUILD)/filelist_selftest: test/filelist_selftest.c src/q9_filelist.c src/q9_filelist.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) test/filelist_selftest.c src/q9_filelist.c -o $@
+
+$(BUILD)/filedialog_selftest: test/filedialog_selftest.c src/q9_filedialog.c src/q9_filedialog.h \
+                               src/q9_filelist.c src/q9_listview.c src/q9_screenbuf.c \
+                               src/q9_input.c src/q9_ansi.c
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) test/filedialog_selftest.c src/q9_filedialog.c src/q9_filelist.c \
+	    src/q9_listview.c src/q9_screenbuf.c src/q9_input.c src/q9_ansi.c \
+	    -o $@
 
 clean:
 	rm -rf $(BUILD)
