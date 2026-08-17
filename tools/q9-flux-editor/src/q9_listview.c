@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.00
+// File:   q9_listview.c                                                                   Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -8,6 +8,8 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-16│ 1.00 │ Erster Wurf                                                              │ Cld
+// 26-08-17│ 1.10 │ Proportionaler Scrollbalken-Griff (Andreas), Q9_GLYPH_VLINE/BLOCK statt   │ Cld
+//         │      │ ASCII                                                                      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -96,17 +98,40 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
     if (has_scrollbar) {
         int sb_col = lv->col + lv->width - 1;
         int max_offset = lv->item_count - lv->height;      /* > 0 garantiert, s. has_scrollbar oben  */
-        int thumb_row;
+        int thumb_height, thumb_start, max_thumb_start;
+        char track_str[2], thumb_str[2];
+        track_str[0] = Q9_GLYPH_VLINE; track_str[1] = '\0';
+        thumb_str[0] = Q9_GLYPH_BLOCK; thumb_str[1] = '\0';
         if (max_offset < 1) { max_offset = 1; }             /* defensiv, Divisionsschutz              */
 
         for (i = 0; i < lv->height; i++) {
-            q9_screenbuf_puts(sb, lv->row + i, sb_col, "|", fg_r, fg_g, fg_b);
+            q9_screenbuf_puts(sb, lv->row + i, sb_col, track_str, fg_r, fg_g, fg_b);
         }
-        thumb_row = lv->row + (lv->scroll_offset * (lv->height - 1)) / max_offset;
-        q9_screenbuf_puts(sb, thumb_row, sb_col, "#", sel_bg_r, sel_bg_g, sel_bg_b);
+
+        /* Proportionale Griffgroesse (Andreas' Wunsch, 2026-08-17): der Griff nimmt denselben Anteil
+           der Balkenhoehe ein wie der sichtbare Anteil der Liste (height/item_count) -- bei 50%
+           sichtbar also auch 50% Griffhoehe. Mindestens 1 Zeile; hoechstens height-1, damit IMMER
+           erkennbar bleibt, dass es ueberhaupt etwas zu scrollen gibt (ein Griff so gross wie die
+           ganze Spur saehe wie "nichts zu scrollen" aus -- kann bei has_scrollbar aber ohnehin nicht
+           passieren, da item_count>height hier garantiert ist). */
+        thumb_height = (lv->height * lv->height) / lv->item_count;
+        if (thumb_height < 1)              { thumb_height = 1; }
+        if (thumb_height > lv->height - 1) { thumb_height = lv->height - 1; }
+        if (thumb_height < 1)              { thumb_height = 1; }   /* height==1: height-1==0-Randfall */
+
+        max_thumb_start = lv->height - thumb_height;
+        if (max_thumb_start < 1) { max_thumb_start = 1; }
+        thumb_start = (lv->scroll_offset * max_thumb_start) / max_offset;
+        if (thumb_start > lv->height - thumb_height) { thumb_start = lv->height - thumb_height; }
+        if (thumb_start < 0)                          { thumb_start = 0; }
+
+        for (i = 0; i < thumb_height; i++) {
+            q9_screenbuf_puts(sb, lv->row + thumb_start + i, sb_col, thumb_str,
+                               sel_bg_r, sel_bg_g, sel_bg_b);
+        }
     }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.00
+// EOF q9_listview.c                                                                       Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

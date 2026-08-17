@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.80
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 1.90
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -33,7 +33,10 @@
 #         │      │ steht                                                                        │
 # 26-08-16│ 1.80 │ Dynamische Groessenanpassung FERTIG (q9_term_size + Q9_KEY_RESIZE, SIGWINCH); │ Cld
 #         │      │ dabei echten macOS-signal()-vs-sigaction()-Bug per Pty-Test gefunden+behoben  │
-#═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
+# 26-08-17│ 1.90 │ Integrations-Demo FERTIG (demo/integration_demo.c); Andreas' Feedback danach  │ Cld
+#         │      │ umgesetzt: Mindestgroesse, proportionaler Scrollbalken, eigene Statuszeile,   │
+#         │      │ echte Unicode-Box-Drawing-Zeichen, warme Farbpalette. Maus bewusst vertagt     │
+#═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
 
@@ -144,15 +147,48 @@ SIGWINCH-Aequivalent, `q9_term_size()` funktioniert dort (`GetConsoleScreenBuffe
 `Q9_KEY_RESIZE` wird nie von sich aus geliefert -- ein kuenftiger Windows-Zweig der Hauptschleife
 muesste selbst regelmaessig nachfragen (mangels Windows-Host hier ungetestet).
 
-**Noch offen:** Buttons/Textfelder (Aussehen noch nicht mit Andreas geklaert, s. Abschnitt 3 unten
-"genauer Zuschnitt/Wortlaut nicht final") und das eigentliche Zusammensetzen aller Bausteine
-(q9_screenbuf/q9_widgets/q9_procspawn/q9_input/q9_listview) zu echten, bedienbaren Bildschirmen --
-alle Grundbausteine sind jetzt da, es fehlt noch das Programm selbst. Maus-Unterstuetzung
-weiterhin nicht angefangen. **Neu (2026-08-16):** Andreas' Idee, die inzwischen 6 Module als
-eigene, wiederverwendbare Bibliothek ("Q9TUI") zu benennen/umzuziehen (`tools/q9tui/` statt
-`tools/q9-flux-editor/src/`) -- bewusst VERTAGT, bis der Editor selbst einen brauchbaren
-Grundstock ergibt ("erst das hier weiter machen, wenn wir fertig sind haben wir vielleicht einen
-guten Grundstock fuer die Lib").
+**Integrations-Demo FERTIG (2026-08-17):** Andreas wollte sich das Ganze mal ansehen -- bis dahin
+gab es nur einzelne, fuer sich getestete Module ohne zusammengesetztes Programm.
+`tools/q9-flux-editor/demo/integration_demo.c` (`make demo-integration`) zeigt alle sechs
+Bausteine zusammen in einem echten, bedienbaren Bildschirm: Rahmen mit Titel, scrollbare
+20-Eintrag-Demo-Geraeteliste, Pfeiltasten-Navigation, Statuszeile, Reaktion auf Terminal-Resize.
+KEIN echter Editor (keine Config-Anbindung, keine echten Hardware-Typen, keine Buttons) -- reine
+Sichtpruefung, dass die Bausteine zusammenpassen. Per `expect`/Pseudo-Terminal-Rauchtest
+verifiziert.
+
+**Andreas' Feedback nach dem ersten Ansehen (2026-08-17), alles umgesetzt:**
+- **Mindestgroesse**: unter 60x20 sah das Layout "sehr komisch" aus -- `integration_demo.c` zeigt
+  darunter jetzt einen Hinweistext ("Fenster zu klein... mind. 20x60") statt eines verzerrten
+  Rahmens. `MIN_ROWS`/`MIN_COLS`-Konstanten, Anwendungs-Policy (nicht Teil der Bibliothek selbst).
+- **Scrollbalken-Griff war immer nur 1 Zeichen gross** -- jetzt PROPORTIONAL zum sichtbaren Anteil
+  (`q9_listview.c`, z.B. 50% sichtbar -> Griff nimmt 50% der Balkenhoehe ein), mindestens 1 Zeile,
+  hoechstens Balkenhoehe-1 (damit immer erkennbar bleibt, dass es ueberhaupt etwas zu scrollen
+  gibt). Neue Tests inkl. genau Andreas' eigenem 50%-Beispiel.
+- **"Kleine Linie ganz rechts unten"** -- war die Statuszeile, die bisher in die untere
+  Rahmenkante hineingemischt wurde (Text ueberschrieb nur einen Teil der Kanten-Striche, der Rest
+  blieb als kurzes Dashes-Stueck sichtbar). Behoben: Statuszeile bekommt jetzt eine EIGENE Zeile
+  mit eigenem (gedecktem, "inversem") Hintergrund, die untere Rahmenkante bleibt durchgehend sauber.
+- **"Volle Linien" statt ASCII** -- `q9_screenbuf.h` bekam `Q9_GLYPH_HLINE/VLINE/TL/TR/BL/BR/BLOCK`:
+  Ein-Byte-Sentinels (kein Struktur-Umbau von `q9_screencell_t` noetig), die ERST beim Rendern in
+  echtes UTF-8-Unicode-Box-Drawing (`─│┌┐└┘█`) uebersetzt werden. `draw_frame()` und der
+  Scrollbalken nutzen sie jetzt statt `'+'/'-'/'|'/'#'`. BEKANNTER KOMPROMISS: aeltere
+  Windows-Konsolen (vor UTF-8-Codepage/Windows Terminal) koennten das falsch darstellen --
+  ungetestet, da kein Windows-Host hier verfuegbar.
+- **Warme Farbpalette** ("aehnliche Toene", Vorbild Hermes-Farbschema) -- `integration_demo.c`
+  nutzt jetzt konsequent Amber-/Beige-/Braun-Toene statt der urspruenglichen bunt gemischten
+  Zufallsfarben. Eine "kuehle" Variante (Blau/Gruen/Cyan) waere nach demselben Muster moeglich.
+  Eine echte UMSCHALTBARE Palette (mehrere Saetze + Laufzeit-Auswahl) ist als "Endausbau"-Idee
+  vorgemerkt, noch nicht gebaut -- aktuell nur EIN fest verdrahteter Satz im Demo-Programm.
+
+**Maus-Unterstuetzung -- weiterhin NICHT angefangen, bewusst als eigene Aufgabe vertagt:**
+Andreas' Beobachtung ("mit dem Scrollrad schiebe ich momentan das ganze Fenster weg") ist genau
+das erwartete Verhalten OHNE aktivierte Maus-Unterstuetzung: das Terminal-EMULATORPROGRAMM selbst
+(nicht unser Code) faengt das Mausrad ab und scrollt seinen eigenen Scrollback-Puffer, weil wir
+ihm nie gesagt haben, dass wir Mausereignisse stattdessen SELBST bekommen wollen (xterm-Mouse-
+Reporting muss explizit per Escape-Sequenz angefordert werden). Bereits in Abschnitt 2 als "echte
+Zusatzanforderung" markiert (SGR-Mausmodus aktivieren/deaktivieren, Escape-Sequenzen parsen,
+Terminal-Abdeckung pruefen) -- aus Umfangsgruenden nicht Teil dieser Aenderungsrunde, eigener
+naechster Schritt.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
