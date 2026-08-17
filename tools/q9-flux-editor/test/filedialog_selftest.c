@@ -1,15 +1,23 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   filedialog_selftest.c                                                          Ver. 1.00
+// File:   filedialog_selftest.c                                                          Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_filedialog.h/.c -- reine Zustandslogik (Fokus-Zyklus,
-//         Filter-Zyklus, Escape/Enter-Verhalten, "eingefroren nach done!=0") mit einem echten
-//         Scratch-Verzeichnis (wie filelist_selftest.c). Rendering selbst (q9_filedialog_render)
-//         wird NICHT geprueft (kein automatisierter Sichtvergleich, gleiches Muster wie
-//         widgets_selftest/listview_selftest -- die pruefen auch nur die Geometrie-/Zustandslogik,
-//         nicht das tatsaechliche Bildschirmbild).
+//         Filter-Zyklus, Filter-Aufklapp-Menue, Escape/Enter-Verhalten, "eingefroren nach
+//         done!=0") mit einem echten Scratch-Verzeichnis (wie filelist_selftest.c). Rendering
+//         selbst (q9_filedialog_render) wird NICHT geprueft (kein automatisierter Sichtvergleich,
+//         gleiches Muster wie widgets_selftest/listview_selftest -- die pruefen auch nur die
+//         Geometrie-/Zustandslogik, nicht das tatsaechliche Bildschirmbild).
 //
 // Call:   build/filedialog_selftest
-//════════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Edition History
+//─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
+// Date    │ Ver. │ Description                                                            │ By
+//─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
+// 26-08-17│ 1.00 │ Erster Wurf                                                              │ Cld
+// 26-08-17│ 1.10 │ Filter-Aufklapp-Menue-Checks dazu (oeffnen per Enter/Pfeil-runter,        │ Cld
+//         │      │ navigieren, uebernehmen, Escape schliesst nur das Popup)                 │
+//═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -150,6 +158,53 @@ int main(void)
     check_int("Fokus bleibt ebenfalls unveraendert (kein Seiteneffekt mehr)",
               (int)dlg.focus, (int)Q9_FILEDIALOG_FOCUS_LIST);
 
+    printf("=== Filter-Aufklapp-Menue: oeffnen, navigieren, uebernehmen ===\n");
+    q9_filedialog_init(&dlg, 2, 2, 16, 50, "T", dir, filters, 3, &pal);
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_TAB));           /* -> FILTER */
+    check_int("Popup startet geschlossen", dlg.filter_popup_open, 0);
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_ENTER));
+    check_int("Enter auf FILTER oeffnet das Popup (nicht mehr Pfeil-rechts-Ersatz)",
+              dlg.filter_popup_open, 1);
+    check_int("Popup-Auswahl startet beim aktuellen Filter (Index 0, '*.*')", dlg.filter_popup_index, 0);
+    check_str("Filter selbst noch unveraendert waehrend das Popup offen ist",
+              dlg.filters[dlg.filter_index], "*.*");
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_DOWN));
+    check_int("Pfeil runter im Popup -> Index 1", dlg.filter_popup_index, 1);
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_DOWN));
+    check_int("Pfeil runter im Popup -> Index 2 (.img)", dlg.filter_popup_index, 2);
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_DOWN));
+    check_int("Pfeil runter am Ende des Popups -> bleibt auf Index 2 (kein Rundlauf)",
+              dlg.filter_popup_index, 2);
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_UP));
+    check_int("Pfeil hoch im Popup -> Index 1", dlg.filter_popup_index, 1);
+    r = q9_filedialog_handle_key(&dlg, key(Q9_KEY_ENTER));
+    check_int("Enter im Popup -> weiterhin offen (0), Popup schliesst NICHT den Dialog", r, 0);
+    check_int("Popup jetzt geschlossen", dlg.filter_popup_open, 0);
+    check_str("Filter uebernommen (Index 1 -> '.q9')", dlg.filters[dlg.filter_index], ".q9");
+    check_int("Verzeichnis mit dem neuen Filter neu gescannt -> 2 Dateien", dlg.files.count, 2);
+
+    printf("=== Filter-Aufklapp-Menue: Pfeil runter (statt Enter) oeffnet es ebenfalls ===\n");
+    q9_filedialog_init(&dlg, 2, 2, 16, 50, "T", dir, filters, 3, &pal);
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_TAB));
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_DOWN));
+    check_int("Pfeil runter auf FILTER oeffnet das Popup", dlg.filter_popup_open, 1);
+
+    printf("=== Filter-Aufklapp-Menue: Escape schliesst NUR das Popup, nicht den Dialog ===\n");
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_DOWN));          /* Index 1, aber noch NICHT bestaetigt */
+    r = q9_filedialog_handle_key(&dlg, key(Q9_KEY_ESCAPE));
+    check_int("Escape im Popup -> Dialog bleibt offen (0)", r, 0);
+    check_int("Popup jetzt geschlossen", dlg.filter_popup_open, 0);
+    check_str("Filter UNVERAENDERT (Auswahl verworfen, '*.*' bleibt aktiv)",
+              dlg.filters[dlg.filter_index], "*.*");
+
+    printf("=== Filter-Aufklapp-Menue: waehrend es offen ist, ignoriert alles ausser Pfeil/Enter/Escape ===\n");
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_ENTER));         /* Popup wieder oeffnen (Fokus: FILTER) */
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_TAB));
+    check_int("TAB waehrend Popup offen -> Fokus bleibt unveraendert (FILTER)",
+              (int)dlg.focus, (int)Q9_FILEDIALOG_FOCUS_FILTER);
+    check_int("Popup bleibt offen", dlg.filter_popup_open, 1);
+    q9_filedialog_handle_key(&dlg, key(Q9_KEY_ESCAPE));        /* aufraeumen fuer die naechsten Checks */
+
     printf("=== Enter auf leerer Liste bestaetigt nicht ===\n");
     {
         q9_filedialog_t dlg_empty;
@@ -182,5 +237,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF filedialog_selftest.c                                                              Ver. 1.00
+// EOF filedialog_selftest.c                                                              Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
