@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.30
+// File:   integration_demo.c                                                             Ver. 2.40
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -77,6 +77,11 @@
 //         │      │ lesbar auf hellem Gelb), neue PAL_DIALOG_SUB_FG fuer Tabellenkopf/Namens-Kaestchen/│
 //         │      │ OK-Abbrechen (mehr Kontrast), PAL_DIALOG_FOOTER_BG referenziert jetzt PAL_STATUS_BG│
 //         │      │ direkt, Hauptfenster-Liste bekommt line_fg=PAL_FRAME (Linien-Farbinkonsistenz-Fix) │
+// 26-08-17│ 2.40 │ Achte Feedback-Runde: render_size_overlay() nutzt PAL_STATUS_FG statt PAL_HEADER_FG│ Cld
+//         │      │ (war unlesbar dunkel geworden, kein farbiger Hintergrund dort), neue eigene       │
+//         │      │ status_fg/bg-Felder fuer die Dialog-Statuszeile (jetzt = Hauptfenster-Statuszeile),│
+//         │      │ run_file_dialog() behandelt Resize waehrend der Dialog offen ist (compute_dialog_  │
+//         │      │ geometry() zentriert dabei automatisch neu), rows/cols jetzt Zeiger                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -241,8 +246,14 @@ static void render_size_overlay(int rows, int cols, int too_small)
     mid_row = rows / 2;
     mid_col = (cols - len1) / 2;
     if (mid_col < 0) { mid_col = 0; }
+    /* PAL_STATUS_FG statt PAL_HEADER_FG (Andreas' Feedback, 2026-08-17): dieser Text steht auf
+       KEINEM eigenen farbigen Hintergrund (nur q9_screenbuf_init(), also Terminal-Default,
+       typischerweise dunkel) -- PAL_HEADER_FG wurde in der letzten Runde bewusst DUNKEL gemacht
+       (Kontrast auf dem jetzt kraeftigen PAL_HEADER_BG), hier fehlte dieser Hintergrund also
+       komplett und der Text war praktisch unsichtbar. PAL_STATUS_FG ist nach wie vor hell und
+       genau fuer "Text ohne eigenen Hintergrund" gedacht. */
     q9_screenbuf_puts(&sb, too_small ? mid_row - 1 : mid_row, mid_col, line1,
-                       PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
+                       PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
 
     if (too_small) {
         char line2[64];
@@ -252,7 +263,7 @@ static void render_size_overlay(int rows, int cols, int too_small)
         mid_col2 = (cols - len2) / 2;
         if (mid_col2 < 0) { mid_col2 = 0; }
         q9_screenbuf_puts(&sb, mid_row + 1, mid_col2, line2,
-                           PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
+                           PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
     }
 
     {
@@ -351,6 +362,24 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols, const cha
     fflush(stdout);
 }
 
+/* Berechnet dlg_row/dlg_col/dlg_rows/dlg_cols aus der aktuellen Terminal-Groesse -- IMMER zentriert
+   (Andreas' Wunsch, 2026-08-17, elfte Runde: "waere auch gut wenn der Dialog nach dem
+   Positionieren immer wieder mittig positioniert wird"). Ausgelagert aus run_file_dialog(), damit
+   dieselbe Formel sowohl beim ersten Oeffnen ALS AUCH bei einem Resize waehrend der Dialog offen
+   ist verwendet wird (s. dort) -- ein Resize zentriert den Dialog dadurch automatisch neu. */
+static void compute_dialog_geometry(int rows, int cols, int *dlg_row, int *dlg_col,
+                                     int *dlg_rows, int *dlg_cols)
+{
+    *dlg_rows = DIALOG_ROWS;
+    *dlg_cols = DIALOG_COLS;
+    if (*dlg_rows > rows - 2) { *dlg_rows = rows - 2; }
+    if (*dlg_cols > cols - 2) { *dlg_cols = cols - 2; }
+    *dlg_row = (rows - *dlg_rows) / 2;
+    *dlg_col = (cols - *dlg_cols) / 2;
+    if (*dlg_row < 1) { *dlg_row = 1; }
+    if (*dlg_col < 1) { *dlg_col = 1; }
+}
+
 /* Oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20) zentriert ueber dem
    aktuellen Bildschirm, scannt HOME (s.u.) mit ein paar Beispiel-Filtern -- reine Vorfuehrung,
    keine echte Config-Anbindung, s. Kopfkommentar.
@@ -359,33 +388,35 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols, const cha
    ECHTE Hauptbildschirm (ueber build_full_content(), s.o.), nicht mehr eine reine Fuellfarbe ueber
    den ganzen Schirm (das war der eigentliche Grund, warum es vorher wie Vollbild aussah, obwohl
    der Dialog selbst schon immer klein war).
-   DEMO-GRENZE: ein Terminal-Resize WAEHREND der Dialog offen ist, wird hier bewusst IGNORIERT
-   (Dialog bleibt in seiner urspruenglichen Groesse/Position stehen, kein Nachziehen) -- ein
-   echter Editor muesste hier neu snapshot/restore + den Dialog re-initialisieren, das würde die
-   Demo aber unnoetig verkomplizieren. Strg-C/EOF waehrend des Dialogs wird dagegen NICHT
-   ignoriert (sonst liesse sich das Programm aus dem Dialog heraus nicht mehr beenden) --
+   rows/cols sind jetzt Zeiger (nicht mehr nur Eingabe) -- ein Terminal-Resize WAEHREND der Dialog
+   offen ist wird jetzt behandelt (Andreas' Feedback, elfte Runde: "Fenster Groesse aendern
+   waehrend ein Dialog auf ist funktioniert nicht richtig"): q9_term_size() wird neu abgefragt, der
+   Dialog wird MIT DENSELBEN Filtern/Verzeichnis/Palette neu initialisiert (compute_dialog_geometry,
+   s.o., zentriert automatisch neu -- erledigt gleichzeitig den zweiten Wunsch "immer wieder
+   mittig"). DEMO-GRENZE: das Neu-Initialisieren setzt Fokus/Auswahl/Filter auf ihre Startwerte
+   zurueck (kein Nachziehen des BISHERIGEN Zustands) -- ein echter Editor wuerde hier gezielter nur
+   die Geometrie aktualisieren; fuer die Demo ist das ein akzeptabler Kompromiss (Resize mitten in
+   der Dateiauswahl ist ein Randfall). Die Zeiger werden aktualisiert, damit der Aufrufer nach
+   Rueckkehr die dann aktuelle Terminal-Groesse kennt. Strg-C/EOF waehrend des Dialogs wird
+   NICHT ignoriert (sonst liesse sich das Programm aus dem Dialog heraus nicht mehr beenden) --
    signalisiert per Rueckgabe 0 an den Aufrufer, der dann seinerseits sauber beendet.
    Rueckgabe: 1 = Datei ausgewaehlt (result_msg beschreibt sie), -1 = abgebrochen (result_msg
    entsprechend gesetzt), 0 = Strg-C/EOF (result_msg unveraendert -- Aufrufer beendet ohnehin).
    result_msg dient WAEHREND der Dialoglaufzeit zusaetzlich als "aktueller Hinweistext" fuer den
    Hintergrund (unveraendert bis zum Ende der Funktion) -- spart einen eigenen Parameter dafuer. */
-static int run_file_dialog(int rows, int cols, q9_listview_t *lv,
+static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
                             char *result_msg, unsigned result_msg_size)
 {
     static const char *const filters[] = { "*.*", ".c", ".h" };
+    const char *home = getenv("HOME");
+    const char *dir = home ? home : ".";
     q9_filedialog_palette_t pal;
     q9_filedialog_t dlg;
-    int dlg_rows = DIALOG_ROWS, dlg_cols = DIALOG_COLS;
-    int dlg_row, dlg_col;
+    int dlg_row, dlg_col, dlg_rows, dlg_cols;
     int done = 0;
     int want_quit = 0;
 
-    if (dlg_rows > rows - 2) { dlg_rows = rows - 2; }
-    if (dlg_cols > cols - 2) { dlg_cols = cols - 2; }
-    dlg_row = (rows - dlg_rows) / 2;
-    dlg_col = (cols - dlg_cols) / 2;
-    if (dlg_row < 1) { dlg_row = 1; }
-    if (dlg_col < 1) { dlg_col = 1; }
+    compute_dialog_geometry(*rows, *cols, &dlg_row, &dlg_col, &dlg_rows, &dlg_cols);
 
     memset(&pal, 0, sizeof(pal));
     pal.header_fg_r = PAL_HEADER_FG_R; pal.header_fg_g = PAL_HEADER_FG_G; pal.header_fg_b = PAL_HEADER_FG_B;
@@ -410,18 +441,21 @@ static int run_file_dialog(int rows, int cols, q9_listview_t *lv,
        s. PAL_DIALOG_FOOTER_BG_* oben. Text darauf in derselben Farbe wie der Dialog-Fliesstext. */
     pal.footer_fg_r = PAL_LIST_FG_R; pal.footer_fg_g = PAL_LIST_FG_G; pal.footer_fg_b = PAL_LIST_FG_B;
     pal.footer_bg_r = PAL_DIALOG_FOOTER_BG_R; pal.footer_bg_g = PAL_DIALOG_FOOTER_BG_G; pal.footer_bg_b = PAL_DIALOG_FOOTER_BG_B;
+    /* Untere Statuszeile -- EXAKT dieselbe Farbe wie die Hauptfenster-Statuszeile (Andreas'
+       Feedback, elfte Runde: "die Statuszeilen sind noch unterschiedlich"), ueber eigene
+       status_fg/bg-Felder statt header_fg/bg (das bliebe sonst an die Dialog-Kopfzeile gekoppelt,
+       s. q9_filedialog.h). */
+    pal.status_fg_r = PAL_STATUS_FG_R; pal.status_fg_g = PAL_STATUS_FG_G; pal.status_fg_b = PAL_STATUS_FG_B;
+    pal.status_bg_r = PAL_STATUS_BG_R; pal.status_bg_g = PAL_STATUS_BG_G; pal.status_bg_b = PAL_STATUS_BG_B;
 
     /* Andreas' Wunsch (2026-08-17): "stell den Pfad bitte mal auf das ~ Verzeichnis, dann sieht
        man das besser" -- HOME statt "." fuer den Test (mehr/andere Dateien als im leeren
        Demo-Arbeitsverzeichnis). Reine Vorfuehrung, keine echte Config-Anbindung, s. Kopfkommentar.
        Kein HOME gesetzt (z.B. manche minimalen Umgebungen) -> Rueckfall auf ".". */
-    {
-        const char *home = getenv("HOME");
-        if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
-                                "Konfigurationsauswahl", home ? home : ".", filters, 3, &pal) != 0) {
-            snprintf(result_msg, result_msg_size, "Dateidialog: Fehler beim Start (O: erneut versuchen)");
-            return -1;
-        }
+    if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
+                            "Konfigurationsauswahl", dir, filters, 3, &pal) != 0) {
+        snprintf(result_msg, result_msg_size, "Dateidialog: Fehler beim Start (O: erneut versuchen)");
+        return -1;
     }
 
     for (;;) {
@@ -431,7 +465,7 @@ static int run_file_dialog(int rows, int cols, q9_listview_t *lv,
         /* Echter Hauptbildschirm als Hintergrund (s. Funktionskommentar) -- der Dialog selbst
            ueberschreibt danach nur sein EIGENES Rechteck (q9_filedialog_render() faengt mit
            seinem eigenen fill_rect ueber dlg->row/col/rows/cols an), der Rest bleibt sichtbar. */
-        build_full_content(&sb, lv, rows, cols, result_msg);
+        build_full_content(&sb, lv, *rows, *cols, result_msg);
         q9_filedialog_render(&dlg, &sb);
         {
             unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
@@ -442,7 +476,24 @@ static int run_file_dialog(int rows, int cols, q9_listview_t *lv,
         {
             q9_key_t k = q9_input_read_key();
             if (k.kind == Q9_KEY_CTRL_C || k.kind == Q9_KEY_EOF) { want_quit = 1; break; }
-            if (k.kind == Q9_KEY_RESIZE) { continue; }        /* Demo-Grenze, s. Funktionskommentar */
+            if (k.kind == Q9_KEY_RESIZE) {
+                /* Terminal-Groesse neu abfragen (wie main()'s eigene Behandlung von
+                   Q9_KEY_RESIZE, s.u.), Dialog-Geometrie neu berechnen (zentriert automatisch
+                   neu, s. compute_dialog_geometry()) und den Dialog MIT DENSELBEN Filtern/
+                   Verzeichnis/Palette neu aufsetzen -- s. Funktionskommentar zur DEMO-GRENZE
+                   (Fokus/Auswahl/Filter gehen dabei auf ihre Startwerte zurueck). */
+                if (q9_term_size(rows, cols) == 0) {
+                    clamp_dims(rows, cols);
+                }
+                compute_dialog_geometry(*rows, *cols, &dlg_row, &dlg_col, &dlg_rows, &dlg_cols);
+                if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
+                                        "Konfigurationsauswahl", dir, filters, 3, &pal) != 0) {
+                    snprintf(result_msg, result_msg_size,
+                             "Dateidialog: Fehler nach Groessenaenderung (Esc: abbrechen)");
+                    return -1;
+                }
+                continue;
+            }
             done = q9_filedialog_handle_key(&dlg, k);
             if (done != 0) { break; }
         }
@@ -551,7 +602,7 @@ int main(void)
                 case Q9_KEY_CHAR:
                     if (!showing_overlay && (k.ch == 'o' || k.ch == 'O')) {
                         /* task #22: modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20). */
-                        int r = run_file_dialog(rows, cols, &lv, last_dialog_msg, sizeof(last_dialog_msg));
+                        int r = run_file_dialog(&rows, &cols, &lv, last_dialog_msg, sizeof(last_dialog_msg));
                         if (r == 0) { running = 0; }         /* Strg-C/EOF waehrend des Dialogs */
                         /* naechste Schleifenrunde zeichnet automatisch alles neu (inkl. last_dialog_msg) */
                     }
@@ -578,5 +629,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.30
+// EOF integration_demo.c                                                                  Ver. 2.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.70
+// File:   q9_filedialog.c                                                                 Ver. 1.80
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
 //         des Dialogs, s. layout_rows() -- EINZIGE Stelle, die diese Aufteilung kennt, init() und
@@ -55,6 +55,8 @@
 // 26-08-17│ 1.70 │ Siebte Feedback-Runde: q9_listview_render() Aufruf um neuen line_fg-Parameter│ Cld
 //         │      │ ergaenzt (list_fg, unveraendertes Aussehen -- der Dialog hatte diesen Bug    │
 //         │      │ ohnehin nicht, s. q9_listview.c)                                             │
+// 26-08-17│ 1.80 │ Untere Statuszeile nutzt jetzt status_fg/bg statt header_fg/bg (Andreas:      │ Cld
+//         │      │ "die Statuszeilen sind noch unterschiedlich")                                 │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -564,13 +566,15 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                 p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
 
     /* NEUE Statuszeile ganz unten ("auch eine Statuszeile wie im Hauptfenster") -- volle Breite,
-       eigene Farbe (dieselbe wie die Kopfzeile, fuer ein symmetrisches Erscheinungsbild oben/unten).
-       Gekuerzter Text mit Trennstrichen (Andreas' Wunsch, sechste Runde: "der Text ist zu lang,
-       steht zwei Zeichen ueber... bitte auch dort mit senkrechten Strichen teilen") -- 1 Zeichen
-       Luft an beiden Seiten, wie beim Rest des Dialogs. */
+       EIGENE status_fg/bg-Felder (NICHT header_fg/bg, s. .h -- Andreas' Feedback, elfte Runde:
+       "die Statuszeilen sind noch unterschiedlich", der Aufrufer kann jetzt dieselbe Farbe wie die
+       Hauptfenster-Statuszeile uebergeben, ohne die Dialog-Kopfzeile mitzuaendern). Gekuerzter Text
+       mit Trennstrichen (Andreas' Wunsch, sechste Runde: "der Text ist zu lang, steht zwei Zeichen
+       ueber... bitte auch dort mit senkrechten Strichen teilen") -- 1 Zeichen Luft an beiden
+       Seiten, wie beim Rest des Dialogs. */
     q9_screenbuf_fill_rect(sb, bottom_status_row, dlg->col, 1, dlg->cols, ' ',
-                            p->header_fg_r, p->header_fg_g, p->header_fg_b,
-                            1, p->header_bg_r, p->header_bg_g, p->header_bg_b);
+                            p->status_fg_r, p->status_fg_g, p->status_fg_b,
+                            1, p->status_bg_r, p->status_bg_g, p->status_bg_b);
     {
         char status_line[64];
         char sep[2];
@@ -578,7 +582,7 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
         snprintf(status_line, sizeof(status_line), "TAB: weiter %s Enter: OK %s Esc: Abbruch",
                  sep, sep);
         q9_screenbuf_puts(sb, bottom_status_row, content_left, status_line,
-                           p->header_fg_r, p->header_fg_g, p->header_fg_b);
+                           p->status_fg_r, p->status_fg_g, p->status_fg_b);
     }
 
     /* Rahmenlinien -- links (von diesem Modul komplett selbst gezeichnet) UND rechts (fuer die
@@ -620,5 +624,5 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.70
+// EOF q9_filedialog.c                                                                     Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────
