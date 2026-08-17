@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_input.h                                                                      Ver. 1.30
+// File:   q9_input.h                                                                      Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Tastatur-Eingabe fuer den Q9-Flux-Editor -- Rohmodus + Tastenerkennung (Pfeiltasten,
 //         Enter, Escape, Tab, Backspace, Strg-C). Letzter fehlender Baustein aus
@@ -57,6 +57,8 @@
 //         │      │ anzeige waehrend des Ziehens sehen, nicht nur eine Neuzeichnung am Ende) --  │
 //         │      │ stattdessen neue q9_input_read_key_timeout(), Aufrufer entscheidet selbst,   │
 //         │      │ wann er auf "Ruhe" wartet (z.B. 1s ohne Aenderung -> Normalanzeige)           │
+// 26-08-17│ 1.40 │ Q9_KEY_SHIFT_TAB (CBT, "ESC[Z") -- rueckwaertige Fokus-Navigation fuer den    │ Cld
+//         │      │ kommenden Datei-Auswahl-Dialog                                                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_INPUT_H
 #define Q9_INPUT_H
@@ -69,6 +71,11 @@ typedef enum {
     Q9_KEY_ENTER,                                         /* CR (0x0D) oder LF (0x0A)                */
     Q9_KEY_ESCAPE,                                         /* einzelnes ESC (s. Kopfkommentar)        */
     Q9_KEY_TAB,
+    Q9_KEY_SHIFT_TAB,                                       /* CBT, "ESC[Z" -- rueckwaertige Fokus-
+                                                             Navigation (z.B. in Dialogen). Windows:
+                                                             _getch() liefert dafuer keinen eigenen
+                                                             Scan-Code (UNGETESTET, ob/wie es dort
+                                                             ankommt -- s. q9_input.c Windows-Zweig) */
     Q9_KEY_BACKSPACE,                                      /* 0x7F (DEL) oder 0x08 (BS) -- beide ueblich
                                                              je nach Terminal/Plattform, gleich behandelt */
     Q9_KEY_UP,
@@ -172,5 +179,5 @@ int q9_term_size(int *rows, int *cols);
 
 #endif /* Q9_INPUT_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_input.h                                                                          Ver. 1.30
+// EOF q9_input.h                                                                          Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
