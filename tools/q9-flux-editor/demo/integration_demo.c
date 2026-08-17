@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.10
+// File:   integration_demo.c                                                             Ver. 2.20
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -69,6 +69,10 @@
 //         │      │ vergroessert (neue Filterzeile + Statuszeile im Dialog, plus Luftspalten)         │
 // 26-08-17│ 2.10 │ Fuenfte Feedback-Runde ("zwei Zeilen sparen"): DIALOG_ROWS wieder verkleinert    │ Cld
 //         │      │ (Buttons teilen sich jetzt Namens-/Filterzeile statt eigene Zeilen zu belegen)    │
+// 26-08-17│ 2.20 │ Sechste Feedback-Runde ("Farben Richtung Braun abgerutscht"): komplette Palette   │ Cld
+//         │      │ auf durchgehende Gelb-/Orange-Leiter umgerechnet (gleicher Farbton/Saettigung,    │
+//         │      │ nur die Helligkeit unterscheidet die Ebenen), Tabellenhintergrund dunkler,         │
+//         │      │ groesserer Helligkeitssprung zwischen den Ebenen fuer mehr Kontrast                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -93,33 +97,43 @@ static const char *const g_items[] = {
 };
 #define ITEM_COUNT (int)(sizeof(g_items) / sizeof(g_items[0]))
 
-/* Warme Amber-/Beige-/Braun-Palette, s. Kopfkommentar. Kopf-/Statuszeile bewusst zwei
-   UNTERSCHIEDLICHE (aber verwandte) Hintergrundtoene -- Kopf etwas heller als Status, damit man sie
-   auf den ersten Blick auseinanderhalten kann, ohne aus der Farbfamilie auszubrechen. */
-#define PAL_FRAME_R      190
-#define PAL_FRAME_G      150
-#define PAL_FRAME_B       70
-#define PAL_LIST_FG_R    215
-#define PAL_LIST_FG_G    195
-#define PAL_LIST_FG_B    155
+/* Warme Gelb-/Orange-Palette. Neunte Feedback-Runde (Andreas, 2026-08-17): "die ganzen Farben
+   sind jetzt alle so in Richtung Braun abgerutscht... mehr in Richtung gelb orange" -- alle Toene
+   HIER auf denselben Farbton (~42 Grad, Orange-Gelb) und dieselbe hohe Saettigung (~82%)
+   umgerechnet, nur die HELLIGKEIT (V) unterscheidet die Ebenen -- eine durchgehende Leiter von
+   ganz dunkel (Tabellenhintergrund) bis ganz hell (Kopfzeile/Auswahl), damit der Sprung zwischen
+   den Ebenen klarer wirkt ("etwas mehr Kontrast"), statt wie zuvor nur unterschiedlich HELLE
+   BRAUNTOENE zu sein:
+     V=0.15  PAL_DIALOG_BODY_BG (Tabellenhintergrund -- "noch etwas dunkler")
+     V=0.32  PAL_DIALOG_FOOTER_BG / PAL_STATUS_BG ("der untere Teil")
+     V=0.44  PAL_DIALOG_SUB_BG (Tabellenkopf/Spaltentitel-Zeile, Button-Grundfarbe)
+     V=0.72  PAL_FRAME (Rahmenlinien + Text auf PAL_DIALOG_SUB_BG/PAL_STATUS_BG)
+     V=0.80  PAL_HEADER_BG
+     V=0.90  PAL_SEL_BG (hellster, kraeftigster Farbton -- die Auswahl-Hervorhebung) */
+#define PAL_FRAME_R      184
+#define PAL_FRAME_G      138
+#define PAL_FRAME_B       33
+#define PAL_LIST_FG_R    217
+#define PAL_LIST_FG_G    191
+#define PAL_LIST_FG_B    130
 #define PAL_SEL_FG_R      35
 #define PAL_SEL_FG_G      25
 #define PAL_SEL_FG_B      10
-#define PAL_SEL_BG_R     215
-#define PAL_SEL_BG_G     165
-#define PAL_SEL_BG_B      35
+#define PAL_SEL_BG_R     230
+#define PAL_SEL_BG_G     173
+#define PAL_SEL_BG_B      41
 #define PAL_STATUS_FG_R  230
 #define PAL_STATUS_FG_G  212
 #define PAL_STATUS_FG_B  178
-#define PAL_STATUS_BG_R   95
-#define PAL_STATUS_BG_G   68
-#define PAL_STATUS_BG_B   25
+#define PAL_STATUS_BG_R   82
+#define PAL_STATUS_BG_G   62
+#define PAL_STATUS_BG_B   15
 #define PAL_HEADER_FG_R  255                                /* Andreas' Wunsch (2026-08-17):      */
 #define PAL_HEADER_FG_G  248                                 /* "das weiss etwas heller" -- naeher */
 #define PAL_HEADER_FG_B  225                                 /* an Weiss, noch leicht warm getoent */
-#define PAL_HEADER_BG_R  140                                /* etwas heller als PAL_STATUS_BG,    */
-#define PAL_HEADER_BG_G  100                                /* gleiche Farbfamilie                */
-#define PAL_HEADER_BG_B   40
+#define PAL_HEADER_BG_R  204                                /* etwas heller als PAL_STATUS_BG,    */
+#define PAL_HEADER_BG_G  154                                 /* gleiche Farbfamilie                */
+#define PAL_HEADER_BG_B   37
 
 #define MIN_ROWS 20                                        /* Andreas' Wunsch (2026-08-17):     */
 #define MIN_COLS 60                                         /* darunter sieht es "sehr komisch"
@@ -132,21 +146,23 @@ static const char *const g_items[] = {
    NAME_FIELD_WIDTH >= der laengste Eintrag in g_items ("CF-Interface (onboard, c0)" = 27 Zeichen). */
 #define NAME_FIELD_WIDTH 30
 
-/* Zusaetzliche Toene NUR fuer den Datei-Auswahl-Dialog (task #22) -- bewusst in derselben warmen
-   Amber-/Braun-Familie wie der Rest (Andreas' Wunsch nach "aehnlichen" Farben), aber dunkler als
-   PAL_STATUS_BG/PAL_HEADER_BG, damit der Dialog optisch klar "ueber" dem Hauptbildschirm liegt. */
-#define PAL_DIALOG_BODY_BG_R  55
-#define PAL_DIALOG_BODY_BG_G  40
-#define PAL_DIALOG_BODY_BG_B  15
-#define PAL_DIALOG_SUB_BG_R  110
-#define PAL_DIALOG_SUB_BG_G   78
-#define PAL_DIALOG_SUB_BG_B   30
-/* Fussbereich (Andreas' Wunsch, 2026-08-17: "Hintergrundfarbe im unteren Bereich noch mal
-   aendern... so dass sich der untere Teil etwas absetzt") -- zwischen PAL_DIALOG_BODY_BG und
-   PAL_DIALOG_SUB_BG, deutlich sichtbar anders als beide, bleibt aber in derselben Farbfamilie. */
-#define PAL_DIALOG_FOOTER_BG_R  75
-#define PAL_DIALOG_FOOTER_BG_G  54
-#define PAL_DIALOG_FOOTER_BG_B  20
+/* Zusaetzliche Toene NUR fuer den Datei-Auswahl-Dialog -- Teil derselben Gelb-/Orange-Leiter wie
+   oben (gleicher Farbton/Saettigung, s. dortiger Kopfkommentar), V=0.15 (dunkelster Schritt, "der
+   Tabellenhintergrund bitte noch etwas dunkler"). */
+#define PAL_DIALOG_BODY_BG_R  38
+#define PAL_DIALOG_BODY_BG_G  29
+#define PAL_DIALOG_BODY_BG_B   7
+/* Tabellenkopf/Spaltentitel-Zeile + Button-Grundfarbe, V=0.44 -- deutlicher Sprung gegenueber
+   PAL_DIALOG_BODY_BG (V=0.15) UND gegenueber PAL_DIALOG_FOOTER_BG (V=0.32) fuer "etwas mehr
+   Kontrast" (Andreas' Wunsch, 2026-08-17). */
+#define PAL_DIALOG_SUB_BG_R  112
+#define PAL_DIALOG_SUB_BG_G   85
+#define PAL_DIALOG_SUB_BG_B   20
+/* Fussbereich ("der untere Teil"), V=0.32 -- zwischen PAL_DIALOG_BODY_BG und PAL_DIALOG_SUB_BG,
+   deutlich sichtbar anders als beide. */
+#define PAL_DIALOG_FOOTER_BG_R  82
+#define PAL_DIALOG_FOOTER_BG_G  62
+#define PAL_DIALOG_FOOTER_BG_B  15
 
 #define DIALOG_ROWS 18                                      /* Wunschgroesse -- wird in            */
 #define DIALOG_COLS 56                                       /* run_file_dialog() an rows/cols geklemmt.
@@ -530,5 +546,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.10
+// EOF integration_demo.c                                                                  Ver. 2.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
