@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_ansi.h                                                                       Ver. 1.00
+// File:   q9_ansi.h                                                                       Ver. 1.10
 // Owner:  Claudia
 // Desc.:  6.7-Nachfolge: rohe ANSI-/VT100-Escape-Sequenzen fuer den kuenftigen Q9-Flux-Launcher/
 //         Config-Editor (docs/Q9FLUX_EDITOR_de.md) -- BEWUSST KEIN TUI-Framework (kein Turbo
@@ -34,6 +34,9 @@
 //         │      │ ein-/ausblenden. Reine Positions-/Farb-Primitive, noch kein Dialog-/     │
 //         │      │ Bildschirmpuffer-System (kommt erst, wenn der Editor selbst angegangen   │
 //         │      │ wird)                                                                    │
+// 26-08-17│ 1.10 │ q9_ansi_resize_window (XTWINOPS) -- Andreas' Wunsch, ein zu kleines       │ Cld
+//         │      │ Terminal automatisch auf die Mindestgroesse zu bringen (nicht universell   │
+//         │      │ unterstuetzt, s. dortiger Kommentar)                                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_ANSI_H
 #define Q9_ANSI_H
@@ -80,7 +83,23 @@ unsigned q9_ansi_clear(char *out, unsigned out_max);
 unsigned q9_ansi_hide_cursor(char *out, unsigned out_max);
 unsigned q9_ansi_show_cursor(char *out, unsigned out_max);
 
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_ansi_resize_window
+// Desc.:    XTWINOPS "ESC[8;{rows};{cols}t" -- bittet das Terminal, sich auf die angegebene
+//           Zeichen-Groesse zu vergroessern/verkleinern (Andreas' Wunsch, 2026-08-17: bei zu
+//           kleinem Fenster automatisch auf die Mindestgroesse bringen). BEWUSST KEINE Garantie:
+//           nicht universell unterstuetzt -- viele Terminals ignorieren die Sequenz oder haben sie
+//           aus Sicherheitsgruenden abgeschaltet (ein Programm, das beliebigen Text ausgibt,
+//           koennte sonst ungefragt fremde Fenster verschieben/resizen). xterm unterstuetzt es
+//           (mit aktiviertem allowWindowOps), Verhalten auf anderen Terminals (iTerm2,
+//           Terminal.app, Windows Terminal, ...) UNGETESTET -- der Aufrufer bekommt kein
+//           Feedback, ob es gewirkt hat (dafuer q9_term_size() nach einer kurzen Wartezeit erneut
+//           abfragen).
+// Call:     n = q9_ansi_resize_window(out, out_max, 20, 60);   // -> "\x1b[8;20;60t"
+//════════════════════════════════════════════════════════════════════════════════════════════════
+unsigned q9_ansi_resize_window(char *out, unsigned out_max, int rows, int cols);
+
 #endif /* Q9_ANSI_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_ansi.h                                                                           Ver. 1.00
+// EOF q9_ansi.h                                                                           Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
