@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.h                                                                 Ver. 1.10
+// File:   q9_filedialog.h                                                                 Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Modaler Datei-Auswahl-Dialog -- komponiert q9_filelist (Verzeichnis-Scan), q9_listview
 //         (scrollbare Liste) und q9_screenbuf (Bildschirmpuffer) zu einem echten interaktiven
@@ -10,22 +10,36 @@
 //             │  Maus-Support, s. q9_input.h Kopfkommentar -- Mausklick ist zurueckgestellt)
 //             ├ Spaltentitel-Zeile: "Name  Datum  Groesse", leicht andere Farbe
 //             ├ Dateiliste (q9_listview, scrollbar, Zeilen vorformatiert -- s.u.)
+//             ├──────────────────────────── FUSSBEREICH, eigene Hintergrundfarbe (footer_bg) ──────
 //             ├ Auswahl-/Filterzeile: links die aktuell ausgewaehlte Datei, rechts ein kompakter
-//             │  Extensions-Umschalter (4-5 Buchstaben + Pfeil, zyklisch durch vorgegebene Filter
-//             │  UND "*.*")
-//             └ Buttons OK / Abbrechen auf der Hauptflaeche
+//             │  Extensions-Umschalter (4-5 Buchstaben + ▾) -- ▾ oeffnet ein kleines Aufklapp-Menue
+//             │  mit ALLEN Filtern (s.u.), kein reines Durchschalten mehr
+//             ├ (Halbblock-Kappe oberhalb der Buttons, s.u.)
+//             ├ Buttons OK / Abbrechen -- "richtige" Buttons in Spaltentitel-Farbe (sub_fg/bg),
+//             │  rechtsbuendig, gleich breit, per Q9_GLYPH_UPPER_HALF/LOWER_HALF nach oben+unten
+//             │  "aufgeblasen" (klassischer Halbblock-Trick: eine Zeile UEBER dem Button zeigt in
+//             │  der unteren Haelfte die Button-Farbe, eine Zeile UNTER dem Button in der oberen
+//             │  Haelfte -- der Button wirkt dadurch anderthalb Zeilen hoch, obwohl er nur eine
+//             │  einzige Textzeile belegt)
+//             └ (Halbblock-Kappe unterhalb der Buttons, s.u.)
 //
 //         RAHMENLOS -- nur ueber eine eigene Hintergrundfarbe vom Rest des Bildschirms abgegrenzt
 //         (Aufgabenbeschreibung, kein q9_widgets-Rahmen). Der AUFRUFER macht snapshot()/restore()
 //         um den Dialog herum (s. q9_screenbuf.h Kopfkommentar) -- dieses Modul zeichnet nur IN
 //         einen bereits vorhandenen q9_screenbuf_t hinein, kennt kein stdout/Terminal selbst.
 //
-//         Bedienung (task #20): TAB/Shift-TAB wandert zyklisch Liste -> Filter -> OK -> Abbrechen
-//         -> (wieder Liste). Pfeil hoch/runter bewegt die Auswahl NUR wenn die Liste den Fokus hat;
-//         Pfeil links/rechts schaltet den Extensions-Filter NUR wenn der Filter den Fokus hat.
-//         Enter auf der Liste ODER auf OK = Bestaetigen (nur wenn eine Datei ausgewaehlt ist -- ein
-//         leeres Verzeichnis kann nicht bestaetigt werden). Enter auf dem Filter schaltet ihn wie
-//         Pfeil-rechts einen weiter. Escape bestaetigt IMMER Abbruch, unabhaengig vom Fokus.
+//         Bedienung (task #20 + Andreas' Feedback 2026-08-17): TAB/Shift-TAB wandert zyklisch
+//         Liste -> Filter -> OK -> Abbrechen -> (wieder Liste). Pfeil hoch/runter bewegt die
+//         Auswahl NUR wenn die Liste den Fokus hat; Pfeil links/rechts schaltet den Filter EINEN
+//         weiter (Schnellzugriff) NUR wenn der Filter den Fokus hat. Enter ODER Pfeil-runter auf
+//         dem Filter OEFFNET STATTDESSEN das Aufklapp-Menue mit ALLEN Filtern -- waehrend es offen
+//         ist, navigieren Pfeil hoch/runter DARIN, Enter uebernimmt die Auswahl (rescanned das
+//         Verzeichnis) und schliesst es wieder, Escape schliesst es OHNE Auswahl (schliesst NUR
+//         das Menue, NICHT gleich den ganzen Dialog -- "das oberste Ueberlagerungs-Fenster",
+//         klassisches Popup-Verhalten). Alle anderen Tasten werden waehrend das Menue offen ist
+//         ignoriert (auch TAB). Enter auf der Liste ODER auf OK = Bestaetigen (nur wenn eine Datei
+//         ausgewaehlt ist -- ein leeres Verzeichnis kann nicht bestaetigt werden). Escape bestaetigt
+//         (ausserhalb des Filter-Menues) IMMER Abbruch, unabhaengig vom Fokus.
 //
 //         Multi-Spalten-Problem: q9_listview_render() kennt nur ein flaches `const char *const *`
 //         Array (ein String pro Zeile, s. q9_listview.h). Statt die Listview-API zu erweitern,
@@ -58,6 +72,10 @@
 // 26-08-17│ 1.10 │ Andreas' Feedback nach dem ersten Test: unfocus_sel_* Farbpaar dazu --   │ Cld
 //         │      │ markierte Zeile war bisher unabhaengig vom Fokus immer gleich hell, ein  │
 //         │      │ Fokuswechsel auf/von der Liste war dadurch unsichtbar                    │
+// 26-08-17│ 1.20 │ Zweite Feedback-Runde: eigener footer_fg/bg-Fussbereich ab der Auswahl-/ │ Cld
+//         │      │ Filterzeile, "richtige" Buttons (sub_fg/bg, Halbblock-Kappen, gleich     │
+//         │      │ breit, rechtsbuendig), Filter-Pfeil jetzt ▾ + oeffnet ein Aufklapp-Menue │
+//         │      │ mit ALLEN Filtern statt nur einzeln durchzuschalten                      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_FILEDIALOG_H
 #define Q9_FILEDIALOG_H
@@ -107,6 +125,11 @@ typedef struct {
     int unfocus_sel_bg_r, unfocus_sel_bg_g, unfocus_sel_bg_b;
     int focus_fg_r, focus_fg_g, focus_fg_b;                 /* fokussiertes Bedienelement (Filter/     */
     int focus_bg_r, focus_bg_g, focus_bg_b;                 /* OK/Abbrechen), s. sel_* fuer die Liste  */
+    int footer_fg_r, footer_fg_g, footer_fg_b;              /* Fussbereich unterhalb der Dateiliste    */
+    int footer_bg_r, footer_bg_g, footer_bg_b;              /* (Andreas' Wunsch, 2026-08-17: "sich
+                                                                etwas absetzen") -- eigener Hintergrund,
+                                                                Buttons/Filter-Popup nutzen sub_fg/bg
+                                                                (Spaltentitel-Farbe) DAVOR, s. .c        */
 } q9_filedialog_palette_t;
 
 typedef struct {
@@ -117,6 +140,11 @@ typedef struct {
     char filters[Q9_FILEDIALOG_MAX_FILTERS][Q9_FILEDIALOG_FILTER_MAX];  /* eigene Kopie, s. .c        */
     int  filter_count;
     int  filter_index;
+    int  filter_popup_open;                                 /* 1 = Aufklapp-Menue mit allen Filtern
+                                                                offen (s. Kopfkommentar), 0 = zu       */
+    int  filter_popup_index;                                /* Auswahl INNERHALB des offenen Menues --
+                                                                erst bei Enter nach filter_index/rescan
+                                                                uebernommen, s. .c                      */
 
     q9_filelist_t files;                                    /* Ergebnis des letzten Scans             */
     char row_text[Q9_FILELIST_MAX_ENTRIES][Q9_FILEDIALOG_ROW_MAX];      /* vorformatierte Listenzeilen */
@@ -153,7 +181,11 @@ int q9_filedialog_init(q9_filedialog_t *dlg, int row, int col, int rows, int col
 //           q9_input.h), aendert Fokus/Auswahl/Filter entsprechend. Ist dlg->done bereits != 0
 //           (Dialog schon entschieden), tut die Funktion nichts mehr und liefert einfach den
 //           bestehenden Wert zurueck (verhindert z.B., dass ein nachzitterndes Escape nach einem
-//           bereits erfolgten OK das Ergebnis noch umbiegt). Rueckgabe == dlg->done danach:
+//           bereits erfolgten OK das Ergebnis noch umbiegt). Ist das Filter-Aufklapp-Menue offen
+//           (dlg->filter_popup_open), werden NUR Pfeil hoch/runter (Auswahl darin bewegen), Enter
+//           (uebernehmen+schliessen) und Escape (schliessen OHNE Auswahl) verarbeitet -- alle
+//           anderen Tasten (auch TAB) werden ignoriert, dlg->done bleibt dabei immer 0 (das Menue
+//           schliessen kann den GANZEN Dialog nicht beenden). Rueckgabe == dlg->done danach:
 //           0 = weiterhin offen, 1 = OK (q9_filedialog_selected_name abrufen), -1 = Abbruch.
 // Call:     int r = q9_filedialog_handle_key(&dlg, key); if (r != 0) { /* Dialog fertig */ }
 //════════════════════════════════════════════════════════════════════════════════════════════════
@@ -183,5 +215,5 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
 
 #endif /* Q9_FILEDIALOG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.h                                                                     Ver. 1.10
+// EOF q9_filedialog.h                                                                     Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

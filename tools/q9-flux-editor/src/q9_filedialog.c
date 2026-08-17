@@ -1,15 +1,17 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.10
+// File:   q9_filedialog.c                                                                 Ver. 1.20
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
-//         des Dialogs):
+//         des Dialogs, s. layout_rows() -- EINZIGE Stelle, die diese Aufteilung kennt, init() und
+//         render() rufen beide dieselbe Funktion auf):
 //             0            Kopfzeile (Titel + "X")
 //             1            Spaltentitel ("Name  Datum  Groesse")
-//             2..rows-4    Dateiliste (Hoehe = rows-5, s. LIST_HEIGHT unten)
-//             rows-3       Auswahl-/Filterzeile
-//             rows-2       (frei, body_bg -- kleiner Abstand vor den Buttons)
-//             rows-1       Buttons OK / Abbrechen
-//         Macht rows kleiner als das Minimum (7) keinen Sinn mehr -- init klemmt die Listenhoehe
+//             2..rows-5    Dateiliste (Hoehe = rows-6)
+//             rows-4       Auswahl-/Filterzeile               ┐
+//             rows-3       Halbblock-Kappe UEBER den Buttons   │ FUSSBEREICH, eigene footer_bg-
+//             rows-2       Buttons OK / Abbrechen              │ Hintergrundfarbe (s. render())
+//             rows-1       Halbblock-Kappe UNTER den Buttons   ┘
+//         Macht rows kleiner als das Minimum (8) keinen Sinn mehr -- init klemmt die Listenhoehe
 //         auf mindestens 1, ein winziger Dialog sieht dann einfach gedraengt aus (kein Crash, wie
 //         der Rest der q9_screenbuf-Familie).
 //
@@ -20,6 +22,9 @@
 // 26-08-17│ 1.00 │ Erster Wurf                                                              │ Cld
 // 26-08-17│ 1.10 │ Dateiliste zeigt jetzt gedaempfte unfocus_sel_*-Farben, wenn sie NICHT   │ Cld
 //         │      │ den Fokus hat (s. q9_filedialog.h)                                       │
+// 26-08-17│ 1.20 │ Zweite Feedback-Runde: layout_rows() als gemeinsame Geometrie-Quelle,    │ Cld
+//         │      │ eigener Fussbereich (footer_bg), "richtige" Buttons per Halbblock-Kappen,│
+//         │      │ Filter-Aufklapp-Menue (filter_popup_open/-index) statt reinem Durchschalten│
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -33,6 +38,21 @@ static void copy_bounded(char *dst, unsigned dst_size, const char *src)
     if (n >= dst_size) { n = dst_size ? dst_size - 1 : 0; }
     memcpy(dst, src, n);
     if (dst_size) { dst[n] = '\0'; }
+}
+
+/* Zentrale Geometrie fuer den Fussbereich -- s. Kopfkommentar. Alle Rueckgabe-Zeiger duerfen NULL
+   sein (Aufrufer holt sich nur, was er braucht: init() nur list_height, render() den Rest). Werte
+   sind Zeilen-OFFSETS relativ zu dlg->row, noch NICHT damit addiert. */
+static void layout_rows(int rows, int *list_height, int *status_row, int *cap_above_row,
+                         int *buttons_row, int *cap_below_row)
+{
+    int lh = rows - 6;
+    if (lh < 1) { lh = 1; }
+    if (list_height)  { *list_height  = lh; }
+    if (status_row)    { *status_row    = rows - 4; }
+    if (cap_above_row) { *cap_above_row = rows - 3; }
+    if (buttons_row)   { *buttons_row   = rows - 2; }
+    if (cap_below_row) { *cap_below_row = rows - 1; }
 }
 
 /* Formatiert alle aktuell in dlg->files stehenden Eintraege zu spaltenausgerichteten Zeilen fuer
@@ -81,15 +101,16 @@ int q9_filedialog_init(q9_filedialog_t *dlg, int row, int col, int rows, int col
         copy_bounded(dlg->filters[i], sizeof(dlg->filters[i]), filters[i]);
     }
     dlg->filter_index = 0;
+    dlg->filter_popup_open = 0;
+    dlg->filter_popup_index = 0;
 
     dlg->pal = *pal;
     dlg->focus = Q9_FILEDIALOG_FOCUS_LIST;
     dlg->done = 0;
 
-    /* Listen-Geometrie EINMAL berechnen (s. Layout-Uebersicht im Kopfkommentar) -- rescan()
-       aendert nur noch item_count, nie row/col/height/width. */
-    list_height = dlg->rows - 5;
-    if (list_height < 1) { list_height = 1; }
+    /* Listen-Geometrie EINMAL berechnen (s. layout_rows()) -- rescan() aendert nur noch item_count,
+       nie row/col/height/width. */
+    layout_rows(dlg->rows, &list_height, NULL, NULL, NULL, NULL);
     dlg->list.row    = dlg->row + 2;
     dlg->list.col    = dlg->col + 1;
     dlg->list.height = list_height;
@@ -110,6 +131,7 @@ static void advance_focus(q9_filedialog_t *dlg, int dir)
     dlg->focus = (q9_filedialog_focus_t)f;
 }
 
+/* Filter EINEN weiter (Schnellzugriff per Pfeil links/rechts, s. .h) -- rescanned sofort. */
 static void cycle_filter(q9_filedialog_t *dlg, int dir)
 {
     int f = dlg->filter_index + dir;
@@ -119,10 +141,44 @@ static void cycle_filter(q9_filedialog_t *dlg, int dir)
     rescan(dlg);
 }
 
+/* Oeffnet das Aufklapp-Menue mit ALLEN Filtern (Andreas' Wunsch, 2026-08-17) -- die Auswahl DARIN
+   startet beim aktuell aktiven Filter, wird aber erst bei Enter uebernommen (Escape verwirft sie
+   wieder, s. .h). */
+static void open_filter_popup(q9_filedialog_t *dlg)
+{
+    dlg->filter_popup_open = 1;
+    dlg->filter_popup_index = dlg->filter_index;
+}
+
 int q9_filedialog_handle_key(q9_filedialog_t *dlg, q9_key_t key)
 {
     if (!dlg) { return 0; }
     if (dlg->done != 0) { return dlg->done; }               /* schon entschieden -- eingefroren, s. .h */
+
+    /* Solange das Filter-Aufklapp-Menue offen ist, gehoert ihm die volle Tastatur -- s. .h
+       Kopfkommentar zu q9_filedialog_handle_key(): Escape schliesst hier NUR das Menue, nicht den
+       ganzen Dialog (klassisches "oberste Ueberlagerung zuerst"-Popup-Verhalten). */
+    if (dlg->filter_popup_open) {
+        switch (key.kind) {
+            case Q9_KEY_UP:
+                if (dlg->filter_popup_index > 0) { dlg->filter_popup_index--; }
+                break;
+            case Q9_KEY_DOWN:
+                if (dlg->filter_popup_index < dlg->filter_count - 1) { dlg->filter_popup_index++; }
+                break;
+            case Q9_KEY_ENTER:
+                dlg->filter_index = dlg->filter_popup_index;
+                rescan(dlg);
+                dlg->filter_popup_open = 0;
+                break;
+            case Q9_KEY_ESCAPE:
+                dlg->filter_popup_open = 0;                  /* verwirft die Auswahl, s. Funktionskomm. */
+                break;
+            default:
+                break;                                        /* alles andere: ignorieren, auch TAB     */
+        }
+        return dlg->done;                                     /* bleibt 0 -- Popup kann Dialog nicht beenden */
+    }
 
     switch (key.kind) {
         case Q9_KEY_ESCAPE:
@@ -138,7 +194,11 @@ int q9_filedialog_handle_key(q9_filedialog_t *dlg, q9_key_t key)
             if (dlg->focus == Q9_FILEDIALOG_FOCUS_LIST) { q9_listview_move(&dlg->list, -1); }
             break;
         case Q9_KEY_DOWN:
-            if (dlg->focus == Q9_FILEDIALOG_FOCUS_LIST) { q9_listview_move(&dlg->list, 1); }
+            if (dlg->focus == Q9_FILEDIALOG_FOCUS_LIST) {
+                q9_listview_move(&dlg->list, 1);
+            } else if (dlg->focus == Q9_FILEDIALOG_FOCUS_FILTER) {
+                open_filter_popup(dlg);                       /* Pfeil runter = "aufklappen" */
+            }
             break;
         case Q9_KEY_LEFT:
             if (dlg->focus == Q9_FILEDIALOG_FOCUS_FILTER) { cycle_filter(dlg, -1); }
@@ -155,7 +215,7 @@ int q9_filedialog_handle_key(q9_filedialog_t *dlg, q9_key_t key)
                     if (dlg->list.selected >= 0) { dlg->done = 1; }
                     break;
                 case Q9_FILEDIALOG_FOCUS_FILTER:
-                    cycle_filter(dlg, 1);                    /* Enter auf dem Filter == Pfeil rechts  */
+                    open_filter_popup(dlg);                  /* Enter oeffnet jetzt das Aufklapp-Menue */
                     break;
                 case Q9_FILEDIALOG_FOCUS_CANCEL:
                     dlg->done = -1;
@@ -179,17 +239,97 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
     return 0;
 }
 
+/* Zentriert label in ein Feld der Breite width (leerzeichenaufgefuellt), z.B. "OK" in einem 13
+   Zeichen breiten Button -> "     OK      ". Schneidet label ab, falls es nicht passt (sollte bei
+   den beiden festen Beschriftungen hier nie vorkommen, s. Aufrufer). */
+static void center_label(char *out, unsigned out_size, const char *label, int width)
+{
+    int len = (int)strlen(label);
+    int left, i;
+    if (width < 0) { width = 0; }
+    if ((unsigned)width >= out_size) { width = (int)out_size - 1; }
+    if (len > width) { len = width; }
+    left = (width - len) / 2;
+    for (i = 0; i < width; i++) { out[i] = ' '; }
+    memcpy(out + left, label, (size_t)len);
+    out[width] = '\0';
+}
+
+/* Zeichnet EINEN Button (Text + zwei Halbblock-Kappen ueber/unter der Textzeile, s. Kopfkommentar
+   q9_filedialog.h fuer den Trick) an (row,col), Breite width, in der Farbe fg/bg (Aufrufer waehlt
+   schon die richtige -- sub_* unfokussiert, focus_* fokussiert). cap_row_above/cap_row_below sind
+   die beiden Zeilen fuer die Kappen, footer_bg die Hintergrundfarbe DORT (die "aeussere" Haelfte
+   jeder Kappe zeigt diese Farbe, die "innere" -- an den Button angrenzende -- Haelfte fg/bg). */
+static void draw_button(q9_screenbuf_t *sb, int row, int col, int width, const char *label,
+                         int fg_r, int fg_g, int fg_b, int bg_r, int bg_g, int bg_b,
+                         int cap_row_above, int cap_row_below,
+                         int footer_bg_r, int footer_bg_g, int footer_bg_b)
+{
+    char text[32];
+    center_label(text, sizeof(text), label, width);
+    q9_screenbuf_fill_rect(sb, row, col, 1, width, ' ', fg_r, fg_g, fg_b, 1, bg_r, bg_g, bg_b);
+    q9_screenbuf_puts(sb, row, col, text, fg_r, fg_g, fg_b);
+    q9_screenbuf_fill_rect(sb, cap_row_above, col, 1, width, (char)Q9_GLYPH_LOWER_HALF,
+                            bg_r, bg_g, bg_b, 1, footer_bg_r, footer_bg_g, footer_bg_b);
+    q9_screenbuf_fill_rect(sb, cap_row_below, col, 1, width, (char)Q9_GLYPH_UPPER_HALF,
+                            bg_r, bg_g, bg_b, 1, footer_bg_r, footer_bg_g, footer_bg_b);
+}
+
+/* Zeichnet das Filter-Aufklapp-Menue (dlg->filter_popup_open) ueber der Statuszeile -- waechst nach
+   OBEN in den Bereich, den sonst die Dateiliste einnimmt (unterhalb der Buttons ist kein Platz
+   mehr, s. Layout-Uebersicht .h), rechtsbuendig unter dem Filterfeld. Wird ganz am Ende von
+   q9_filedialog_render() aufgerufen, ueberzeichnet also bewusst alles darunter. */
+static void render_filter_popup(const q9_filedialog_t *dlg, q9_screenbuf_t *sb, int status_row_abs)
+{
+    const q9_filedialog_palette_t *p = &dlg->pal;
+    int avail = status_row_abs - (dlg->row + 2);            /* Platz unter der Spaltentitel-Zeile   */
+    int popup_h = dlg->filter_count;
+    int popup_w = Q9_FILEDIALOG_FILTER_MAX + 2;
+    int popup_row, popup_col, i;
+
+    if (popup_h > avail) { popup_h = avail; }
+    if (popup_h < 1)     { popup_h = 1; }
+    if (popup_w > dlg->cols - 2) { popup_w = dlg->cols - 2; }
+    if (popup_w < 1)     { popup_w = 1; }
+
+    popup_row = status_row_abs - popup_h;
+    popup_col = dlg->col + dlg->cols - 1 - popup_w;
+    if (popup_col < dlg->col + 1) { popup_col = dlg->col + 1; }
+
+    q9_screenbuf_fill_rect(sb, popup_row, popup_col, popup_h, popup_w, ' ',
+                            p->sub_fg_r, p->sub_fg_g, p->sub_fg_b,
+                            1, p->sub_bg_r, p->sub_bg_g, p->sub_bg_b);
+
+    for (i = 0; i < dlg->filter_count && i < popup_h; i++) {
+        int is_sel = (i == dlg->filter_popup_index);
+        char line[Q9_FILEDIALOG_FILTER_MAX + 4];
+        snprintf(line, sizeof(line), " %-*.*s", popup_w - 1, popup_w - 1, dlg->filters[i]);
+        if (is_sel) {
+            q9_screenbuf_fill_rect(sb, popup_row + i, popup_col, 1, popup_w, ' ',
+                                    p->focus_fg_r, p->focus_fg_g, p->focus_fg_b,
+                                    1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
+        }
+        q9_screenbuf_puts(sb, popup_row + i, popup_col, line,
+                           is_sel ? p->focus_fg_r : p->sub_fg_r,
+                           is_sel ? p->focus_fg_g : p->sub_fg_g,
+                           is_sel ? p->focus_fg_b : p->sub_fg_b);
+    }
+}
+
 void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 {
     const q9_filedialog_palette_t *p;
     char line[96];
-    int status_row, buttons_row;
+    int status_row, cap_above_row, buttons_row, cap_below_row;
     int ok_focus, cancel_focus, filter_focus;
 
     if (!dlg || !sb) { return; }
     p = &dlg->pal;
-    status_row  = dlg->row + dlg->rows - 3;
-    buttons_row = dlg->row + dlg->rows - 1;
+    layout_rows(dlg->rows, NULL, &status_row, &cap_above_row, &buttons_row, &cap_below_row);
+    status_row    += dlg->row;
+    cap_above_row += dlg->row;
+    buttons_row   += dlg->row;
+    cap_below_row += dlg->row;
     filter_focus = (dlg->focus == Q9_FILEDIALOG_FOCUS_FILTER);
     ok_focus     = (dlg->focus == Q9_FILEDIALOG_FOCUS_OK);
     cancel_focus = (dlg->focus == Q9_FILEDIALOG_FOCUS_CANCEL);
@@ -234,21 +374,33 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                             list_focus ? p->sel_bg_b : p->unfocus_sel_bg_b);
     }
 
+    /* Fussbereich -- eigene Hintergrundfarbe ab der Statuszeile bis zum Dialogende, damit sich
+       dieser Bereich sichtbar von der Dateiliste absetzt (Andreas' Wunsch, 2026-08-17). Deckt
+       Auswahl-/Filterzeile, beide Halbblock-Kappen UND die Buttons-Zeile ab -- die Buttons selbst
+       (s.u.) uebermalen ihren eigenen Ausschnitt gleich wieder mit sub_ bzw. focus_ Farben. */
+    q9_screenbuf_fill_rect(sb, status_row, dlg->col, cap_below_row - status_row + 1, dlg->cols, ' ',
+                            p->footer_fg_r, p->footer_fg_g, p->footer_fg_b,
+                            1, p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+
     /* Auswahl-/Filterzeile -- links die ausgewaehlte Datei, rechts der Extensions-Umschalter mit
-       Pfeil (nur der Filter-Teil wird bei Fokus hervorgehoben, der Dateiname links ist nicht
-       bedienbar). */
+       Dropdown-Pfeil (▾, s. q9_screenbuf.h) -- Enter/Pfeil-runter darauf oeffnet das Aufklapp-Menue
+       mit allen Filtern (render_filter_popup(), ganz am Ende dieser Funktion), Pfeil links/rechts
+       bleibt als Schnellzugriff (einzeln durchschalten) erhalten. */
     {
         const char *sel_name = (dlg->list.selected >= 0 && dlg->list.selected < dlg->files.count)
                                 ? dlg->files.entry[dlg->list.selected].name : "-";
         snprintf(line, sizeof(line), "Datei: %-*.*s", Q9_FILEDIALOG_NAME_COL, Q9_FILEDIALOG_NAME_COL,
                  sel_name);
-        q9_screenbuf_puts(sb, status_row, dlg->col + 1, line, p->body_fg_r, p->body_fg_g, p->body_fg_b);
+        q9_screenbuf_puts(sb, status_row, dlg->col + 1, line, p->footer_fg_r, p->footer_fg_g, p->footer_fg_b);
 
         {
             char filt[Q9_FILEDIALOG_FILTER_MAX + 4];
             int flen, fcol;
-            snprintf(filt, sizeof(filt), "%s >", dlg->filters[dlg->filter_index]);
+            snprintf(filt, sizeof(filt), "%s ", dlg->filters[dlg->filter_index]);
             flen = (int)strlen(filt);
+            filt[flen]     = (char)Q9_GLYPH_DOWN_ARROW;
+            filt[flen + 1] = '\0';
+            flen += 1;
             fcol = dlg->col + dlg->cols - 1 - flen;
             if (fcol < dlg->col + 1) { fcol = dlg->col + 1; }
             if (filter_focus) {
@@ -257,42 +409,47 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                                         1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
             }
             q9_screenbuf_puts(sb, status_row, fcol, filt,
-                               filter_focus ? p->focus_fg_r : p->body_fg_r,
-                               filter_focus ? p->focus_fg_g : p->body_fg_g,
-                               filter_focus ? p->focus_fg_b : p->body_fg_b);
+                               filter_focus ? p->focus_fg_r : p->footer_fg_r,
+                               filter_focus ? p->focus_fg_g : p->footer_fg_g,
+                               filter_focus ? p->focus_fg_b : p->footer_fg_b);
         }
     }
 
-    /* Buttons -- fokussiertes Element bekommt focus_fg/focus_bg (analog zur markierten Zeile in
-       der Liste), das andere bleibt auf der normalen Hauptflaeche stehen. */
+    /* Buttons -- "richtige" Buttons (Andreas' Wunsch, 2026-08-17): sub_fg/bg (Spaltentitel-Farbe)
+       wenn unfokussiert, focus_fg/bg wenn fokussiert, gleich breit, rechtsbuendig, per Halbblock-
+       Kappen "aufgeblasen" (draw_button(), s. Kopfkommentar .h). */
     {
-        const char *ok_label = "  OK  ";
-        const char *cancel_label = "  Abbrechen  ";
-        int ok_col = dlg->col + 2;
-        int cancel_col = ok_col + (int)strlen(ok_label) + 3;
+        int button_w = (int)strlen("Abbrechen") + 4;
+        int cancel_col = dlg->col + dlg->cols - 1 - button_w;
+        int ok_col = cancel_col - 1 - button_w;
+        if (ok_col < dlg->col + 1) { ok_col = dlg->col + 1; }
 
-        if (ok_focus) {
-            q9_screenbuf_fill_rect(sb, buttons_row, ok_col, 1, (int)strlen(ok_label), ' ',
-                                    p->focus_fg_r, p->focus_fg_g, p->focus_fg_b,
-                                    1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
-        }
-        q9_screenbuf_puts(sb, buttons_row, ok_col, ok_label,
-                           ok_focus ? p->focus_fg_r : p->body_fg_r,
-                           ok_focus ? p->focus_fg_g : p->body_fg_g,
-                           ok_focus ? p->focus_fg_b : p->body_fg_b);
+        draw_button(sb, buttons_row, ok_col, button_w, "OK",
+                    ok_focus ? p->focus_fg_r : p->sub_fg_r,
+                    ok_focus ? p->focus_fg_g : p->sub_fg_g,
+                    ok_focus ? p->focus_fg_b : p->sub_fg_b,
+                    ok_focus ? p->focus_bg_r : p->sub_bg_r,
+                    ok_focus ? p->focus_bg_g : p->sub_bg_g,
+                    ok_focus ? p->focus_bg_b : p->sub_bg_b,
+                    cap_above_row, cap_below_row,
+                    p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
 
-        if (cancel_focus) {
-            q9_screenbuf_fill_rect(sb, buttons_row, cancel_col, 1, (int)strlen(cancel_label), ' ',
-                                    p->focus_fg_r, p->focus_fg_g, p->focus_fg_b,
-                                    1, p->focus_bg_r, p->focus_bg_g, p->focus_bg_b);
-        }
-        q9_screenbuf_puts(sb, buttons_row, cancel_col, cancel_label,
-                           cancel_focus ? p->focus_fg_r : p->body_fg_r,
-                           cancel_focus ? p->focus_fg_g : p->body_fg_g,
-                           cancel_focus ? p->focus_fg_b : p->body_fg_b);
+        draw_button(sb, buttons_row, cancel_col, button_w, "Abbrechen",
+                    cancel_focus ? p->focus_fg_r : p->sub_fg_r,
+                    cancel_focus ? p->focus_fg_g : p->sub_fg_g,
+                    cancel_focus ? p->focus_fg_b : p->sub_fg_b,
+                    cancel_focus ? p->focus_bg_r : p->sub_bg_r,
+                    cancel_focus ? p->focus_bg_g : p->sub_bg_g,
+                    cancel_focus ? p->focus_bg_b : p->sub_bg_b,
+                    cap_above_row, cap_below_row,
+                    p->footer_bg_r, p->footer_bg_g, p->footer_bg_b);
+    }
+
+    if (dlg->filter_popup_open) {
+        render_filter_popup(dlg, sb, status_row);
     }
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.10
+// EOF q9_filedialog.c                                                                     Ver. 1.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
