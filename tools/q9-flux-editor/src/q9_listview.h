@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.30
+// File:   q9_listview.h                                                                   Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -17,7 +17,7 @@
 // Call:   q9_listview_t lv;
 //         q9_listview_init(&lv, 5, 10, 8, 40, item_count);   // Viewport: Zeile 5, Spalte 10, 8x40
 //         q9_listview_move(&lv, +1);                          // Auswahl eine Zeile runter (Pfeil ab)
-//         q9_listview_render(&lv, &sb, items, 255,255,255, 0,0,0, 255,255,0);
+//         q9_listview_render(&lv, &sb, items, 255,255,255, 0,0,0, 255,255,0, 200,200,200);
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -30,6 +30,8 @@
 //         │      │ Wunsch) -- gilt fuer Hauptfenster UND Datei-Dialog gleichermassen          │
 // 26-08-17│ 1.30 │ Luftspalte zwischen Inhalt und der Linie dazu (content_width jetzt width-2│ Cld
 //         │      │ statt width-1) -- Andreas: "wirkt jetzt doch gequetscht"                   │
+// 26-08-17│ 1.40 │ Neuer Parameter line_fg -- Linie/Bildlaufleiste bekommt eine EIGENE Farbe, │ Cld
+//         │      │ unabhaengig von der Text-fg (Andreas: "Striche links/rechts unterschiedlich")│
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -93,14 +95,22 @@ void q9_listview_move(q9_listview_t *lv, int delta);
 //           scrollen gibt). content_width ist width-2 (Linie + eine Luftspalte davor, Andreas'
 //           Wunsch, 2026-08-17, fuenfte Runde: "zum Strich jeweils ein Leerzeichen") -- die Linie
 //           selbst bleibt dabei unveraendert bei col+width-1, nur der Inhalt bekommt mehr Abstand.
-// Call:     q9_listview_render(&lv, &sb, items, 255,255,255, 0,0,0, 255,255,0)
+//           line_fg ist die Farbe der Linie/Bildlaufleiste, UNABHAENGIG von fg (Andreas' Wunsch,
+//           sechste Runde: "die Striche links und rechts am Hauptfenster sind unterschiedlich") --
+//           vorher erbte die Linie einfach fg (die normale Text-Vordergrundfarbe), was im
+//           Hauptfenster nicht zur Rahmenfarbe von q9_widgets.c's draw_frame() passte, obwohl beide
+//           Linien auf derselben Bildschirmspalte aufeinandertreffen. Aufrufer, denen das egal ist
+//           (z.B. weil fg und die gewuenschte Rahmenfarbe ohnehin gleich sein sollen), koennen
+//           einfach denselben Farbwert fuer fg und line_fg uebergeben.
+// Call:     q9_listview_render(&lv, &sb, items, 255,255,255, 0,0,0, 255,255,0, 200,200,200)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char *const *items,
                          int fg_r, int fg_g, int fg_b,
                          int sel_fg_r, int sel_fg_g, int sel_fg_b,
-                         int sel_bg_r, int sel_bg_g, int sel_bg_b);
+                         int sel_bg_r, int sel_bg_g, int sel_bg_b,
+                         int line_fg_r, int line_fg_g, int line_fg_b);
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 1.30
+// EOF q9_listview.h                                                                       Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

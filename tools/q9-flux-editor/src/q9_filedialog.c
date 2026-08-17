@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.60
+// File:   q9_filedialog.c                                                                 Ver. 1.70
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
 //         des Dialogs, s. layout_rows() -- EINZIGE Stelle, die diese Aufteilung kennt, init() und
@@ -52,6 +52,9 @@
 //         │      │ schmaler + mit "..." gekuerzt (auch in der Tabelle selbst), Rahmenlinien   │
 //         │      │ bekommen als Hintergrund IMMER body_bg (dunkler als die jeweilige Zeile),  │
 //         │      │ "X" 1 Zeichen weiter rechts, Statuszeile gekuerzt + mit Trennstrichen       │
+// 26-08-17│ 1.70 │ Siebte Feedback-Runde: q9_listview_render() Aufruf um neuen line_fg-Parameter│ Cld
+//         │      │ ergaenzt (list_fg, unveraendertes Aussehen -- der Dialog hatte diesen Bug    │
+//         │      │ ohnehin nicht, s. q9_listview.c)                                             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -470,7 +473,8 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
                             list_focus ? p->sel_fg_b : p->unfocus_sel_fg_b,
                             list_focus ? p->sel_bg_r : p->unfocus_sel_bg_r,
                             list_focus ? p->sel_bg_g : p->unfocus_sel_bg_g,
-                            list_focus ? p->sel_bg_b : p->unfocus_sel_bg_b);
+                            list_focus ? p->sel_bg_b : p->unfocus_sel_bg_b,
+                            p->list_fg_r, p->list_fg_g, p->list_fg_b);
     }
 
     /* Fussbereich -- eigene Hintergrundfarbe von der Namenszeile bis zur unteren Halbblock-Kappe,
@@ -616,5 +620,5 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.60
+// EOF q9_filedialog.c                                                                     Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────
