@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.00
+// File:   q9_listview.h                                                                   Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -24,6 +24,8 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-16│ 1.00 │ Erster Wurf -- q9_listview_scroll (Kern), render (inkl. Scrollbalken)   │ Cld
+// 26-08-17│ 1.10 │ Scrollbalken-Griff jetzt proportional zum sichtbaren Anteil (Andreas'    │ Cld
+//         │      │ Wunsch), echte Unicode-Zeichen (Q9_GLYPH_VLINE/BLOCK) statt ASCII '|'/'#' │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -78,8 +80,11 @@ void q9_listview_move(q9_listview_t *lv, int delta);
 //           (kein Umbruch). items muss mindestens item_count Eintraege haben (Aufrufer-Verantwortung,
 //           wie bei allen anderen q9_*-Funktionen hier kein Bounds-Tracking ueber die Puffergrenze
 //           von sb selbst hinaus noetig -- q9_screenbuf_puts klemmt ohnehin am Bildschirmpuffer).
-//           Zeichnet AUSSERDEM einen einzelnen-Zeichen-Scrollbalken in der Spalte col+width-1 (nur
-//           wenn item_count > height -- sonst gibt's nichts zu scrollen, keine Balken-Zeichnung).
+//           Zeichnet AUSSERDEM einen Scrollbalken in der Spalte col+width-1 (nur wenn item_count >
+//           height -- sonst gibt's nichts zu scrollen, keine Balken-Zeichnung). Der Griff ist
+//           PROPORTIONAL zum sichtbaren Anteil (height/item_count, z.B. 50% sichtbar -> Griff nimmt
+//           50% der Balkenhoehe ein), mindestens 1 Zeile, hoechstens height-1 (damit immer sichtbar
+//           bleibt, DASS es ueberhaupt etwas zu scrollen gibt).
 // Call:     q9_listview_render(&lv, &sb, items, 255,255,255, 0,0,0, 255,255,0)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char *const *items,
@@ -89,5 +94,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 1.00
+// EOF q9_listview.h                                                                       Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

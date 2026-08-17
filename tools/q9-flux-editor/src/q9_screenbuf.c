@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_screenbuf.c                                                                  Ver. 1.00
+// File:   q9_screenbuf.c                                                                  Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_screenbuf.h.
 //
@@ -8,9 +8,12 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-16│ 1.00 │ Erster Wurf                                                              │ Cld
+// 26-08-17│ 1.10 │ glyph_utf8() -- Q9_GLYPH_*-Sentinels (q9_screenbuf.h) werden beim Rendern  │ Cld
+//         │      │ in echte UTF-8-Box-Drawing-Zeichen uebersetzt (Andreas: "volle Linien")    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_screenbuf.h"
 #include "q9_ansi.h"
+#include <stddef.h>
 
 static int clamp_byte(int v)
 {
@@ -32,6 +35,23 @@ static int clamp_int(int v, int lo, int hi)
 static unsigned rem(unsigned out_max, unsigned n)
 {
     return out_max > n ? out_max - n : 0u;
+}
+
+/* Uebersetzt einen Q9_GLYPH_*-Sentinel (s. q9_screenbuf.h) in seine UTF-8-Bytefolge (immer 3 Byte
+   fuer den Bereich U+2500-U+257F). *len bleibt 0 / Rueckgabe NULL, wenn ch KEIN Glyph-Sentinel ist
+   -- der Aufrufer (render()) faellt dann auf die normale Ein-Byte-Behandlung zurueck. */
+static const char *glyph_utf8(unsigned char ch, unsigned *len)
+{
+    switch (ch) {
+        case Q9_GLYPH_HLINE: *len = 3; return "\xe2\x94\x80";  /* U+2500 ─ */
+        case Q9_GLYPH_VLINE: *len = 3; return "\xe2\x94\x82";  /* U+2502 │ */
+        case Q9_GLYPH_TL:    *len = 3; return "\xe2\x94\x8c";  /* U+250C ┌ */
+        case Q9_GLYPH_TR:    *len = 3; return "\xe2\x94\x90";  /* U+2510 ┐ */
+        case Q9_GLYPH_BL:    *len = 3; return "\xe2\x94\x94";  /* U+2514 └ */
+        case Q9_GLYPH_BR:    *len = 3; return "\xe2\x94\x98";  /* U+2518 ┘ */
+        case Q9_GLYPH_BLOCK: *len = 3; return "\xe2\x96\x88";  /* U+2588 █ */
+        default:              *len = 0; return NULL;
+    }
 }
 
 void q9_screenbuf_init(q9_screenbuf_t *sb, int rows, int cols)
@@ -144,8 +164,17 @@ unsigned q9_screenbuf_render(const q9_screenbuf_t *sb, int origin_row, int origi
                     cur_br = cell->bg_r; cur_bg = cell->bg_g; cur_bb = cell->bg_b;
                 }
             }
-            if (n < out_max) {
-                out[n++] = cell->ch ? cell->ch : ' ';
+            {
+                unsigned glen;
+                const char *g = glyph_utf8((unsigned char)cell->ch, &glen);
+                if (g) {
+                    unsigned gi;
+                    for (gi = 0; gi < glen && n < out_max; gi++) {
+                        out[n++] = g[gi];
+                    }
+                } else if (n < out_max) {
+                    out[n++] = cell->ch ? cell->ch : ' ';
+                }
             }
         }
     }
@@ -192,5 +221,5 @@ void q9_screenbuf_restore(q9_screenbuf_t *sb, int row, int col, const q9_screenb
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_screenbuf.c                                                                      Ver. 1.00
+// EOF q9_screenbuf.c                                                                      Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

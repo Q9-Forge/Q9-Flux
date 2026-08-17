@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_screenbuf.h                                                                  Ver. 1.00
+// File:   q9_screenbuf.h                                                                  Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Bildschirmpuffer auf q9_ansi.h aufgesetzt -- der in Q9FLUX_EDITOR_de.md Abschnitt 2
 //         angekuendigte Baustein fuer den modalen Config-Auswahl-Dialog ("liegt UEBER dem Rest,
@@ -36,6 +36,8 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-16│ 1.00 │ Erster Wurf -- Q9FLUX_EDITOR_de.md Abschnitt 2 (modaler Dialog braucht   │ Cld
 //         │      │ Bildschirmbereich-Sichern/Wiederherstellen)                              │
+// 26-08-17│ 1.10 │ Q9_GLYPH_*-Sentinels (Andreas: "volle Linien statt ASCII") -- echtes      │ Cld
+//         │      │ Unicode-Box-Drawing per Ein-Byte-Marker, nur render() kennt die Bedeutung  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SCREENBUF_H
 #define Q9_SCREENBUF_H
@@ -45,6 +47,24 @@
    diese Maximalwerte, falls ein Aufrufer versehentlich mehr anfordert. */
 #define Q9_SCREENBUF_MAX_ROWS 60
 #define Q9_SCREENBUF_MAX_COLS 200
+
+/* Andreas' Wunsch (2026-08-17): "volle Linien" statt reinem ASCII fuer Rahmen. Echtes Unicode-
+   Box-Drawing (U+2500 ff.) ist in UTF-8 mehrbytig -- q9_screencell_t.ch bleibt bewusst EIN Byte
+   (keine Struktur-Aenderung, kein Einfluss auf puts()/fill_rect()/snapshot()/restore()), stattdessen
+   reservieren diese sechs Werte aus dem sonst ungenutzten Steuerzeichen-Bereich (0x01-0x07, niemals
+   ein echtes druckbares Zeichen, s. q9_input_decode()) als SENTINEL -- nur q9_screenbuf_render()
+   kennt sie und ersetzt sie beim Rendern durch die passende UTF-8-Bytefolge. Aufrufer (q9_widgets.c
+   draw_frame, q9_listview.c Scrollbalken) verwenden diese Konstanten statt roher '+'/'-'/'|'.
+   BEKANNTER KOMPROMISS: aeltere Windows-Konsolen (vor UTF-8-Codepage/Windows Terminal) stellen
+   diese Zeichen ggf. falsch dar -- reines ASCII bleibt technisch weiterhin moeglich (ch='+' usw.
+   funktioniert unveraendert), nur die NEUEN Aufrufer in diesem Repo nutzen ab jetzt die Glyphen. */
+#define Q9_GLYPH_HLINE  0x01                              /* ─ waagerechte Linie                    */
+#define Q9_GLYPH_VLINE  0x02                              /* │ senkrechte Linie                      */
+#define Q9_GLYPH_TL     0x03                              /* ┌ obere linke Ecke                      */
+#define Q9_GLYPH_TR     0x04                              /* ┐ obere rechte Ecke                     */
+#define Q9_GLYPH_BL     0x05                              /* └ untere linke Ecke                     */
+#define Q9_GLYPH_BR     0x06                              /* ┘ untere rechte Ecke                    */
+#define Q9_GLYPH_BLOCK  0x07                              /* █ voller Block (z.B. Scrollbalken-Griff) */
 
 typedef struct {
     char          ch;                                 /* 0/'\0' wird beim Rendern wie ' ' behandelt */
@@ -141,5 +161,5 @@ void q9_screenbuf_restore(q9_screenbuf_t *sb, int row, int col, const q9_screenb
 
 #endif /* Q9_SCREENBUF_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_screenbuf.h                                                                      Ver. 1.00
+// EOF q9_screenbuf.h                                                                      Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

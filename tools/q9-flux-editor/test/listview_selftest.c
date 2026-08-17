@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.00
+// File:   listview_selftest.c                                                             Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -129,6 +129,34 @@ int main(void)
     q9_listview_render(&lv, &sb, items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
     check_int("kein Scrollbalken, wenn alles reinpasst -- Spalte 29 bleibt leer", sb.cell[5][29].ch, ' ');
 
+    printf("=== q9_listview_render: Scrollbalken-Griff ist PROPORTIONAL zum sichtbaren Anteil ===\n");
+    {
+        /* 20 Eintraege, Viewport-Hoehe 10 -- genau 50% sichtbar, damit muss der Griff auch genau
+           50% der Balkenhoehe (5 von 10 Zeilen) einnehmen -- exakt Andreas' eigenes Beispiel
+           (2026-08-17). */
+        const char *big_items[20];
+        int i, filled = 0, sb_col;
+        for (i = 0; i < 20; i++) { big_items[i] = "Eintrag"; }
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 0, 0, 10, 20, 20);
+        q9_listview_render(&lv, &sb, big_items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
+        sb_col = lv.col + lv.width - 1;
+        for (i = 0; i < 10; i++) {
+            if (sb.cell[lv.row + i][sb_col].ch != Q9_GLYPH_VLINE) { filled++; }
+        }
+        check_int("bei 50% sichtbar (10 von 20): Griff nimmt 5 von 10 Zeilen ein", filled, 5);
+        check_int("Griff beginnt oben (Auswahl/Offset == 0)", sb.cell[lv.row][sb_col].ch, Q9_GLYPH_BLOCK);
+
+        /* Ans Ende scrollen -- Griff muss ans untere Ende der Spur wandern. */
+        q9_listview_move(&lv, 19);
+        q9_listview_render(&lv, &sb, big_items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
+        check_int("am Ende: Griff-UNTERKANTE erreicht das Ende der Spur (letzte Zeile ist Griff)",
+                  sb.cell[lv.row + 9][sb_col].ch, Q9_GLYPH_BLOCK);
+        check_int("am Ende: erste Spur-Zeile ist NICHT mehr Teil des Griffs",
+                  sb.cell[lv.row][sb_col].ch, Q9_GLYPH_VLINE);
+    }
+
     printf("=== q9_listview_render: Randfaelle (NULL-Zeiger), kein Absturz ===\n");
     q9_listview_render(NULL, &sb, items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
     q9_listview_render(&lv, NULL, items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
@@ -141,5 +169,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.00
+// EOF listview_selftest.c                                                                 Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_widgets.c                                                                    Ver. 1.00
+// File:   q9_widgets.c                                                                    Ver. 1.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_widgets.h.
 //
@@ -8,6 +8,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-16│ 1.00 │ Erster Wurf                                                              │ Cld
+// 26-08-17│ 1.10 │ Q9_GLYPH_*-Zeichen statt ASCII (Andreas: "volle Linien")                  │ Cld
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_widgets.h"
 #include <stdio.h>
@@ -19,16 +20,18 @@ void q9_screenbuf_draw_frame(q9_screenbuf_t *sb, int row, int col, int rows, int
 
     /* Kanten -- Ecken werden gleich danach ueberschrieben, deshalb ist die Reihenfolge hier egal.
        fill_rect uebernimmt die Bounds-Pruefung (Rahmen teilweise ausserhalb des Puffers -> die
-       betroffenen Zellen werden dort einfach uebersprungen, kein Sonderfall noetig). */
-    q9_screenbuf_fill_rect(sb, row,        col, 1,    cols, '-', fg_r, fg_g, fg_b, 0, 0, 0, 0);
-    q9_screenbuf_fill_rect(sb, row+rows-1, col, 1,    cols, '-', fg_r, fg_g, fg_b, 0, 0, 0, 0);
-    q9_screenbuf_fill_rect(sb, row, col,        rows, 1,    '|', fg_r, fg_g, fg_b, 0, 0, 0, 0);
-    q9_screenbuf_fill_rect(sb, row, col+cols-1, rows, 1,    '|', fg_r, fg_g, fg_b, 0, 0, 0, 0);
+       betroffenen Zellen werden dort einfach uebersprungen, kein Sonderfall noetig). Q9_GLYPH_*
+       (echte Unicode-Box-Drawing-Zeichen, uebersetzt erst beim Rendern, s. q9_screenbuf.h) statt
+       rohem ASCII -- Andreas' Wunsch (2026-08-17) nach "vollen Linien". */
+    q9_screenbuf_fill_rect(sb, row,        col, 1,    cols, Q9_GLYPH_HLINE, fg_r, fg_g, fg_b, 0, 0, 0, 0);
+    q9_screenbuf_fill_rect(sb, row+rows-1, col, 1,    cols, Q9_GLYPH_HLINE, fg_r, fg_g, fg_b, 0, 0, 0, 0);
+    q9_screenbuf_fill_rect(sb, row, col,        rows, 1,    Q9_GLYPH_VLINE, fg_r, fg_g, fg_b, 0, 0, 0, 0);
+    q9_screenbuf_fill_rect(sb, row, col+cols-1, rows, 1,    Q9_GLYPH_VLINE, fg_r, fg_g, fg_b, 0, 0, 0, 0);
 
-    q9_screenbuf_fill_rect(sb, row,        col,        1, 1, '+', fg_r, fg_g, fg_b, 0, 0, 0, 0);
-    q9_screenbuf_fill_rect(sb, row,        col+cols-1, 1, 1, '+', fg_r, fg_g, fg_b, 0, 0, 0, 0);
-    q9_screenbuf_fill_rect(sb, row+rows-1, col,        1, 1, '+', fg_r, fg_g, fg_b, 0, 0, 0, 0);
-    q9_screenbuf_fill_rect(sb, row+rows-1, col+cols-1, 1, 1, '+', fg_r, fg_g, fg_b, 0, 0, 0, 0);
+    q9_screenbuf_fill_rect(sb, row,        col,        1, 1, Q9_GLYPH_TL, fg_r, fg_g, fg_b, 0, 0, 0, 0);
+    q9_screenbuf_fill_rect(sb, row,        col+cols-1, 1, 1, Q9_GLYPH_TR, fg_r, fg_g, fg_b, 0, 0, 0, 0);
+    q9_screenbuf_fill_rect(sb, row+rows-1, col,        1, 1, Q9_GLYPH_BL, fg_r, fg_g, fg_b, 0, 0, 0, 0);
+    q9_screenbuf_fill_rect(sb, row+rows-1, col+cols-1, 1, 1, Q9_GLYPH_BR, fg_r, fg_g, fg_b, 0, 0, 0, 0);
 
     /* Titel mittig in der oberen Kante, mit je einem Leerzeichen als Abstand -- ueberschreibt dort
        die '-'-Zeichen. Passt der Titel (inkl. der zwei Leerzeichen) nicht zwischen die beiden Ecken,
@@ -48,5 +51,5 @@ void q9_screenbuf_draw_frame(q9_screenbuf_t *sb, int row, int col, int rows, int
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_widgets.c                                                                        Ver. 1.00
+// EOF q9_widgets.c                                                                        Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
