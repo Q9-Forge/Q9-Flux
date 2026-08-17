@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.30
+// File:   q9_listview.c                                                                   Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -14,6 +14,8 @@
 //         │      │ "verschmilzt sonst")                                                       │
 // 26-08-17│ 1.30 │ Rechte Spalte zeigt jetzt IMMER die Linie (Andreas: "wird keine Laufleiste │ Cld
 //         │      │ benoetigt ist es einfach der normale Strich") -- ersetzt die -2-Sonderregel │
+// 26-08-17│ 1.40 │ Fuenfte Feedback-Runde: eine Luftspalte zwischen Inhalt und der Linie dazu  │ Cld
+//         │      │ (Andreas: "wirkt jetzt doch gequetscht") -- content_width jetzt width-2      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -82,10 +84,11 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
     /* Rechte Spalte IMMER fuer die Bildlaufleiste reserviert (Andreas' Wunsch, 2026-08-17: "wird
        keine Laufleiste benoetigt ist es einfach der normale Strich" -- die Spalte zeigt IMMER
        mindestens die Linie, unabhaengig davon, ob tatsaechlich etwas zu scrollen ist, sowohl im
-       Hauptfenster als auch im Datei-Dialog). Ersetzt die fruehere "-2 nur wenn Scrollbalken
-       noetig"-Sonderregel (Luecken-Spalte vor dem Balken) -- die durchgehende Linie ist jetzt
-       selbst die Abgrenzung zur markierten Zeile, keine separate Luecke mehr noetig. */
-    content_width = lv->width - 1;
+       Hauptfenster als auch im Datei-Dialog). PLUS eine Luftspalte davor (fuenfte Runde, selber
+       Tag: "wirkt jetzt doch gequetscht... bitte zum Strich jeweils ein Leerzeichen") -- content
+       reicht also bis width-2, nicht bis width-1. Die Linie selbst bleibt an derselben Stelle
+       (line_col haengt NICHT von content_width ab) -- nur der Inhalt bekommt mehr Luft davor. */
+    content_width = lv->width - 2;
     if (content_width < 1) { content_width = 1; }
     line_col = lv->col + lv->width - 1;
 
@@ -149,5 +152,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.30
+// EOF q9_listview.c                                                                       Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

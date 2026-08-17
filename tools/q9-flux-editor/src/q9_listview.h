@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.20
+// File:   q9_listview.h                                                                   Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -28,6 +28,8 @@
 //         │      │ Wunsch), echte Unicode-Zeichen (Q9_GLYPH_VLINE/BLOCK) statt ASCII '|'/'#' │
 // 26-08-17│ 1.20 │ Rechte Spalte zeigt jetzt IMMER die Linie, auch ohne Scrollbedarf (Andreas'│ Cld
 //         │      │ Wunsch) -- gilt fuer Hauptfenster UND Datei-Dialog gleichermassen          │
+// 26-08-17│ 1.30 │ Luftspalte zwischen Inhalt und der Linie dazu (content_width jetzt width-2│ Cld
+//         │      │ statt width-1) -- Andreas: "wirkt jetzt doch gequetscht"                   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -88,7 +90,9 @@ void q9_listview_move(q9_listview_t *lv, int delta);
 //           den Griff (Q9_GLYPH_BLOCK) darauf. Der Griff ist PROPORTIONAL zum sichtbaren Anteil
 //           (height/item_count, z.B. 50% sichtbar -> Griff nimmt 50% der Balkenhoehe ein), mindestens
 //           1 Zeile, hoechstens height-1 (damit immer sichtbar bleibt, DASS es ueberhaupt etwas zu
-//           scrollen gibt). content_width ist entsprechend IMMER width-1 (nicht mehr bedingt).
+//           scrollen gibt). content_width ist width-2 (Linie + eine Luftspalte davor, Andreas'
+//           Wunsch, 2026-08-17, fuenfte Runde: "zum Strich jeweils ein Leerzeichen") -- die Linie
+//           selbst bleibt dabei unveraendert bei col+width-1, nur der Inhalt bekommt mehr Abstand.
 // Call:     q9_listview_render(&lv, &sb, items, 255,255,255, 0,0,0, 255,255,0)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char *const *items,
@@ -98,5 +102,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 1.20
+// EOF q9_listview.h                                                                       Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
