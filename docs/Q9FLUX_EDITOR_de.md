@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.20
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.30
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -73,6 +73,9 @@
 # 26-08-17│ 3.20 │ Elfte Runde: Buttons teilen sich jetzt Namens-/Filterzeile (2 Zeilen gespart),     │ Cld
 #         │      │ Namenskuerzung mit "...", Randlinien immer body_bg, X verschoben, Statuszeile      │
 #         │      │ gekuerzt + mit Trennstrichen                                                       │
+# 26-08-17│ 3.30 │ Zwoelfte Runde: komplette Farbpalette auf durchgehende Gelb-/Orange-Leiter          │ Cld
+#         │      │ umgerechnet (ein Farbton/eine Saettigung, nur Helligkeit unterscheidet die         │
+#         │      │ Ebenen), Tabellenhintergrund dunkler, mehr Kontrast zwischen den Ebenen             │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -575,6 +578,29 @@ die Dialogbreite begrenzt.
 wieder auf 18 verkleinert). `make test` komplett gruen. Sichtpruefung per pyte bestaetigt: Kuerzung
 mit "..." funktioniert (echte lange Datei aus `HOME` als Beleg), Randlinien durchgehend in
 `body_bg`, "X" eine Spalte weiter rechts, Statuszeile passt jetzt ohne Ueberlauf in die Dialogbreite.
+
+**Zwoelfte Runde (2026-08-17) -- Farbpalette:**
+*"Die ganzen Farben sind jetzt alle so in Richtung Braun abgerutscht, kannst du das bitte noch
+etwas mehr in Richtung gelb orange bringen? Der Tabellenhintergrund bitte noch etwas dunkler, der
+Tabellenkopf und der untere Teil bitte etwas mehr Kontrast... falls man das ueberein bringen
+kann."* -- die komplette Palette (Hauptfenster UND Dialog) wurde auf eine durchgehende Farbleiter
+umgerechnet: EIN Farbton (~42 Grad, Orange-Gelb) und EINE hohe Saettigung (~82%) fuer alle Toene,
+nur die HELLIGKEIT (V) unterscheidet die Ebenen -- vorher waren es unterschiedlich helle
+BRAUNTOENE (aehnlicher Farbton, aber niedrigere/wechselnde Saettigung), jetzt eine klare Leiter:
+
+| Ebene | V | Beispiel |
+|---|---|---|
+| `PAL_DIALOG_BODY_BG` (Tabellenhintergrund) | 0.15 | dunkelster Schritt, "noch etwas dunkler" |
+| `PAL_DIALOG_FOOTER_BG` / `PAL_STATUS_BG` ("der untere Teil") | 0.32 | |
+| `PAL_DIALOG_SUB_BG` (Tabellenkopf, Button-Grundfarbe) | 0.44 | deutlicher Sprung zu beiden Nachbarn |
+| `PAL_FRAME` (Rahmenlinien + Text auf SUB_BG/STATUS_BG) | 0.72 | |
+| `PAL_HEADER_BG` | 0.80 | |
+| `PAL_SEL_BG` (Auswahl-Hervorhebung) | 0.90 | hellster, kraeftigster Ton |
+
+`integration_demo.c` Ver. 2.20 (reine Farbkonstanten-Aenderung, keine Geometrie/Logik betroffen).
+`make test` komplett gruen (erwartungsgemaess unveraendert). Sichtpruefung per pyte bestaetigt alle
+neuen Hex-Werte exakt an den erwarteten Stellen (Tabellenhintergrund, Spaltentitel-Zeile,
+Fussbereich, Kopfzeile, Auswahl-Hervorhebung, Fliesstext).
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
