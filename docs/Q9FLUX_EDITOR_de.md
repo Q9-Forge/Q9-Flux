@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.60
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 2.70
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -54,6 +54,9 @@
 #         │      │ getestet; offen bleibt nur noch die Einbindung ins Integrations-Demo (task #22) │
 # 26-08-17│ 2.60 │ task #22 FERTIG -- Dialog per Taste 'O' im Integrations-Demo, echter Pseudo-    │ Cld
 #         │      │ Terminal-Rauchtest bestanden. Datei-Auswahl-Dialog damit komplett abgeschlossen  │
+# 26-08-17│ 2.70 │ Sechste Runde: zwei Bugs aus Andreas' erstem echten Test behoben -- Dialog       │ Cld
+#         │      │ zeigt jetzt den echten Hauptbildschirm dahinter (statt Vollbild-Fuellfarbe),     │
+#         │      │ Fokuswechsel auf/von der Dateiliste ist jetzt sichtbar (unfocus_sel_* Farbpaar)  │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -361,6 +364,27 @@ bestaetigt, dann von Andreas verfeinert):
   sichtbar/bedienbar. **Noch offen** bleiben die von Andreas noch nicht konkretisierten "paar
   Optionen" fuer die Listenansicht (kein eigener Task bisher, s. Runde 5 oben) und die bewusst
   vertagte Anzeige des aktuellen Verzeichnispfads im Dialog.
+
+**Sechste Runde (2026-08-17) -- zwei Bugs aus Andreas' erstem echten Test:**
+1. *"Auf volle Groesse hatte ich mir den jetzt nicht vorgestellt"* -- der Dialog WAR immer schon
+   nur `DIALOG_ROWS x DIALOG_COLS` (14x50) gross, sah aber wie Vollbild aus: `run_file_dialog()`
+   fuellte vorher den KOMPLETTEN Bildschirm mit der Dialog-Hintergrundfarbe, statt den echten
+   Hauptbildschirm dahinter stehen zu lassen. Fix: `render_full_content()` in `build_full_content()`
+   (baut nur in einen Puffer, kein stdout) + duennen Ausgabe-Wrapper aufgeteilt; `run_file_dialog()`
+   nutzt `build_full_content()` jetzt als echten Hintergrund, der Dialog selbst ueberschreibt (via
+   `q9_filedialog_render()`) weiterhin nur sein eigenes Rechteck -- der Hauptbildschirm ist jetzt
+   sichtbar rundherum, per Rauchtest bestaetigt ("Netz-Terminal"-Eintrag bleibt hinter dem Dialog
+   sichtbar).
+2. *"wenn der Selektor auf die Dateiauswahl steht sehe ich nichts, es aendert sich jedenfalls
+   nichts"* -- die markierte Zeile in der Dateiliste sah IMMER gleich aus, egal ob die Liste den
+   Fokus hatte oder nicht; ein Fokuswechsel auf/von der Liste war dadurch unsichtbar (im Gegensatz
+   zu Filter/OK/Abbrechen, die schon eine eigene Fokus-Hervorhebung hatten). Fix: neues Farbpaar
+   `unfocus_sel_fg/bg` in `q9_filedialog_palette_t` -- die markierte Zeile bekommt die kraeftige
+   `sel_fg/bg`-Hervorhebung nur noch, WENN die Liste tatsaechlich den Fokus hat, sonst eine
+   gedaempfte Variante (im Demo: gleicher Ton wie die Spaltentitel-Zeile).
+
+Beide Fixes in `q9_filedialog.h/.c` Ver. 1.10 und `integration_demo.c` Ver. 1.70, `make test`
+weiterhin komplett gruen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

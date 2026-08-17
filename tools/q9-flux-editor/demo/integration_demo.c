@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 1.60
+// File:   integration_demo.c                                                             Ver. 1.70
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -54,6 +54,10 @@
 //         │      │ ("*.*"/".c"/".h"); Ergebnis (Datei gewaehlt/Abbruch) ersetzt bis zur naechsten   │
 //         │      │ Dialog-Oeffnung den unteren Hinweistext. DEMO-GRENZE: ein Resize waehrend der    │
 //         │      │ Dialog offen ist, wird ignoriert (kein Nachziehen der Dialog-Geometrie)          │
+// 26-08-17│ 1.70 │ Andreas' Feedback nach dem ersten Test: Dialog-Hintergrund ist jetzt der ECHTE   │ Cld
+//         │      │ Hauptbildschirm (build_full_content() ausgelagert) statt einer reinen Fuellfarbe │
+//         │      │ ueber den ganzen Schirm -- vorher sah der (schon immer kleine) Dialog dadurch    │
+//         │      │ wie Vollbild aus                                                                 │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -195,17 +199,22 @@ static void render_size_overlay(int rows, int cols, int too_small)
     }
 }
 
-/* hint: NULL/leer -> Standardtext ("Pfeiltasten: ..."); sonst wird STATTDESSEN hint angezeigt --
+/* Baut den vollen Hauptbildschirm-Inhalt in sb auf (KEIN stdout-Schreiben) -- ausgelagert aus
+   render_full_content(), damit run_file_dialog() denselben echten Hintergrund hinter dem Dialog
+   zeigen kann (Andreas' Feedback, 2026-08-17: "auf volle Groesse hatte ich mir den nicht
+   vorgestellt" -- der Dialog WAR schon immer nur DIALOG_ROWS x DIALOG_COLS gross, sah aber wie
+   Vollbild aus, weil vorher der GESAMTE Bildschirm mit der Dialog-Hintergrundfarbe gefuellt wurde,
+   statt den echten Hauptbildschirm dahinter stehen zu lassen -- jetzt behoben).
+   hint: NULL/leer -> Standardtext ("Pfeiltasten: ..."); sonst wird STATTDESSEN hint angezeigt --
    dient der Demo dazu, das Ergebnis des Datei-Auswahl-Dialogs (task #22) sichtbar zu machen, ohne
    die Statuszeile selbst (feste Feldbreiten, s.o.) umbauen zu muessen. */
-static void render_full_content(q9_listview_t *lv, int rows, int cols, const char *hint)
+static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, int cols,
+                                const char *hint)
 {
-    q9_screenbuf_t sb;
-    char out[1 << 16];
     char status[256];
 
-    q9_screenbuf_init(&sb, rows, cols);
-    q9_screenbuf_draw_frame(&sb, 0, 0, rows, cols,
+    q9_screenbuf_init(sb, rows, cols);
+    q9_screenbuf_draw_frame(sb, 0, 0, rows, cols,
                              "Q9-Flux Editor -- Integrations-Demo",
                              PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
@@ -217,13 +226,13 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols, const cha
        durch fill_rect vollstaendig ueberschrieben) -- LINKSBUENDIG ab Spalte 3 statt zentriert
        (Andreas' Wunsch, 2026-08-17: "lass uns mal links versuchen, ab dem dritten Zeichen" --
        Spalte 3 passt auch zur Linksbuendigkeit von Listenansicht/Hinweistext weiter unten). */
-    q9_screenbuf_fill_rect(&sb, 0, 0, 1, cols, ' ',
+    q9_screenbuf_fill_rect(sb, 0, 0, 1, cols, ' ',
                             PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B,
                             1, PAL_HEADER_BG_R, PAL_HEADER_BG_G, PAL_HEADER_BG_B);
-    q9_screenbuf_puts(&sb, 0, 3, "Q9-Flux Editor -- Integrations-Demo",
+    q9_screenbuf_puts(sb, 0, 3, "Q9-Flux Editor -- Integrations-Demo",
                        PAL_HEADER_FG_R, PAL_HEADER_FG_G, PAL_HEADER_FG_B);
 
-    q9_screenbuf_puts(&sb, rows - 2, 3,
+    q9_screenbuf_puts(sb, rows - 2, 3,
                        (hint && hint[0]) ? hint
                                          : "Pfeiltasten: navigieren   O: Datei oeffnen   Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
@@ -235,7 +244,7 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols, const cha
     if (lv->height < 1) { lv->height = 1; }
     if (lv->width  < 1) { lv->width  = 1; }
     lv->scroll_offset = q9_listview_scroll(lv->selected, lv->scroll_offset, lv->height, lv->item_count);
-    q9_listview_render(lv, &sb, g_items,
+    q9_listview_render(lv, sb, g_items,
                         PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
                         PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
                         PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B);
@@ -245,25 +254,36 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols, const cha
        der Eintragsname wird auf NAME_FIELD_WIDTH Zeichen aufgefuellt (linksbuendig), die
        Terminal-Groesse mit fester Breite je Zahl (rows dreistellig rechtsbuendig, cols dreistellig
        linksbuendig) -- "Terminal:" steht dadurch bei jeder Auswahl/Groesse an derselben Spalte. */
-    q9_screenbuf_fill_rect(&sb, rows - 1, 0, 1, cols, ' ',
+    q9_screenbuf_fill_rect(sb, rows - 1, 0, 1, cols, ' ',
                             PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B,
                             1, PAL_STATUS_BG_R, PAL_STATUS_BG_G, PAL_STATUS_BG_B);
     snprintf(status, sizeof(status), " Ausgewaehlt: %-*.*s | Terminal: %3dx%-3d",
              NAME_FIELD_WIDTH, NAME_FIELD_WIDTH,
              (lv->selected >= 0 && lv->selected < ITEM_COUNT) ? g_items[lv->selected] : "-",
              rows, cols);
-    q9_screenbuf_puts(&sb, rows - 1, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
+    q9_screenbuf_puts(sb, rows - 1, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
+}
 
-    {
-        unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
-        fwrite(out, 1, n, stdout);
-        fflush(stdout);
-    }
+static void render_full_content(q9_listview_t *lv, int rows, int cols, const char *hint)
+{
+    q9_screenbuf_t sb;
+    char out[1 << 16];
+    unsigned n;
+
+    build_full_content(&sb, lv, rows, cols, hint);
+    n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
+    fwrite(out, 1, n, stdout);
+    fflush(stdout);
 }
 
 /* Oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20) zentriert ueber dem
    aktuellen Bildschirm, scannt bewusst "." (das Arbeitsverzeichnis der Demo selbst -- reine
    Vorfuehrung, keine echte Config-Anbindung, s. Kopfkommentar) mit ein paar Beispiel-Filtern.
+   Der Dialog ist bewusst NUR DIALOG_ROWS x DIALOG_COLS gross (Andreas' Feedback, 2026-08-17:
+   "auf volle Groesse hatte ich mir den jetzt nicht vorgestellt") -- als Hintergrund steht der
+   ECHTE Hauptbildschirm (ueber build_full_content(), s.o.), nicht mehr eine reine Fuellfarbe ueber
+   den ganzen Schirm (das war der eigentliche Grund, warum es vorher wie Vollbild aussah, obwohl
+   der Dialog selbst schon immer klein war).
    DEMO-GRENZE: ein Terminal-Resize WAEHREND der Dialog offen ist, wird hier bewusst IGNORIERT
    (Dialog bleibt in seiner urspruenglichen Groesse/Position stehen, kein Nachziehen) -- ein
    echter Editor muesste hier neu snapshot/restore + den Dialog re-initialisieren, das würde die
@@ -271,8 +291,11 @@ static void render_full_content(q9_listview_t *lv, int rows, int cols, const cha
    ignoriert (sonst liesse sich das Programm aus dem Dialog heraus nicht mehr beenden) --
    signalisiert per Rueckgabe 0 an den Aufrufer, der dann seinerseits sauber beendet.
    Rueckgabe: 1 = Datei ausgewaehlt (result_msg beschreibt sie), -1 = abgebrochen (result_msg
-   entsprechend gesetzt), 0 = Strg-C/EOF (result_msg unveraendert -- Aufrufer beendet ohnehin). */
-static int run_file_dialog(int rows, int cols, char *result_msg, unsigned result_msg_size)
+   entsprechend gesetzt), 0 = Strg-C/EOF (result_msg unveraendert -- Aufrufer beendet ohnehin).
+   result_msg dient WAEHREND der Dialoglaufzeit zusaetzlich als "aktueller Hinweistext" fuer den
+   Hintergrund (unveraendert bis zum Ende der Funktion) -- spart einen eigenen Parameter dafuer. */
+static int run_file_dialog(int rows, int cols, q9_listview_t *lv,
+                            char *result_msg, unsigned result_msg_size)
 {
     static const char *const filters[] = { "*.*", ".c", ".h" };
     q9_filedialog_palette_t pal;
@@ -301,6 +324,13 @@ static int run_file_dialog(int rows, int cols, char *result_msg, unsigned result
     pal.sel_bg_r    = PAL_SEL_BG_R;    pal.sel_bg_g    = PAL_SEL_BG_G;    pal.sel_bg_b    = PAL_SEL_BG_B;
     pal.focus_fg_r  = PAL_SEL_FG_R;    pal.focus_fg_g  = PAL_SEL_FG_G;    pal.focus_fg_b  = PAL_SEL_FG_B;
     pal.focus_bg_r  = PAL_SEL_BG_R;    pal.focus_bg_g  = PAL_SEL_BG_G;    pal.focus_bg_b  = PAL_SEL_BG_B;
+    /* Andreas' Feedback (2026-08-17): "wenn der Selektor auf die Dateiauswahl steht sehe ich
+       nichts" -- die markierte Zeile sah IMMER gleich aus, egal ob die Liste den Fokus hatte oder
+       nicht (der Fokus-Wechsel war dadurch unsichtbar). Jetzt gedaempfter Ton, wenn die Liste
+       NICHT fokussiert ist -- gleiche Grundfarbe wie die Spaltentitel-Zeile, aber lesbarer Text
+       (statt komplett unsichtbarer Markierung), s. q9_filedialog.c list_focus-Unterscheidung. */
+    pal.unfocus_sel_fg_r = PAL_LIST_FG_R; pal.unfocus_sel_fg_g = PAL_LIST_FG_G; pal.unfocus_sel_fg_b = PAL_LIST_FG_B;
+    pal.unfocus_sel_bg_r = PAL_DIALOG_SUB_BG_R; pal.unfocus_sel_bg_g = PAL_DIALOG_SUB_BG_G; pal.unfocus_sel_bg_b = PAL_DIALOG_SUB_BG_B;
 
     if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
                             "Konfigurationsauswahl", ".", filters, 3, &pal) != 0) {
@@ -312,11 +342,10 @@ static int run_file_dialog(int rows, int cols, char *result_msg, unsigned result
         q9_screenbuf_t sb;
         char out[1 << 16];
 
-        q9_screenbuf_init(&sb, rows, cols);
-        /* Hintergrund hinter dem Dialog -- fuer die Demo reicht eine einfache gefuellte Flaeche
-           (kein echtes snapshot()/restore() des vorherigen Hauptinhalts, s. Funktionskommentar). */
-        q9_screenbuf_fill_rect(&sb, 0, 0, rows, cols, ' ', PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
-                                1, PAL_DIALOG_BODY_BG_R, PAL_DIALOG_BODY_BG_G, PAL_DIALOG_BODY_BG_B);
+        /* Echter Hauptbildschirm als Hintergrund (s. Funktionskommentar) -- der Dialog selbst
+           ueberschreibt danach nur sein EIGENES Rechteck (q9_filedialog_render() faengt mit
+           seinem eigenen fill_rect ueber dlg->row/col/rows/cols an), der Rest bleibt sichtbar. */
+        build_full_content(&sb, lv, rows, cols, result_msg);
         q9_filedialog_render(&dlg, &sb);
         {
             unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
@@ -436,7 +465,7 @@ int main(void)
                 case Q9_KEY_CHAR:
                     if (!showing_overlay && (k.ch == 'o' || k.ch == 'O')) {
                         /* task #22: modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20). */
-                        int r = run_file_dialog(rows, cols, last_dialog_msg, sizeof(last_dialog_msg));
+                        int r = run_file_dialog(rows, cols, &lv, last_dialog_msg, sizeof(last_dialog_msg));
                         if (r == 0) { running = 0; }         /* Strg-C/EOF waehrend des Dialogs */
                         /* naechste Schleifenrunde zeichnet automatisch alles neu (inkl. last_dialog_msg) */
                     }
@@ -463,5 +492,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 1.60
+// EOF integration_demo.c                                                                  Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────
