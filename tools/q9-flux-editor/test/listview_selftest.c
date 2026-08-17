@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.20
+// File:   listview_selftest.c                                                             Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -15,6 +15,8 @@
 // 26-08-16│ 1.10 │ Erster Wurf (vorherige Historie s. q9_listview.h/.c)                    │ Cld
 // 26-08-17│ 1.20 │ Test fuer "kein Scrollbedarf" angepasst -- Spalte zeigt jetzt IMMER die  │ Cld
 //         │      │ Linie statt leer zu bleiben (Andreas' Wunsch, s. q9_listview.h/.c)       │
+// 26-08-17│ 1.30 │ Neuer line_fg-Parameter an allen Aufrufen dazu, neuer Check bestaetigt,   │ Cld
+//         │      │ dass die Linie tatsaechlich line_fg statt fg zeigt                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -115,7 +117,7 @@ int main(void)
     printf("=== q9_listview_render: sichtbare Eintraege landen an der richtigen Stelle ===\n");
     q9_screenbuf_init(&sb, 24, 80);
     q9_listview_init(&lv, 5, 10, 4, 20, 10);                /* Viewport 4 hoch -- zeigt Eintraege 0..3 */
-    q9_listview_render(&lv, &sb, items, 200, 200, 200, 0, 0, 0, 255, 255, 0);
+    q9_listview_render(&lv, &sb, items, 200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99);
     check_int("'E' von 'Eintrag 0' an (5,10)", sb.cell[5][10].ch, 'E');
     check_true("'0' von 'Eintrag 0' irgendwo in der Zeile", sb.cell[5][18].ch == '0');
     check_int("'E' von 'Eintrag 3' an (8,10) (letzte sichtbare Zeile)", sb.cell[8][10].ch, 'E');
@@ -132,9 +134,18 @@ int main(void)
     check_int("Scrollbalken-Spalte (col+width-1 = 29) zeigt '|' oder '#' -- nicht leer",
               sb.cell[5][29].ch != ' ', 1);
 
+    printf("=== q9_listview_render: Linie hat eine EIGENE Farbe (line_fg), unabhaengig von fg ===\n");
+    /* Zeile 6 (nicht 5!) -- bei item_count=10, height=4 ist der Scroll-Griff genau 1 Zeile hoch
+       und beginnt bei Zeile 5 (scroll_offset==0, s. Test oben); Zeile 6 zeigt garantiert die reine
+       Spur (Q9_GLYPH_VLINE in line_fg), nicht den Griff (der in sel_bg gezeichnet wird). */
+    check_int("Linien-Spalte (reine Spur, Zeile 6): fg_r stimmt mit line_fg (77) ueberein, NICHT mit fg (200)",
+              sb.cell[6][29].fg_r, 77);
+    check_int("Linien-Spalte: fg_g stimmt mit line_fg (88) ueberein", sb.cell[6][29].fg_g, 88);
+    check_int("Linien-Spalte: fg_b stimmt mit line_fg (99) ueberein", sb.cell[6][29].fg_b, 99);
+
     q9_screenbuf_init(&sb, 24, 80);
     q9_listview_init(&lv, 5, 10, 20, 20, 10);               /* Viewport GROESSER als item_count */
-    q9_listview_render(&lv, &sb, items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
+    q9_listview_render(&lv, &sb, items, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1);
     check_int("kein Scrollbedarf -- Spalte 29 zeigt trotzdem die durchgehende Linie (kein Griff)",
               sb.cell[5][29].ch, Q9_GLYPH_VLINE);
 
@@ -149,7 +160,7 @@ int main(void)
 
         q9_screenbuf_init(&sb, 24, 80);
         q9_listview_init(&lv, 0, 0, 10, 20, 20);
-        q9_listview_render(&lv, &sb, big_items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
+        q9_listview_render(&lv, &sb, big_items, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1);
         sb_col = lv.col + lv.width - 1;
         for (i = 0; i < 10; i++) {
             if (sb.cell[lv.row + i][sb_col].ch != Q9_GLYPH_VLINE) { filled++; }
@@ -159,7 +170,7 @@ int main(void)
 
         /* Ans Ende scrollen -- Griff muss ans untere Ende der Spur wandern. */
         q9_listview_move(&lv, 19);
-        q9_listview_render(&lv, &sb, big_items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
+        q9_listview_render(&lv, &sb, big_items, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1);
         check_int("am Ende: Griff-UNTERKANTE erreicht das Ende der Spur (letzte Zeile ist Griff)",
                   sb.cell[lv.row + 9][sb_col].ch, Q9_GLYPH_BLOCK);
         check_int("am Ende: erste Spur-Zeile ist NICHT mehr Teil des Griffs",
@@ -167,9 +178,9 @@ int main(void)
     }
 
     printf("=== q9_listview_render: Randfaelle (NULL-Zeiger), kein Absturz ===\n");
-    q9_listview_render(NULL, &sb, items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
-    q9_listview_render(&lv, NULL, items, 1, 1, 1, 0, 0, 0, 1, 1, 1);
-    q9_listview_render(&lv, &sb, NULL, 1, 1, 1, 0, 0, 0, 1, 1, 1);
+    q9_listview_render(NULL, &sb, items, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1);
+    q9_listview_render(&lv, NULL, items, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1);
+    q9_listview_render(&lv, &sb, NULL, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1);
     check_true("kein Absturz bis hierher", 1);
 
     printf("\n=== Zusammenfassung ===\n");
@@ -178,5 +189,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.20
+// EOF listview_selftest.c                                                                 Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
