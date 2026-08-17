@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.h                                                                 Ver. 1.50
+// File:   q9_filedialog.h                                                                 Ver. 1.60
 // Owner:  Claudia
 // Desc.:  Modaler Datei-Auswahl-Dialog -- komponiert q9_filelist (Verzeichnis-Scan), q9_listview
 //         (scrollbare Liste) und q9_screenbuf (Bildschirmpuffer) zu einem echten interaktiven
@@ -32,24 +32,30 @@
 //
 //             ── FUSSBEREICH, eigene Hintergrundfarbe (footer_bg), Rahmenlinien laufen durch ──
 //             ├ Namenszeile: "Datei: " + der Name in einem eigenen, abgesetzten Kaestchen
-//             │  (sub_fg/bg, wie die Spaltentitel-Zeile)
-//             ├ Filterzeile (eigene Zeile, fuenfte Runde -- vorher rechtsbuendig auf derselben
-//             │  Zeile wie "Datei:"): "Filter: " + kompakter Extensions-Umschalter (4-5
-//             │  Buchstaben + ▾) -- ▾ oeffnet ein kleines Aufklapp-Menue mit ALLEN Filtern (s.u.),
-//             │  kein reines Durchschalten mehr. Beide Beschriftungen ("Datei:"/"Filter:") auf
-//             │  Q9_FILEDIALOG_LABEL_WIDTH aufgefuellt, damit ihre Werte untereinander anfangen
-//             ├ (Halbblock-Kappe oberhalb der Buttons, s.u.)
+//             │  (sub_fg/bg, wie die Spaltentitel-Zeile) -- TEILT SICH diese Zeile mit der OBEREN
+//             │  Halbblock-Kappe der Buttons (rechts, s.u. -- sechste Runde: "die Buttons kommen
+//             │  direkt unter die Dateitabelle", spart 2 Zeilen). Das Kaestchen ist deshalb
+//             │  schmaler als dlg->name_col_width und der Name wird mit "..." gekuerzt, wenn er
+//             │  nicht mehr passt -- genau wie in der Tabelle selbst (s. truncate_ellipsis() .c)
+//             ├ Filterzeile: "Filter: " + kompakter Extensions-Umschalter (4-5 Buchstaben + ▾) --
+//             │  ▾ oeffnet ein kleines Aufklapp-Menue mit ALLEN Filtern (s.u.), kein reines
+//             │  Durchschalten mehr. TEILT SICH diese Zeile mit den Buttons SELBST (rechts, s.u.).
+//             │  Beide Beschriftungen ("Datei:"/"Filter:") auf Q9_FILEDIALOG_LABEL_WIDTH
+//             │  aufgefuellt, damit ihre Werte untereinander anfangen
 //             ├ Buttons OK / Abbrechen -- "richtige" Buttons in Spaltentitel-Farbe (sub_fg/bg),
 //             │  rechtsbuendig mit einer Luftspalte vor der rechten Linie, gleich breit, per
 //             │  Q9_GLYPH_UPPER_HALF/LOWER_HALF nach oben+unten "aufgeblasen" (klassischer
 //             │  Halbblock-Trick: eine Zeile UEBER dem Button zeigt in der unteren Haelfte die
 //             │  Button-Farbe, eine Zeile UNTER dem Button in der oberen Haelfte -- der Button
 //             │  wirkt dadurch anderthalb Zeilen hoch, obwohl er nur eine einzige Textzeile
-//             │  belegt)
-//             ├ (Halbblock-Kappe unterhalb der Buttons, s.u.)
-//             └ NEUE Statuszeile (fuenfte Runde: "auch eine Statuszeile wie im Hauptfenster"),
-//                volle Breite, eigene Farbe (dieselbe wie die Kopfzeile) -- Tastatur-Kurzhinweis.
-//                Rahmenlinien enden GENAU hier (s.o.)
+//             │  belegt). Die OBERE Kappe liegt auf der Namenszeile, die UNTERE auf einer eigenen
+//             │  Zeile (s.u.) -- der Haupttext des Buttons selbst auf der Filterzeile
+//             └ (untere Halbblock-Kappe der Buttons, eigene Zeile)
+//
+//             NEUE Statuszeile ("auch eine Statuszeile wie im Hauptfenster"), volle Breite, eigene
+//             Farbe (dieselbe wie die Kopfzeile) -- gekuerzter Tastatur-Hinweis, die drei Felder
+//             durch Q9_GLYPH_VLINE (│) getrennt statt durch viel Leerraum. Rahmenlinien enden
+//             GENAU davor (s.o.).
 //
 //         RAHMENLOS -- nur ueber eine eigene Hintergrundfarbe vom Rest des Bildschirms abgegrenzt
 //         (Aufgabenbeschreibung, kein q9_widgets-Rahmen). Der AUFRUFER macht snapshot()/restore()
@@ -116,6 +122,10 @@
 //         │      │ 2 Zeichen schmaler, Filter jetzt eigene Zeile ("Filter: ") statt rechts-   │
 //         │      │ buendig neben "Datei:", neue Statuszeile ganz unten, Rahmenlinien reichen  │
 //         │      │ jetzt bis dorthin (nicht mehr nur um die Liste herum)                      │
+// 26-08-17│ 1.60 │ Sechste Feedback-Runde: Buttons teilen sich jetzt Namens-/Filterzeile      │ Cld
+//         │      │ statt eigene Zeilen zu belegen (2 Zeilen gespart), Name mit "..." gekuerzt │
+//         │      │ wenn zu lang (auch in der Tabelle), Rahmenlinien bekommen immer body_bg,    │
+//         │      │ "X" 1 Zeichen weiter rechts, Statuszeile gekuerzt + mit Trennstrichen        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_FILEDIALOG_H
 #define Q9_FILEDIALOG_H
@@ -267,5 +277,5 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
 
 #endif /* Q9_FILEDIALOG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.h                                                                     Ver. 1.50
+// EOF q9_filedialog.h                                                                     Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
