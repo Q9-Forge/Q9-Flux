@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.10
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.20
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -70,6 +70,9 @@
 # 26-08-17│ 3.10 │ Zehnte Runde ("wirkt jetzt doch gequetscht"): Luftspalte vor beiden Linien,        │ Cld
 #         │      │ schmalere Buttons, Filter jetzt eigene Zeile, neue Statuszeile ganz unten,         │
 #         │      │ Rahmenlinien reichen jetzt bis dorthin (nicht mehr nur um die Liste)               │
+# 26-08-17│ 3.20 │ Elfte Runde: Buttons teilen sich jetzt Namens-/Filterzeile (2 Zeilen gespart),     │ Cld
+#         │      │ Namenskuerzung mit "...", Randlinien immer body_bg, X verschoben, Statuszeile      │
+#         │      │ gekuerzt + mit Trennstrichen                                                       │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -535,6 +538,43 @@ zwei zusaetzlichen Fusszeilen plus etwas mehr Breite). `make test` komplett grue
 per pyte bestaetigt: durchgehend 1 Zeichen Abstand zu beiden Linien, "Datei:"/"Filter:"-Werte exakt
 in derselben Spalte, Buttons enden mit Luecke vor der Linie, neue Statuszeile farblich korrekt auf
 die Dialogbreite begrenzt.
+
+**Elfte Runde (2026-08-17) -- "Fast gut :-)", sechs weitere Wuensche:**
+1. *"Ich wollte noch zwei Zeilen sparen, die beiden Buttons OK und Abbrechen kommen direkt unter
+   die Dateitabelle, der Dateiname wird dann gekuerzt und ggf. mit den ... dargestellt. Genauso
+   wird es oben in der Tabelle gemacht, wenn der Name zu lange ist."* -- Rueckfrage per
+   `AskUserQuestion` ergab: "Filter bleibt so ist kurz genug", die Buttons wandern zwei Zeilen nach
+   oben und TEILEN SICH die Namens-/Filterzeile mit ihren Halbblock-Kappen bzw. dem Button-Text
+   selbst (rechtsbuendig, waehrend "Datei:"/"Filter:" links stehen) -- neue Funktion
+   `truncate_ellipsis()` kuerzt Namen mit "..." statt hart abzuschneiden, sowohl im Namens-Kaestchen
+   (jetzt schmaler, da es der oberen Halbblock-Kappe von OK ausweichen muss) als auch in der
+   Tabelle selbst.
+2. *"Die Zeichen mit den beiden senkrechten Strichen bekommen als Hintergrundfarbe die dunklere aus
+   der Zeile darunter"* -- die Rahmenlinien-Zeichen (auf der Spaltentitel-Zeile und im
+   Fussbereich, von diesem Modul selbst gezeichnet) bekommen jetzt IMMER `body_bg` (die dunkelste
+   Farbe) als eigenen Zellhintergrund statt die jeweilige Zeilenfarbe zu erben -- dafuer `fill_rect`
+   statt nur `puts()` (das den Hintergrund unangetastet laesst).
+3. *"Das X in der oberen Zeile ein Zeichen weiter nach rechts"* -- erledigt.
+4. *"Statuszeile, der Text ist zu lang, steht zwei Zeichen ueber, bitte auch dort mit senkrechten
+   Strichen teilen"* -- Text gekuerzt ("TAB: weiter │ Enter: OK │ Esc: Abbruch" statt der langen
+   Version) und mit `Q9_GLYPH_VLINE` als Trennzeichen zwischen den drei Feldern statt viel
+   Leerraum, passt jetzt sauber in die Dialogbreite.
+5. *"Warum ist in der Dateiliste einmal ein kompletter Pfad drin?"* -- kein Bug: `q9_filelist_scan`
+   listet einfach ehrlich, was im gescannten Verzeichnis (Andreas' `HOME`) liegt; eine seiner
+   echten Dateien hat dort tatsaechlich einen pfadartigen Namen als Dateiname (kein rekursiver
+   Scan, keine Interpretation).
+6. *"Du kannst gerne Umlaute verwenden... oder ist das ein Problem?"* -- ist aktuell ein Problem:
+   `q9_screencell_t.ch` ist bewusst EIN Byte pro Zelle (s. `q9_screenbuf.h`), Umlaute sind
+   mehrbytige UTF-8-Sequenzen wie die Box-Drawing-Zeichen -- bruechen ohne eigene
+   `Q9_GLYPH_*`-Sentinels (analog zu ▾/▀/▄) das Rendering. Bisher bewusst ASCII-Transliteration
+   (oe/ae/ue/ss) zur Vermeidung -- Umlaut-Unterstuetzung waere ein separates, ueberschaubares
+   Erweiterungsprojekt (7-8 neue Sentinels), aber noch nicht umgesetzt.
+
+`q9_filedialog.h/.c` Ver. 1.60 (Buttons teilen sich Zeilen, `truncate_ellipsis()`, Randlinien mit
+`body_bg`, X verschoben, Statuszeile gekuerzt), `integration_demo.c` Ver. 2.10 (`DIALOG_ROWS`
+wieder auf 18 verkleinert). `make test` komplett gruen. Sichtpruefung per pyte bestaetigt: Kuerzung
+mit "..." funktioniert (echte lange Datei aus `HOME` als Beleg), Randlinien durchgehend in
+`body_bg`, "X" eine Spalte weiter rechts, Statuszeile passt jetzt ohne Ueberlauf in die Dialogbreite.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
