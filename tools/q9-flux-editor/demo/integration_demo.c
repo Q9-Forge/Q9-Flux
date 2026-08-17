@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.20
+// File:   integration_demo.c                                                             Ver. 2.30
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -73,6 +73,10 @@
 //         │      │ auf durchgehende Gelb-/Orange-Leiter umgerechnet (gleicher Farbton/Saettigung,    │
 //         │      │ nur die Helligkeit unterscheidet die Ebenen), Tabellenhintergrund dunkler,         │
 //         │      │ groesserer Helligkeitssprung zwischen den Ebenen fuer mehr Kontrast                │
+// 26-08-17│ 2.30 │ Siebte Feedback-Runde: Kopfzeilen-Text jetzt dunkel statt fast-weiss (schlecht     │ Cld
+//         │      │ lesbar auf hellem Gelb), neue PAL_DIALOG_SUB_FG fuer Tabellenkopf/Namens-Kaestchen/│
+//         │      │ OK-Abbrechen (mehr Kontrast), PAL_DIALOG_FOOTER_BG referenziert jetzt PAL_STATUS_BG│
+//         │      │ direkt, Hauptfenster-Liste bekommt line_fg=PAL_FRAME (Linien-Farbinkonsistenz-Fix) │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -107,9 +111,17 @@ static const char *const g_items[] = {
      V=0.15  PAL_DIALOG_BODY_BG (Tabellenhintergrund -- "noch etwas dunkler")
      V=0.32  PAL_DIALOG_FOOTER_BG / PAL_STATUS_BG ("der untere Teil")
      V=0.44  PAL_DIALOG_SUB_BG (Tabellenkopf/Spaltentitel-Zeile, Button-Grundfarbe)
-     V=0.72  PAL_FRAME (Rahmenlinien + Text auf PAL_DIALOG_SUB_BG/PAL_STATUS_BG)
+     V=0.72  PAL_FRAME (Rahmenlinien im Hauptfenster + Text auf PAL_STATUS_BG)
      V=0.80  PAL_HEADER_BG
-     V=0.90  PAL_SEL_BG (hellster, kraeftigster Farbton -- die Auswahl-Hervorhebung) */
+     V=0.90  PAL_SEL_BG (hellster, kraeftigster Farbton -- die Auswahl-Hervorhebung)
+
+   Zehnte Feedback-Runde, selber Tag: "in den beiden Kopfzeile das weiss auf dem hellen Gelb...
+   im Tabellenkopf und unter der Tabelle zu wenig Kontrast" -- zwei zusaetzliche Text-Sonderfaelle,
+   die NICHT einfach denselben V-Schritt wie ihr Hintergrund bekommen koennen (das waere ja gerade
+   der Kontrast-Verlust), sondern bewusst ans jeweils ANDERE Ende der Leiter geholt werden:
+   PAL_HEADER_FG jetzt so dunkel wie PAL_DIALOG_BODY_BG (dunkler Text auf hellem PAL_HEADER_BG,
+   statt fast-weiss), PAL_DIALOG_SUB_FG (NEU) so hell wie PAL_HEADER_FG vorher war (heller Text auf
+   dem mittelhellen PAL_DIALOG_SUB_BG). */
 #define PAL_FRAME_R      184
 #define PAL_FRAME_G      138
 #define PAL_FRAME_B       33
@@ -128,9 +140,9 @@ static const char *const g_items[] = {
 #define PAL_STATUS_BG_R   82
 #define PAL_STATUS_BG_G   62
 #define PAL_STATUS_BG_B   15
-#define PAL_HEADER_FG_R  255                                /* Andreas' Wunsch (2026-08-17):      */
-#define PAL_HEADER_FG_G  248                                 /* "das weiss etwas heller" -- naeher */
-#define PAL_HEADER_FG_B  225                                 /* an Weiss, noch leicht warm getoent */
+#define PAL_HEADER_FG_R   38                                /* Andreas' Wunsch (2026-08-17, zehnte */
+#define PAL_HEADER_FG_G   29                                 /* Runde): "weiss auf hellem Gelb ist  */
+#define PAL_HEADER_FG_B    7                                 /* schlecht lesbar" -- jetzt dunkel    */
 #define PAL_HEADER_BG_R  204                                /* etwas heller als PAL_STATUS_BG,    */
 #define PAL_HEADER_BG_G  154                                 /* gleiche Farbfamilie                */
 #define PAL_HEADER_BG_B   37
@@ -158,11 +170,23 @@ static const char *const g_items[] = {
 #define PAL_DIALOG_SUB_BG_R  112
 #define PAL_DIALOG_SUB_BG_G   85
 #define PAL_DIALOG_SUB_BG_B   20
+/* TEXT auf PAL_DIALOG_SUB_BG ("Name Datum Groesse", das Namens-Kaestchen, OK/Abbrechen
+   unfokussiert) -- Andreas' Feedback, zehnte Runde: "im Tabellenkopf... und OK/Abbrechen zu wenig
+   Kontrast". Vorher wurde dafuer PAL_FRAME (V=0.72) verwendet -- zu nah an PAL_DIALOG_SUB_BG
+   (V=0.44) fuer guten Kontrast, UND PAL_FRAME wird an anderer Stelle (Rahmenlinien, Hinweistext)
+   bewusst NICHT geaendert (haette dort unerwuenschte Nebenwirkungen). Stattdessen ein eigener,
+   heller Farbton NUR fuer diese Rolle -- derselbe Wert, den PAL_HEADER_FG bis zur letzten Runde
+   hatte (fast-weiss, jetzt frei geworden, s.o.). */
+#define PAL_DIALOG_SUB_FG_R  255
+#define PAL_DIALOG_SUB_FG_G  248
+#define PAL_DIALOG_SUB_FG_B  225
 /* Fussbereich ("der untere Teil"), V=0.32 -- zwischen PAL_DIALOG_BODY_BG und PAL_DIALOG_SUB_BG,
-   deutlich sichtbar anders als beide. */
-#define PAL_DIALOG_FOOTER_BG_R  82
-#define PAL_DIALOG_FOOTER_BG_G  62
-#define PAL_DIALOG_FOOTER_BG_B  15
+   deutlich sichtbar anders als beide. Bewusst IDENTISCH mit PAL_STATUS_BG (Andreas' Wunsch:
+   "den Footer des Dialogs in der Farbe des Hauptfensters machen") -- ueber die Konstante selbst
+   referenziert statt nur zufaellig gleiche Zahlen zu haben, damit das auch so BLEIBT. */
+#define PAL_DIALOG_FOOTER_BG_R  PAL_STATUS_BG_R
+#define PAL_DIALOG_FOOTER_BG_G  PAL_STATUS_BG_G
+#define PAL_DIALOG_FOOTER_BG_B  PAL_STATUS_BG_B
 
 #define DIALOG_ROWS 18                                      /* Wunschgroesse -- wird in            */
 #define DIALOG_COLS 56                                       /* run_file_dialog() an rows/cols geklemmt.
@@ -287,10 +311,18 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
     if (lv->height < 1) { lv->height = 1; }
     if (lv->width  < 1) { lv->width  = 1; }
     lv->scroll_offset = q9_listview_scroll(lv->selected, lv->scroll_offset, lv->height, lv->item_count);
+    /* line_fg = PAL_FRAME (NICHT PAL_LIST_FG) -- die Linie liegt seit der dritten Feedback-Runde
+       direkt AUF draw_frame()'s eigener Kante (s.o.), muss also auch DIESELBE Farbe zeigen, sonst
+       wirken links/rechts UND verschiedene Hoehen der rechten Kante unterschiedlich eingefaerbt
+       (Andreas' Feedback, 2026-08-17, siebte Runde: "die Striche links und rechts... sind
+       unterschiedlich... das oberste rechts ist noch mal anders" -- die Eckzeichen/Kanten VOR und
+       NACH dem Listenbereich blieben in PAL_FRAME, waehrend die Liste selbst bisher PAL_LIST_FG
+       zeichnete, obwohl beide auf derselben Spalte liegen). */
     q9_listview_render(lv, sb, g_items,
                         PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
                         PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
-                        PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B);
+                        PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B,
+                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     /* Statuszeile ALS untere Rahmenkante, ueber die volle Breite (vorherige Feedback-Runden) --
        jetzt zusaetzlich mit FESTEN Feldbreiten (Andreas: "sonst huepfen die Texte hin und her"):
@@ -358,7 +390,7 @@ static int run_file_dialog(int rows, int cols, q9_listview_t *lv,
     memset(&pal, 0, sizeof(pal));
     pal.header_fg_r = PAL_HEADER_FG_R; pal.header_fg_g = PAL_HEADER_FG_G; pal.header_fg_b = PAL_HEADER_FG_B;
     pal.header_bg_r = PAL_HEADER_BG_R; pal.header_bg_g = PAL_HEADER_BG_G; pal.header_bg_b = PAL_HEADER_BG_B;
-    pal.sub_fg_r    = PAL_FRAME_R;     pal.sub_fg_g    = PAL_FRAME_G;     pal.sub_fg_b    = PAL_FRAME_B;
+    pal.sub_fg_r    = PAL_DIALOG_SUB_FG_R; pal.sub_fg_g = PAL_DIALOG_SUB_FG_G; pal.sub_fg_b = PAL_DIALOG_SUB_FG_B;
     pal.sub_bg_r    = PAL_DIALOG_SUB_BG_R;  pal.sub_bg_g = PAL_DIALOG_SUB_BG_G;  pal.sub_bg_b = PAL_DIALOG_SUB_BG_B;
     pal.body_fg_r   = PAL_LIST_FG_R;   pal.body_fg_g   = PAL_LIST_FG_G;   pal.body_fg_b   = PAL_LIST_FG_B;
     pal.body_bg_r   = PAL_DIALOG_BODY_BG_R; pal.body_bg_g = PAL_DIALOG_BODY_BG_G; pal.body_bg_b = PAL_DIALOG_BODY_BG_B;
@@ -546,5 +578,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.20
+// EOF integration_demo.c                                                                  Ver. 2.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
