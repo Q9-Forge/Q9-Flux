@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.80
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.90
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -123,6 +123,9 @@
 # 26-08-18│ 4.80 │ Siebenundzwanzigste Runde: [cfN]-Abschnitte jetzt als eigene CF-Image-#N-Eintraege im  │ Cld
 #         │      │ Editor sichtbar/editierbar (Typ:/Bus:/Unit:/Datei:), fest verankert am Ende der Liste │
 #         │      │ (g_item_count waechst/schrumpft dynamisch), voll ins Speichern eingebunden            │
+# 26-08-18│ 4.90 │ Achtundzwanzigste Runde: mechanische NUMERIC-Uebernahme -- CLUT "Eintraege:" auf       │ Cld
+#         │      │ NUMERIC_DEC (einziger verbliebener reiner Zahlenwert), "Groesse:"-Felder bleiben       │
+#         │      │ bewusst TEXT (Einheit im Wert, K/MB/Leerzeichen waeren sonst nicht mehr tippbar)       │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1214,9 +1217,28 @@ aufgeloest), CF-Image #1 pcf/rc2014/slave; Datei:-Feld von CF-Image #0 per Hand 
 Namen geaendert, gespeichert -- `[cf0].image` aendert sich, `[cf1]` UND alle anderen `[cf0]`-Werte
 bleiben unveraendert. `filedialog_smoke3.exp` erneut gruen.
 
-**Noch offen:** mechanische Uebernahme von NUMERIC fuer die restlichen Felder, eventuell ein
-eigenes Symbol fuer BOOLEAN-Felder, Basis/Slot/Descriptor bei CF-Images editierbar machen,
-"Neu anlegen" als expliziter Weg.
+**Noch offen (bis zur naechsten Runde):** mechanische Uebernahme von NUMERIC fuer die restlichen
+Felder, eventuell ein eigenes Symbol fuer BOOLEAN-Felder, Basis/Slot/Descriptor bei CF-Images
+editierbar machen, "Neu anlegen" als expliziter Weg.
+
+**Achtundzwanzigste Runde (2026-08-18) -- mechanische NUMERIC-Uebernahme:**
+Zweiter von drei angebotenen offenen Punkten ("1 dann 2 dann 3"). Alle noch verbliebenen TEXT-
+Felder durchgesehen: nur EIN einziges ist noch eine reine Dezimalzahl ohne Einheit/Platzhalter --
+CLUT's `Eintraege:` (`"256"`) -- jetzt `NUMERIC_DEC`. Alle anderen Kandidaten stellten sich beim
+genaueren Hinsehen als NICHT geeignet heraus:
+
+- **`Groesse:`-Felder** (Framebuffer `512K`, RAM `4 MB`, ROM `256K`, NVRAM `2K`) -- Einheit im
+  Wert, keine reine Zahl. `NUMERIC_DEC`s Zeichenklassen-Filter (`is_allowed_numeric_char()`,
+  s. `q9_listview.c`) akzeptiert nur `0`-`9` -- K/MB/Leerzeichen waeren dann beim Tippen NICHT
+  mehr eingebbar, ein echter Funktionsverlust statt einer reinen Verbesserung. Bleiben bewusst
+  TEXT.
+- **`IRQ:`-Felder mit `"-"`** (z.B. RTC) -- Platzhalter, bereits in der numerischen Runde als
+  bewusste Ausnahme dokumentiert.
+
+`integration_demo.c` Ver. 3.70. `make test` (tool-lokal UND root) komplett gruen, Build ohne
+Warnung. Per Pseudo-Terminal-Test bestaetigt: Buchstabe wird im `Eintraege:`-Feld jetzt verworfen,
+Ziffer akzeptiert (`x` verworfen, `9` uebernommen -- Wert `2569` statt `256x9`).
+`filedialog_smoke3.exp` erneut gruen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

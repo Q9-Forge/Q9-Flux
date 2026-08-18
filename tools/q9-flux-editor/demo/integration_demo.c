@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.60
+// File:   integration_demo.c                                                             Ver. 3.70
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -127,6 +127,10 @@
 //         │      │ 3.20 stehen geblieben, jetzt nachgezogen. Siebenundzwanzigste Feedback-Runde: [cfN]-  │
 //         │      │ Abschnitte einer geladenen Datei erscheinen jetzt als eigene CF-Image-#N-Eintraege    │
 //         │      │ (g_cfimg_fields, sync_cfimg_items()), editierbar UND ins Speichern eingebunden         │
+// 26-08-18│ 3.70 │ Achtundzwanzigste Feedback-Runde: mechanische NUMERIC-Uebernahme -- einziger noch     │ Cld
+//         │      │ verbliebener reiner Zahlenwert (CLUT "Eintraege:") auf NUMERIC_DEC umgestellt; die    │
+//         │      │ "Groesse:"-Felder (512K/4 MB/256K/2K) bleiben bewusst TEXT (Einheit im Wert, keine    │
+//         │      │ reine Zahl -- NUMERIC_DEC wuerde K/MB/Leerzeichen beim Tippen verwerfen)               │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -210,7 +214,7 @@ static q9_listview_field_t g_quicc_fields[]  = { {"MAC:", "00:1A:2B:03:04:05", Q
                                                   {"Link:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "FFFF9000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
                                                   {"Modus:", "Text 80x25", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "FFFF9800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Eintraege:", "256", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "FFFF9800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Eintraege:", "256", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
                                                   {"Tiefe:", "8 Bit", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_rc2014_fields[] = { {"Bus:", "rc2014", Q9_LISTVIEW_FIELD_TEXT},  {"Basis:", "FFFFC010", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
                                                   {"Slot:", "0", Q9_LISTVIEW_FIELD_NUMERIC_DEC}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN} };
