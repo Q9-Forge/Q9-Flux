@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.70
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.80
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -89,6 +89,9 @@
 # 26-08-18│ 3.70 │ Sechzehnte Runde: erweiterbare Listeneintraege -- q9_listview_item_t + _item_rows()/│ Cld
 #         │      │ _scroll_ex()/_move_ex()/_render_ex() (NEU, bestehende Funktionen unveraendert),     │
 #         │      │ Q9_GLYPH_RIGHT_ARROW dazu, Enter klappt den ausgewaehlten Eintrag auf/zu             │
+# 26-08-18│ 3.80 │ Siebzehnte Runde: neuer exp_bg-Parameter an render_ex() -- Kopfzeile eines           │ Cld
+#         │      │ aufgeklappten, nicht ausgewaehlten Eintrags bekommt eigenen Hintergrund (Andreas:    │
+#         │      │ "die Headerzeile geht ein wenig unter"); Feld-Bearbeitung IM Eintrag noch offen       │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -766,6 +769,34 @@ Eintrag mitten in einer laengeren, teilweise gescrollten Liste haelt die Auswahl
 eine proportionale Bildlaufleiste (kleines Terminal, 20 Zeilen, Auswahl auf "ROM-Spiegel" per
 Pfeiltasten). Bestehender `filedialog_smoke3.exp` (Datei-Dialog, nutzt weiter die einfachen
 Funktionen) erneut gruen -- keine Regression.
+
+**Siebzehnte Runde (2026-08-18) -- Kopfzeile eines aufgeklappten Eintrags besser hervorgehoben:**
+*"Cool! flüssig zu bedienen. Es fände es gut wenn die Headerzeile noch besonders markiert wird wenn
+das item offen ist, so geht sie ein wenig unter ..."*
+
+Ohne Auswahl sah die Kopfzeile eines aufgeklappten Eintrags bisher genauso aus wie jeder andere,
+zugeklappte Eintrag -- ging neben den (bewusst gedaempften) Detailzeilen direkt darunter optisch
+unter. Neuer Parameter `exp_bg` an `q9_listview_render_ex()`: die Kopfzeile eines aufgeklappten,
+aber NICHT ausgewaehlten Eintrags bekommt jetzt einen eigenen, gedaempften Hintergrund (V=0.44 auf
+derselben Gelb-/Orange-Leiter, dieselben Zahlen wie `PAL_DIALOG_SUB_BG` im Datei-Dialog, aber als
+eigene Konstante `PAL_LIST_EXP_BG` -- Hauptfenster und Dialog bleiben unabhaengige Aufrufer). Ist der
+Eintrag ZUSAETZLICH ausgewaehlt, gewinnt weiterhin die staerkere Auswahl-Hervorhebung (`sel_bg`) --
+Rangfolge Auswahl > aufgeklappt > normal.
+
+`q9_listview.h/.c` Ver. 1.60/1.70 (neuer `exp_bg`-Parameter), `integration_demo.c` Ver. 2.70 (neue
+`PAL_LIST_EXP_BG`-Konstante, an `render_ex()` uebergeben), `listview_selftest.c` Ver. 1.50 (neue
+Checks: aufgeklappt+nicht ausgewaehlt zeigt `exp_bg`, ausgewaehlt+aufgeklappt zeigt weiterhin
+`sel_bg`). `make test` komplett gruen. Per echtem Pseudo-Terminal-Test + direkter pyte-Farbpruefung
+bestaetigt: Kopfzeile von "CF-Interface" (aufgeklappt) zeigt Hintergrund `#705514` (= 112,85,20,
+`PAL_LIST_EXP_BG`), NACHDEM die Auswahl per Pfeiltaste weiter auf "Netz-Terminal x1" gewandert ist
+(dessen Zeile zeigt korrekt den staerkeren `PAL_SEL_BG`, `#e6ad29`).
+
+Andreas' zweite Frage in derselben Nachricht -- *"Wie komme ich dann in das item rein um dort Werte
+zu Ändern?"* -- ist NOCH NICHT umgesetzt: Auf-/Zuklappen zeigt bisher nur STATISCHE Vorfuehrdaten
+(reiner Text, keine echten, editierbaren Felder). Feld-Navigation/-Bearbeitung INNERHALB eines
+aufgeklappten Eintrags waere der naechste groessere Baustein (eigene Planungsrunde noetig -- Fokus-
+Modell zwischen Eintraegen und Feldern, Bearbeitungsmodus je Feldtyp text/enum/hex-Zahl, o.ae.),
+noch nicht angefangen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
