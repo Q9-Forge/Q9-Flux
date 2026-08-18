@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.40
+// File:   listview_selftest.c                                                             Ver. 1.50
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -19,6 +19,8 @@
 //         │      │ dass die Linie tatsaechlich line_fg statt fg zeigt                        │
 // 26-08-18│ 1.40 │ Tests fuer q9_listview_item_rows()/_scroll_ex()/_move_ex()/_render_ex()   │ Cld
 //         │      │ dazu (erweiterbare Eintraege, s. q9_listview.h)                            │
+// 26-08-18│ 1.50 │ render_ex()-Aufrufe um neuen exp_bg-Parameter ergaenzt, neue Checks fuer   │ Cld
+//         │      │ Kopfzeilen-Hintergrund (aufgeklappt+nicht ausgewaehlt vs. ausgewaehlt)      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -289,20 +291,43 @@ int main(void)
         q9_screenbuf_init(&sb, 24, 80);
         q9_listview_init(&lv, 5, 10, 6, 30, 2);
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
-                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66);
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133);
 
         check_int("Item0 (nicht erweiterbar): Leerzeichen statt Pfeil-Symbol an (5,10)",
                   sb.cell[5][10].ch, ' ');
         check_int("Item0: Name beginnt an Spalte 12 (col+2)", sb.cell[5][12].ch, 'F');
+        /* Item0 ist nach q9_listview_init() automatisch ausgewaehlt (selected==0) -- bekommt daher
+           ganz normal sel_bg, NICHT exp_bg (nicht erweiterbar, aber Auswahl bleibt unabhaengig davon
+           wie gewohnt sichtbar). */
+        check_true("Item0 (ausgewaehlt, nicht erweiterbar): normaler sel_bg-Hintergrund",
+                   sb.cell[5][10].has_bg == 1 && sb.cell[5][10].bg_g == 255);
         check_int("Item1 (aufgeklappt): Q9_GLYPH_DOWN_ARROW an (6,10)",
                   sb.cell[6][10].ch, Q9_GLYPH_DOWN_ARROW);
         check_int("Item1: Name beginnt an Spalte 12", sb.cell[6][12].ch, 'K');
+        check_true("Item1 (aufgeklappt, NICHT ausgewaehlt): Kopfzeile hat exp_bg als Hintergrund "
+                   "(Andreas' Feedback, 2026-08-18: \"die Headerzeile geht ein wenig unter\")",
+                   sb.cell[6][10].has_bg == 1 && sb.cell[6][10].bg_r == 111);
         check_int("Detailzeile 1 eingerueckt (Spalte 12), Zeile 7", sb.cell[7][12].ch, 'D');
         check_true("Detailzeile hat detail_fg (44), nicht die normale fg (200)",
                    sb.cell[7][12].fg_r == 44);
         check_int("Detailzeile 2, Zeile 8", sb.cell[8][12].ch, 'D');
         check_int("Trennlinie danach (Zeile 9): Q9_GLYPH_HLINE", sb.cell[9][10].ch, Q9_GLYPH_HLINE);
         check_true("Trennlinie hat line_fg (77), nicht detail_fg", sb.cell[9][10].fg_r == 77);
+    }
+    {
+        /* Ausgewaehlt UND aufgeklappt -- sel_bg gewinnt, NICHT exp_bg (staerkere Hervorhebung). */
+        static const char *const detail_a[] = { "Detail A1", "Detail A2" };
+        static const q9_listview_item_t rx_items[] = { { "Klappbar", detail_a, 2 } };
+        int rx_expanded[1] = { 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 1);                 /* selected startet bei 0 -- ausgewaehlt */
+        q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133);
+        check_true("ausgewaehlt UND aufgeklappt: sel_bg (255) gewinnt, nicht exp_bg (111)",
+                   sb.cell[5][10].has_bg == 1 && sb.cell[5][10].bg_g == 255);
     }
     {
         /* Zugeklappt: RIGHT_ARROW statt DOWN_ARROW, keine Detailzeilen/Trennlinie. */
@@ -315,7 +340,8 @@ int main(void)
         q9_screenbuf_init(&sb, 24, 80);
         q9_listview_init(&lv, 5, 10, 6, 30, 1);
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
-                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66);
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133);
         check_int("zugeklappt: Q9_GLYPH_RIGHT_ARROW an (5,10)", sb.cell[5][10].ch, Q9_GLYPH_RIGHT_ARROW);
         check_int("zugeklappt: keine Detailzeile -- Zeile 6 bleibt leer", sb.cell[6][10].ch, ' ');
     }
@@ -330,7 +356,7 @@ int main(void)
         q9_screenbuf_init(&sb, 24, 80);
         q9_listview_init(&lv, 0, 0, 3, 30, 1);                  /* Hoehe 3 -- Eintrag braucht 7 */
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
-                               1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+                               1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
         check_true("kein Absturz bei ueberlangem aufgeklapptem Eintrag", 1);
     }
 
@@ -338,9 +364,9 @@ int main(void)
     {
         static const q9_listview_item_t rx_items[] = { { "X", NULL, 0 } };
         int rx_expanded[1] = { 0 };
-        q9_listview_render_ex(NULL, &sb, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1);
-        q9_listview_render_ex(&lv, NULL, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1);
-        q9_listview_render_ex(&lv, &sb, NULL, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(NULL, &sb, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(&lv, NULL, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(&lv, &sb, NULL, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
         check_true("kein Absturz bis hierher", 1);
     }
 
@@ -350,5 +376,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.40
+// EOF listview_selftest.c                                                                 Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
