@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.60
+// File:   integration_demo.c                                                             Ver. 2.70
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -86,6 +86,9 @@
 //         │      │ q9_listview_item_t), g_expanded-Array, Enter klappt den ausgewaehlten Eintrag      │
 //         │      │ auf/zu, Haupt-Listenansicht nutzt jetzt q9_listview_render_ex()/_scroll_ex()/       │
 //         │      │ _move_ex() (erweiterbare Eintraege, s. q9_listview.h)                               │
+// 26-08-18│ 2.70 │ Siebzehnte Feedback-Runde: neue PAL_LIST_EXP_BG (V=0.44) fuer die Kopfzeile eines  │ Cld
+//         │      │ aufgeklappten, nicht ausgewaehlten Eintrags (Andreas: "die Headerzeile geht ein    │
+//         │      │ wenig unter")                                                                       │
 // 26-08-17│ 2.50 │ Neunte Feedback-Runde ("da wird immer alles neu gezeichnet"): run_file_dialog()    │ Cld
 //         │      │ nutzt jetzt dasselbe Overlay-Settle-Muster wie main() -- waehrend des Ziehens nur  │
 //         │      │ billiges render_size_overlay(), teurer Dialog-Neuaufbau erst nach RESIZE_SETTLE_MS │
@@ -227,6 +230,17 @@ static int g_expanded[ITEM_COUNT];
 #define PAL_HEADER_BG_R  204                                /* etwas heller als PAL_STATUS_BG,    */
 #define PAL_HEADER_BG_G  154                                 /* gleiche Farbfamilie                */
 #define PAL_HEADER_BG_B   37
+/* V=0.44 (derselbe Ton/Saettigung wie der Rest der Leiter, s.o.) -- bisher nur im Datei-Dialog
+   verwendet (PAL_DIALOG_SUB_BG, Tabellenkopf/Buttons), hier fuer denselben Zweck im Hauptfenster:
+   Kopfzeile eines AUFGEKLAPPTEN, aber nicht ausgewaehlten Listeneintrags (Andreas' Feedback,
+   2026-08-18, siebzehnte Runde: "die Headerzeile geht ein wenig unter" -- ohne Auswahl sah eine
+   aufgeklappte Kopfzeile bisher aus wie jede andere, ging neben den gedaempften Detailzeilen
+   darunter optisch unter). Bewusst DIESELBEN Zahlen wie PAL_DIALOG_SUB_BG (keine neue Sprosse auf
+   der Leiter noetig), aber als eigene Konstante benannt -- der Datei-Dialog und diese Liste sind
+   unabhaengige Aufrufer, sollen aber nicht zufaellig aneinander gekoppelt sein. */
+#define PAL_LIST_EXP_BG_R  112
+#define PAL_LIST_EXP_BG_G   85
+#define PAL_LIST_EXP_BG_B   20
 
 #define MIN_ROWS 20                                        /* Andreas' Wunsch (2026-08-17):     */
 #define MIN_COLS 60                                         /* darunter sieht es "sehr komisch"
@@ -409,13 +423,16 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
        NACH dem Listenbereich blieben in PAL_FRAME, waehrend die Liste selbst bisher PAL_LIST_FG
        zeichnete, obwohl beide auf derselben Spalte liegen). detail_fg = PAL_FRAME ebenfalls -- die
        eingerueckten Detailzeilen bekommen dieselbe gedaempfte Farbe wie der Hinweistext unten
-       (strukturell/sekundaer, nicht der "wichtige" Text wie der Eintragsname selbst). */
+       (strukturell/sekundaer, nicht der "wichtige" Text wie der Eintragsname selbst). exp_bg =
+       PAL_LIST_EXP_BG -- Kopfzeile eines aufgeklappten, nicht ausgewaehlten Eintrags (Andreas'
+       Feedback, siebzehnte Runde: "die Headerzeile geht ein wenig unter"). */
     q9_listview_render_ex(lv, sb, g_list_items, g_expanded,
                            PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
                            PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
                            PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B,
                            PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B,
-                           PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
+                           PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B,
+                           PAL_LIST_EXP_BG_R, PAL_LIST_EXP_BG_G, PAL_LIST_EXP_BG_B);
 
     /* Statuszeile ALS untere Rahmenkante, ueber die volle Breite (vorherige Feedback-Runden) --
        jetzt zusaetzlich mit FESTEN Feldbreiten (Andreas: "sonst huepfen die Texte hin und her"):
@@ -761,5 +778,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.60
+// EOF integration_demo.c                                                                  Ver. 2.70
 //────────────────────────────────────────────────────────────────────────────────────────────────

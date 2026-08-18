@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.50
+// File:   q9_listview.h                                                                   Ver. 1.60
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -37,6 +37,9 @@
 //         │      │ (Name + Detailzeilen), q9_listview_item_rows()/_scroll_ex()/_move_ex()/       │
 //         │      │ _render_ex() NEU dazu, bestehende Funktionen UNVERAENDERT (Datei-Dialog nutzt │
 //         │      │ weiter die einfachen 1-Zeile-pro-Eintrag-Varianten)                           │
+// 26-08-18│ 1.60 │ Neuer Parameter exp_bg an render_ex() -- Kopfzeile eines aufgeklappten, nicht  │ Cld
+//         │      │ ausgewaehlten Eintrags bekommt einen eigenen Hintergrund (Andreas: "die        │
+//         │      │ Headerzeile geht ein wenig unter")                                             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -120,8 +123,14 @@ void q9_listview_move_ex(q9_listview_t *lv, int delta,
 //           Bildlaufleiste) jetzt ROW-basiert statt item-basiert -- Griffgroesse/-position richten
 //           sich nach der GESAMTZEILENZAHL aller Eintraege (inkl. aufgeklappter), nicht mehr nach
 //           der reinen Eintragsanzahl.
+//           Kopfzeile eines AUFGEKLAPPTEN, aber NICHT ausgewaehlten Eintrags bekommt jetzt exp_bg
+//           als eigenen Hintergrund (Andreas' Feedback, 2026-08-18: "die Headerzeile geht ein wenig
+//           unter" -- ohne Auswahl-Hervorhebung sah eine aufgeklappte Kopfzeile bisher genauso aus
+//           wie jede andere, gedaempfte Detailzeilen direkt darunter liessen sie optisch
+//           "verschwimmen"). Ist der Eintrag ZUSAETZLICH ausgewaehlt, gewinnt weiterhin sel_bg (die
+//           Auswahl-Hervorhebung ist staerker/wichtiger als die reine "ist aufgeklappt"-Markierung).
 // Call:     q9_listview_render_ex(&lv, &sb, items, expanded, 255,255,255, 0,0,0, 255,255,0,
-//                                  200,200,200, 150,120,80)
+//                                  200,200,200, 150,120,80, 112,85,20)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                             const q9_listview_item_t *items, const int *expanded,
@@ -129,7 +138,8 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                             int sel_fg_r, int sel_fg_g, int sel_fg_b,
                             int sel_bg_r, int sel_bg_g, int sel_bg_b,
                             int line_fg_r, int line_fg_g, int line_fg_b,
-                            int detail_fg_r, int detail_fg_g, int detail_fg_b);
+                            int detail_fg_r, int detail_fg_g, int detail_fg_b,
+                            int exp_bg_r, int exp_bg_g, int exp_bg_b);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_listview_init
@@ -196,5 +206,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 1.50
+// EOF q9_listview.h                                                                       Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
