@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.50
+// File:   integration_demo.c                                                             Ver. 3.60
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -123,6 +123,10 @@
 //         │      │ auf (q9_board_cfg_save(), gleiches Prinzip wie beim Laden), g_loaded_cfg haelt eine   │
 //         │      │ geladene Konfiguration vollstaendig (inkl. [cfN]) am Leben, damit Speichern sie nicht │
 //         │      │ stillschweigend loescht (Andreas: "Speichern-Funktion")                              │
+// 26-08-18│ 3.60 │ NACHTRAG (Versionsbump beim Original-Commit vergessen): EOF-Fusszeile war noch auf    │ Cld
+//         │      │ 3.20 stehen geblieben, jetzt nachgezogen. Siebenundzwanzigste Feedback-Runde: [cfN]-  │
+//         │      │ Abschnitte einer geladenen Datei erscheinen jetzt als eigene CF-Image-#N-Eintraege    │
+//         │      │ (g_cfimg_fields, sync_cfimg_items()), editierbar UND ins Speichern eingebunden         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -143,6 +147,11 @@
    laesst sich daher unveraendert in dieses eigenstaendige Tool hineinlinken (s. Makefile),
    garantiert dabei echte Formatkompatibilitaet statt eines zweiten, driftenden Parsers. */
 #include "../../../src/kernel/boardcfg.h"
+/* Siebenundzwanzigste Runde: Q9_CF_FMT_RBF/_PCF/_AUTO fuer die CF-Image-Felder (Typ:, s. unten)
+   -- diese Konstanten leben in q9board.h, NICHT in boardcfg.h (das Struct-Feld q9_cfg_cf_t.format
+   dokumentiert das explizit, s. dort). q9board.h selbst bindet nur devreg.h (Konstanten/Typen,
+   kein Funktionsaufruf) -- bleibt daher ebenso gefahrlos linkbar wie boardcfg.c. */
+#include "../../../src/kernel/q9board.h"
 
 /* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. Erweiterbare, editierbare
    Eintraege (Andreas' Wunsch, 2026-08-18: "groessere Eintraege... minimiert ein oder zwei Zeilen,
@@ -216,6 +225,28 @@ static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "FFFFB000", Q9_LISTV
 static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "FFFFA800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
                                                   {"Intervall:", "10ms", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 
+/* Siebenundzwanzigste Runde ("CF-Image-Abschnitte im Editor selbst anzeigen/bearbeiten") -- die
+   [cfN]-Abschnitte einer GELADENEN Datei (g_loaded_cfg.cf[], s. load_q9_config_fields()), NICHT
+   zu verwechseln mit den obigen Hardware-DEMO-Eintraegen (die bleiben reine Vorfuehrdaten, s.
+   Kopfkommentar). Q9_CFG_MAX_CF (boardcfg.h) feste Slots, IMMER am ENDE von g_list_items[]
+   (s. dort) -- dadurch braucht ein wechselnder cf_count keine Verschiebung anderer Eintraege,
+   nur g_item_count (s. dort) waechst/schrumpft. Vier Felder je Slot: Typ:/Bus:/Unit: (die drei
+   kurzen Enum-Werte aus q9_cfg_cf_t, s. boardcfg.h) und Datei: (der Image-Pfad, wie ROM: beim
+   Laden bereits aufgeloest angezeigt). BEKANNTE VEREINFACHUNG: Basis/Slot/Descriptor sind (noch)
+   NICHT editierbar hier -- bleiben beim Speichern unangetastet wie bisher (s. save_q9_config()),
+   das waere ein eigener, noch groesserer Schritt (Bereichspruefung, useSlot/base-Wechselspiel). */
+#define Q9_LISTVIEW_CFIMG_SLOTS Q9_CFG_MAX_CF
+static q9_listview_field_t g_cfimg_fields[Q9_LISTVIEW_CFIMG_SLOTS][4] = {
+    { {"Typ:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Bus:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+      {"Unit:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT} },
+    { {"Typ:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Bus:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+      {"Unit:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT} },
+    { {"Typ:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Bus:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+      {"Unit:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT} },
+    { {"Typ:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Bus:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+      {"Unit:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT} },
+};
+
 static const q9_listview_item_t g_list_items[] = {
     { "Emulator-Konfiguration",     g_cfg_fields,    6 },
     { "CF-Interface (onboard, c0)", g_cf_fields,     4 },
@@ -238,14 +269,34 @@ static const q9_listview_item_t g_list_items[] = {
     { "ROM-Spiegel",                g_rom_fields,    4 },
     { "NVRAM (Akku-gepuffert)",     g_nvram_fields,  4 },
     { "Timer/IRQ3-Trigger",         g_timer_fields,  4 },
+    /* CF-Image #0..#3 (s. Kommentar oben) -- IMMER am Ende, nur die ersten g_item_count-
+       BASE_ITEM_COUNT davon sind tatsaechlich sichtbar/erreichbar, s. dort. */
+    { "CF-Image #0", g_cfimg_fields[0], 4 },
+    { "CF-Image #1", g_cfimg_fields[1], 4 },
+    { "CF-Image #2", g_cfimg_fields[2], 4 },
+    { "CF-Image #3", g_cfimg_fields[3], 4 },
 };
-#define ITEM_COUNT (int)(sizeof(g_list_items) / sizeof(g_list_items[0]))
+/* MAX_ITEM_COUNT: volle Array-Kapazitaet (Compile-Zeit-Konstante fuer g_expanded[]s Groesse, s.
+   unten). BASE_ITEM_COUNT: Emulator-Konfiguration + alle hardcodierten Hardware-Demo-Eintraege,
+   OHNE die vier CF-Image-Slots am Ende. g_item_count (Laufzeit-Variable, s. unten) ist die
+   tatsaechlich AKTIVE Anzahl -- startet bei BASE_ITEM_COUNT (kein Datei geladen, keine CF-Image-
+   Slots sichtbar) und waechst nach einem erfolgreichen Laden um g_loaded_cfg.cf_count (0-4),
+   s. load_q9_config_fields(). */
+#define MAX_ITEM_COUNT  (int)(sizeof(g_list_items) / sizeof(g_list_items[0]))
+#define BASE_ITEM_COUNT (MAX_ITEM_COUNT - Q9_LISTVIEW_CFIMG_SLOTS)
 
 /* 0 = zugeklappt (Default), 1 = aufgeklappt -- Pfeil rechts auf der Hauptliste klappt den
    AUSGEWAEHLTEN Eintrag auf und setzt den Feld-Fokus aufs erste Feld (q9_listview_field_enter()),
    mehrere gleichzeitig aufgeklappte Eintraege sind ausdruecklich erlaubt (kein "nur einer offen"-
-   Akkordeon -- einfacher zu verstehen, kein ueberraschendes Zuklappen anderer Eintraege). */
-static int g_expanded[ITEM_COUNT];
+   Akkordeon -- einfacher zu verstehen, kein ueberraschendes Zuklappen anderer Eintraege). Feste
+   Groesse MAX_ITEM_COUNT (nicht g_item_count) -- unsichtbare CF-Image-Slots brauchen trotzdem
+   einen gueltigen Speicherplatz (q9_listview_field_enter() darf sie theoretisch adressieren,
+   auch wenn main() sie nie erreicht, solange g_item_count kleiner ist). */
+static int g_expanded[MAX_ITEM_COUNT];
+
+/* Laufzeit-Anzahl der AKTIVEN Eintraege (s. Kommentar bei BASE_ITEM_COUNT oben) -- startet ohne
+   geladene Datei bei BASE_ITEM_COUNT, load_q9_config_fields() passt sie nach jedem Laden an. */
+static int g_item_count = BASE_ITEM_COUNT;
 
 /* Warme Gelb-/Orange-Palette. Neunte Feedback-Runde (Andreas, 2026-08-17): "die ganzen Farben
    sind jetzt alle so in Richtung Braun abgerutscht... mehr in Richtung gelb orange" -- alle Toene
@@ -513,7 +564,7 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
                             1, PAL_STATUS_BG_R, PAL_STATUS_BG_G, PAL_STATUS_BG_B);
     snprintf(status, sizeof(status), " Ausgewaehlt: %-*.*s | Terminal: %3dx%-3d",
              NAME_FIELD_WIDTH, NAME_FIELD_WIDTH,
-             (lv->selected >= 0 && lv->selected < ITEM_COUNT) ? g_list_items[lv->selected].name : "-",
+             (lv->selected >= 0 && lv->selected < g_item_count) ? g_list_items[lv->selected].name : "-",
              rows, cols);
     q9_screenbuf_puts(sb, rows - 1, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
 }
@@ -576,17 +627,67 @@ static void q9flux_dir(char *out, unsigned out_size)
 static q9_board_cfg_t g_loaded_cfg;
 static int             g_cfg_loaded = 0;
 
+/* Wandeln q9_cfg_cf_t.format/bus/unit (Enum-Werte) in genau die Kurztexte um, die auch die
+   .q9-Datei selbst verwendet (rbf/pcf/auto, onboard/rc2014, master/slave) -- fuer die Anzeige in
+   den CF-Image-Feldern (Typ:/Bus:/Unit:). Die Umkehrung (String -> Enum, fuers Speichern) s.
+   parse_cf_format()/_bus()/_unit() bei save_q9_config(). BEWUSST hier dupliziert statt
+   boardcfg.c's private cfg_parse_*()-Helfer freizulegen (die sind absichtlich `static`, kein Teil
+   der oeffentlichen boardcfg.h-API) -- die Duplikation ist klein und risikoarm (feste, seit
+   langem stabile Wertelisten), im Unterschied zur vollen INI-Syntax (Kommentare/Abschnitte/
+   Escaping), die deshalb bewusst NICHT dupliziert wird (s. Kommentar bei den #include-Zeilen
+   oben). Ein ungueltiger String wuerde beim naechsten Laden ohnehin vom echten Parser abgelehnt
+   (klare Fehlermeldung) -- hier daher keine eigene Validierung noetig. */
+static const char *cf_format_str(int format)
+{
+    if (format == Q9_CF_FMT_RBF) { return "rbf"; }
+    if (format == Q9_CF_FMT_PCF) { return "pcf"; }
+    return "auto";
+}
+static const char *cf_bus_str(int bus)  { return bus == Q9_CFG_BUS_RC2014 ? "rc2014" : "onboard"; }
+static const char *cf_unit_str(int unit) { return unit ? "slave" : "master"; }
+
+/* Traegt die CF-Image-Felder (g_cfimg_fields[0..g_loaded_cfg.cf_count-1]) aus g_loaded_cfg.cf[]
+   ein und richtet lv NEU aus (item_count/g_item_count wachsen um cf_count, s. Kommentar bei
+   BASE_ITEM_COUNT). lv darf NULL sein (z.B. wenn kein Listview-Kontext verfuegbar ist) -- dann
+   werden nur die Felder befuellt, ohne Sichtbarkeits-/Fokus-Anpassung. */
+static void sync_cfimg_items(q9_listview_t *lv)
+{
+    int i;
+    for (i = 0; i < g_loaded_cfg.cf_count && i < Q9_LISTVIEW_CFIMG_SLOTS; i++) {
+        const q9_cfg_cf_t *cf = &g_loaded_cfg.cf[i];
+        snprintf(g_cfimg_fields[i][0].value, sizeof(g_cfimg_fields[i][0].value), "%s",
+                 cf_format_str(cf->format));
+        snprintf(g_cfimg_fields[i][1].value, sizeof(g_cfimg_fields[i][1].value), "%s",
+                 cf_bus_str(cf->bus));
+        snprintf(g_cfimg_fields[i][2].value, sizeof(g_cfimg_fields[i][2].value), "%s",
+                 cf_unit_str(cf->unit));
+        snprintf(g_cfimg_fields[i][3].value, sizeof(g_cfimg_fields[i][3].value), "%s",
+                 cf->path[0] ? cf->path : "<leer>");
+    }
+    g_item_count = BASE_ITEM_COUNT + (g_loaded_cfg.cf_count < Q9_LISTVIEW_CFIMG_SLOTS
+                                       ? g_loaded_cfg.cf_count : Q9_LISTVIEW_CFIMG_SLOTS);
+    if (lv) {
+        lv->item_count = g_item_count;
+        if (lv->selected >= g_item_count) { lv->selected = g_item_count - 1; }
+        q9_listview_move_ex(lv, 0, g_list_items, g_expanded);   /* Scroll-Offset neu ausrichten */
+    }
+}
+
 /* Andreas' Wunsch (2026-08-18, fuenfundzwanzigste Runde): "echtes Laden/Auswerten der .q9-Datei"
    -- ruft den ECHTEN Board-Config-Parser des Emulators auf (src/kernel/boardcfg.c/.h, s. Include
    oben), KEIN zweiter, eigener INI-Parser hier. Fuellt Name:/ROM:/Netz:/CPU: (g_cfg_fields[2..5],
    FESTE Positionen -- s. Kommentar dort) aus der geladenen Datei; leere Config-Werte werden als
    "<leer>" angezeigt (unterscheidet "im Feld steht nichts" von "wurde noch nie geladen" nicht
    extra -- beides sieht fuer den Nutzer gleich aus, das ist in dieser Runde bewusst so einfach
-   gehalten). Schlaegt das Laden fehl (kaputte/unlesbare Datei), werden alle vier Felder auf
+   gehalten). Siebenundzwanzigste Runde: zusaetzlich sync_cfimg_items() -- die [cfN]-Abschnitte
+   der Datei werden jetzt als eigene CF-Image-#N-Eintraege sichtbar (s. Kommentar bei
+   g_cfimg_fields). Schlaegt das Laden fehl (kaputte/unlesbare Datei), werden alle vier Felder auf
    "<Fehler>" gesetzt und msg traegt die genaue Fehlermeldung (inkl. Zeilennummer, s.
    q9_board_cfg_load()); g_cfg_loaded bleibt/wird 0 (kein Speichern auf Basis einer kaputten
-   Ladung, s. save_q9_config()). */
-static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_size)
+   Ladung, s. save_q9_config()) UND vorhandene CF-Image-Eintraege verschwinden wieder (cf_count
+   wird von q9_board_cfg_default() auf 0 zurueckgesetzt). */
+static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_size,
+                                   q9_listview_t *lv)
 {
     char dir[512];
     char path[Q9_CFG_PATH_MAX];
@@ -602,6 +703,7 @@ static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_
         snprintf(g_cfg_fields[3].value, sizeof(g_cfg_fields[3].value), "<Fehler>");
         snprintf(g_cfg_fields[4].value, sizeof(g_cfg_fields[4].value), "<Fehler>");
         snprintf(g_cfg_fields[5].value, sizeof(g_cfg_fields[5].value), "<Fehler>");
+        sync_cfimg_items(lv);                                   /* cf_count==0 -- Slots verschwinden */
         snprintf(msg, msg_size, "Laden fehlgeschlagen: %s", err);
         return;
     }
@@ -614,6 +716,7 @@ static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_
              g_loaded_cfg.net_mode[0] ? g_loaded_cfg.net_mode : "<leer>");
     snprintf(g_cfg_fields[5].value, sizeof(g_cfg_fields[5].value), "%s",
              g_loaded_cfg.cpu[0]      ? g_loaded_cfg.cpu      : "<leer>");
+    sync_cfimg_items(lv);
     snprintf(msg, msg_size, "Konfiguration geladen: %s", filename);
 }
 
@@ -629,14 +732,42 @@ static void field_to_cfg_str(const char *field_value, char *out, unsigned out_ma
     }
 }
 
+/* q9_cfg_cf_t.format/bus/unit sind Enum-Werte -- kehrt cf_format_str()/_bus_str()/_unit_str() um
+   (fuers Speichern der CF-Image-Felder Typ:/Bus:/Unit:, s. save_q9_config()). fallback greift bei
+   unbekanntem Text (z.B. Tippfehler) -- BEHAELT den vorherigen (aus g_loaded_cfg uebernommenen)
+   Wert bei, statt auf einen willkuerlichen Default zu springen; ein wirklich falscher Wert faellt
+   spaetestens beim naechsten Laden auf (s. Kommentar bei cf_format_str() oben). */
+static int parse_cf_format(const char *v, int fallback)
+{
+    if (strcmp(v, "rbf") == 0)  { return Q9_CF_FMT_RBF; }
+    if (strcmp(v, "pcf") == 0)  { return Q9_CF_FMT_PCF; }
+    if (strcmp(v, "auto") == 0) { return Q9_CF_FMT_AUTO; }
+    return fallback;
+}
+static int parse_cf_bus(const char *v, int fallback)
+{
+    if (strcmp(v, "onboard") == 0) { return Q9_CFG_BUS_ONBOARD; }
+    if (strcmp(v, "rc2014") == 0)  { return Q9_CFG_BUS_RC2014; }
+    return fallback;
+}
+static int parse_cf_unit(const char *v, int fallback)
+{
+    if (strcmp(v, "master") == 0) { return 0; }
+    if (strcmp(v, "slave") == 0)  { return 1; }
+    return fallback;
+}
+
 /* Andreas' Wunsch (2026-08-18, sechsundzwanzigste Runde): "Speichern-Funktion" -- schreibt die
    AKTUELLEN Feldwerte (Name:/ROM:/Netz:/CPU:, egal ob von Hand editiert oder aus einem vorigen
    Laden uebernommen) in die Datei zurueck, die im Datei:-Feld steht. Startet dabei bei
-   g_loaded_cfg (falls vorhanden, s. Kommentar dort) statt bei leeren Defaults, damit [cfN]-
-   Abschnitte einer geladenen Datei NICHT stillschweigend verschwinden -- der Editor zeigt/
-   bearbeitet sie noch nicht (s. "Noch offen" in Q9FLUX_EDITOR_de.md). Ruft (wie load_
-   q9_config_fields()) den ECHTEN Board-Config-Parser des Emulators auf (q9_board_cfg_save(),
-   src/kernel/boardcfg.c/.h) -- KEIN zweiter, eigener Serialisierer hier. */
+   g_loaded_cfg (falls vorhanden, s. Kommentar dort) statt bei leeren Defaults, damit unbekannte
+   [cfN]-Felder (Basis/Slot/Descriptor -- der Editor zeigt/bearbeitet die noch nicht, s. "Noch
+   offen" in Q9FLUX_EDITOR_de.md) NICHT stillschweigend verschwinden. Siebenundzwanzigste Runde:
+   Typ:/Bus:/Unit:/Datei: DER SICHTBAREN CF-Image-Eintraege (g_item_count-BASE_ITEM_COUNT Stueck)
+   werden zusaetzlich zurueckgeschrieben (cfg.cf_count entsprechend gesetzt) -- ALLES darueber
+   hinaus (weitere, nie geladene/sichtbare Slots) bleibt unberuehrt und wird NICHT mitgespeichert.
+   Ruft (wie load_q9_config_fields()) den ECHTEN Board-Config-Parser des Emulators auf
+   (q9_board_cfg_save(), src/kernel/boardcfg.c/.h) -- KEIN zweiter, eigener Serialisierer hier. */
 static void save_q9_config(char *msg, unsigned msg_size)
 {
     q9_board_cfg_t cfg;
@@ -644,6 +775,7 @@ static void save_q9_config(char *msg, unsigned msg_size)
     char path[Q9_CFG_PATH_MAX];
     char err[160];
     const char *filename = g_cfg_fields[0].value;
+    int i, cf_visible;
 
     if (filename[0] == '\0' || strcmp(filename, "<leer>") == 0) {
         snprintf(msg, msg_size,
@@ -660,6 +792,20 @@ static void save_q9_config(char *msg, unsigned msg_size)
     field_to_cfg_str(g_cfg_fields[3].value, cfg.rom_path, sizeof(cfg.rom_path));
     field_to_cfg_str(g_cfg_fields[4].value, cfg.net_mode, sizeof(cfg.net_mode));
     field_to_cfg_str(g_cfg_fields[5].value, cfg.cpu,      sizeof(cfg.cpu));
+
+    /* cf_visible == cfg.cf_count per Konstruktion (sync_cfimg_items() haelt g_item_count IMMER
+       exakt in dieser Beziehung zu g_loaded_cfg.cf_count, s. dort) -- trotzdem explizit gesetzt,
+       nicht stillschweigend vorausgesetzt (robust, falls sich das je aendert, z.B. ein kuenftiges
+       "neuen CF-Image-Slot hinzufuegen"). */
+    cf_visible = g_item_count - BASE_ITEM_COUNT;
+    cfg.cf_count = cf_visible;
+    for (i = 0; i < cf_visible; i++) {
+        q9_cfg_cf_t *cf = &cfg.cf[i];
+        cf->format = parse_cf_format(g_cfimg_fields[i][0].value, cf->format);
+        cf->bus    = parse_cf_bus(g_cfimg_fields[i][1].value, cf->bus);
+        cf->unit   = parse_cf_unit(g_cfimg_fields[i][2].value, cf->unit);
+        field_to_cfg_str(g_cfimg_fields[i][3].value, cf->path, sizeof(cf->path));
+    }
 
     q9flux_dir(dir, sizeof(dir));
     snprintf(path, sizeof(path), "%s/%s", dir, filename);
@@ -887,7 +1033,7 @@ static void clamp_field_range(q9_listview_field_t *f, long lo, long hi)
 static void maybe_clamp_focused_field(q9_listview_t *lv)
 {
     q9_listview_field_t *f;
-    if (lv->selected < 0 || lv->selected >= ITEM_COUNT || lv->field_focus < 0) { return; }
+    if (lv->selected < 0 || lv->selected >= g_item_count || lv->field_focus < 0) { return; }
     if (lv->field_focus >= g_list_items[lv->selected].field_count) { return; }
     f = &g_list_items[lv->selected].fields[lv->field_focus];
     if (f->label && strcmp(f->label, "Slot:") == 0) {
@@ -921,7 +1067,7 @@ int main(void)
     }
     write_ansi(wrap_hide);
 
-    q9_listview_init(&lv, 2, 3, 1, 1, ITEM_COUNT);          /* echte Geometrie folgt in render_full_content */
+    q9_listview_init(&lv, 2, 3, 1, 1, g_item_count);          /* echte Geometrie folgt in render_full_content */
 
     while (running) {
         int too_small = (rows < MIN_ROWS || cols < MIN_COLS);
@@ -1019,11 +1165,11 @@ int main(void)
                         /* Kurzform auf Item-Ebene (frueheres Verhalten, sechzehnte Runde) -- klappt
                            den AUSGEWAEHLTEN Eintrag auf/zu, OHNE in die Felder zu springen (das
                            macht seit der achtzehnten Runde gezielt Pfeil rechts). */
-                        if (lv.selected >= 0 && lv.selected < ITEM_COUNT) {
+                        if (lv.selected >= 0 && lv.selected < g_item_count) {
                             g_expanded[lv.selected] = !g_expanded[lv.selected];
                             q9_listview_move_ex(&lv, 0, g_list_items, g_expanded);
                         }
-                    } else if (lv.selected >= 0 && lv.selected < ITEM_COUNT
+                    } else if (lv.selected >= 0 && lv.selected < g_item_count
                                && lv.field_focus < g_list_items[lv.selected].field_count
                                && g_list_items[lv.selected].fields[lv.field_focus].kind
                                   == Q9_LISTVIEW_FIELD_BUTTON) {
@@ -1045,7 +1191,7 @@ int main(void)
                             /* Fuenfundzwanzigste Runde: nicht nur den Namen uebernehmen, sondern
                                die Datei auch WIRKLICH laden (ueberschreibt last_dialog_msg mit dem
                                genaueren Lade-Ergebnis statt der reinen Auswahl-Bestaetigung). */
-                            load_q9_config_fields(chosen, last_dialog_msg, sizeof(last_dialog_msg));
+                            load_q9_config_fields(chosen, last_dialog_msg, sizeof(last_dialog_msg), &lv);
                         } else if (r == 0) {
                             running = 0;                     /* Strg-C/EOF waehrend des Dialogs */
                         }
@@ -1075,7 +1221,7 @@ int main(void)
                        bei field_putc() ohnehin wirkungslos, s. dort) einfach zu verpuffen. */
                     if (!showing_overlay && lv.field_focus >= 0
                         && k.ch == ' '
-                        && lv.selected >= 0 && lv.selected < ITEM_COUNT
+                        && lv.selected >= 0 && lv.selected < g_item_count
                         && lv.field_focus < g_list_items[lv.selected].field_count
                         && g_list_items[lv.selected].fields[lv.field_focus].kind
                            == Q9_LISTVIEW_FIELD_BOOLEAN) {
@@ -1118,5 +1264,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 3.20
+// EOF integration_demo.c                                                                  Ver. 3.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
