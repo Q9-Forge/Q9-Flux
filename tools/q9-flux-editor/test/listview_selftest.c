@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 2.00
+// File:   listview_selftest.c                                                             Ver. 2.10
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -33,6 +33,8 @@
 //         │      │ 35 Zeichen")                                                                 │
 // 26-08-18│ 2.00 │ Neue Tests fuer NUMERIC_DEC/_HEX -- Zeichenklassen-Filterung (field_putc()), │ Cld
 //         │      │ automatisches "$"-Praefix bei NUMERIC_HEX (render_ex())                       │
+// 26-08-18│ 2.10 │ Neue Tests fuer field_toggle() -- ja/nein-Umschaltung, No-op bei TEXT-Feldern, │ Cld
+//         │      │ unerwarteter Ausgangswert wird zu "ja", NULL-Zeiger-Sicherheit                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -671,6 +673,44 @@ int main(void)
         check_int("NUMERIC_DEC (Zeile 7): KEIN \"$\" -- Wert direkt an Spalte 28", sb.cell[7][28].ch, '5');
     }
 
+    printf("=== q9_listview_field_toggle: schaltet BOOLEAN-Felder um (Andreas' Wunsch: \"Boolean "
+           "Eingabe\") ===\n");
+    {
+        static q9_listview_field_t fields_a[] = {
+            {"Aktiv:", "ja",      Q9_LISTVIEW_FIELD_BOOLEAN},
+            {"Bus:",   "onboard", Q9_LISTVIEW_FIELD_TEXT},
+            {"Link:",  "seltsam", Q9_LISTVIEW_FIELD_BOOLEAN},
+        };
+        static const q9_listview_item_t nav_items[] = { { "Item0", fields_a, 3 } };
+        int nav_expanded[1] = { 0 };
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 1);
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);        /* field_focus == 0 (Aktiv:) */
+        q9_listview_field_toggle(&lv, nav_items);
+        check_true("BOOLEAN: \"ja\" wird zu \"nein\"", strcmp(fields_a[0].value, "nein") == 0);
+        q9_listview_field_toggle(&lv, nav_items);
+        check_true("BOOLEAN: \"nein\" wird wieder zu \"ja\"", strcmp(fields_a[0].value, "ja") == 0);
+
+        q9_listview_field_putc(&lv, nav_items, 'x');
+        check_true("BOOLEAN-Feld: putc tut nichts -- value bleibt unveraendert",
+                   strcmp(fields_a[0].value, "ja") == 0);
+        q9_listview_field_backspace(&lv, nav_items);
+        check_true("BOOLEAN-Feld: backspace tut nichts -- value bleibt unveraendert",
+                   strcmp(fields_a[0].value, "ja") == 0);
+
+        q9_listview_field_move(&lv, 1, nav_items);                    /* field_focus == 1 (TEXT) */
+        q9_listview_field_toggle(&lv, nav_items);
+        check_true("TEXT-Feld: toggle tut nichts -- value bleibt unveraendert",
+                   strcmp(fields_a[1].value, "onboard") == 0);
+
+        q9_listview_field_move(&lv, 1, nav_items);                    /* field_focus == 2 (Link:) */
+        check_true("Ausgangswert weder \"ja\" noch \"nein\" (Kontrolle)",
+                   strcmp(fields_a[2].value, "seltsam") == 0);
+        q9_listview_field_toggle(&lv, nav_items);
+        check_true("BOOLEAN: unerwarteter Ausgangswert wird zu \"ja\"",
+                   strcmp(fields_a[2].value, "ja") == 0);
+    }
+
     printf("=== q9_listview_field_*: Randfaelle (NULL-Zeiger), kein Absturz ===\n");
     {
         static q9_listview_field_t fields_a[] = { {"L1:", "V1", Q9_LISTVIEW_FIELD_TEXT} };
@@ -687,6 +727,8 @@ int main(void)
         q9_listview_field_putc(&lv, NULL, 'x');
         q9_listview_field_backspace(NULL, nav_items);
         q9_listview_field_backspace(&lv, NULL);
+        q9_listview_field_toggle(NULL, nav_items);
+        q9_listview_field_toggle(&lv, NULL);
         check_true("kein Absturz bis hierher", 1);
     }
 

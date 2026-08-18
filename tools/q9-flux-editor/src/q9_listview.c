@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 2.20
+// File:   q9_listview.c                                                                   Ver. 2.30
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -38,6 +38,9 @@
 // 26-08-18│ 2.20 │ Numerische Feldtypen NUMERIC_DEC/_HEX -- field_putc() filtert die Zeichenklasse,  │ Cld
 //         │      │ render_ex() zeigt automatisch "$" vor Hex-Werten (Andreas: "Numerische Eingabe    │
 //         │      │ Dezimal/Hex opt. mit Bereich")                                                    │
+// 26-08-18│ 2.30 │ Boolean-Feldtyp -- field_toggle() NEU (schaltet "ja"/"nein" um, value_equals()/    │ Cld
+//         │      │ value_assign() als Hilfsfunktionen ohne <string.h>), putc/backspace ignorieren     │
+//         │      │ BOOLEAN-Felder jetzt zusaetzlich zu BUTTON (Andreas: "Boolean Eingabe")            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -332,8 +335,11 @@ void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, 
     if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
     if (lv->field_focus >= items[lv->selected].field_count) { return; }
     f = &items[lv->selected].fields[lv->field_focus];
-    if (f->kind == Q9_LISTVIEW_FIELD_BUTTON) { return; }     /* BUTTON-Feld -- nicht antippbar,
-                                                                  s. q9_listview_item_t */
+    if (f->kind == Q9_LISTVIEW_FIELD_BUTTON || f->kind == Q9_LISTVIEW_FIELD_BOOLEAN) {
+        return;                                               /* nicht antippbar -- BOOLEAN wird
+                                                                   ueber field_toggle() umgeschaltet,
+                                                                   s. q9_listview_item_t */
+    }
     if (!is_allowed_numeric_char(f->kind, ch)) { return; }   /* falsche Zeichenklasse -- verwerfen */
     len = 0;
     while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
@@ -349,10 +355,45 @@ void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *it
     if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
     if (lv->field_focus >= items[lv->selected].field_count) { return; }
     f = &items[lv->selected].fields[lv->field_focus];
-    if (f->kind == Q9_LISTVIEW_FIELD_BUTTON) { return; }     /* BUTTON-Feld -- nicht antippbar */
+    if (f->kind == Q9_LISTVIEW_FIELD_BUTTON || f->kind == Q9_LISTVIEW_FIELD_BOOLEAN) { return; }
     len = 0;
     while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
     if (len > 0) { f->value[len - 1] = '\0'; }
+}
+
+/* Vergleicht value mit dem Literal s (bis zum NUL bei s) -- reine Hilfsfunktion, ersetzt strcmp()
+   ohne <string.h> dazuzunehmen (Datei kommt bisher bewusst ganz ohne aus). */
+static int value_equals(const char *value, const char *s)
+{
+    int i;
+    for (i = 0; s[i] != '\0'; i++) {
+        if (value[i] != s[i]) { return 0; }
+    }
+    return value[i] == '\0';
+}
+
+/* Kopiert das Literal s (bis zum NUL bei s) in value -- s ist IMMER "ja" oder "nein", passt also
+   sicher in Q9_LISTVIEW_FIELD_VALUE_MAX, kein Laengencheck noetig. */
+static void value_assign(char *value, const char *s)
+{
+    int i;
+    for (i = 0; s[i] != '\0'; i++) { value[i] = s[i]; }
+    value[i] = '\0';
+}
+
+void q9_listview_field_toggle(q9_listview_t *lv, const q9_listview_item_t *items)
+{
+    q9_listview_field_t *f;
+    if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
+    if (lv->field_focus >= items[lv->selected].field_count) { return; }
+    f = &items[lv->selected].fields[lv->field_focus];
+    if (f->kind != Q9_LISTVIEW_FIELD_BOOLEAN) { return; }
+    if (value_equals(f->value, "ja")) {
+        value_assign(f->value, "nein");
+    } else {
+        value_assign(f->value, "ja");                         /* "nein" ODER unerwarteter Wert
+                                                                   -- beides wird "ja" */
+    }
 }
 
 void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
@@ -601,5 +642,5 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 2.20
+// EOF q9_listview.c                                                                       Ver. 2.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

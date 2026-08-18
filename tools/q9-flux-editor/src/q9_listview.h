@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 2.10
+// File:   q9_listview.h                                                                   Ver. 2.20
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -55,6 +55,9 @@
 // 26-08-18│ 2.10 │ Numerische Feldtypen (Andreas: "Numerische Eingabe Dezimal/Hex opt. mit Bereich") │ Cld
 //         │      │ -- NUMERIC_DEC/_HEX als NEUE kind-Werte (kein neues Struct-Feld, s. dortiger      │
 //         │      │ Kommentar), field_putc() filtert die Zeichenklasse, render_ex() zeigt "$" vor Hex │
+// 26-08-18│ 2.20 │ Boolean-Feldtyp (Andreas: "Boolean Eingabe") -- Q9_LISTVIEW_FIELD_BOOLEAN als     │ Cld
+//         │      │ weiterer NEUER kind-Wert, neue Funktion field_toggle() (Leertaste schaltet ja/    │
+//         │      │ nein um, s. integration_demo.c) -- putc/backspace ignorieren BOOLEAN wie BUTTON   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -106,11 +109,19 @@ typedef struct {
    prueft/klemmt selbst (z.B. beim Verlassen des Feldes), s. integration_demo.c fuer ein Beispiel
    (Slot: 0-255). NUMERIC_HEX-Werte werden OHNE fuehrendes "$" gespeichert (reine Hex-Ziffern) --
    q9_listview_render_ex() zeichnet das "$" automatisch davor, s. dort. */
+/* BOOLEAN (Andreas' Wunsch von Anfang an, 2026-08-18: "Boolean Eingabe") -- wieder ein neuer
+   kind-WERT statt neuer Struct-Felder, wie schon bei NUMERIC_DEC/_HEX. Der Wert ist IMMER genau
+   "ja" oder "nein" (die Konvention, die schon alle "Aktiv:"-Felder in integration_demo.c
+   verwenden). Tippen/Loeschen wirkt bei BOOLEAN-Feldern NICHT (wie bei BUTTON) -- stattdessen
+   schaltet q9_listview_field_toggle() zwischen "ja"/"nein" um (Aufrufer bindet das ueblicherweise
+   an die Leertaste, s. integration_demo.c). Rendering unveraendert wie TEXT (kein eigenes Symbol
+   fuer diese erste Fassung -- bei Bedarf spaeter nachruestbar, z.B. ein Kaestchen-Symbol). */
 typedef enum {
     Q9_LISTVIEW_FIELD_TEXT = 0,
     Q9_LISTVIEW_FIELD_BUTTON,
     Q9_LISTVIEW_FIELD_NUMERIC_DEC,
-    Q9_LISTVIEW_FIELD_NUMERIC_HEX
+    Q9_LISTVIEW_FIELD_NUMERIC_HEX,
+    Q9_LISTVIEW_FIELD_BOOLEAN
 } q9_listview_field_kind_t;
 
 #define Q9_LISTVIEW_FIELD_VALUE_MAX 40
@@ -243,6 +254,18 @@ void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, 
 void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *items);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_field_toggle
+// Desc.:    Waehrend ein Feld mit kind==Q9_LISTVIEW_FIELD_BOOLEAN fokussiert ist: schaltet dessen
+//           Wert um -- "ja" wird zu "nein" und umgekehrt. Der Aufrufer bindet dies ueblicherweise an
+//           die Leertaste (s. integration_demo.c). Ignoriert den Aufruf, wenn field_focus==-1 oder
+//           das fokussierte Feld NICHT kind==Q9_LISTVIEW_FIELD_BOOLEAN ist (dann tut sich nichts,
+//           kein Fehler, kein Absturz). Ist der aktuelle Wert weder "ja" noch "nein" (sollte bei
+//           korrekt initialisierten BOOLEAN-Feldern nicht vorkommen), wird er auf "ja" gesetzt.
+// Call:     q9_listview_field_toggle(&lv, items)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_field_toggle(q9_listview_t *lv, const q9_listview_item_t *items);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_listview_render_ex
 // Desc.:    Wie q9_listview_render(), aber fuer erweiterbare, editierbare Eintraege (s.
 //           q9_listview_item_t). Jede Kopfzeile bekommt ein Pfeil-Symbol davor (Q9_GLYPH_DOWN_ARROW
@@ -368,5 +391,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 2.10
+// EOF q9_listview.h                                                                       Ver. 2.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
