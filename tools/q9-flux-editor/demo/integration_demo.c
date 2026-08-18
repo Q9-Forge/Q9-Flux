@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.80
+// File:   integration_demo.c                                                             Ver. 2.90
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -99,6 +99,9 @@
 //         │      │ Stille statt bei jedem Zwischenschritt; render_size_overlay() zeigt den Groessen-  │
 //         │      │ Text jetzt an fester Position (OVERLAY_ROW/_COL = 3,3) statt zentriert (huepfte     │
 //         │      │ sonst waehrend des Ziehens staendig an eine andere Stelle)                          │
+// 26-08-18│ 2.90 │ Neunzehnte Feedback-Runde: erster fester Eintrag "Emulator-Konfiguration" (Name +   │ Cld
+//         │      │ Button-Feld), run_file_dialog() liefert optional den rohen Dateinamen zurueck,      │
+//         │      │ Enter auf einem BUTTON-Feld oeffnet den Dialog, Ergebnis geht ins Feld davor         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -123,48 +126,61 @@
    q9_listview_field_putc()/_backspace()), reine Vorfuehrdaten, KEINE echte Config-Anbindung (s.
    Kopfkommentar) -- das (noch offene) naechste Stueck waere, ein kleines Datenfile pro Hardware-Typ
    auszuwerten (aehnlich devschema.h/.c) statt dieser fest verdrahteten Felder. */
-static q9_listview_field_t g_cf_fields[]     = { {"Bus:",   "onboard"},   {"Basis:", "$FFFFE000"},
-                                                  {"Slot:",  "-"},        {"Aktiv:", "ja"} };
-static q9_listview_field_t g_net1_fields[]   = { {"Port:",  "2001"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_net2_fields[]   = { {"Port:",  "2002"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_net3_fields[]   = { {"Port:",  "2003"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_net4_fields[]   = { {"Port:",  "2004"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_net5_fields[]   = { {"Port:",  "2005"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_net6_fields[]   = { {"Port:",  "2006"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_net7_fields[]   = { {"Port:",  "2007"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_net8_fields[]   = { {"Port:",  "2008"},     {"Protokoll:", "Telnet"},
-                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
-static q9_listview_field_t g_rtc_fields[]    = { {"Basis:", "$FFFFA000"}, {"IRQ:",     "-"},
-                                                  {"Batterie:", "ok"},    {"Aktiv:",   "ja"} };
-static q9_listview_field_t g_duart_fields[]  = { {"Basis:", "$FFFFA000"}, {"IRQ:",     "2"},
-                                                  {"Kanal A:", "Konsole"}, {"Kanal B:", "frei"} };
-static q9_listview_field_t g_quicc_fields[]  = { {"MAC:",   "00:1A:2B:03:04:05"},
-                                                  {"Link:",  "nein"},    {"Aktiv:",   "nein"} };
-static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "$FFFF9000"}, {"IRQ:",     "3"},
-                                                  {"Modus:", "Text 80x25"}, {"Aktiv:", "ja"} };
-static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "$FFFF9800"}, {"Eintraege:", "256"},
-                                                  {"Tiefe:", "8 Bit"},   {"Aktiv:",   "ja"} };
-static q9_listview_field_t g_rc2014_fields[] = { {"Bus:",   "rc2014"},  {"Basis:",   "$FFFFC010"},
-                                                  {"Slot:",  "0"},       {"Aktiv:",   "nein"} };
-static q9_listview_field_t g_fb_fields[]     = { {"Basis:", "$00300000"}, {"Groesse:", "512K"},
-                                                  {"Aufloesung:", "640x480"}, {"Aktiv:", "ja"} };
-static q9_listview_field_t g_ram_fields[]    = { {"Basis:", "$00000000"}, {"Groesse:", "4 MB"},
-                                                  {"Parity:", "nein"},   {"Getestet:", "ja"} };
-static q9_listview_field_t g_rom_fields[]    = { {"Basis:", "$00F00000"}, {"Groesse:", "256K"},
-                                                  {"Schreibschutz:", "ja"}, {"Aktiv:", "ja"} };
-static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "$FFFFB000"}, {"Groesse:", "2K"},
-                                                  {"Batterie:", "ok"},   {"Aktiv:",   "ja"} };
-static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "$FFFFA800"}, {"IRQ:",     "3"},
-                                                  {"Intervall:", "10ms"}, {"Aktiv:",  "ja"} };
+/* Erster fester Eintrag -- KEIN Hardware-Ding wie die Eintraege darunter, sondern die eigentliche
+   Konfigurationsdatei-Auswahl (Andreas' Wunsch, 2026-08-18, neunzehnte Runde). Zwei Felder: das
+   Namensfeld (normaler TEXT, zeigt den gewaehlten Dateinamen -- von Hand tippbar UND per Button
+   befuellbar) und ein BUTTON-Feld dahinter, das den bestehenden Datei-Dialog oeffnet (s.
+   Q9_KEY_ENTER-Behandlung in main()). CPU/Netzwerk bewusst NOCH NICHT dazu (Andreas' eigene
+   Ueberlegung: die waeren bis zum echten Laden ohnehin nur leere Platzhalter) -- eigene Runde,
+   sobald entweder echtes Laden steht oder Andreas sie schon als Platzhalter sehen will. */
+static q9_listview_field_t g_cfg_fields[] = {
+    {"Datei:", "(keine ausgewaehlt)", Q9_LISTVIEW_FIELD_TEXT},
+    { "",       "[ Datei waehlen... ]", Q9_LISTVIEW_FIELD_BUTTON },
+};
+
+static q9_listview_field_t g_cf_fields[]     = { {"Bus:", "onboard", Q9_LISTVIEW_FIELD_TEXT},   {"Basis:", "$FFFFE000", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Slot:", "-", Q9_LISTVIEW_FIELD_TEXT},        {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net1_fields[]   = { {"Port:", "2001", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net2_fields[]   = { {"Port:", "2002", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net3_fields[]   = { {"Port:", "2003", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net4_fields[]   = { {"Port:", "2004", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net5_fields[]   = { {"Port:", "2005", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net6_fields[]   = { {"Port:", "2006", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net7_fields[]   = { {"Port:", "2007", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_net8_fields[]   = { {"Port:", "2008", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_rtc_fields[]    = { {"Basis:", "$FFFFA000", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "-", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_duart_fields[]  = { {"Basis:", "$FFFFA000", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "2", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Kanal A:", "Konsole", Q9_LISTVIEW_FIELD_TEXT}, {"Kanal B:", "frei", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_quicc_fields[]  = { {"MAC:", "00:1A:2B:03:04:05", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Link:", "nein", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "$FFFF9000", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Modus:", "Text 80x25", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "$FFFF9800", Q9_LISTVIEW_FIELD_TEXT}, {"Eintraege:", "256", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Tiefe:", "8 Bit", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_rc2014_fields[] = { {"Bus:", "rc2014", Q9_LISTVIEW_FIELD_TEXT},  {"Basis:", "$FFFFC010", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Slot:", "0", Q9_LISTVIEW_FIELD_TEXT},       {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_fb_fields[]     = { {"Basis:", "$00300000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "512K", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Aufloesung:", "640x480", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_ram_fields[]    = { {"Basis:", "$00000000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "4 MB", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Parity:", "nein", Q9_LISTVIEW_FIELD_TEXT},   {"Getestet:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_rom_fields[]    = { {"Basis:", "$00F00000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "256K", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Schreibschutz:", "ja", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "$FFFFB000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "2K", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "$FFFFA800", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_TEXT},
+                                                  {"Intervall:", "10ms", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
 
 static const q9_listview_item_t g_list_items[] = {
+    { "Emulator-Konfiguration",     g_cfg_fields,    2 },
     { "CF-Interface (onboard, c0)", g_cf_fields,     4 },
     { "Netz-Terminal x1",           g_net1_fields,   4 },
     { "Netz-Terminal x2",           g_net2_fields,   4 },
@@ -520,7 +536,8 @@ static void compute_dialog_geometry(int rows, int cols, int *dlg_row, int *dlg_c
    result_msg dient WAEHREND der Dialoglaufzeit zusaetzlich als "aktueller Hinweistext" fuer den
    Hintergrund (unveraendert bis zum Ende der Funktion) -- spart einen eigenen Parameter dafuer. */
 static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
-                            char *result_msg, unsigned result_msg_size)
+                            char *result_msg, unsigned result_msg_size,
+                            char *out_name, unsigned out_name_size)
 {
     static const char *const filters[] = { "*.*", ".c", ".h" };
     const char *home = getenv("HOME");
@@ -651,6 +668,12 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
         char name[Q9_FILELIST_NAME_MAX];
         q9_filedialog_selected_name(&dlg, name, sizeof(name));
         snprintf(result_msg, result_msg_size, "Datei gewaehlt: %s   (O: erneut oeffnen)", name);
+        /* out_name ist optional (NULL = Aufrufer interessiert sich nur fuer die Hinweis-Nachricht,
+           s. der 'o'/'O'-Aufruf in main()) -- der NEUE Button-Feld-Aufruf (Emulator-Konfiguration)
+           will dagegen den rohen Dateinamen, um ihn ins Namensfeld zu uebernehmen. */
+        if (out_name && out_name_size > 0) {
+            snprintf(out_name, out_name_size, "%s", name);
+        }
         return 1;
     }
     snprintf(result_msg, result_msg_size, "Dateiauswahl abgebrochen   (O: erneut oeffnen)");
@@ -769,16 +792,37 @@ int main(void)
                     if (!showing_overlay) { q9_listview_field_escape(&lv, g_expanded); }
                     break;
                 case Q9_KEY_ENTER:
-                    /* Weiterhin als Kurzform auf Item-Ebene erhalten (frueheres Verhalten, sechzehnte
-                       Runde) -- klappt den AUSGEWAEHLTEN Eintrag auf/zu, OHNE in die Felder zu
-                       springen (das macht seit dieser Runde gezielt Pfeil rechts). Nur auf
-                       Item-Ebene sinnvoll (field_focus<0) -- waehrend ein Feld fokussiert ist, hat
-                       Enter (noch) keine Wirkung (kein Bestaetigen noetig, s. field_putc()-Kommentar
-                       zur direkten Manipulation). */
-                    if (!showing_overlay && lv.field_focus < 0
-                        && lv.selected >= 0 && lv.selected < ITEM_COUNT) {
-                        g_expanded[lv.selected] = !g_expanded[lv.selected];
-                        q9_listview_move_ex(&lv, 0, g_list_items, g_expanded);
+                    if (showing_overlay) { break; }
+                    if (lv.field_focus < 0) {
+                        /* Kurzform auf Item-Ebene (frueheres Verhalten, sechzehnte Runde) -- klappt
+                           den AUSGEWAEHLTEN Eintrag auf/zu, OHNE in die Felder zu springen (das
+                           macht seit der achtzehnten Runde gezielt Pfeil rechts). */
+                        if (lv.selected >= 0 && lv.selected < ITEM_COUNT) {
+                            g_expanded[lv.selected] = !g_expanded[lv.selected];
+                            q9_listview_move_ex(&lv, 0, g_list_items, g_expanded);
+                        }
+                    } else if (lv.selected >= 0 && lv.selected < ITEM_COUNT
+                               && lv.field_focus < g_list_items[lv.selected].field_count
+                               && g_list_items[lv.selected].fields[lv.field_focus].kind
+                                  == Q9_LISTVIEW_FIELD_BUTTON) {
+                        /* Andreas' Wunsch (2026-08-18, neunzehnte Runde): "dahinter ein Button um
+                           den Dialog zu oeffnen" -- Enter auf einem BUTTON-Feld loest die Aktion aus
+                           (bei TEXT-Feldern bleibt Enter weiterhin wirkungslos, s. Kommentar bei
+                           field_putc() zur direkten Manipulation -- kein Bestaetigen noetig). Der
+                           gewaehlte Dateiname geht ins Feld DAVOR (per Konvention: "Datei:" liegt
+                           immer direkt vor seinem Button, s. g_cfg_fields). */
+                        char chosen[Q9_FILELIST_NAME_MAX];
+                        int r;
+                        chosen[0] = '\0';
+                        r = run_file_dialog(&rows, &cols, &lv, last_dialog_msg,
+                                             sizeof(last_dialog_msg), chosen, sizeof(chosen));
+                        if (r == 1 && lv.field_focus > 0) {
+                            q9_listview_field_t *namefield =
+                                &g_list_items[lv.selected].fields[lv.field_focus - 1];
+                            snprintf(namefield->value, sizeof(namefield->value), "%s", chosen);
+                        } else if (r == 0) {
+                            running = 0;                     /* Strg-C/EOF waehrend des Dialogs */
+                        }
                     }
                     break;
                 case Q9_KEY_BACKSPACE:
@@ -803,8 +847,11 @@ int main(void)
                     if (!showing_overlay && lv.field_focus >= 0) {
                         q9_listview_field_putc(&lv, g_list_items, k.ch);
                     } else if (!showing_overlay && (k.ch == 'o' || k.ch == 'O')) {
-                        /* task #22: modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20). */
-                        int r = run_file_dialog(&rows, &cols, &lv, last_dialog_msg, sizeof(last_dialog_msg));
+                        /* task #22: modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20).
+                           out_name NULL -- hier interessiert nur die Hinweis-Nachricht, s.
+                           run_file_dialog()-Kommentar. */
+                        int r = run_file_dialog(&rows, &cols, &lv, last_dialog_msg,
+                                                 sizeof(last_dialog_msg), NULL, 0);
                         if (r == 0) { running = 0; }         /* Strg-C/EOF waehrend des Dialogs */
                         /* naechste Schleifenrunde zeichnet automatisch alles neu (inkl. last_dialog_msg) */
                     }
@@ -831,5 +878,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.80
+// EOF integration_demo.c                                                                  Ver. 2.90
 //────────────────────────────────────────────────────────────────────────────────────────────────
