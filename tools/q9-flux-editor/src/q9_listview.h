@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.60
+// File:   q9_listview.h                                                                   Ver. 1.70
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -40,6 +40,10 @@
 // 26-08-18│ 1.60 │ Neuer Parameter exp_bg an render_ex() -- Kopfzeile eines aufgeklappten, nicht  │ Cld
 //         │      │ ausgewaehlten Eintrags bekommt einen eigenen Hintergrund (Andreas: "die        │
 //         │      │ Headerzeile geht ein wenig unter")                                             │
+// 26-08-18│ 1.70 │ Feld-Navigation (Andreas: "wie komme ich in das item rein um dort Werte zu     │ Cld
+//         │      │ aendern?") -- detail_lines/detail_count durch echte, EDITIERBARE Felder ersetzt │
+//         │      │ (q9_listview_field_t: label + value), lv->field_focus NEU (-1 = Item-Ebene),    │
+//         │      │ q9_listview_field_enter()/_leave()/_escape()/_move()/_putc()/_backspace() NEU    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -53,25 +57,41 @@ typedef struct {
     int selected;                                          /* Index des ausgewaehlten Eintrags, -1 wenn
                                                              item_count==0 (nichts auswaehlbar)          */
     int scroll_offset;                                     /* Index des ERSTEN sichtbaren Eintrags       */
+    /* NUR fuer die "_ex"-Funktionen relevant (s.u.) -- Index des fokussierten FELDES innerhalb des
+       AUSGEWAEHLTEN Eintrags, -1 = kein Feld fokussiert (Fokus liegt auf der Kopfzeile/Item-Ebene,
+       das bisherige Verhalten). q9_listview_init() setzt dies auf -1; jede item-EBENE-Bewegung
+       (q9_listview_move_ex()) setzt es defensiv ebenfalls auf -1 zurueck (Feld-Fokus ergibt bei
+       einem ANDEREN Eintrag keinen Sinn), s. q9_listview_field_enter()/_leave()/_escape() fuer die
+       eigentliche Navigation hinein/hinaus. */
+    int field_focus;
 } q9_listview_t;
 
-/* Fuer die "_ex"-Funktionen (erweiterbare Eintraege, s.u.): ein Eintrag ist jetzt mehr als ein
-   blosser String -- er hat eine Kopfzeile (name, IMMER sichtbar) und optional Detailzeilen (nur
-   sichtbar, wenn der Eintrag aufgeklappt ist, s. das expanded-Array bei den einzelnen Funktionen).
-   detail_lines/detail_count bleiben beim Aufrufer (wie items bei den einfachen Funktionen oben) --
-   q9_listview_item_t selbst kopiert nichts. detail_count<=0 bedeutet "nicht erweiterbar" (kein
-   Pfeil-Symbol, q9_listview_item_rows() liefert dafuer immer 1, egal was im expanded-Array steht). */
+/* Fuer die "_ex"-Funktionen (erweiterbare, editierbare Eintraege, s.u.): ein Eintrag hat eine
+   Kopfzeile (name, IMMER sichtbar) und optional FELDER (nur sichtbar, wenn der Eintrag aufgeklappt
+   ist, s. das expanded-Array bei den einzelnen Funktionen). Jedes Feld hat ein Label (konstant) und
+   einen Wert (value, MUTABLE -- q9_listview_field_putc()/_backspace() aendern ihn direkt in place,
+   "direkte Manipulation" statt separatem Bearbeiten-Bestaetigen-Zyklus, s. dortiger Kommentar).
+   fields/field_count bleiben beim Aufrufer (wie items bei den einfachen Funktionen oben) --
+   q9_listview_item_t selbst kopiert nichts. field_count<=0 bedeutet "nicht erweiterbar" (kein
+   Pfeil-Symbol, q9_listview_item_rows() liefert dafuer immer 1, egal was im expanded-Array steht,
+   q9_listview_field_enter() tut dann nichts). */
+#define Q9_LISTVIEW_FIELD_VALUE_MAX 40
+typedef struct {
+    const char *label;
+    char value[Q9_LISTVIEW_FIELD_VALUE_MAX];
+} q9_listview_field_t;
+
 typedef struct {
     const char *name;
-    const char *const *detail_lines;
-    int detail_count;
+    q9_listview_field_t *fields;                        /* NICHT const -- value ist editierbar */
+    int field_count;
 } q9_listview_item_t;
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_listview_item_rows
 // Desc.:    Wie viele Bildschirmzeilen Eintrag index braucht: 1 (nur die Kopfzeile), wenn er
-//           zugeklappt ist ODER detail_count<=0 (nicht erweiterbar) -- sonst 1 (Kopf) +
-//           detail_count (Detailzeilen) + 1 (Trennlinie danach). items/expanded duerfen NULL sein
+//           zugeklappt ist ODER field_count<=0 (nicht erweiterbar) -- sonst 1 (Kopf) +
+//           field_count (Felder) + 1 (Trennlinie danach). items/expanded duerfen NULL sein
 //           (liefert dann immer 1, wie ein ganz normaler Ein-Zeile-Eintrag) -- damit verhalten sich
 //           die "_ex"-Funktionen bei NULL/NULL exakt wie ihre einfachen Gegenstuecke oben.
 // Call:     int rows = q9_listview_item_rows(items, expanded, 3)
@@ -108,13 +128,76 @@ void q9_listview_move_ex(q9_listview_t *lv, int delta,
                           const q9_listview_item_t *items, const int *expanded);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_field_enter
+// Desc.:    Pfeil RECHTS (Andreas' Wunsch, 2026-08-18): den ausgewaehlten Eintrag betreten -- klappt
+//           ihn auf (falls noch zu, expanded[selected]=1) und setzt field_focus auf 0 (erstes Feld).
+//           Tut NICHTS, wenn der Eintrag keine Felder hat (field_count<=0, s. q9_listview_item_t) --
+//           es gibt dann nichts zu betreten.
+// Call:     q9_listview_field_enter(&lv, expanded, items)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_field_enter(q9_listview_t *lv, int *expanded, const q9_listview_item_t *items);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_field_leave
+// Desc.:    Pfeil LINKS WAEHREND ein Feld fokussiert ist: field_focus zurueck auf -1 (Fokus auf die
+//           Kopfzeile) -- der Eintrag bleibt aufgeklappt (im Gegensatz zu q9_listview_field_escape()
+//           unten). Kein Effekt, wenn bereits field_focus==-1.
+// Call:     q9_listview_field_leave(&lv)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_field_leave(q9_listview_t *lv);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_field_escape
+// Desc.:    Esc: wie q9_listview_field_leave() (field_focus zurueck auf -1), klappt den Eintrag
+//           danach ZUSAETZLICH zu (Andreas' Wunsch: "bei ESC wird das item auch geschlossen" --
+//           "ganz zurueck" statt nur "ein Level zurueck", s. q9_listview_field_leave() fuer die
+//           reine Pfeil-links-Variante). Wirkt auch OHNE aktiven Feld-Fokus (klappt einen bereits
+//           aufgeklappten Eintrag einfach zu, wie Enter das auch koennte) -- ein allgemeines
+//           "Esc = zurueck"-Verhalten, unabhaengig davon, wo genau man gerade steht.
+// Call:     q9_listview_field_escape(&lv, expanded)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_field_escape(q9_listview_t *lv, int *expanded);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_field_move
+// Desc.:    Pfeil hoch/runter WAEHREND ein Feld fokussiert ist (field_focus>=0): bewegt field_focus
+//           um delta, geklemmt auf [0, field_count-1] DES AUSGEWAEHLTEN Eintrags -- verlaesst den
+//           Eintrag NICHT ueber die Feldgrenzen hinaus (kein automatisches Umschalten auf den
+//           naechsten/vorigen LISTENEINTRAG, das bleibt q9_listview_move_ex() auf Item-Ebene
+//           vorbehalten). Tut nichts, wenn field_focus==-1 (Aufrufer-Verantwortung, dann
+//           stattdessen move_ex() aufzurufen, s. Kopfkommentar zu field_focus).
+// Call:     q9_listview_field_move(&lv, +1, items)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_field_move(q9_listview_t *lv, int delta, const q9_listview_item_t *items);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_field_putc
+// Desc.:    Waehrend ein Feld fokussiert ist: haengt ch an den WERT des fokussierten Feldes an
+//           (DIREKTE Manipulation -- kein separater Bearbeiten-Modus mit eigenem Bestaetigen/
+//           Abbrechen, Andreas' Wunsch: "kann dort alles aendern", tippen wirkt sofort). Ignoriert
+//           den Aufruf, wenn field_focus==-1 ODER der Wert bereits Q9_LISTVIEW_FIELD_VALUE_MAX-1
+//           Zeichen erreicht hat (Puffer bleibt IMMER NUL-terminiert, kein Ueberlauf).
+// Call:     q9_listview_field_putc(&lv, items, 'x')
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, char ch);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_field_backspace
+// Desc.:    Waehrend ein Feld fokussiert ist: entfernt das LETZTE Zeichen aus dem Wert des
+//           fokussierten Feldes (kein Effekt bei bereits leerem Wert). Ignoriert den Aufruf, wenn
+//           field_focus==-1.
+// Call:     q9_listview_field_backspace(&lv, items)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *items);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_listview_render_ex
-// Desc.:    Wie q9_listview_render(), aber fuer erweiterbare Eintraege (s. q9_listview_item_t).
-//           Jede Kopfzeile bekommt ein Pfeil-Symbol davor (Q9_GLYPH_DOWN_ARROW aufgeklappt,
-//           Q9_GLYPH_RIGHT_ARROW zugeklappt, ein Leerzeichen bei detail_count<=0 -- nichts zum
-//           Auf-/Zuklappen). Aufgeklappte Detailzeilen werden um zwei Spalten eingerueckt (Pfeil +
-//           Luftspalte) in EINER EIGENEN Farbe (detail_fg, gedaempft/anders als der normale
-//           Eintragstext -- optische Unterscheidung Kopf/Detail), danach eine volle Trennlinie
+// Desc.:    Wie q9_listview_render(), aber fuer erweiterbare, editierbare Eintraege (s.
+//           q9_listview_item_t). Jede Kopfzeile bekommt ein Pfeil-Symbol davor (Q9_GLYPH_DOWN_ARROW
+//           aufgeklappt, Q9_GLYPH_RIGHT_ARROW zugeklappt, ein Leerzeichen bei field_count<=0 --
+//           nichts zum Auf-/Zuklappen). Aufgeklappte Felder werden um zwei Spalten eingerueckt
+//           (Pfeil + Luftspalte), Label und Wert nebeneinander in EINER EIGENEN Farbe (detail_fg,
+//           gedaempft/anders als der normale Eintragstext), danach eine volle Trennlinie
 //           (Q9_GLYPH_HLINE ueber content_width, in line_fg). Bewusst LEICHTGEWICHTIG (Andreas'
 //           Wahl, 2026-08-18, aus drei vorgeschlagenen Stilen): KEIN Rahmen um den aufgeklappten
 //           Bereich -- nur Einrueckung + die eine Trennlinie danach, spart am meisten Platz. Zeilen,
@@ -123,12 +206,16 @@ void q9_listview_move_ex(q9_listview_t *lv, int delta,
 //           Bildlaufleiste) jetzt ROW-basiert statt item-basiert -- Griffgroesse/-position richten
 //           sich nach der GESAMTZEILENZAHL aller Eintraege (inkl. aufgeklappter), nicht mehr nach
 //           der reinen Eintragsanzahl.
-//           Kopfzeile eines AUFGEKLAPPTEN, aber NICHT ausgewaehlten Eintrags bekommt jetzt exp_bg
-//           als eigenen Hintergrund (Andreas' Feedback, 2026-08-18: "die Headerzeile geht ein wenig
-//           unter" -- ohne Auswahl-Hervorhebung sah eine aufgeklappte Kopfzeile bisher genauso aus
-//           wie jede andere, gedaempfte Detailzeilen direkt darunter liessen sie optisch
-//           "verschwimmen"). Ist der Eintrag ZUSAETZLICH ausgewaehlt, gewinnt weiterhin sel_bg (die
-//           Auswahl-Hervorhebung ist staerker/wichtiger als die reine "ist aufgeklappt"-Markierung).
+//           Kopfzeile eines AUFGEKLAPPTEN Eintrags bekommt exp_bg als eigenen Hintergrund (Andreas'
+//           Feedback, 2026-08-18: "die Headerzeile geht ein wenig unter" -- ohne Hervorhebung sah
+//           eine aufgeklappte Kopfzeile bisher genauso aus wie jede andere, gedaempfte Detailzeilen
+//           direkt darunter liessen sie optisch "verschwimmen"). Ist der Eintrag ZUSAETZLICH
+//           ausgewaehlt UND field_focus==-1 (Fokus auf der Kopfzeile selbst, kein Feld), gewinnt
+//           stattdessen sel_bg (staerker/wichtiger als die reine "ist aufgeklappt"-Markierung). Ist
+//           dagegen field_focus>=0 (Fokus ist in ein Feld gewandert, s. q9_listview_field_enter()),
+//           faellt die Kopfzeile auf exp_bg zurueck -- sel_bg wandert stattdessen auf die FOKUSSIERTE
+//           Feldzeile (Wert-Spalte in sel_fg/sel_bg statt detail_fg, deutlich als "hier tippst du
+//           gerade" erkennbar), es ist zu jedem Zeitpunkt genau EINE Zeile in sel_bg.
 // Call:     q9_listview_render_ex(&lv, &sb, items, expanded, 255,255,255, 0,0,0, 255,255,0,
 //                                  200,200,200, 150,120,80, 112,85,20)
 //════════════════════════════════════════════════════════════════════════════════════════════════

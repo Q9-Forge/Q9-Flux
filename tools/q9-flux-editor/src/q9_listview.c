@@ -27,6 +27,11 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
+/* Spalte, ab der der WERT eines Feldes beginnt (relativ zur Feld-Startspalte col+2, s.
+   q9_listview_render_ex()) -- feste Ausrichtung, damit alle Werte untereinander in einer Spalte
+   stehen, unabhaengig von der Laenge des jeweiligen Labels (formularaehnlicher Look). */
+#define Q9_LISTVIEW_FIELD_VALUE_COL 16
+
 int q9_listview_scroll(int selected, int offset, int height, int item_count)
 {
     int max_offset;
@@ -65,6 +70,8 @@ void q9_listview_init(q9_listview_t *lv, int row, int col, int height, int width
     lv->item_count   = item_count;
     lv->selected     = (item_count > 0) ? 0 : -1;
     lv->scroll_offset = 0;
+    lv->field_focus   = -1;                                 /* Fokus auf der Kopfzeile, kein Feld,
+                                                                  s. q9_listview_field_enter() */
 }
 
 void q9_listview_move(q9_listview_t *lv, int delta)
@@ -169,13 +176,13 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 int q9_listview_item_rows(const q9_listview_item_t *items, const int *expanded, int index)
 {
-    int dc;
+    int fc;
 
     if (!items)                       { return 1; }
     if (!expanded || !expanded[index]) { return 1; }
-    dc = items[index].detail_count;
-    if (dc <= 0) { return 1; }
-    return 1 /* Kopfzeile */ + dc /* Detailzeilen */ + 1 /* Trennlinie */;
+    fc = items[index].field_count;
+    if (fc <= 0) { return 1; }
+    return 1 /* Kopfzeile */ + fc /* Felder */ + 1 /* Trennlinie */;
 }
 
 int q9_listview_scroll_ex(int selected, int offset, int height,
@@ -219,6 +226,69 @@ void q9_listview_move_ex(q9_listview_t *lv, int delta,
     if (lv->selected > lv->item_count - 1) { lv->selected = lv->item_count - 1; }
     lv->scroll_offset = q9_listview_scroll_ex(lv->selected, lv->scroll_offset, lv->height,
                                                items, expanded, lv->item_count);
+    lv->field_focus = -1;                                   /* defensiv: Feld-Fokus ergibt bei einem
+                                                                  ANDEREN Eintrag keinen Sinn, s.
+                                                                  q9_listview.h */
+}
+
+void q9_listview_field_enter(q9_listview_t *lv, int *expanded, const q9_listview_item_t *items)
+{
+    int sel;
+    if (!lv || !items || lv->selected < 0) { return; }
+    sel = lv->selected;
+    if (items[sel].field_count <= 0) { return; }            /* nichts zum Betreten */
+    if (expanded) { expanded[sel] = 1; }
+    lv->field_focus = 0;
+}
+
+void q9_listview_field_leave(q9_listview_t *lv)
+{
+    if (!lv) { return; }
+    lv->field_focus = -1;
+}
+
+void q9_listview_field_escape(q9_listview_t *lv, int *expanded)
+{
+    if (!lv) { return; }
+    lv->field_focus = -1;
+    if (expanded && lv->selected >= 0) { expanded[lv->selected] = 0; }
+}
+
+void q9_listview_field_move(q9_listview_t *lv, int delta, const q9_listview_item_t *items)
+{
+    int count;
+    if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
+    count = items[lv->selected].field_count;
+    if (count <= 0) { return; }
+    lv->field_focus += delta;
+    if (lv->field_focus < 0)         { lv->field_focus = 0; }
+    if (lv->field_focus > count - 1) { lv->field_focus = count - 1; }
+}
+
+void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, char ch)
+{
+    q9_listview_field_t *f;
+    int len;
+    if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
+    if (lv->field_focus >= items[lv->selected].field_count) { return; }
+    f = &items[lv->selected].fields[lv->field_focus];
+    len = 0;
+    while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
+    if (len >= Q9_LISTVIEW_FIELD_VALUE_MAX - 1) { return; }  /* voll -- kein Ueberlauf */
+    f->value[len]     = ch;
+    f->value[len + 1] = '\0';
+}
+
+void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *items)
+{
+    q9_listview_field_t *f;
+    int len;
+    if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
+    if (lv->field_focus >= items[lv->selected].field_count) { return; }
+    f = &items[lv->selected].fields[lv->field_focus];
+    len = 0;
+    while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
+    if (len > 0) { f->value[len - 1] = '\0'; }
 }
 
 void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
@@ -246,31 +316,38 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
     row_cursor = 0;
     for (idx = lv->scroll_offset; idx < lv->item_count && row_cursor < lv->height; idx++) {
         int screen_row = lv->row + row_cursor;
-        int has_details = items[idx].detail_count > 0;
+        int has_details = items[idx].field_count > 0;
         int is_expanded = has_details && expanded && expanded[idx];
         int is_selected = (idx == lv->selected);
-        int use_fg_r = is_selected ? sel_fg_r : fg_r;
-        int use_fg_g = is_selected ? sel_fg_g : fg_g;
-        int use_fg_b = is_selected ? sel_fg_b : fg_b;
+        /* header_is_focused statt rohem is_selected: die Kopfzeile zeigt die STARKE sel_bg-
+           Hervorhebung nur, wenn der Fokus tatsaechlich AUF ihr liegt (field_focus==-1). Ist der
+           Fokus in ein Feld gewandert (field_focus>=0, s. q9_listview_field_enter()), faellt die
+           Kopfzeile auf die schwaechere exp_bg zurueck -- die Feldzeile weiter unten uebernimmt die
+           sel_bg-Rolle (s.u.). Zu jedem Zeitpunkt genau EINE Zeile in sel_bg. */
+        int header_is_focused = is_selected && lv->field_focus < 0;
+        int use_fg_r = header_is_focused ? sel_fg_r : fg_r;
+        int use_fg_g = header_is_focused ? sel_fg_g : fg_g;
+        int use_fg_b = header_is_focused ? sel_fg_b : fg_b;
         char marker[2];
 
         /* Kopfzeile: Pfeil-Symbol (auf-/zugeklappt, s. q9_listview.h) + Luftspalte + Name --
            zwei separate puts() statt einem zusammengesetzten String (spart eine feste Puffergroesse
            fuer beliebig lange Namen, s. q9_screenbuf_puts()-Klemmung an der Puffergrenze). Eintraege
-           ohne Detailzeilen bekommen KEIN Pfeil-Symbol (nichts zum Auf-/Zuklappen) -- ein Leerzeichen
+           ohne Felder bekommen KEIN Pfeil-Symbol (nichts zum Auf-/Zuklappen) -- ein Leerzeichen
            an derselben Stelle, damit der Name trotzdem an derselben Spalte wie bei erweiterbaren
            Eintraegen beginnt. */
         marker[0] = has_details ? (is_expanded ? (char)Q9_GLYPH_DOWN_ARROW : (char)Q9_GLYPH_RIGHT_ARROW)
                                  : ' ';
         marker[1] = '\0';
-        if (is_selected) {
+        if (header_is_focused) {
             q9_screenbuf_fill_rect(sb, screen_row, lv->col, 1, content_width, ' ',
                                     sel_fg_r, sel_fg_g, sel_fg_b, 1, sel_bg_r, sel_bg_g, sel_bg_b);
         } else if (is_expanded) {
-            /* Aufgeklappt, aber NICHT ausgewaehlt -- eigener, gedaempfter Hintergrund (exp_bg) fuer
-               die Kopfzeile, damit sie sich von den (noch gedaempfteren) Detailzeilen darunter UND
-               von normalen, zugeklappten Eintraegen abhebt (Andreas' Feedback, 2026-08-18: "die
-               Headerzeile geht ein wenig unter"). sel_bg oben hat Vorrang, falls BEIDES zutrifft. */
+            /* Aufgeklappt, aber der Fokus liegt NICHT auf der Kopfzeile (entweder ein anderer
+               Eintrag ist ausgewaehlt, oder der Fokus ist in ein Feld dieses Eintrags gewandert) --
+               eigener, gedaempfter Hintergrund (exp_bg), damit sie sich von den (noch gedaempfteren)
+               Feldzeilen darunter UND von normalen, zugeklappten Eintraegen abhebt (Andreas'
+               Feedback, 2026-08-18: "die Headerzeile geht ein wenig unter"). */
             q9_screenbuf_fill_rect(sb, screen_row, lv->col, 1, content_width, ' ',
                                     use_fg_r, use_fg_g, use_fg_b, 1, exp_bg_r, exp_bg_g, exp_bg_b);
         }
@@ -281,12 +358,29 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 
         if (is_expanded) {
             int j;
-            /* Detailzeilen -- um zwei Spalten eingerueckt (Pfeil + Luftspalte, dieselbe Einrueckung
-               wie der Name in der Kopfzeile), EIGENE Farbe (detail_fg) statt der normalen Text-fg --
-               optische Unterscheidung Kopf/Detail (Andreas' gewaehlter Stil, s. q9_listview.h). */
-            for (j = 0; j < items[idx].detail_count && row_cursor < lv->height; j++) {
-                q9_screenbuf_puts(sb, lv->row + row_cursor, lv->col + 2, items[idx].detail_lines[j],
-                                   detail_fg_r, detail_fg_g, detail_fg_b);
+            /* Felder -- um zwei Spalten eingerueckt (Pfeil + Luftspalte, dieselbe Einrueckung wie
+               der Name in der Kopfzeile), Label + Wert in einer festen Spalte nebeneinander. Normal
+               in EIGENER, gedaempfter Farbe (detail_fg) statt der normalen Text-fg -- optische
+               Unterscheidung Kopf/Feld (Andreas' gewaehlter Stil, s. q9_listview.h). Das FOKUSSIERTE
+               Feld (field_focus==j, NUR beim ausgewaehlten Eintrag moeglich) bekommt stattdessen
+               sel_fg/sel_bg -- deutlich als "hier tippst du gerade" erkennbar (Andreas' Wunsch,
+               2026-08-18: Feld-Navigation/-Bearbeitung). */
+            for (j = 0; j < items[idx].field_count && row_cursor < lv->height; j++) {
+                int field_row = lv->row + row_cursor;
+                int is_field_focused = is_selected && lv->field_focus == j;
+                int fld_fg_r = is_field_focused ? sel_fg_r : detail_fg_r;
+                int fld_fg_g = is_field_focused ? sel_fg_g : detail_fg_g;
+                int fld_fg_b = is_field_focused ? sel_fg_b : detail_fg_b;
+
+                if (is_field_focused) {
+                    q9_screenbuf_fill_rect(sb, field_row, lv->col, 1, content_width, ' ',
+                                            sel_fg_r, sel_fg_g, sel_fg_b, 1,
+                                            sel_bg_r, sel_bg_g, sel_bg_b);
+                }
+                q9_screenbuf_puts(sb, field_row, lv->col + 2, items[idx].fields[j].label,
+                                   fld_fg_r, fld_fg_g, fld_fg_b);
+                q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                   items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
                 row_cursor++;
             }
             /* Trennlinie danach -- volle content_width, in line_fg (dieselbe Rolle wie die rechte
