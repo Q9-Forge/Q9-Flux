@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.50
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.60
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -83,6 +83,9 @@
 #         │      │ Kopfzeilen-Verdunklung der letzten Runde fast unlesbar geworden), neue             │
 #         │      │ status_fg/bg-Felder fuer die untere Dialog-Statuszeile (Angleich ans Hauptfenster), │
 #         │      │ Resize waehrend offenem Dialog behoben + automatische Neuzentrierung                │
+# 26-08-18│ 3.60 │ Fuenfzehnte Runde: Resize waehrend offenem Dialog WIRKLICH behoben (Overlay-Settle- │ Cld
+#         │      │ Muster wie main() statt vollem Redraw bei jedem Zwischenschritt), Groessen-Overlay- │
+#         │      │ Text an fester Position (3,3) statt zentriert (huepfte sonst waehrend des Ziehens)  │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -682,6 +685,45 @@ Terminal-Vergroesserung `stty rows 35 columns 120`) -- Dialog zeichnet sich bei 
 neu und zentriert, bleibt bedienbar (Enter bestaetigt weiterhin eine Auswahl), die aktualisierte
 Terminal-Groesse kommt korrekt beim Aufrufer an (Hauptfenster-Statuszeile zeigt "Terminal: 35x120"
 nach dem Schliessen des Dialogs).
+
+**Fuenfzehnte Runde (2026-08-18) -- Resize waehrend offenem Dialog WIRKLICH behoben (voller
+Redraw bei jedem Zwischenschritt), Overlay-Text an fester Position:**
+*"ok, das verändern der Fenstergröße geht immer noch nicht wenn ein Dialog offen ist. da wird immer
+alles neu gezeichnet. Kannst du den Text für die Fenstergröße beim ändern, but mal auf Position 3,3
+setzen, da dürfte das auch nicht mehr so durch die Gegend hüpfen ..."*
+
+1. **"Da wird immer alles neu gezeichnet"** -- der ERSTE Anlauf (vierzehnte Runde) hat bei JEDEM
+   einzelnen `Q9_KEY_RESIZE`-Ereignis sofort den KOMPLETTEN Dialog per `q9_filedialog_init()` + vollem
+   Redraw neu aufgebaut. Waehrend des Ziehens an der Terminal-Ecke kommen davon viele kurz
+   hintereinander -- sichtbar ruckelig/flackernd bei jedem Zwischenschritt, genau Andreas' Beschreibung.
+   `run_file_dialog()` nutzt jetzt dasselbe Overlay-Settle-Muster wie `main()` (s. dortiges
+   `RESIZE_SETTLE_MS`): waehrend gezogen wird, nur das billige `render_size_overlay()` (kein
+   Dialog-/Hintergrund-Redraw); der teure Dialog-Neuaufbau (`compute_dialog_geometry()` +
+   `q9_filedialog_init()`, zentriert dabei weiterhin automatisch neu) passiert erst EINMAL, nach
+   `RESIZE_SETTLE_MS` Stille.
+2. **Overlay-Text an fester Position** -- vorher zentriert (`mid_row`/`mid_col`, haengt von
+   rows/cols ab), dadurch sprang der Text bei JEDEM Zwischenschritt an eine andere Bildschirmstelle.
+   Neue Konstanten `OVERLAY_ROW`/`OVERLAY_COL` (= 3,3, dieselbe Spalte wie Kopfzeilen-Titel/
+   Hinweistext/Listenansicht) -- feste Position, kein Huepfen mehr.
+
+**Fallstrick bei der Verifikation:** ein erster `expect`-Test schien einen echten Regressions-Bug
+zu zeigen (Enter bestaetigte nach dem Resize nicht mehr) -- Ursache war aber die TESTMETHODE, nicht
+das Programm: `after N` in `expect`-Skripten liest waehrenddessen NICHTS vom Kindprozess. Wenn dessen
+PTY-Ausgabepuffer dadurch vollaeuft, blockiert sein naechstes `fflush(stdout)`, bis `expect` wieder
+aktiv liest (z.B. bei `expect eof`) -- ein Testartefakt, das reale interaktive Terminals (immer aktiv
+lesend) nie zeigen. Per `gettimeofday()`-Zeitstempeln direkt im Code nachgewiesen (Luecke von genau
+der Summe der `after`-Wartezeiten zwischen zwei Log-Zeilen). Korrigierter Test liest waehrend der
+Wartezeit aktiv weiter (`expect { -timeout N -re "." { exp_continue } timeout {} }`) statt zu
+schlafen -- damit bestaetigt: Settle funktioniert korrekt, Dialog baut sich nach Stille wieder auf,
+bleibt bedienbar. Andreas hat es anschliessend auch live im echten Terminal bestaetigt ("jetzt geht
+es immer").
+
+`integration_demo.c` Ver. 2.50 (`run_file_dialog()` mit eigenem `showing_overlay`-Zustand nach
+main()-Vorbild, `render_size_overlay()` mit fester `OVERLAY_ROW/_COL`-Position statt Zentrierung).
+`make test` komplett gruen. Per echtem Pseudo-Terminal-Test (aktiv lesend statt `after`) bestaetigt:
+Overlay zeigt die Groesse waehrend des Resizes, Dialog baut sich nach `RESIZE_SETTLE_MS` Stille
+vollstaendig neu auf, Enter bestaetigt danach weiterhin eine Auswahl. Bestehender
+`filedialog_smoke3.exp` erneut gruen (keine Regression).
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
