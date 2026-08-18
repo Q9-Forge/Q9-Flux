@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.40
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.50
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -109,6 +109,10 @@
 # 26-08-18│ 4.40 │ Dreiundzwanzigste Runde (Phase 3/4): numerische Feldtypen NUMERIC_DEC/_HEX (zwei     │ Cld
 #         │      │ neue kind-Werte statt neuer Struct-Felder), "$"-Praefix automatisch, Bereichs-       │
 #         │      │ Beispiel am Slot:-Feld (0-255); Boolean-Feldtyp (Phase 4/4) noch offen               │
+# 26-08-18│ 4.50 │ Vierundzwanzigste Runde (Phase 4/4, letzte Phase): Boolean-Feldtyp fertig --          │ Cld
+#         │      │ Q9_LISTVIEW_FIELD_BOOLEAN als weiterer neuer kind-Wert, field_toggle() schaltet      │
+#         │      │ ja/nein um (Leertaste), alle bestehenden ja/nein-Felder umgestellt. Alle vier         │
+#         │      │ Eingabearten (Text/Datei/Numerisch/Boolean) jetzt vorhanden                          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1036,9 +1040,46 @@ Pseudo-Terminal-Test bestaetigt: CF-Interface's "Basis:" zeigt `$FFFFE000`, RC20
 (Eingabe "999" -- Zeichen werden akzeptiert, da field_putc() keine Bereichspruefung macht) wird
 beim Verlassen des Feldes korrekt auf `255` geklemmt. `filedialog_smoke3.exp` erneut gruen.
 
-**Noch offen:** Boolean-Feldtyp (Phase 4/4), echtes Laden/Auswerten der `.q9`-Datei, Speichern-
-Funktion, mechanische Uebernahme von NUMERIC fuer die restlichen Felder (`Eintraege:`, `Groesse:`
-u.ae. sind aktuell noch TEXT).
+**Noch offen (bis zur naechsten Runde):** Boolean-Feldtyp (Phase 4/4), echtes Laden/Auswerten der
+`.q9`-Datei, Speichern-Funktion, mechanische Uebernahme von NUMERIC fuer die restlichen Felder
+(`Eintraege:`, `Groesse:` u.ae. sind aktuell noch TEXT).
+
+**Vierundzwanzigste Runde (2026-08-18) -- Boolean-Feldtyp (Phase 4 von 4, letzte Phase):**
+*"ja bitte... mach einfach weiter :-)"* -- letzter der vier urspruenglich genannten Feldtypen
+("Texteingabe, Dateiauswahl (mit dem Dialog), Numerische Eingabe Dezimal/Hex opt. mit Bereich,
+Boolean Eingabe... denke das ist das Mindeste").
+
+Wieder als NEUER `kind`-WERT (`Q9_LISTVIEW_FIELD_BOOLEAN`) statt neuem Struct-Feld umgesetzt --
+derselbe Grund wie bei NUMERIC_DEC/_HEX (s. vorige Runde): kein einziger bestehender Initialisierer
+musste angefasst werden.
+
+1. **Fester Wertebereich** -- ein BOOLEAN-Feld ist IMMER genau `"ja"` oder `"nein"` (die Konvention,
+   die schon alle bisherigen `"Aktiv:"`-Felder als reinen TEXT-Wert verwendet haben).
+2. **Umschalten statt Tippen** -- neue Funktion `q9_listview_field_toggle()` kehrt den Wert um; der
+   Aufrufer bindet sie an die Leertaste (`integration_demo.c`, `Q9_KEY_CHAR`-Behandlung, Sonderfall
+   VOR der normalen `field_putc()`-Weiterleitung). `field_putc()`/`_backspace()` ignorieren
+   BOOLEAN-Felder wie schon BUTTON-Felder -- Tippen/Loeschen wirkt dort nicht.
+3. **Kein eigenes Rendering** -- ein BOOLEAN-Feld sieht optisch aus wie ein TEXT-Feld (kein
+   Kaestchen-Symbol o.ae. in dieser ersten Fassung, bei Bedarf spaeter nachruestbar); der einzige
+   Unterschied ist die Interaktion.
+4. **Demo-Daten umgestellt** -- alle 14 bestehenden `"ja"`/`"nein"`-Felder (`Aktiv:` bei acht
+   Eintraegen, `Link:`, `Parity:`, `Getestet:`, `Schreibschutz:`) auf `Q9_LISTVIEW_FIELD_BOOLEAN`.
+   Hinweistext unten um "Leertaste: ja/nein" ergaenzt.
+
+`q9_listview.h/.c` Ver. 2.20/2.30 (neuer kind-Wert, `field_toggle()`, `value_equals()`/
+`value_assign()` als Hilfsfunktionen OHNE `<string.h>` -- die Datei kam bisher bewusst ganz ohne
+aus), `integration_demo.c` Ver. 3.30 (Felddaten umgestellt, Leertaste-Sonderfall in `Q9_KEY_CHAR`),
+`listview_selftest.c` Ver. 2.10 (neue Tests: ja↔nein-Umschaltung, No-op bei TEXT-Feldern,
+unerwarteter Ausgangswert wird zu "ja", NULL-Sicherheit). `make test` komplett gruen, Build ohne
+jede Warnung. Per echtem Pseudo-Terminal-Test bestaetigt: CF-Interface's "Aktiv:"-Feld springt nach
+einer Leertaste sichtbar von "ja" auf "nein". `filedialog_smoke3.exp` erneut gruen.
+
+Damit sind alle vier von Andreas genannten Eingabearten fertig (Text, Dateiauswahl, Numerisch,
+Boolean).
+
+**Noch offen:** echtes Laden/Auswerten der `.q9`-Datei, Speichern-Funktion, mechanische Uebernahme
+von NUMERIC fuer die restlichen Felder (`Eintraege:`, `Groesse:` u.ae. sind aktuell noch TEXT),
+eventuell ein eigenes Symbol fuer BOOLEAN-Felder statt reinem "ja"/"nein"-Text.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
