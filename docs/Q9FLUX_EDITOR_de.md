@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.00
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.10
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -98,6 +98,9 @@
 # 26-08-18│ 4.00 │ Neunzehnte Runde (Phase 2/4): erster fester Eintrag "Emulator-Konfiguration" +       │ Cld
 #         │      │ neuer BUTTON-Feldtyp (q9_listview_field_kind_t), run_file_dialog() liefert jetzt      │
 #         │      │ optional den rohen Dateinamen zurueck; Numerisch/Boolean noch offen                  │
+# 26-08-18│ 4.10 │ Zwanzigste Runde: Datei-Dialog scannt jetzt ~/.q9-flux (wird bei Bedarf angelegt)     │ Cld
+#         │      │ statt HOME, Filter auf .q9 umgestellt (Glob-Stil "*.q9" traf NICHT -- ext_matches()  │
+#         │      │ erwartet reine Endung, per pyte-Test gefunden+korrigiert)                             │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -911,6 +914,34 @@ echtem Pseudo-Terminal-Test + pyte bestaetigt: Pfeil rechts oeffnet "Emulator-Ko
 "Datei:"-Feld, Pfeil runter wechselt zum Button, Enter oeffnet den Dialog, eine Auswahl (hier "64K")
 landet korrekt im "Datei:"-Feld darueber ("(keine ausgewaehlt)" -> "64K"), der Button bleibt darunter
 sichtbar. Bestehender `filedialog_smoke3.exp` erneut gruen -- keine Regression.
+
+**Zwanzigste Runde (2026-08-18) -- echtes Zielverzeichnis + Dateifilter:**
+*"Cool, Funktion erst mal gegeben :-) Als Verzeichnis sollte ~/.q9-flux gesetzt sein und dort
+sollen alle *.q9 Dateien angezeigt werden."*
+
+Der Datei-Dialog scannte bisher HOME mit C-Quelltext-Filtern (reine Demo-Bequemlichkeit, "mehr
+Dateien zum Anschauen als im leeren Arbeitsverzeichnis"). Jetzt das ECHTE Zielverzeichnis:
+`~/.q9-flux` (wird beim Oeffnen bei Bedarf per `mkdir()` angelegt, Fehler bewusst ignoriert --
+existiert es schon, kein Problem), Standardfilter `.q9`, `*.*` bleibt als Ausweichoption im
+Dropdown erhalten.
+
+**Faustfalle unterwegs gefunden:** `filters[] = { "*.q9", "*.*" }` (Glob-Stil) zeigte beim ersten
+Testlauf eine KOMPLETT LEERE Liste, obwohl `.q9`-Dateien im Verzeichnis lagen -- `q9_filelist.c`s
+`ext_matches()` erwartet eine REINE Endung (mit oder ohne fuehrenden Punkt, z.B. `".c"`/`"c"`),
+kein Glob-Muster wie `"*.c"`. Per echtem Pseudo-Terminal-Test + pyte sofort aufgefallen (Datei-
+Liste blieb leer trotz vorhandener `.q9`-Dateien) und korrigiert auf `".q9"`.
+
+Der bestehende `filedialog_smoke3.exp`-Rauchtest hatte bisher stillschweigend auf zufaelligen
+HOME-Inhalt vertraut ("Enter auf der Liste waehlt eine echte Datei") -- seit `~/.q9-flux` das
+Zielverzeichnis ist (frisch, meist leer), legt der Test jetzt selbst eine Fixture-Datei
+(`smoke_test_fixture.q9`) an und raeumt sie danach wieder auf, statt implizit von vorhandenen
+Dateien abzuhaengen.
+
+`integration_demo.c` Ver. 3.00 (`dir`/`filters` in `run_file_dialog()` umgestellt, neues `<sys/
+stat.h>`-Include fuer `mkdir()`). `make test` komplett gruen, Build ohne jede Warnung. Per echtem
+Pseudo-Terminal-Test + pyte bestaetigt: Dialog zeigt nur `.q9`-Dateien aus `~/.q9-flux` (Testdatei
+`ignored.txt` im selben Verzeichnis bleibt korrekt aussen vor), Filter-Anzeige zeigt `.q9` als
+Standard. `filedialog_smoke3.exp` (mit eigener Fixture-Datei) erneut gruen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
