@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.c                                                                      Ver. 1.40
+// File:   boardcfg.c                                                                      Ver. 1.50
 // Owner:  AF
 // Desc.:  Implementierung des Board-Config-Parsers, siehe boardcfg.h. INI-artig, C99, ohne
 //         Fremdbibliothek. Bewusst schlank: nur die Abschnitte/Keys, die 5.19a heute braucht
@@ -22,6 +22,9 @@
 //         │      │ Parse-Fehler                                                              │
 // 26-08-15│ 1.40 │ Q9FLUX_EDITOR_de.md 4.1: neuer [board]-Key "cpu" (Whitelist-Validierung),  │ Cld
 //         │      │ macht die CPU-Typ-Wahl aus m68krt.h q9_cpu_type_t config-steuerbar         │
+// 26-08-18│ 1.50 │ q9_board_cfg_save() NEU (Gegenstueck zu q9_board_cfg_load(), Q9FLUX_EDITOR_ │ Cld
+//         │      │ de.md, Andreas: "Speichern-Funktion") + Hilfsfunktion cfg_relativize()      │
+//         │      │ (Umkehrung von cfg_resolve_rel())                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "boardcfg.h"
 #include "q9board.h"                                     /* Q9_CF_FMT_*                            */
@@ -121,6 +124,24 @@ static void cfg_resolve_rel(const char *dir, const char *value, char *out, unsig
     }
     if (snprintf(out, out_max, "%s%s", dir, value) < 0) {
         cfg_copy(out, out_max, value);
+    }
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// Function: cfg_relativize
+// Desc.:    Umkehrung von cfg_resolve_rel() fuer q9_board_cfg_save() -- beginnt path mit genau dem
+//           Verzeichnis dir (das cfg_resolve_rel() beim Laden vorangestellt hat), wird dieser
+//           Praefix wieder abgeschnitten (path bleibt relativ). Passt path NICHT (bleibt absolut
+//           im out), wenn dir leer ist oder path NICHT mit dir beginnt (z.B. weil der Nutzer beim
+//           Laden bereits einen absoluten Pfad angegeben hatte, s. cfg_resolve_rel()).
+//────────────────────────────────────────────────────────────────────────────────────────────────
+static void cfg_relativize(const char *dir, const char *path, char *out, unsigned out_max)
+{
+    unsigned dlen = (unsigned)strlen(dir);
+    if (dlen > 0 && strncmp(path, dir, dlen) == 0) {
+        cfg_copy(out, out_max, path + dlen);
+    } else {
+        cfg_copy(out, out_max, path);
     }
 }
 
@@ -488,5 +509,83 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.c                                                                          Ver. 1.40
+// Function: q9_board_cfg_save
+//────────────────────────────────────────────────────────────────────────────────────────────────
+int q9_board_cfg_save(const q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsigned err_max)
+{
+    /* Defaults exakt wie q9_board_cfg_default() -- vmnet_*-Keys werden nur geschrieben, wenn sie
+       davon abweichen (s. Kopfkommentar in boardcfg.h). */
+    static const char *const def_vmnet_ip       = "192.168.200.2";
+    static const char *const def_vmnet_gateway  = "192.168.200.1";
+    static const char *const def_vmnet_netmask  = "255.255.255.0";
+    static const char *const def_vmnet_dhcp_end = "192.168.200.254";
+    FILE *f;
+    char  dir[Q9_CFG_PATH_MAX];
+    char  rel[Q9_CFG_PATH_MAX];
+    int   i;
+
+    cfg_dir_of(cfg_path, dir, sizeof(dir));
+
+    f = fopen(cfg_path, "w");
+    if (!f) {
+        snprintf(err, err_max, "Config-Datei '%s' nicht schreibbar", cfg_path);
+        return -1;
+    }
+
+    fprintf(f, "[board]\n");
+    if (cfg->name[0])     { fprintf(f, "name = %s\n", cfg->name); }
+    if (cfg->rom_path[0]) {
+        cfg_relativize(dir, cfg->rom_path, rel, sizeof(rel));
+        fprintf(f, "rom  = %s\n", rel);
+    }
+    if (cfg->net_mode[0]) { fprintf(f, "net  = %s\n", cfg->net_mode); }
+    if (strcmp(cfg->vmnet_ip, def_vmnet_ip) != 0) {
+        fprintf(f, "vmnet_ip       = %s\n", cfg->vmnet_ip);
+    }
+    if (strcmp(cfg->vmnet_gateway, def_vmnet_gateway) != 0) {
+        fprintf(f, "vmnet_gateway  = %s\n", cfg->vmnet_gateway);
+    }
+    if (strcmp(cfg->vmnet_netmask, def_vmnet_netmask) != 0) {
+        fprintf(f, "vmnet_netmask  = %s\n", cfg->vmnet_netmask);
+    }
+    if (strcmp(cfg->vmnet_dhcp_end, def_vmnet_dhcp_end) != 0) {
+        fprintf(f, "vmnet_dhcp_end = %s\n", cfg->vmnet_dhcp_end);
+    }
+    if (cfg->net_hostfwd[0]) { fprintf(f, "net_hostfwd = %s\n", cfg->net_hostfwd); }
+    if (cfg->cpu[0])         { fprintf(f, "cpu  = %s\n", cfg->cpu); }
+
+    for (i = 0; i < cfg->cf_count; i++) {
+        const q9_cfg_cf_t *cf = &cfg->cf[i];
+        fprintf(f, "\n[cf%d]\n", i);
+        fprintf(f, "type = %s\n", cf->format == Q9_CF_FMT_RBF ? "rbf" :
+                                   cf->format == Q9_CF_FMT_PCF ? "pcf" : "auto");
+        fprintf(f, "bus  = %s\n", cf->bus == Q9_CFG_BUS_RC2014 ? "rc2014" : "onboard");
+        fprintf(f, "unit = %s\n", cf->unit ? "slave" : "master");
+        cfg_relativize(dir, cf->path, rel, sizeof(rel));
+        fprintf(f, "image = %s\n", rel);
+        if (!cf->has_descriptor) { fprintf(f, "descriptor = no\n"); }
+        if (cf->descriptor_name[0]) {
+            cfg_relativize(dir, cf->descriptor_name, rel, sizeof(rel));
+            fprintf(f, "descriptorName = %s\n", rel);
+        }
+        if (cf->use_slot) {
+            fprintf(f, "useSlot = yes\n");
+            fprintf(f, "slot = %d\n", cf->slot);
+        } else if (cf->base) {
+            fprintf(f, "base = 0x%08X\n", cf->base);
+        }
+        if (cf->start_sector)   { fprintf(f, "start_sector = %u\n", cf->start_sector); }
+        if (cf->length_sectors) { fprintf(f, "length_sectors = %u\n", cf->length_sectors); }
+        if (cf->descriptor_lsn) { fprintf(f, "descriptor_lsn = %u\n", cf->descriptor_lsn); }
+    }
+
+    if (fclose(f) != 0) {
+        snprintf(err, err_max, "Config-Datei '%s': Fehler beim Schreiben", cfg_path);
+        return -1;
+    }
+    return 0;
+}
+
+//────────────────────────────────────────────────────────────────────────────────────────────────
+// EOF boardcfg.c                                                                          Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
