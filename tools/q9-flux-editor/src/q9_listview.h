@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.40
+// File:   q9_listview.h                                                                   Ver. 1.50
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -32,6 +32,11 @@
 //         │      │ statt width-1) -- Andreas: "wirkt jetzt doch gequetscht"                   │
 // 26-08-17│ 1.40 │ Neuer Parameter line_fg -- Linie/Bildlaufleiste bekommt eine EIGENE Farbe, │ Cld
 //         │      │ unabhaengig von der Text-fg (Andreas: "Striche links/rechts unterschiedlich")│
+// 26-08-18│ 1.50 │ Erweiterbare Eintraege (Andreas: "groessere Eintraege... minimiert ein/zwei │ Cld
+//         │      │ Zeilen, aufgeklappt so viele wie sie brauchen") -- q9_listview_item_t NEU    │
+//         │      │ (Name + Detailzeilen), q9_listview_item_rows()/_scroll_ex()/_move_ex()/       │
+//         │      │ _render_ex() NEU dazu, bestehende Funktionen UNVERAENDERT (Datei-Dialog nutzt │
+//         │      │ weiter die einfachen 1-Zeile-pro-Eintrag-Varianten)                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -46,6 +51,85 @@ typedef struct {
                                                              item_count==0 (nichts auswaehlbar)          */
     int scroll_offset;                                     /* Index des ERSTEN sichtbaren Eintrags       */
 } q9_listview_t;
+
+/* Fuer die "_ex"-Funktionen (erweiterbare Eintraege, s.u.): ein Eintrag ist jetzt mehr als ein
+   blosser String -- er hat eine Kopfzeile (name, IMMER sichtbar) und optional Detailzeilen (nur
+   sichtbar, wenn der Eintrag aufgeklappt ist, s. das expanded-Array bei den einzelnen Funktionen).
+   detail_lines/detail_count bleiben beim Aufrufer (wie items bei den einfachen Funktionen oben) --
+   q9_listview_item_t selbst kopiert nichts. detail_count<=0 bedeutet "nicht erweiterbar" (kein
+   Pfeil-Symbol, q9_listview_item_rows() liefert dafuer immer 1, egal was im expanded-Array steht). */
+typedef struct {
+    const char *name;
+    const char *const *detail_lines;
+    int detail_count;
+} q9_listview_item_t;
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_item_rows
+// Desc.:    Wie viele Bildschirmzeilen Eintrag index braucht: 1 (nur die Kopfzeile), wenn er
+//           zugeklappt ist ODER detail_count<=0 (nicht erweiterbar) -- sonst 1 (Kopf) +
+//           detail_count (Detailzeilen) + 1 (Trennlinie danach). items/expanded duerfen NULL sein
+//           (liefert dann immer 1, wie ein ganz normaler Ein-Zeile-Eintrag) -- damit verhalten sich
+//           die "_ex"-Funktionen bei NULL/NULL exakt wie ihre einfachen Gegenstuecke oben.
+// Call:     int rows = q9_listview_item_rows(items, expanded, 3)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_listview_item_rows(const q9_listview_item_t *items, const int *expanded, int index);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_scroll_ex
+// Desc.:    Wie q9_listview_scroll(), aber ROW-bewusst (Eintraege koennen mehr als eine Zeile
+//           brauchen, s. q9_listview_item_rows()). Garantiert, dass die KOPFZEILE von `selected`
+//           sichtbar bleibt -- bei einem sehr grossen aufgeklappten Eintrag (mehr Detailzeilen als
+//           height) wird NICHT versucht, den kompletten Eintrag ins Fenster zu quetschen (das
+//           wuerde bei stark unterschiedlichen Eintragsgroessen zu ueberraschenden Spruengen
+//           fuehren) -- es reicht, wenn der Kopf oben im Fenster steht, der Rest wird unten
+//           abgeschnitten (genau wie ein zu grosser einzelner Eintrag im normalen Textfluss vieler
+//           anderer TUI-Listenansichten). BEKANNTE VEREINFACHUNG: anders als q9_listview_scroll()
+//           wird NICHT versucht, unnoetigen Leerraum am Fensterende zu vermeiden (kein "so weit wie
+//           moeglich zurueckziehen, wenn ohnehin nichts mehr folgt") -- fuer die erste Fassung
+//           bewusst weggelassen, bei Bedarf spaeter nachruestbar.
+// Call:     new_offset = q9_listview_scroll_ex(selected, offset, height, items, expanded, item_count)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_listview_scroll_ex(int selected, int offset, int height,
+                           const q9_listview_item_t *items, const int *expanded, int item_count);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_move_ex
+// Desc.:    Wie q9_listview_move(), nutzt aber q9_listview_scroll_ex() zum Nachziehen. delta==0 ist
+//           ein gueltiger, gewollter Aufruf: bewegt die Auswahl NICHT, richtet aber scroll_offset neu
+//           aus -- genau das braucht der Aufrufer direkt NACH dem Auf-/Zuklappen eines Eintrags
+//           (dessen Zeilenzahl sich dadurch aendert, die Auswahl selbst aber gleich bleibt).
+// Call:     q9_listview_move_ex(&lv, 0, items, expanded)     // nur neu ausrichten, nicht bewegen
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_move_ex(q9_listview_t *lv, int delta,
+                          const q9_listview_item_t *items, const int *expanded);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_listview_render_ex
+// Desc.:    Wie q9_listview_render(), aber fuer erweiterbare Eintraege (s. q9_listview_item_t).
+//           Jede Kopfzeile bekommt ein Pfeil-Symbol davor (Q9_GLYPH_DOWN_ARROW aufgeklappt,
+//           Q9_GLYPH_RIGHT_ARROW zugeklappt, ein Leerzeichen bei detail_count<=0 -- nichts zum
+//           Auf-/Zuklappen). Aufgeklappte Detailzeilen werden um zwei Spalten eingerueckt (Pfeil +
+//           Luftspalte) in EINER EIGENEN Farbe (detail_fg, gedaempft/anders als der normale
+//           Eintragstext -- optische Unterscheidung Kopf/Detail), danach eine volle Trennlinie
+//           (Q9_GLYPH_HLINE ueber content_width, in line_fg). Bewusst LEICHTGEWICHTIG (Andreas'
+//           Wahl, 2026-08-18, aus drei vorgeschlagenen Stilen): KEIN Rahmen um den aufgeklappten
+//           Bereich -- nur Einrueckung + die eine Trennlinie danach, spart am meisten Platz. Zeilen,
+//           die nicht mehr in den Viewport passen (Eintrag laeuft ueber das Fensterende hinaus),
+//           werden abgeschnitten, wie bei render() ueberzaehlige Eintraege. Rechte Spalte (Linie +
+//           Bildlaufleiste) jetzt ROW-basiert statt item-basiert -- Griffgroesse/-position richten
+//           sich nach der GESAMTZEILENZAHL aller Eintraege (inkl. aufgeklappter), nicht mehr nach
+//           der reinen Eintragsanzahl.
+// Call:     q9_listview_render_ex(&lv, &sb, items, expanded, 255,255,255, 0,0,0, 255,255,0,
+//                                  200,200,200, 150,120,80)
+//════════════════════════════════════════════════════════════════════════════════════════════════
+void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
+                            const q9_listview_item_t *items, const int *expanded,
+                            int fg_r, int fg_g, int fg_b,
+                            int sel_fg_r, int sel_fg_g, int sel_fg_b,
+                            int sel_bg_r, int sel_bg_g, int sel_bg_b,
+                            int line_fg_r, int line_fg_g, int line_fg_b,
+                            int detail_fg_r, int detail_fg_g, int detail_fg_b);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_listview_init
@@ -112,5 +196,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 1.40
+// EOF q9_listview.h                                                                       Ver. 1.50
 //────────────────────────────────────────────────────────────────────────────────────────────────

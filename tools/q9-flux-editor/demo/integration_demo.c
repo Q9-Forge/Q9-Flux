@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.50
+// File:   integration_demo.c                                                             Ver. 2.60
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -82,6 +82,10 @@
 //         │      │ status_fg/bg-Felder fuer die Dialog-Statuszeile (jetzt = Hauptfenster-Statuszeile),│
 //         │      │ run_file_dialog() behandelt Resize waehrend der Dialog offen ist (compute_dialog_  │
 //         │      │ geometry() zentriert dabei automatisch neu), rows/cols jetzt Zeiger                │
+// 26-08-18│ 2.60 │ Sechzehnte Feedback-Runde: g_items durch g_list_items ersetzt (Name + Detailzeilen,│ Cld
+//         │      │ q9_listview_item_t), g_expanded-Array, Enter klappt den ausgewaehlten Eintrag      │
+//         │      │ auf/zu, Haupt-Listenansicht nutzt jetzt q9_listview_render_ex()/_scroll_ex()/       │
+//         │      │ _move_ex() (erweiterbare Eintraege, s. q9_listview.h)                               │
 // 26-08-17│ 2.50 │ Neunte Feedback-Runde ("da wird immer alles neu gezeichnet"): run_file_dialog()    │ Cld
 //         │      │ nutzt jetzt dasselbe Overlay-Settle-Muster wie main() -- waehrend des Ziehens nur  │
 //         │      │ billiges render_size_overlay(), teurer Dialog-Neuaufbau erst nach RESIZE_SETTLE_MS │
@@ -100,17 +104,83 @@
 #include "../src/q9_input.h"
 #include "../src/q9_filedialog.h"
 
-/* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. */
-static const char *const g_items[] = {
-    "CF-Interface (onboard, c0)", "Netz-Terminal x1", "Netz-Terminal x2",
-    "Netz-Terminal x3", "Netz-Terminal x4", "Netz-Terminal x5",
-    "Netz-Terminal x6", "Netz-Terminal x7", "Netz-Terminal x8",
-    "RTC72421 (Echtzeituhr)", "DUART 68681 (Konsole)", "QUICC-Ethernet",
-    "MC6845 (GDP/CRTC)", "CLUT (Farbtabelle)", "RC2014-CF (sekundaer)",
-    "Framebuffer (VRAM)", "Systemspeicher (RAM)", "ROM-Spiegel",
-    "NVRAM (Akku-gepuffert)", "Timer/IRQ3-Trigger",
+/* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. Erweiterbare Eintraege
+   (Andreas' Wunsch, 2026-08-18: "groessere Eintraege... minimiert ein oder zwei Zeilen, aufgeklappt
+   so viele wie sie brauchen") -- jeder Eintrag hat jetzt eine Kopfzeile (name, wie vorher g_items[])
+   plus ein paar Detailzeilen, die nur sichtbar werden, wenn der Eintrag aufgeklappt ist (Enter auf
+   der Auswahl, s. main()). Zwei Zeilen je Eintrag reichen fuer die Vorfuehrung -- das Datenmodell
+   (q9_listview_item_t.detail_count, s. q9_listview.h) erlaubt aber pro Eintrag eine BELIEBIGE Anzahl,
+   das ist keine feste Grenze der Bibliothek. */
+static const char *const g_cf_detail[]     = { "Bus:    onboard         Basis:  $FFFFE000",
+                                                "Slot:   -               Aktiv:  ja" };
+static const char *const g_net1_detail[]   = { "Port:   2001            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_net2_detail[]   = { "Port:   2002            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_net3_detail[]   = { "Port:   2003            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_net4_detail[]   = { "Port:   2004            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_net5_detail[]   = { "Port:   2005            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_net6_detail[]   = { "Port:   2006            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_net7_detail[]   = { "Port:   2007            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_net8_detail[]   = { "Port:   2008            Protokoll: Telnet",
+                                                "Status: bereit          Baudrate: -" };
+static const char *const g_rtc_detail[]    = { "Basis:  $FFFFA000       IRQ:    -",
+                                                "Batterie: ok            Aktiv:  ja" };
+static const char *const g_duart_detail[]  = { "Basis:  $FFFFA000       IRQ:    2",
+                                                "Kanal A: Konsole        Kanal B: frei" };
+static const char *const g_quicc_detail[]  = { "MAC:    00:1A:2B:03:04:05",
+                                                "Link:   nein            Aktiv:  nein" };
+static const char *const g_mc6845_detail[] = { "Basis:  $FFFF9000       IRQ:    3",
+                                                "Modus:  Text 80x25      Aktiv:  ja" };
+static const char *const g_clut_detail[]   = { "Basis:  $FFFF9800       Eintraege: 256",
+                                                "Tiefe:  8 Bit           Aktiv:  ja" };
+static const char *const g_rc2014_detail[] = { "Bus:    rc2014          Basis:  $FFFFC010",
+                                                "Slot:   0               Aktiv:  nein" };
+static const char *const g_fb_detail[]     = { "Basis:  $00300000       Groesse: 512K",
+                                                "Aufloesung: 640x480     Aktiv:  ja" };
+static const char *const g_ram_detail[]    = { "Basis:  $00000000       Groesse: 4 MB",
+                                                "Parity: nein            Getestet: ja" };
+static const char *const g_rom_detail[]    = { "Basis:  $00F00000       Groesse: 256K",
+                                                "Schreibschutz: ja       Aktiv:  ja" };
+static const char *const g_nvram_detail[]  = { "Basis:  $FFFFB000       Groesse: 2K",
+                                                "Batterie: ok            Aktiv:  ja" };
+static const char *const g_timer_detail[]  = { "Basis:  $FFFFA800       IRQ:    3",
+                                                "Intervall: 10ms         Aktiv:  ja" };
+
+static const q9_listview_item_t g_list_items[] = {
+    { "CF-Interface (onboard, c0)", g_cf_detail,     2 },
+    { "Netz-Terminal x1",           g_net1_detail,   2 },
+    { "Netz-Terminal x2",           g_net2_detail,   2 },
+    { "Netz-Terminal x3",           g_net3_detail,   2 },
+    { "Netz-Terminal x4",           g_net4_detail,   2 },
+    { "Netz-Terminal x5",           g_net5_detail,   2 },
+    { "Netz-Terminal x6",           g_net6_detail,   2 },
+    { "Netz-Terminal x7",           g_net7_detail,   2 },
+    { "Netz-Terminal x8",           g_net8_detail,   2 },
+    { "RTC72421 (Echtzeituhr)",     g_rtc_detail,    2 },
+    { "DUART 68681 (Konsole)",      g_duart_detail,  2 },
+    { "QUICC-Ethernet",             g_quicc_detail,  2 },
+    { "MC6845 (GDP/CRTC)",          g_mc6845_detail, 2 },
+    { "CLUT (Farbtabelle)",         g_clut_detail,   2 },
+    { "RC2014-CF (sekundaer)",      g_rc2014_detail, 2 },
+    { "Framebuffer (VRAM)",         g_fb_detail,     2 },
+    { "Systemspeicher (RAM)",       g_ram_detail,    2 },
+    { "ROM-Spiegel",                g_rom_detail,    2 },
+    { "NVRAM (Akku-gepuffert)",     g_nvram_detail,  2 },
+    { "Timer/IRQ3-Trigger",         g_timer_detail,  2 },
 };
-#define ITEM_COUNT (int)(sizeof(g_items) / sizeof(g_items[0]))
+#define ITEM_COUNT (int)(sizeof(g_list_items) / sizeof(g_list_items[0]))
+
+/* 0 = zugeklappt (Default), 1 = aufgeklappt -- Enter auf der Hauptliste klappt den AUSGEWAEHLTEN
+   Eintrag auf/zu (s. main()), mehrere gleichzeitig aufgeklappte Eintraege sind ausdruecklich erlaubt
+   (kein "nur einer offen"-Akkordeon -- einfacher zu verstehen, kein ueberraschendes Zuklappen
+   anderer Eintraege). */
+static int g_expanded[ITEM_COUNT];
 
 /* Warme Gelb-/Orange-Palette. Neunte Feedback-Runde (Andreas, 2026-08-17): "die ganzen Farben
    sind jetzt alle so in Richtung Braun abgerutscht... mehr in Richtung gelb orange" -- alle Toene
@@ -166,7 +236,7 @@ static const char *const g_items[] = {
                                                                 nach 1s Stille zurueck zum Inhalt  */
 
 /* Feste Feldbreiten fuer die Statuszeile (Andreas' Wunsch: "sonst huepfen die Texte hin und her").
-   NAME_FIELD_WIDTH >= der laengste Eintrag in g_items ("CF-Interface (onboard, c0)" = 27 Zeichen). */
+   NAME_FIELD_WIDTH >= der laengste Name in g_list_items ("CF-Interface (onboard, c0)" = 27 Zeichen). */
 #define NAME_FIELD_WIDTH 30
 
 /* Zusaetzliche Toene NUR fuer den Datei-Auswahl-Dialog -- Teil derselben Gelb-/Orange-Leiter wie
@@ -313,7 +383,8 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
 
     q9_screenbuf_puts(sb, rows - 2, 3,
                        (hint && hint[0]) ? hint
-                                         : "Pfeiltasten: navigieren   O: Datei oeffnen   Strg-C: beenden",
+                                         : "Pfeiltasten: navigieren   Enter: auf-/zuklappen   "
+                                           "O: Datei oeffnen   Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     lv->row    = 2;
@@ -326,19 +397,25 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
     lv->width  = cols - lv->col;
     if (lv->height < 1) { lv->height = 1; }
     if (lv->width  < 1) { lv->width  = 1; }
-    lv->scroll_offset = q9_listview_scroll(lv->selected, lv->scroll_offset, lv->height, lv->item_count);
+    /* _ex statt der einfachen q9_listview_scroll() -- Eintraege koennen jetzt mehr als eine
+       Bildschirmzeile brauchen (aufgeklappt), s. q9_listview.h. */
+    lv->scroll_offset = q9_listview_scroll_ex(lv->selected, lv->scroll_offset, lv->height,
+                                               g_list_items, g_expanded, lv->item_count);
     /* line_fg = PAL_FRAME (NICHT PAL_LIST_FG) -- die Linie liegt seit der dritten Feedback-Runde
        direkt AUF draw_frame()'s eigener Kante (s.o.), muss also auch DIESELBE Farbe zeigen, sonst
        wirken links/rechts UND verschiedene Hoehen der rechten Kante unterschiedlich eingefaerbt
        (Andreas' Feedback, 2026-08-17, siebte Runde: "die Striche links und rechts... sind
        unterschiedlich... das oberste rechts ist noch mal anders" -- die Eckzeichen/Kanten VOR und
        NACH dem Listenbereich blieben in PAL_FRAME, waehrend die Liste selbst bisher PAL_LIST_FG
-       zeichnete, obwohl beide auf derselben Spalte liegen). */
-    q9_listview_render(lv, sb, g_items,
-                        PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
-                        PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
-                        PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B,
-                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
+       zeichnete, obwohl beide auf derselben Spalte liegen). detail_fg = PAL_FRAME ebenfalls -- die
+       eingerueckten Detailzeilen bekommen dieselbe gedaempfte Farbe wie der Hinweistext unten
+       (strukturell/sekundaer, nicht der "wichtige" Text wie der Eintragsname selbst). */
+    q9_listview_render_ex(lv, sb, g_list_items, g_expanded,
+                           PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
+                           PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
+                           PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B,
+                           PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B,
+                           PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     /* Statuszeile ALS untere Rahmenkante, ueber die volle Breite (vorherige Feedback-Runden) --
        jetzt zusaetzlich mit FESTEN Feldbreiten (Andreas: "sonst huepfen die Texte hin und her"):
@@ -350,7 +427,7 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
                             1, PAL_STATUS_BG_R, PAL_STATUS_BG_G, PAL_STATUS_BG_B);
     snprintf(status, sizeof(status), " Ausgewaehlt: %-*.*s | Terminal: %3dx%-3d",
              NAME_FIELD_WIDTH, NAME_FIELD_WIDTH,
-             (lv->selected >= 0 && lv->selected < ITEM_COUNT) ? g_items[lv->selected] : "-",
+             (lv->selected >= 0 && lv->selected < ITEM_COUNT) ? g_list_items[lv->selected].name : "-",
              rows, cols);
     q9_screenbuf_puts(sb, rows - 1, 1, status, PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
 }
@@ -627,10 +704,22 @@ int main(void)
                     running = 0;
                     break;
                 case Q9_KEY_UP:
-                    if (!showing_overlay) { q9_listview_move(&lv, -1); }
+                    if (!showing_overlay) { q9_listview_move_ex(&lv, -1, g_list_items, g_expanded); }
                     break;
                 case Q9_KEY_DOWN:
-                    if (!showing_overlay) { q9_listview_move(&lv, 1); }
+                    if (!showing_overlay) { q9_listview_move_ex(&lv, 1, g_list_items, g_expanded); }
+                    break;
+                case Q9_KEY_ENTER:
+                    /* Andreas' Wunsch (2026-08-18): "erweiterbare Items" -- Enter klappt den
+                       AUSGEWAEHLTEN Eintrag auf/zu. delta=0 bewegt die Auswahl nicht, richtet aber
+                       scroll_offset neu aus (der aufgeklappte/zugeklappte Eintrag hat jetzt eine
+                       andere Zeilenzahl, s. q9_listview_move_ex()). Eintraege ohne Detailzeilen
+                       (detail_count<=0) haben ohnehin kein Pfeil-Symbol -- toggeln ist fuer sie
+                       wirkungslos (q9_listview_item_rows() liefert immer 1), kein Sonderfall noetig. */
+                    if (!showing_overlay && lv.selected >= 0 && lv.selected < ITEM_COUNT) {
+                        g_expanded[lv.selected] = !g_expanded[lv.selected];
+                        q9_listview_move_ex(&lv, 0, g_list_items, g_expanded);
+                    }
                     break;
                 case Q9_KEY_RESIZE:
                     if (q9_term_size(&rows, &cols) == 0) {
@@ -672,5 +761,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.50
+// EOF integration_demo.c                                                                  Ver. 2.60
 //────────────────────────────────────────────────────────────────────────────────────────────────

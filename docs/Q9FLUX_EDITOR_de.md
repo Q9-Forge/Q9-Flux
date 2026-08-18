@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.60
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.70
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -86,6 +86,9 @@
 # 26-08-18│ 3.60 │ Fuenfzehnte Runde: Resize waehrend offenem Dialog WIRKLICH behoben (Overlay-Settle- │ Cld
 #         │      │ Muster wie main() statt vollem Redraw bei jedem Zwischenschritt), Groessen-Overlay- │
 #         │      │ Text an fester Position (3,3) statt zentriert (huepfte sonst waehrend des Ziehens)  │
+# 26-08-18│ 3.70 │ Sechzehnte Runde: erweiterbare Listeneintraege -- q9_listview_item_t + _item_rows()/│ Cld
+#         │      │ _scroll_ex()/_move_ex()/_render_ex() (NEU, bestehende Funktionen unveraendert),     │
+#         │      │ Q9_GLYPH_RIGHT_ARROW dazu, Enter klappt den ausgewaehlten Eintrag auf/zu             │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -724,6 +727,45 @@ main()-Vorbild, `render_size_overlay()` mit fester `OVERLAY_ROW/_COL`-Position s
 Overlay zeigt die Groesse waehrend des Resizes, Dialog baut sich nach `RESIZE_SETTLE_MS` Stille
 vollstaendig neu auf, Enter bestaetigt danach weiterhin eine Auswahl. Bestehender
 `filedialog_smoke3.exp` erneut gruen (keine Regression).
+
+**Sechzehnte Runde (2026-08-18) -- erweiterbare Listeneintraege:**
+*"Jetzt brauchen wir groessere Einträge in der Listbox, ich würde vorschlage erweiterbare Items,
+Minimiert haben sie nur ein oder zwei Zeilen und wenn aktiviert, so viele wie sie brauchen."*
+
+Andreas schlug zwei Stile vor (voller Rahmen um den aufgeklappten Eintrag; oder Dialog-Stil mit
+Kopf-/Fusszeile + Seitenstrichen) und fragte nach Alternativen -- drei ASCII-Mockups zur Auswahl
+vorgelegt (per `AskUserQuestion` mit Vorschau), Andreas' Wahl: die dritte, leichteste Variante (nur
+Pfeil-Symbol + Einrueckung + eine Trennlinie danach, kein Rahmen -- spart am meisten Platz).
+
+1. **`q9_listview_item_t`** (NEU, `q9_listview.h`) -- ein Eintrag ist jetzt Kopfzeile (`name`, immer
+   sichtbar) + optionale Detailzeilen (`detail_lines`/`detail_count`, nur sichtbar wenn aufgeklappt).
+2. **`q9_listview_item_rows()`** (NEU, reine Funktion) -- Zeilenzahl eines Eintrags: 1 zugeklappt/
+   nicht erweiterbar, sonst 1 (Kopf) + detail_count (Details) + 1 (Trennlinie).
+3. **`q9_listview_scroll_ex()`** (NEU, reine Funktion) -- wie `q9_listview_scroll()`, aber ROW-bewusst
+   statt item-bewusst (Eintraege koennen jetzt mehr als eine Zeile brauchen). Garantiert nur, dass die
+   KOPFZEILE der Auswahl sichtbar bleibt (bewusste Vereinfachung bei ueberlangen aufgeklappten
+   Eintraegen -- kein Versuch, den kompletten Block ins Fenster zu quetschen).
+4. **`q9_listview_move_ex()`**/**`q9_listview_render_ex()`** (NEU) -- Bewegen/Zeichnen fuer
+   erweiterbare Eintraege; bestehende `q9_listview_scroll()`/`_move()`/`_render()` bleiben
+   UNVERAENDERT (der Datei-Dialog nutzt weiterhin die einfachen Varianten, keine Aenderung dort).
+5. **`Q9_GLYPH_RIGHT_ARROW`** (NEU, `q9_screenbuf.h`, ▸) -- Pendant zum bestehenden
+   `Q9_GLYPH_DOWN_ARROW` (▾, bisher nur beim Filter-Dropdown im Dialog): zugeklappt zeigt ▸, aufgeklappt
+   ▾, Eintraege ohne Detailzeilen bekommen kein Symbol (nichts zum Auf-/Zuklappen).
+6. **`integration_demo.c`**: `g_items` (reine Namensliste) durch `g_list_items` (Name + zwei
+   Detailzeilen je Eintrag, reine Vorfuehrdaten wie der Rest der Demo) ersetzt, neues `g_expanded[]`-
+   Array (mehrere Eintraege gleichzeitig aufklappbar, kein Akkordeon), Enter auf der Hauptliste
+   klappt den ausgewaehlten Eintrag auf/zu.
+
+`q9_screenbuf.h/.c` Ver. 1.30 (`Q9_GLYPH_RIGHT_ARROW`), `q9_listview.h/.c` Ver. 1.50/1.60 (die vier
+neuen `_ex`-Funktionen + `q9_listview_item_t`), `integration_demo.c` Ver. 2.60 (`g_list_items`,
+`g_expanded`, Enter-Handler), `listview_selftest.c` Ver. 1.40 (Tests fuer alle vier neuen Funktionen,
+inkl. gemischter Zeilenhoehen). `make test` komplett gruen. Per echtem Pseudo-Terminal-Test + pyte-
+Sichtpruefung bestaetigt: Aufklappen zeigt Pfeil+Detailzeilen+Trennlinie exakt wie das gewaehlte
+Mockup, Zuklappen stellt den Ausgangszustand exakt wieder her, Scrollen mit einem aufgeklappten
+Eintrag mitten in einer laengeren, teilweise gescrollten Liste haelt die Auswahl sichtbar und zeigt
+eine proportionale Bildlaufleiste (kleines Terminal, 20 Zeilen, Auswahl auf "ROM-Spiegel" per
+Pfeiltasten). Bestehender `filedialog_smoke3.exp` (Datei-Dialog, nutzt weiter die einfachen
+Funktionen) erneut gruen -- keine Regression.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_screenbuf.h                                                                  Ver. 1.20
+// File:   q9_screenbuf.h                                                                  Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Bildschirmpuffer auf q9_ansi.h aufgesetzt -- der in Q9FLUX_EDITOR_de.md Abschnitt 2
 //         angekuendigte Baustein fuer den modalen Config-Auswahl-Dialog ("liegt UEBER dem Rest,
@@ -40,6 +40,8 @@
 //         │      │ Unicode-Box-Drawing per Ein-Byte-Marker, nur render() kennt die Bedeutung  │
 // 26-08-17│ 1.20 │ Q9_GLYPH_DOWN_ARROW/UPPER_HALF/LOWER_HALF dazu (q9_filedialog.c -- "echte"  │ Cld
 //         │      │ Buttons per Halbblock-Zeichen + Dropdown-Pfeil beim Filter)                │
+// 26-08-18│ 1.30 │ Q9_GLYPH_RIGHT_ARROW dazu (q9_listview.c -- Einklapp-Symbol fuer erweiterbare│ Cld
+//         │      │ Listeneintraege, Andreas' Wunsch "erweiterbare Items")                      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SCREENBUF_H
 #define Q9_SCREENBUF_H
@@ -74,6 +76,10 @@
 #define Q9_GLYPH_DOWN_ARROW  0x08                         /* ▾ kleines Dreieck (Dropdown-Hinweis)    */
 #define Q9_GLYPH_UPPER_HALF  0x0B                         /* ▀ obere Haelfte gefuellt                */
 #define Q9_GLYPH_LOWER_HALF  0x0C                         /* ▄ untere Haelfte gefuellt                */
+/* Nachtrag (2026-08-18, q9_listview.c erweiterbare Eintraege): 0x0E statt des naheliegenden 0x0D --
+   0x0D ist CR, aus demselben Grund gemieden wie oben TAB/LF bei 0x09/0x0A. */
+#define Q9_GLYPH_RIGHT_ARROW 0x0E                         /* ▸ kleines Dreieck (eingeklappt, Pendant
+                                                              zu DOWN_ARROW = aufgeklappt)            */
 
 typedef struct {
     char          ch;                                 /* 0/'\0' wird beim Rendern wie ' ' behandelt */
@@ -170,5 +176,5 @@ void q9_screenbuf_restore(q9_screenbuf_t *sb, int row, int col, const q9_screenb
 
 #endif /* Q9_SCREENBUF_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_screenbuf.h                                                                      Ver. 1.20
+// EOF q9_screenbuf.h                                                                      Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
