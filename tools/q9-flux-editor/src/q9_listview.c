@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 2.30
+// File:   q9_listview.c                                                                   Ver. 2.40
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -41,6 +41,9 @@
 // 26-08-18│ 2.30 │ Boolean-Feldtyp -- field_toggle() NEU (schaltet "ja"/"nein" um, value_equals()/    │ Cld
 //         │      │ value_assign() als Hilfsfunktionen ohne <string.h>), putc/backspace ignorieren     │
 //         │      │ BOOLEAN-Felder jetzt zusaetzlich zu BUTTON (Andreas: "Boolean Eingabe")            │
+// 26-08-18│ 2.40 │ Eigenes Symbol fuer BOOLEAN-Felder -- render_ex() zeichnet Q9_GLYPH_CHECKBOX_ON/    │ Cld
+//         │      │ _OFF vor dem Wert (analog zum "$"-Praefix bei NUMERIC_HEX, s. q9_screenbuf.h)       │
+//         │      │ (Andreas: "eigenes Symbol fuer Boolean-Felder")                                     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -565,11 +568,24 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                     q9_screenbuf_puts(sb, field_row, lv->col + 2, items[idx].fields[j].label,
                                        fld_fg_r, fld_fg_g, fld_fg_b);
                     /* NUMERIC_HEX: "$" automatisch vor den Wert (nicht Teil von value selbst,
-                       s. q9_listview_field_kind_t) -- Wert dadurch um eine Spalte verschoben. */
+                       s. q9_listview_field_kind_t) -- Wert dadurch um eine Spalte verschoben.
+                       BOOLEAN (28. Runde, Andreas: "eigenes Symbol fuer Boolean-Felder"): ebenso
+                       ein automatisches Praefix-Symbol -- Kaestchen-Glyph + Luftspalte, Wert dadurch
+                       um ZWEI Spalten verschoben (besser lesbar als Glyph direkt am Wort, anders als
+                       beim kompakten "$FFFF..."-Stil). */
                     if (items[idx].fields[j].kind == Q9_LISTVIEW_FIELD_NUMERIC_HEX) {
                         q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
                                            "$", fld_fg_r, fld_fg_g, fld_fg_b);
                         q9_screenbuf_puts(sb, field_row, lv->col + 3 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                           items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
+                    } else if (items[idx].fields[j].kind == Q9_LISTVIEW_FIELD_BOOLEAN) {
+                        char box[2];
+                        box[0] = value_equals(items[idx].fields[j].value, "ja")
+                                     ? (char)Q9_GLYPH_CHECKBOX_ON : (char)Q9_GLYPH_CHECKBOX_OFF;
+                        box[1] = '\0';
+                        q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                           box, fld_fg_r, fld_fg_g, fld_fg_b);
+                        q9_screenbuf_puts(sb, field_row, lv->col + 4 + Q9_LISTVIEW_FIELD_VALUE_COL,
                                            items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
                     } else {
                         q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
@@ -642,5 +658,5 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 2.30
+// EOF q9_listview.c                                                                       Ver. 2.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

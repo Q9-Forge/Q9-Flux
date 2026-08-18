@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 2.20
+// File:   q9_listview.h                                                                   Ver. 2.30
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -58,6 +58,9 @@
 // 26-08-18│ 2.20 │ Boolean-Feldtyp (Andreas: "Boolean Eingabe") -- Q9_LISTVIEW_FIELD_BOOLEAN als     │ Cld
 //         │      │ weiterer NEUER kind-Wert, neue Funktion field_toggle() (Leertaste schaltet ja/    │
 //         │      │ nein um, s. integration_demo.c) -- putc/backspace ignorieren BOOLEAN wie BUTTON   │
+// 26-08-18│ 2.30 │ Eigenes Symbol fuer BOOLEAN-Felder (Andreas: "eigenes Symbol fuer Boolean-        │ Cld
+//         │      │ Felder") -- render_ex() zeichnet Q9_GLYPH_CHECKBOX_ON/_OFF vor dem Wert, analog   │
+//         │      │ zum "$"-Praefix bei NUMERIC_HEX                                                   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -114,8 +117,10 @@ typedef struct {
    "ja" oder "nein" (die Konvention, die schon alle "Aktiv:"-Felder in integration_demo.c
    verwenden). Tippen/Loeschen wirkt bei BOOLEAN-Feldern NICHT (wie bei BUTTON) -- stattdessen
    schaltet q9_listview_field_toggle() zwischen "ja"/"nein" um (Aufrufer bindet das ueblicherweise
-   an die Leertaste, s. integration_demo.c). Rendering unveraendert wie TEXT (kein eigenes Symbol
-   fuer diese erste Fassung -- bei Bedarf spaeter nachruestbar, z.B. ein Kaestchen-Symbol). */
+   an die Leertaste, s. integration_demo.c). Rendering (seit 28. Runde, Andreas: "eigenes Symbol
+   fuer Boolean-Felder"): q9_listview_render_ex() zeichnet ein Kaestchen-Symbol
+   (Q9_GLYPH_CHECKBOX_ON/_OFF, s. q9_screenbuf.h) vor dem Wert, analog zum "$"-Praefix bei
+   NUMERIC_HEX -- der Wert-TEXT selbst ("ja"/"nein") bleibt unveraendert sichtbar daneben. */
 typedef enum {
     Q9_LISTVIEW_FIELD_TEXT = 0,
     Q9_LISTVIEW_FIELD_BUTTON,
@@ -277,7 +282,12 @@ void q9_listview_field_toggle(q9_listview_t *lv, const q9_listview_item_t *items
 //           Q9_LISTVIEW_FIELD_NUMERIC_HEX bekommt vor dem Wert automatisch ein "$" gezeichnet
 //           (nicht Teil von value selbst, s. q9_listview_field_kind_t) -- NUMERIC_DEC und TEXT
 //           sehen sich sonst gleich (der Unterschied ist nur die Zeichenklassen-Filterung beim
-//           Tippen, s. q9_listview_field_putc()). Bewusst LEICHTGEWICHTIG (Andreas'
+//           Tippen, s. q9_listview_field_putc()). Ein Feld mit kind==Q9_LISTVIEW_FIELD_BOOLEAN
+//           bekommt ebenso automatisch ein Kaestchen-Symbol vor dem Wert (Q9_GLYPH_CHECKBOX_ON
+//           bei "ja", sonst Q9_GLYPH_CHECKBOX_OFF, s. q9_screenbuf.h) -- derselbe Praefix-
+//           Mechanismus wie beim "$", nur mit einer zusaetzlichen Luftspalte dazwischen (Symbol +
+//           Leerzeichen + Wert statt "$" direkt am Wert, besser lesbar als "☑ja").
+//           Bewusst LEICHTGEWICHTIG (Andreas'
 //           Wahl, 2026-08-18, aus drei vorgeschlagenen Stilen): KEIN Rahmen um den aufgeklappten
 //           Bereich -- nur Einrueckung + die eine Trennlinie danach, spart am meisten Platz. Zeilen,
 //           die nicht mehr in den Viewport passen (Eintrag laeuft ueber das Fensterende hinaus),
@@ -391,5 +401,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 2.20
+// EOF q9_listview.h                                                                       Ver. 2.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
