@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.20
+// File:   integration_demo.c                                                             Ver. 3.30
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -111,6 +111,10 @@
 // 26-08-18│ 3.20 │ Dreiundzwanzigste Feedback-Runde: Basis:/IRQ:/Port:-Felder auf NUMERIC_HEX/_DEC      │ Cld
 //         │      │ umgestellt ("$" faellt aus dem Wert, wird jetzt automatisch gezeichnet), Slot:-Feld │
 //         │      │ bei RC2014-CF mit Bereichs-Beispiel (0-255, clamp_field_range())                    │
+// 26-08-18│ 3.30 │ Vierundzwanzigste Feedback-Runde: alle "ja"/"nein"-Felder (Aktiv:/Link:/Parity:/     │ Cld
+//         │      │ Getestet:/Schreibschutz:) auf Q9_LISTVIEW_FIELD_BOOLEAN umgestellt, Leertaste        │
+//         │      │ schaltet um (q9_listview_field_toggle()), Hinweistext ergaenzt (Andreas: "Boolean    │
+//         │      │ Eingabe")                                                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -150,7 +154,7 @@ static q9_listview_field_t g_cfg_fields[] = {
 };
 
 static q9_listview_field_t g_cf_fields[]     = { {"Bus:", "onboard", Q9_LISTVIEW_FIELD_TEXT},   {"Basis:", "FFFFE000", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
-                                                  {"Slot:", "-", Q9_LISTVIEW_FIELD_TEXT},        {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Slot:", "-", Q9_LISTVIEW_FIELD_TEXT},        {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_net1_fields[]   = { {"Port:", "2001", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
 static q9_listview_field_t g_net2_fields[]   = { {"Port:", "2002", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
@@ -168,27 +172,27 @@ static q9_listview_field_t g_net7_fields[]   = { {"Port:", "2007", Q9_LISTVIEW_F
 static q9_listview_field_t g_net8_fields[]   = { {"Port:", "2008", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
 static q9_listview_field_t g_rtc_fields[]    = { {"Basis:", "FFFFA000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "-", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_duart_fields[]  = { {"Basis:", "FFFFA000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "2", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
                                                   {"Kanal A:", "Konsole", Q9_LISTVIEW_FIELD_TEXT}, {"Kanal B:", "frei", Q9_LISTVIEW_FIELD_TEXT} };
 static q9_listview_field_t g_quicc_fields[]  = { {"MAC:", "00:1A:2B:03:04:05", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Link:", "nein", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Link:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "FFFF9000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
-                                                  {"Modus:", "Text 80x25", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Modus:", "Text 80x25", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "FFFF9800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Eintraege:", "256", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Tiefe:", "8 Bit", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Tiefe:", "8 Bit", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_rc2014_fields[] = { {"Bus:", "rc2014", Q9_LISTVIEW_FIELD_TEXT},  {"Basis:", "FFFFC010", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
-                                                  {"Slot:", "0", Q9_LISTVIEW_FIELD_NUMERIC_DEC}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Slot:", "0", Q9_LISTVIEW_FIELD_NUMERIC_DEC}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_fb_fields[]     = { {"Basis:", "00300000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "512K", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Aufloesung:", "640x480", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Aufloesung:", "640x480", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_ram_fields[]    = { {"Basis:", "00000000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "4 MB", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Parity:", "nein", Q9_LISTVIEW_FIELD_TEXT},   {"Getestet:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Parity:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN}, {"Getestet:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_rom_fields[]    = { {"Basis:", "00F00000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "256K", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Schreibschutz:", "ja", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Schreibschutz:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "FFFFB000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "2K", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "FFFFA800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
-                                                  {"Intervall:", "10ms", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
+                                                  {"Intervall:", "10ms", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 
 static const q9_listview_item_t g_list_items[] = {
     { "Emulator-Konfiguration",     g_cfg_fields,    2 },
@@ -434,7 +438,8 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
     q9_screenbuf_puts(sb, rows - 2, 3,
                        (hint && hint[0]) ? hint
                                          : "Pfeiltasten: navigieren   Rechts: oeffnen+bearbeiten   "
-                                           "Esc: schliessen   O: Datei oeffnen   Strg-C: beenden",
+                                           "Leertaste: ja/nein   Esc: schliessen   O: Datei oeffnen   "
+                                           "Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     lv->row    = 2;
@@ -922,8 +927,18 @@ int main(void)
                 case Q9_KEY_CHAR:
                     /* Waehrend ein Feld fokussiert ist: das Zeichen geht DIREKT in den Feldwert
                        (Andreas' Wunsch: "kann dort alles aendern") -- 'o'/'O' oeffnet dann bewusst
-                       NICHT den Datei-Dialog (sonst liesse sich kein "o" in einen Wert tippen). */
-                    if (!showing_overlay && lv.field_focus >= 0) {
+                       NICHT den Datei-Dialog (sonst liesse sich kein "o" in einen Wert tippen).
+                       SONDERFALL Leertaste bei einem BOOLEAN-Feld (Andreas' Wunsch, 2026-08-18,
+                       vierundzwanzigste Runde: "Boolean Eingabe") -- schaltet ja/nein um statt (wie
+                       bei field_putc() ohnehin wirkungslos, s. dort) einfach zu verpuffen. */
+                    if (!showing_overlay && lv.field_focus >= 0
+                        && k.ch == ' '
+                        && lv.selected >= 0 && lv.selected < ITEM_COUNT
+                        && lv.field_focus < g_list_items[lv.selected].field_count
+                        && g_list_items[lv.selected].fields[lv.field_focus].kind
+                           == Q9_LISTVIEW_FIELD_BOOLEAN) {
+                        q9_listview_field_toggle(&lv, g_list_items);
+                    } else if (!showing_overlay && lv.field_focus >= 0) {
                         q9_listview_field_putc(&lv, g_list_items, k.ch);
                     } else if (!showing_overlay && (k.ch == 'o' || k.ch == 'O')) {
                         /* task #22: modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20).
