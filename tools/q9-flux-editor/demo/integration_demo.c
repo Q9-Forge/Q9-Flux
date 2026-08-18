@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.00
+// File:   integration_demo.c                                                             Ver. 3.10
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -105,6 +105,9 @@
 // 26-08-18│ 3.00 │ Zwanzigste Feedback-Runde: Datei-Dialog scannt jetzt ~/.q9-flux (wird bei Bedarf    │ Cld
 //         │      │ angelegt) statt HOME, Standardfilter auf *.q9 umgestellt (*.* bleibt als Ausweich-  │
 //         │      │ option im Dropdown) -- kein reines Demo-Verzeichnis mehr, echtes Zielverzeichnis     │
+// 26-08-18│ 3.10 │ Einundzwanzigste Feedback-Runde: Button-Feldwert auf "Datei" gekuerzt, Platzhalter  │ Cld
+//         │      │ "(keine ausgewaehlt)" durch "<leer>" ersetzt, render_ex()-Aufruf um box_fg/bg       │
+//         │      │ (PAL_DIALOG_SUB_FG/BG, "wie im Dialog") ergaenzt                                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -139,8 +142,8 @@
    Ueberlegung: die waeren bis zum echten Laden ohnehin nur leere Platzhalter) -- eigene Runde,
    sobald entweder echtes Laden steht oder Andreas sie schon als Platzhalter sehen will. */
 static q9_listview_field_t g_cfg_fields[] = {
-    {"Datei:", "(keine ausgewaehlt)", Q9_LISTVIEW_FIELD_TEXT},
-    { "",       "[ Datei waehlen... ]", Q9_LISTVIEW_FIELD_BUTTON },
+    {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+    { "",       "Datei", Q9_LISTVIEW_FIELD_BUTTON },
 };
 
 static q9_listview_field_t g_cf_fields[]     = { {"Bus:", "onboard", Q9_LISTVIEW_FIELD_TEXT},   {"Basis:", "$FFFFE000", Q9_LISTVIEW_FIELD_TEXT},
@@ -455,14 +458,20 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
        eingerueckten Detailzeilen bekommen dieselbe gedaempfte Farbe wie der Hinweistext unten
        (strukturell/sekundaer, nicht der "wichtige" Text wie der Eintragsname selbst). exp_bg =
        PAL_LIST_EXP_BG -- Kopfzeile eines aufgeklappten, nicht ausgewaehlten Eintrags (Andreas'
-       Feedback, siebzehnte Runde: "die Headerzeile geht ein wenig unter"). */
+       Feedback, siebzehnte Runde: "die Headerzeile geht ein wenig unter"). box_fg/bg =
+       PAL_DIALOG_SUB_FG/PAL_DIALOG_SUB_BG -- fuer den TEXT+BUTTON-Sonderfall (Wert-Box +
+       dreizeiliger Button, s. q9_listview.h) BEWUSST dieselben Konstanten wie das Namens-Kaestchen
+       und die OK/Abbrechen-Buttons im Datei-Dialog (Andreas' Wunsch, 2026-08-18, einundzwanzigste
+       Runde: "mit der Darstellung wie im Dialog"). */
     q9_listview_render_ex(lv, sb, g_list_items, g_expanded,
                            PAL_LIST_FG_R, PAL_LIST_FG_G, PAL_LIST_FG_B,
                            PAL_SEL_FG_R, PAL_SEL_FG_G, PAL_SEL_FG_B,
                            PAL_SEL_BG_R, PAL_SEL_BG_G, PAL_SEL_BG_B,
                            PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B,
                            PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B,
-                           PAL_LIST_EXP_BG_R, PAL_LIST_EXP_BG_G, PAL_LIST_EXP_BG_B);
+                           PAL_LIST_EXP_BG_R, PAL_LIST_EXP_BG_G, PAL_LIST_EXP_BG_B,
+                           PAL_DIALOG_SUB_FG_R, PAL_DIALOG_SUB_FG_G, PAL_DIALOG_SUB_FG_B,
+                           PAL_DIALOG_SUB_BG_R, PAL_DIALOG_SUB_BG_G, PAL_DIALOG_SUB_BG_B);
 
     /* Statuszeile ALS untere Rahmenkante, ueber die volle Breite (vorherige Feedback-Runden) --
        jetzt zusaetzlich mit FESTEN Feldbreiten (Andreas: "sonst huepfen die Texte hin und her"):
@@ -902,5 +911,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 3.00
+// EOF integration_demo.c                                                                  Ver. 3.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
