@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.90
+// File:   integration_demo.c                                                             Ver. 3.00
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -15,8 +15,8 @@
 //         als "Endausbau"-Idee vorgemerkt, hier erstmal nur EIN fest verdrahteter Satz.
 //
 // Call:   make -C tools/q9-flux-editor demo-integration
-//         Pfeiltasten hoch/runter: Auswahl bewegen. O: Datei-Auswahl-Dialog oeffnen (scannt ".",
-//         das Arbeitsverzeichnis der Demo, s. run_file_dialog()). Strg-C: beenden.
+//         Pfeiltasten hoch/runter: Auswahl bewegen. O: Datei-Auswahl-Dialog oeffnen (scannt
+//         ~/.q9-flux mit *.q9-Filter, s. run_file_dialog()). Strg-C: beenden.
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -102,10 +102,15 @@
 // 26-08-18│ 2.90 │ Neunzehnte Feedback-Runde: erster fester Eintrag "Emulator-Konfiguration" (Name +   │ Cld
 //         │      │ Button-Feld), run_file_dialog() liefert optional den rohen Dateinamen zurueck,      │
 //         │      │ Enter auf einem BUTTON-Feld oeffnet den Dialog, Ergebnis geht ins Feld davor         │
+// 26-08-18│ 3.00 │ Zwanzigste Feedback-Runde: Datei-Dialog scannt jetzt ~/.q9-flux (wird bei Bedarf    │ Cld
+//         │      │ angelegt) statt HOME, Standardfilter auf *.q9 umgestellt (*.* bleibt als Ausweich-  │
+//         │      │ option im Dropdown) -- kein reines Demo-Verzeichnis mehr, echtes Zielverzeichnis     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>                                        /* mkdir() fuer ~/.q9-flux, s.
+                                                                  run_file_dialog()             */
 
 #include "../src/q9_ansi.h"
 #include "../src/q9_screenbuf.h"
@@ -505,8 +510,10 @@ static void compute_dialog_geometry(int rows, int cols, int *dlg_row, int *dlg_c
 }
 
 /* Oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20) zentriert ueber dem
-   aktuellen Bildschirm, scannt HOME (s.u.) mit ein paar Beispiel-Filtern -- reine Vorfuehrung,
-   keine echte Config-Anbindung, s. Kopfkommentar.
+   aktuellen Bildschirm, scannt ~/.q9-flux (wird bei Bedarf angelegt) mit *.q9 als Standardfilter
+   (Andreas' Wunsch, 2026-08-18, zwanzigste Runde) -- das ECHTE Zielverzeichnis fuer
+   Config-Dateien, kein reines Demo-Verzeichnis mehr. Die Config-DATEN selbst (die einzelnen
+   Hardware-Eintraege/-Felder) bleiben weiterhin reine Vorfuehrdaten, s. Kopfkommentar.
    Der Dialog ist bewusst NUR DIALOG_ROWS x DIALOG_COLS gross (Andreas' Feedback, 2026-08-17:
    "auf volle Groesse hatte ich mir den jetzt nicht vorgestellt") -- als Hintergrund steht der
    ECHTE Hauptbildschirm (ueber build_full_content(), s.o.), nicht mehr eine reine Fuellfarbe ueber
@@ -539,9 +546,27 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
                             char *result_msg, unsigned result_msg_size,
                             char *out_name, unsigned out_name_size)
 {
-    static const char *const filters[] = { "*.*", ".c", ".h" };
+    /* Andreas' Wunsch (2026-08-18, zwanzigste Runde): "als Verzeichnis sollte ~/.q9-flux gesetzt
+       sein und dort sollen alle *.q9 Dateien angezeigt werden" -- kein reines Demo-Verzeichnis
+       mehr, sondern das ECHTE Zielverzeichnis fuer Config-Dateien dieses Editors. ".q9" (OHNE
+       fuehrenden Stern) als Standardfilter -- q9_filelist.c's ext_matches() erwartet eine reine
+       Endung (mit oder ohne fuehrenden Punkt, s. dort), KEIN Glob-Muster wie "*.q9"; "*.q9" haette
+       NIE getroffen (beim ersten Testlauf per pyte tatsaechlich aufgefallen: leere Liste trotz
+       vorhandener .q9-Dateien). "*.*" bleibt als Ausweichoption im Dropdown (z.B. um zu sehen, ob
+       ueberhaupt etwas im Verzeichnis liegt). Verzeichnis wird bei Bedarf angelegt (mkdir, Fehler
+       bewusst ignoriert -- existiert es schon, ist das kein Problem; schlaegt es aus anderem Grund
+       fehl, zeigt der Dialog einfach eine leere Liste, s. q9_filedialog.c rescan()). */
+    static const char *const filters[] = { ".q9", "*.*" };
     const char *home = getenv("HOME");
-    const char *dir = home ? home : ".";
+    char dir_buf[512];
+    const char *dir;
+    if (home) {
+        snprintf(dir_buf, sizeof(dir_buf), "%s/.q9-flux", home);
+        mkdir(dir_buf, 0755);
+        dir = dir_buf;
+    } else {
+        dir = ".";                                           /* kein HOME gesetzt -- Rueckfall */
+    }
     q9_filedialog_palette_t pal;
     q9_filedialog_t dlg;
     int dlg_row, dlg_col, dlg_rows, dlg_cols;
@@ -584,12 +609,11 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
     pal.status_fg_r = PAL_STATUS_FG_R; pal.status_fg_g = PAL_STATUS_FG_G; pal.status_fg_b = PAL_STATUS_FG_B;
     pal.status_bg_r = PAL_STATUS_BG_R; pal.status_bg_g = PAL_STATUS_BG_G; pal.status_bg_b = PAL_STATUS_BG_B;
 
-    /* Andreas' Wunsch (2026-08-17): "stell den Pfad bitte mal auf das ~ Verzeichnis, dann sieht
-       man das besser" -- HOME statt "." fuer den Test (mehr/andere Dateien als im leeren
-       Demo-Arbeitsverzeichnis). Reine Vorfuehrung, keine echte Config-Anbindung, s. Kopfkommentar.
-       Kein HOME gesetzt (z.B. manche minimalen Umgebungen) -> Rueckfall auf ".". */
+    /* Urspruenglich (2026-08-17) nur HOME statt "." fuer den Test (mehr/andere Dateien als im
+       leeren Demo-Arbeitsverzeichnis) -- seit der zwanzigsten Runde (2026-08-18) das ECHTE
+       Zielverzeichnis ~/.q9-flux mit *.q9-Filter, s. dir/filters oben. */
     if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
-                            "Konfigurationsauswahl", dir, filters, 3, &pal) != 0) {
+                            "Konfigurationsauswahl", dir, filters, 2, &pal) != 0) {
         snprintf(result_msg, result_msg_size, "Dateidialog: Fehler beim Start (O: erneut versuchen)");
         return -1;
     }
@@ -630,7 +654,7 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
                 if (!too_small) {
                     compute_dialog_geometry(*rows, *cols, &dlg_row, &dlg_col, &dlg_rows, &dlg_cols);
                     if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
-                                            "Konfigurationsauswahl", dir, filters, 3, &pal) != 0) {
+                                            "Konfigurationsauswahl", dir, filters, 2, &pal) != 0) {
                         snprintf(result_msg, result_msg_size,
                                  "Dateidialog: Fehler nach Groessenaenderung (Esc: abbrechen)");
                         return -1;
@@ -878,5 +902,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.90
+// EOF integration_demo.c                                                                  Ver. 3.00
 //────────────────────────────────────────────────────────────────────────────────────────────────
