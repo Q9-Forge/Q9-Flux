@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.30
+// File:   listview_selftest.c                                                             Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -17,6 +17,8 @@
 //         │      │ Linie statt leer zu bleiben (Andreas' Wunsch, s. q9_listview.h/.c)       │
 // 26-08-17│ 1.30 │ Neuer line_fg-Parameter an allen Aufrufen dazu, neuer Check bestaetigt,   │ Cld
 //         │      │ dass die Linie tatsaechlich line_fg statt fg zeigt                        │
+// 26-08-18│ 1.40 │ Tests fuer q9_listview_item_rows()/_scroll_ex()/_move_ex()/_render_ex()   │ Cld
+//         │      │ dazu (erweiterbare Eintraege, s. q9_listview.h)                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -183,11 +185,170 @@ int main(void)
     q9_listview_render(&lv, &sb, NULL, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1);
     check_true("kein Absturz bis hierher", 1);
 
+    printf("=== q9_listview_item_rows: erweiterbare Eintraege (Andreas' Wunsch, 2026-08-18) ===\n");
+    {
+        static const char *const detail_a[] = { "Zeile A1", "Zeile A2" };
+        static const q9_listview_item_t rows_items[] = {
+            { "Item0", NULL,     0 },                       /* nicht erweiterbar (kein detail_lines) */
+            { "Item1", detail_a, 2 },
+        };
+        /* JE EIN eigenes 2-Element-Array pro Fall -- q9_listview_item_rows() liest expanded[index],
+           ein Zeiger auf einen einzelnen int waere bei index==1 ein Zugriff ausserhalb des Arrays
+           (undefiniertes Verhalten). */
+        int exp_none[2]  = { 0, 0 };                        /* nichts aufgeklappt                */
+        int exp_item0[2] = { 1, 0 };                        /* Item0 "aufgeklappt", hat aber keine
+                                                                 Detailzeilen (detail_count==0)    */
+        int exp_item1[2] = { 0, 1 };                        /* Item1 aufgeklappt                 */
+
+        check_int("items==NULL -> immer 1", q9_listview_item_rows(NULL, exp_item1, 0), 1);
+        check_int("expanded==NULL -> immer 1 (auch bei detail_count>0)",
+                  q9_listview_item_rows(rows_items, NULL, 1), 1);
+        check_int("zugeklappt (expanded[i]==0) -> 1, egal wie viele Detailzeilen",
+                  q9_listview_item_rows(rows_items, exp_none, 1), 1);
+        check_int("detail_count<=0 -> 1, auch wenn expanded[i]==1 (nichts zum Aufklappen)",
+                  q9_listview_item_rows(rows_items, exp_item0, 0), 1);
+        check_int("aufgeklappt, detail_count==2 -> 1 (Kopf) + 2 (Details) + 1 (Trennlinie) == 4",
+                  q9_listview_item_rows(rows_items, exp_item1, 1), 4);
+    }
+
+    printf("=== q9_listview_scroll_ex: identisch zu q9_listview_scroll() bei items==NULL ===\n");
+    /* Ohne Items/Zustand muss sich _ex() exakt wie das einfache q9_listview_scroll() verhalten
+       (alle Zeilenzahlen == 1) -- direkter Regressionsnachweis anhand derselben Faelle wie oben. */
+    check_int("Auswahl 4 (faellt aus [0..3] raus), Offset 0 -> Offset auf 1",
+              q9_listview_scroll_ex(4, 0, 4, NULL, NULL, 10), 1);
+    check_int("Auswahl 9 (letzter Eintrag), Offset 0 -> Offset 6",
+              q9_listview_scroll_ex(9, 0, 4, NULL, NULL, 10), 6);
+    check_int("Auswahl 5, Offset 6 (Auswahl VOR dem Fenster) -> Offset auf 5",
+              q9_listview_scroll_ex(5, 6, 4, NULL, NULL, 10), 5);
+    check_int("item_count<=0 -> immer 0", q9_listview_scroll_ex(0, 3, 4, NULL, NULL, 0), 0);
+    check_int("height<=0 -> immer 0", q9_listview_scroll_ex(0, 3, 0, NULL, NULL, 10), 0);
+
+    printf("=== q9_listview_scroll_ex: gemischte Zeilenhoehen (aufgeklappte Eintraege) ===\n");
+    {
+        /* 5 Eintraege: Item0 (1 Zeile), Item1 aufgeklappt (1+2+1=4 Zeilen), Item2-4 (je 1 Zeile).
+           Viewport-Hoehe 4. */
+        static const char *const detail_a[] = { "A1", "A2" };
+        static const q9_listview_item_t mix_items[] = {
+            { "Item0", NULL,     0 },
+            { "Item1", detail_a, 2 },
+            { "Item2", NULL,     0 },
+            { "Item3", NULL,     0 },
+            { "Item4", NULL,     0 },
+        };
+        int mix_expanded[5] = { 0, 1, 0, 0, 0 };             /* nur Item1 aufgeklappt */
+
+        check_int("Auswahl 0 (1 Zeile), Offset 0 -> passt, bleibt 0",
+                  q9_listview_scroll_ex(0, 0, 4, mix_items, mix_expanded, 5), 0);
+        check_int("Auswahl 1 (4 Zeilen aufgeklappt), Offset 0 -> Item0 wird oben abgeschnitten, "
+                  "Offset auf 1 (genau die 4 Zeilen von Item1 passen)",
+                  q9_listview_scroll_ex(1, 0, 4, mix_items, mix_expanded, 5), 1);
+        check_int("Auswahl 2, Offset 1 (Item1 nimmt allein schon die volle Hoehe) -> Item1 muss "
+                  "weichen, Offset auf 2 (nur noch Item2's Kopfzeile muss sichtbar bleiben)",
+                  q9_listview_scroll_ex(2, 1, 4, mix_items, mix_expanded, 5), 2);
+        check_int("Auswahl 0, Offset 2 (nach oben rausgelaufen) -> Offset direkt auf 0",
+                  q9_listview_scroll_ex(0, 2, 4, mix_items, mix_expanded, 5), 0);
+    }
+
+    printf("=== q9_listview_move_ex: delta==0 richtet nur den Scroll neu aus (nach Auf-/Zuklappen) ===\n");
+    {
+        static const char *const detail_a[] = { "A1", "A2" };
+        static const q9_listview_item_t mix_items[] = {
+            { "Item0", NULL,     0 },
+            { "Item1", detail_a, 2 },
+            { "Item2", NULL,     0 },
+            { "Item3", NULL,     0 },
+            { "Item4", NULL,     0 },
+        };
+        int mix_expanded[5] = { 0, 0, 0, 0, 0 };
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 5);
+        q9_listview_move_ex(&lv, 1, mix_items, mix_expanded);     /* Auswahl auf Item1, noch zugeklappt */
+        check_int("Item1 ausgewaehlt, noch zugeklappt: scroll_offset bleibt 0 (1 Zeile passt)",
+                  lv.scroll_offset, 0);
+
+        mix_expanded[1] = 1;                                       /* jetzt aufklappen (4 Zeilen) */
+        q9_listview_move_ex(&lv, 0, mix_items, mix_expanded);      /* delta==0 -- nur neu ausrichten */
+        check_int("selected bleibt unveraendert (delta==0)", lv.selected, 1);
+        check_int("nach dem Aufklappen: scroll_offset auf 1 nachgezogen (Item0 faellt raus)",
+                  lv.scroll_offset, 1);
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 0);
+        q9_listview_move_ex(&lv, 1, mix_items, mix_expanded);
+        check_int("move_ex() bei item_count==0 tut nichts -- selected bleibt -1", lv.selected, -1);
+    }
+
+    printf("=== q9_listview_render_ex: Pfeil-Symbol, Einrueckung, Trennlinie ===\n");
+    {
+        static const char *const detail_a[] = { "Detail A1", "Detail A2" };
+        static const q9_listview_item_t rx_items[] = {
+            { "Fest",     NULL,     0 },                    /* nicht erweiterbar             */
+            { "Klappbar", detail_a, 2 },                    /* erweiterbar, hier AUFGEKLAPPT  */
+        };
+        int rx_expanded[2] = { 0, 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 2);
+        q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66);
+
+        check_int("Item0 (nicht erweiterbar): Leerzeichen statt Pfeil-Symbol an (5,10)",
+                  sb.cell[5][10].ch, ' ');
+        check_int("Item0: Name beginnt an Spalte 12 (col+2)", sb.cell[5][12].ch, 'F');
+        check_int("Item1 (aufgeklappt): Q9_GLYPH_DOWN_ARROW an (6,10)",
+                  sb.cell[6][10].ch, Q9_GLYPH_DOWN_ARROW);
+        check_int("Item1: Name beginnt an Spalte 12", sb.cell[6][12].ch, 'K');
+        check_int("Detailzeile 1 eingerueckt (Spalte 12), Zeile 7", sb.cell[7][12].ch, 'D');
+        check_true("Detailzeile hat detail_fg (44), nicht die normale fg (200)",
+                   sb.cell[7][12].fg_r == 44);
+        check_int("Detailzeile 2, Zeile 8", sb.cell[8][12].ch, 'D');
+        check_int("Trennlinie danach (Zeile 9): Q9_GLYPH_HLINE", sb.cell[9][10].ch, Q9_GLYPH_HLINE);
+        check_true("Trennlinie hat line_fg (77), nicht detail_fg", sb.cell[9][10].fg_r == 77);
+    }
+    {
+        /* Zugeklappt: RIGHT_ARROW statt DOWN_ARROW, keine Detailzeilen/Trennlinie. */
+        static const char *const detail_a[] = { "Detail A1", "Detail A2" };
+        static const q9_listview_item_t rx_items[] = {
+            { "Klappbar", detail_a, 2 },
+        };
+        int rx_expanded[1] = { 0 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 1);
+        q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66);
+        check_int("zugeklappt: Q9_GLYPH_RIGHT_ARROW an (5,10)", sb.cell[5][10].ch, Q9_GLYPH_RIGHT_ARROW);
+        check_int("zugeklappt: keine Detailzeile -- Zeile 6 bleibt leer", sb.cell[6][10].ch, ' ');
+    }
+    {
+        /* Eintrag laeuft ueber das Fensterende hinaus -- wird abgeschnitten, kein Absturz. */
+        static const char *const detail_c[] = { "C1", "C2", "C3", "C4", "C5" };
+        static const q9_listview_item_t rx_items[] = {
+            { "Gross", detail_c, 5 },
+        };
+        int rx_expanded[1] = { 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 0, 0, 3, 30, 1);                  /* Hoehe 3 -- Eintrag braucht 7 */
+        q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
+                               1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+        check_true("kein Absturz bei ueberlangem aufgeklapptem Eintrag", 1);
+    }
+
+    printf("=== q9_listview_render_ex: Randfaelle (NULL-Zeiger), kein Absturz ===\n");
+    {
+        static const q9_listview_item_t rx_items[] = { { "X", NULL, 0 } };
+        int rx_expanded[1] = { 0 };
+        q9_listview_render_ex(NULL, &sb, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(&lv, NULL, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(&lv, &sb, NULL, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1);
+        check_true("kein Absturz bis hierher", 1);
+    }
+
     printf("\n=== Zusammenfassung ===\n");
     printf("  Gesamt: %d Checks fehlgeschlagen\n", g_fails);
     return g_fails ? 1 : 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.30
+// EOF listview_selftest.c                                                                 Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────

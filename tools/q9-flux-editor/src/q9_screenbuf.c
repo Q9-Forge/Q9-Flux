@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_screenbuf.c                                                                  Ver. 1.20
+// File:   q9_screenbuf.c                                                                  Ver. 1.30
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_screenbuf.h.
 //
@@ -11,6 +11,7 @@
 // 26-08-17│ 1.10 │ glyph_utf8() -- Q9_GLYPH_*-Sentinels (q9_screenbuf.h) werden beim Rendern  │ Cld
 //         │      │ in echte UTF-8-Box-Drawing-Zeichen uebersetzt (Andreas: "volle Linien")    │
 // 26-08-17│ 1.20 │ glyph_utf8(): DOWN_ARROW/UPPER_HALF/LOWER_HALF dazu (q9_filedialog.c)      │ Cld
+// 26-08-18│ 1.30 │ glyph_utf8(): RIGHT_ARROW dazu (q9_listview.c erweiterbare Eintraege)      │ Cld
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_screenbuf.h"
 #include "q9_ansi.h"
@@ -54,6 +55,7 @@ static const char *glyph_utf8(unsigned char ch, unsigned *len)
         case Q9_GLYPH_DOWN_ARROW: *len = 3; return "\xe2\x96\xbe";  /* U+25BE ▾ */
         case Q9_GLYPH_UPPER_HALF: *len = 3; return "\xe2\x96\x80";  /* U+2580 ▀ */
         case Q9_GLYPH_LOWER_HALF: *len = 3; return "\xe2\x96\x84";  /* U+2584 ▄ */
+        case Q9_GLYPH_RIGHT_ARROW: *len = 3; return "\xe2\x96\xb8";  /* U+25B8 ▸ */
         default:              *len = 0; return NULL;
     }
 }
@@ -225,5 +227,5 @@ void q9_screenbuf_restore(q9_screenbuf_t *sb, int row, int col, const q9_screenb
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_screenbuf.c                                                                      Ver. 1.20
+// EOF q9_screenbuf.c                                                                      Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
