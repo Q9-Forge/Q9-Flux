@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.40
+// File:   integration_demo.c                                                             Ver. 3.50
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -119,6 +119,10 @@
 //         │      │ ROM:/Netz:/CPU: bei Emulator-Konfiguration, load_q9_config_fields() ruft den ECHTEN  │
 //         │      │ Board-Config-Parser des Emulators (src/kernel/boardcfg.c) auf, kein zweiter eigener  │
 //         │      │ INI-Parser (Andreas: "echtes Laden/Auswerten der .q9-Datei")                         │
+// 26-08-18│ 3.50 │ Sechsundzwanzigste Feedback-Runde: Speichern-Funktion -- Taste S ruft save_q9_config()│ Cld
+//         │      │ auf (q9_board_cfg_save(), gleiches Prinzip wie beim Laden), g_loaded_cfg haelt eine   │
+//         │      │ geladene Konfiguration vollstaendig (inkl. [cfN]) am Leben, damit Speichern sie nicht │
+//         │      │ stillschweigend loescht (Andreas: "Speichern-Funktion")                              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -159,9 +163,9 @@
    Q9_KEY_ENTER-Behandlung in main()).
    Name:/ROM:/Netz:/CPU: (fuenfundzwanzigste Runde, "echtes Laden/Auswerten der .q9-Datei") --
    FESTE Positionen g_cfg_fields[2..5] (s. load_q9_config_fields()), werden erst nach erfolgreicher
-   Dateiauswahl befuellt (vorher "<leer>", bei Ladefehler "<Fehler>"). Reiner ANZEIGE-Zweck in
-   dieser Runde -- Aendern hier von Hand schreibt (noch) nicht in die Datei zurueck, das ist erst
-   Sache der kommenden Speichern-Funktion. */
+   Dateiauswahl befuellt (vorher "<leer>", bei Ladefehler "<Fehler>"). Von Hand editierbar UND
+   (sechsundzwanzigste Runde, "Speichern-Funktion") per Taste S in die Datei zurueckgeschrieben --
+   s. save_q9_config(). */
 static q9_listview_field_t g_cfg_fields[] = {
     {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
     { "",       "Datei", Q9_LISTVIEW_FIELD_BUTTON },
@@ -457,7 +461,7 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
                        (hint && hint[0]) ? hint
                                          : "Pfeiltasten: navigieren   Rechts: oeffnen+bearbeiten   "
                                            "Leertaste: ja/nein   Esc: schliessen   O: Datei oeffnen   "
-                                           "Strg-C: beenden",
+                                           "S: speichern   Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     lv->row    = 2;
@@ -561,6 +565,17 @@ static void q9flux_dir(char *out, unsigned out_size)
     }
 }
 
+/* Sechsundzwanzigste Runde ("Speichern-Funktion"): die zuletzt erfolgreich GELADENE Konfiguration
+   bleibt hier vollstaendig erhalten (inkl. [cfN]-Abschnitte, die der Editor selbst noch nicht
+   anzeigt/bearbeitet) -- save_q9_config() startet beim Speichern davon (statt bei leeren Defaults)
+   und ueberschreibt nur die vier Felder, die der Editor tatsaechlich zeigt. Ohne das wuerden beim
+   Speichern einer geladenen Datei ihre [cfN]-Abschnitte stillschweigend verschwinden.
+   g_cfg_loaded==0 bedeutet "noch nie erfolgreich geladen (oder letzter Ladeversuch ist
+   fehlgeschlagen)" -- Speichern startet dann bei q9_board_cfg_default() (frische Config, kein
+   [cfN]), deckt den "neue Config von Grund auf"-Fall ab. */
+static q9_board_cfg_t g_loaded_cfg;
+static int             g_cfg_loaded = 0;
+
 /* Andreas' Wunsch (2026-08-18, fuenfundzwanzigste Runde): "echtes Laden/Auswerten der .q9-Datei"
    -- ruft den ECHTEN Board-Config-Parser des Emulators auf (src/kernel/boardcfg.c/.h, s. Include
    oben), KEIN zweiter, eigener INI-Parser hier. Fuellt Name:/ROM:/Netz:/CPU: (g_cfg_fields[2..5],
@@ -569,11 +584,10 @@ static void q9flux_dir(char *out, unsigned out_size)
    extra -- beides sieht fuer den Nutzer gleich aus, das ist in dieser Runde bewusst so einfach
    gehalten). Schlaegt das Laden fehl (kaputte/unlesbare Datei), werden alle vier Felder auf
    "<Fehler>" gesetzt und msg traegt die genaue Fehlermeldung (inkl. Zeilennummer, s.
-   q9_board_cfg_load()) -- reiner ANZEIGE-Zweck in dieser Runde, kein Zurueckschreiben in die Datei
-   (das ist Sache der kommenden Speichern-Funktion). */
+   q9_board_cfg_load()); g_cfg_loaded bleibt/wird 0 (kein Speichern auf Basis einer kaputten
+   Ladung, s. save_q9_config()). */
 static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_size)
 {
-    q9_board_cfg_t cfg;
     char dir[512];
     char path[Q9_CFG_PATH_MAX];
     char err[160];
@@ -581,8 +595,9 @@ static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_
     q9flux_dir(dir, sizeof(dir));
     snprintf(path, sizeof(path), "%s/%s", dir, filename);
 
-    q9_board_cfg_default(&cfg);
-    if (q9_board_cfg_load(&cfg, path, err, sizeof(err)) != 0) {
+    q9_board_cfg_default(&g_loaded_cfg);
+    if (q9_board_cfg_load(&g_loaded_cfg, path, err, sizeof(err)) != 0) {
+        g_cfg_loaded = 0;
         snprintf(g_cfg_fields[2].value, sizeof(g_cfg_fields[2].value), "<Fehler>");
         snprintf(g_cfg_fields[3].value, sizeof(g_cfg_fields[3].value), "<Fehler>");
         snprintf(g_cfg_fields[4].value, sizeof(g_cfg_fields[4].value), "<Fehler>");
@@ -590,15 +605,70 @@ static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_
         snprintf(msg, msg_size, "Laden fehlgeschlagen: %s", err);
         return;
     }
+    g_cfg_loaded = 1;
     snprintf(g_cfg_fields[2].value, sizeof(g_cfg_fields[2].value), "%s",
-             cfg.name[0]     ? cfg.name     : "<leer>");
+             g_loaded_cfg.name[0]     ? g_loaded_cfg.name     : "<leer>");
     snprintf(g_cfg_fields[3].value, sizeof(g_cfg_fields[3].value), "%s",
-             cfg.rom_path[0] ? cfg.rom_path : "<leer>");
+             g_loaded_cfg.rom_path[0] ? g_loaded_cfg.rom_path : "<leer>");
     snprintf(g_cfg_fields[4].value, sizeof(g_cfg_fields[4].value), "%s",
-             cfg.net_mode[0] ? cfg.net_mode : "<leer>");
+             g_loaded_cfg.net_mode[0] ? g_loaded_cfg.net_mode : "<leer>");
     snprintf(g_cfg_fields[5].value, sizeof(g_cfg_fields[5].value), "%s",
-             cfg.cpu[0]      ? cfg.cpu      : "<leer>");
+             g_loaded_cfg.cpu[0]      ? g_loaded_cfg.cpu      : "<leer>");
     snprintf(msg, msg_size, "Konfiguration geladen: %s", filename);
+}
+
+/* Uebernimmt field_value in out -- die Platzhalter "<leer>"/"<Fehler>" (reine ANZEIGE-Werte, s.
+   load_q9_config_fields()) werden dabei als "nichts eingetragen" (leerer String) behandelt, alles
+   andere woertlich uebernommen. Kleine Hilfsfunktion fuer save_q9_config() unten. */
+static void field_to_cfg_str(const char *field_value, char *out, unsigned out_max)
+{
+    if (strcmp(field_value, "<leer>") == 0 || strcmp(field_value, "<Fehler>") == 0) {
+        out[0] = '\0';
+    } else {
+        snprintf(out, out_max, "%s", field_value);
+    }
+}
+
+/* Andreas' Wunsch (2026-08-18, sechsundzwanzigste Runde): "Speichern-Funktion" -- schreibt die
+   AKTUELLEN Feldwerte (Name:/ROM:/Netz:/CPU:, egal ob von Hand editiert oder aus einem vorigen
+   Laden uebernommen) in die Datei zurueck, die im Datei:-Feld steht. Startet dabei bei
+   g_loaded_cfg (falls vorhanden, s. Kommentar dort) statt bei leeren Defaults, damit [cfN]-
+   Abschnitte einer geladenen Datei NICHT stillschweigend verschwinden -- der Editor zeigt/
+   bearbeitet sie noch nicht (s. "Noch offen" in Q9FLUX_EDITOR_de.md). Ruft (wie load_
+   q9_config_fields()) den ECHTEN Board-Config-Parser des Emulators auf (q9_board_cfg_save(),
+   src/kernel/boardcfg.c/.h) -- KEIN zweiter, eigener Serialisierer hier. */
+static void save_q9_config(char *msg, unsigned msg_size)
+{
+    q9_board_cfg_t cfg;
+    char dir[512];
+    char path[Q9_CFG_PATH_MAX];
+    char err[160];
+    const char *filename = g_cfg_fields[0].value;
+
+    if (filename[0] == '\0' || strcmp(filename, "<leer>") == 0) {
+        snprintf(msg, msg_size,
+                 "Speichern: keine Datei ausgewaehlt (erst 'Datei' waehlen oder Namen eintippen)");
+        return;
+    }
+
+    if (g_cfg_loaded) {
+        cfg = g_loaded_cfg;
+    } else {
+        q9_board_cfg_default(&cfg);
+    }
+    field_to_cfg_str(g_cfg_fields[2].value, cfg.name,     sizeof(cfg.name));
+    field_to_cfg_str(g_cfg_fields[3].value, cfg.rom_path, sizeof(cfg.rom_path));
+    field_to_cfg_str(g_cfg_fields[4].value, cfg.net_mode, sizeof(cfg.net_mode));
+    field_to_cfg_str(g_cfg_fields[5].value, cfg.cpu,      sizeof(cfg.cpu));
+
+    q9flux_dir(dir, sizeof(dir));
+    snprintf(path, sizeof(path), "%s/%s", dir, filename);
+
+    if (q9_board_cfg_save(&cfg, path, err, sizeof(err)) != 0) {
+        snprintf(msg, msg_size, "Speichern fehlgeschlagen: %s", err);
+        return;
+    }
+    snprintf(msg, msg_size, "Konfiguration gespeichert: %s", filename);
 }
 
 /* Oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20) zentriert ueber dem
@@ -1020,6 +1090,10 @@ int main(void)
                                                  sizeof(last_dialog_msg), NULL, 0);
                         if (r == 0) { running = 0; }         /* Strg-C/EOF waehrend des Dialogs */
                         /* naechste Schleifenrunde zeichnet automatisch alles neu (inkl. last_dialog_msg) */
+                    } else if (!showing_overlay && (k.ch == 's' || k.ch == 'S')) {
+                        /* Sechsundzwanzigste Runde (Andreas: "Speichern-Funktion") -- global wie
+                           'o'/'O', kein Feld muss fokussiert sein. */
+                        save_q9_config(last_dialog_msg, sizeof(last_dialog_msg));
                     }
                     break;
                 default:
