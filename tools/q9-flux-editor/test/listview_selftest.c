@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.90
+// File:   listview_selftest.c                                                             Ver. 2.00
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -31,6 +31,8 @@
 //         │      │ (item_rows()==3, Box-Farbe, dreizeiliger Button mit Kappen, Fokus-Wechsel)   │
 // 26-08-18│ 1.90 │ Spaltenerwartungen auf VALUE_BOX_WIDTH=35 angepasst (Andreas: "im Dialog ca. │ Cld
 //         │      │ 35 Zeichen")                                                                 │
+// 26-08-18│ 2.00 │ Neue Tests fuer NUMERIC_DEC/_HEX -- Zeichenklassen-Filterung (field_putc()), │ Cld
+//         │      │ automatisches "$"-Praefix bei NUMERIC_HEX (render_ex())                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -618,6 +620,57 @@ int main(void)
                    strcmp(fields_a[1].value, "[ Oeffnen... ]") == 0);
     }
 
+    printf("=== q9_listview_field_putc: NUMERIC_DEC/_HEX filtern die Zeichenklasse (Andreas' "
+           "Wunsch: \"Numerische Eingabe Dezimal/Hex opt. mit Bereich\") ===\n");
+    {
+        static q9_listview_field_t fields_a[] = {
+            {"Dez:", "1", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
+            {"Hex:", "1", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
+        };
+        static const q9_listview_item_t nav_items[] = { { "Item0", fields_a, 2 } };
+        int nav_expanded[1] = { 0 };
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 1);
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);        /* field_focus == 0 (DEZ) */
+        q9_listview_field_putc(&lv, nav_items, '2');
+        check_true("NUMERIC_DEC: Ziffer wird akzeptiert", strcmp(fields_a[0].value, "12") == 0);
+        q9_listview_field_putc(&lv, nav_items, 'a');
+        check_true("NUMERIC_DEC: Buchstabe wird verworfen (auch Hex-Ziffern wie 'a')",
+                   strcmp(fields_a[0].value, "12") == 0);
+        q9_listview_field_putc(&lv, nav_items, ' ');
+        check_true("NUMERIC_DEC: Leerzeichen wird verworfen", strcmp(fields_a[0].value, "12") == 0);
+
+        q9_listview_field_move(&lv, 1, nav_items);                    /* field_focus == 1 (HEX) */
+        q9_listview_field_putc(&lv, nav_items, 'F');
+        check_true("NUMERIC_HEX: Grossbuchstabe A-F wird akzeptiert", strcmp(fields_a[1].value, "1F") == 0);
+        q9_listview_field_putc(&lv, nav_items, 'c');
+        check_true("NUMERIC_HEX: Kleinbuchstabe a-f wird akzeptiert", strcmp(fields_a[1].value, "1Fc") == 0);
+        q9_listview_field_putc(&lv, nav_items, 'g');
+        check_true("NUMERIC_HEX: 'g' (kein Hex) wird verworfen", strcmp(fields_a[1].value, "1Fc") == 0);
+        q9_listview_field_putc(&lv, nav_items, '9');
+        check_true("NUMERIC_HEX: Ziffer wird ebenfalls akzeptiert", strcmp(fields_a[1].value, "1Fc9") == 0);
+    }
+
+    printf("=== q9_listview_render_ex: NUMERIC_HEX zeigt automatisch \"$\" vor dem Wert ===\n");
+    {
+        static q9_listview_field_t fields_a[] = {
+            {"Basis:", "FFFFE000", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
+            {"Slot:",  "5",        Q9_LISTVIEW_FIELD_NUMERIC_DEC},
+        };
+        static const q9_listview_item_t rx_items[] = { { "Item0", fields_a, 2 } };
+        int rx_expanded[1] = { 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 1);
+        q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133, 200, 210, 220, 230, 240, 250);
+        /* Zeile 6 = erstes Feld (Zeile 5 ist die Kopfzeile). Wert-Spalte = col+2+VALUE_COL = 28. */
+        check_int("NUMERIC_HEX: \"$\" an der Wert-Spalte (28)", sb.cell[6][28].ch, '$');
+        check_int("NUMERIC_HEX: Wert beginnt eine Spalte weiter (29)", sb.cell[6][29].ch, 'F');
+        check_int("NUMERIC_DEC (Zeile 7): KEIN \"$\" -- Wert direkt an Spalte 28", sb.cell[7][28].ch, '5');
+    }
+
     printf("=== q9_listview_field_*: Randfaelle (NULL-Zeiger), kein Absturz ===\n");
     {
         static q9_listview_field_t fields_a[] = { {"L1:", "V1", Q9_LISTVIEW_FIELD_TEXT} };
@@ -643,5 +696,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.90
+// EOF listview_selftest.c                                                                 Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────

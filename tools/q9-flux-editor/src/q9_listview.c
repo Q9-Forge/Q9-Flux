@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 2.10
+// File:   q9_listview.c                                                                   Ver. 2.20
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -35,6 +35,9 @@
 //         │      │ (Andreas: "wie im Dialog... zentrisch hinter Datei ausgerichtet")                │
 // 26-08-18│ 2.10 │ Q9_LISTVIEW_VALUE_BOX_WIDTH 20 -> 35 Zeichen -- dasselbe Mass wie das Namens-      │ Cld
 //         │      │ Kaestchen im Datei-Dialog (Andreas: "Im Dialog sind es ca. 35 Zeichen")           │
+// 26-08-18│ 2.20 │ Numerische Feldtypen NUMERIC_DEC/_HEX -- field_putc() filtert die Zeichenklasse,  │ Cld
+//         │      │ render_ex() zeigt automatisch "$" vor Hex-Werten (Andreas: "Numerische Eingabe    │
+//         │      │ Dezimal/Hex opt. mit Bereich")                                                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -309,6 +312,19 @@ void q9_listview_field_move(q9_listview_t *lv, int delta, const q9_listview_item
     if (lv->field_focus > count - 1) { lv->field_focus = count - 1; }
 }
 
+/* Zeichenklasse fuer NUMERIC_DEC/_HEX (s. q9_listview_field_putc()) -- reine Filterfunktion, kein
+   Bereich (das bleibt Sache des Aufrufers, s. q9_listview_field_kind_t-Kommentar). */
+static int is_allowed_numeric_char(q9_listview_field_kind_t kind, char ch)
+{
+    if (kind == Q9_LISTVIEW_FIELD_NUMERIC_DEC) {
+        return ch >= '0' && ch <= '9';
+    }
+    if (kind == Q9_LISTVIEW_FIELD_NUMERIC_HEX) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+    }
+    return 1;                                               /* TEXT -- alles erlaubt */
+}
+
 void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, char ch)
 {
     q9_listview_field_t *f;
@@ -316,8 +332,9 @@ void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, 
     if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
     if (lv->field_focus >= items[lv->selected].field_count) { return; }
     f = &items[lv->selected].fields[lv->field_focus];
-    if (f->kind != Q9_LISTVIEW_FIELD_TEXT) { return; }       /* BUTTON-Feld -- nicht antippbar,
+    if (f->kind == Q9_LISTVIEW_FIELD_BUTTON) { return; }     /* BUTTON-Feld -- nicht antippbar,
                                                                   s. q9_listview_item_t */
+    if (!is_allowed_numeric_char(f->kind, ch)) { return; }   /* falsche Zeichenklasse -- verwerfen */
     len = 0;
     while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
     if (len >= Q9_LISTVIEW_FIELD_VALUE_MAX - 1) { return; }  /* voll -- kein Ueberlauf */
@@ -332,7 +349,7 @@ void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *it
     if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
     if (lv->field_focus >= items[lv->selected].field_count) { return; }
     f = &items[lv->selected].fields[lv->field_focus];
-    if (f->kind != Q9_LISTVIEW_FIELD_TEXT) { return; }       /* BUTTON-Feld -- nicht antippbar */
+    if (f->kind == Q9_LISTVIEW_FIELD_BUTTON) { return; }     /* BUTTON-Feld -- nicht antippbar */
     len = 0;
     while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
     if (len > 0) { f->value[len - 1] = '\0'; }
@@ -506,8 +523,17 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                     }
                     q9_screenbuf_puts(sb, field_row, lv->col + 2, items[idx].fields[j].label,
                                        fld_fg_r, fld_fg_g, fld_fg_b);
-                    q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
-                                       items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
+                    /* NUMERIC_HEX: "$" automatisch vor den Wert (nicht Teil von value selbst,
+                       s. q9_listview_field_kind_t) -- Wert dadurch um eine Spalte verschoben. */
+                    if (items[idx].fields[j].kind == Q9_LISTVIEW_FIELD_NUMERIC_HEX) {
+                        q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                           "$", fld_fg_r, fld_fg_g, fld_fg_b);
+                        q9_screenbuf_puts(sb, field_row, lv->col + 3 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                           items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
+                    } else {
+                        q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                           items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
+                    }
                     row_cursor++;
                 }
             }
@@ -575,5 +601,5 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 2.10
+// EOF q9_listview.c                                                                       Ver. 2.20
 //────────────────────────────────────────────────────────────────────────────────────────────────
