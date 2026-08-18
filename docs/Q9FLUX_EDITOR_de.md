@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.60
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.70
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -117,6 +117,9 @@
 #         │      │ jetzt src/kernel/boardcfg.c (den ECHTEN Board-Config-Parser des Emulators), neue      │
 #         │      │ Felder Name:/ROM:/Netz:/CPU: bei Emulator-Konfiguration werden nach Dateiauswahl      │
 #         │      │ befuellt, Fehleranzeige bei kaputter Datei                                            │
+# 26-08-18│ 4.70 │ Sechsundzwanzigste Runde: Speichern-Funktion -- q9_board_cfg_save() NEU in            │ Cld
+#         │      │ boardcfg.h/.c (Gegenstueck zu q9_board_cfg_load(), voller Roundtrip inkl. [cfN] und   │
+#         │      │ relativer Pfade), Taste S im Editor schreibt Name:/ROM:/Netz:/CPU: zurueck            │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1120,9 +1123,56 @@ Config-Datei aufgeloest, z.B. `roms/testrom.bin` -> `/Users/afoe/.q9-flux/roms/t
 kaputte Datei (`useSlot = yes` ohne `slot`) zeigt in allen vier Feldern `<Fehler>` und die passende
 Fehlermeldung in der Statuszeile. `filedialog_smoke3.exp` erneut gruen.
 
-**Noch offen:** Speichern-Funktion (komplett unimplementiert), mechanische Uebernahme von NUMERIC
-fuer die restlichen Felder, eventuell ein eigenes Symbol fuer BOOLEAN-Felder, `[cfN]`-Abschnitte der
-geladenen Datei (bisher wird nur `[board]` ausgewertet/angezeigt).
+**Noch offen (bis zur naechsten Runde):** Speichern-Funktion (komplett unimplementiert), mechanische
+Uebernahme von NUMERIC fuer die restlichen Felder, eventuell ein eigenes Symbol fuer BOOLEAN-Felder,
+`[cfN]`-Abschnitte der geladenen Datei (bisher wird nur `[board]` ausgewertet/angezeigt).
+
+**Sechsundzwanzigste Runde (2026-08-18) -- Speichern-Funktion:**
+*"ja bitte, leg los"* -- letzter der drei zuletzt genannten offenen Punkte (echtes Laden stand
+bereits, Speichern war von Andreas selbst mehrfach als offener Punkt genannt worden).
+
+Symmetrisch zur Laden-Runde: statt eines eigenen Serialisierers bekommt der ECHTE Board-Config-
+Parser des Emulators ein neues Gegenstueck, `q9_board_cfg_save()` (`src/kernel/boardcfg.h/.c`,
+NICHT nur im Editor-Tool -- eine echte Erweiterung des Kernel-Moduls, kommt so auch `q9.exe` selbst
+zugute). Vorher genau die Frage geklaert, die bei Speicherfunktionen leicht schiefgeht:
+
+1. **Datenverlust-Falle erkannt und vermieden** -- der Editor zeigt bisher NUR `[board]`-Felder
+   (Name:/ROM:/Netz:/CPU:), keine `[cfN]`-Abschnitte. Ein naiver Save haette beim Ueberschreiben
+   einer geladenen Datei deren CF-Images stillschweigend geloescht. Loesung: `g_loaded_cfg` haelt
+   die zuletzt erfolgreich geladene Konfiguration VOLLSTAENDIG im Speicher (inkl. `cf[]`); Save
+   startet davon (statt bei leeren Defaults) und ueberschreibt nur die vier tatsaechlich
+   angezeigten Felder. Per Pseudo-Terminal-Test verifiziert: eine Datei mit `[cf0]`-Abschnitt
+   laden, nur `Name:` per Hand aendern, speichern -- `[cf0]` steht danach unveraendert in der
+   Datei.
+2. **Relative Pfade bleiben relativ** -- `q9_board_cfg_load()` loest Pfade beim Laden relativ zum
+   Config-Verzeichnis auf (`cfg_resolve_rel()`); ein naives Zurueckschreiben dieser bereits
+   aufgeloesten (oft absoluten) Pfade wuerde eine portable Config unportabel machen. Neue
+   Hilfsfunktion `cfg_relativize()` kehrt das um: beginnt ein Pfad mit dem Config-Verzeichnis,
+   wird dieser Praefix beim Speichern wieder abgeschnitten. Getestet mit einem echten
+   Load-Save-Load-Roundtrip (Unit-Test `test/11_test_boardcfg_save.c`) UND live im Editor (ROM-Pfad
+   wird angezeigt als `/Users/.../roms/orig.bin`, gespeichert aber wieder als `roms/orig.bin`).
+3. **`vmnet_*`-Keys nur bei Abweichung vom Default** -- sonst waere jede gespeicherte Datei mit
+   vier Zeilen vollgestellt, die nur bei `net=vmnet` wirken.
+4. **Kein Dateiname gewaehlt** -- Save meldet dann einen klaren Hinweis statt zu versuchen, "ins
+   Leere" zu schreiben.
+5. **Taste S** (global wie `O`, kein Feld muss fokussiert sein) loest `save_q9_config()` aus.
+
+`boardcfg.h/.c` Ver. 1.60/1.50 (neue Funktion `q9_board_cfg_save()` + Hilfsfunktion
+`cfg_relativize()`), `Makefile` (Root) Ver. 4.40 (neues Test-Target `test-boardcfg-save`, dabei
+NACHTRAG: die EOF-Fusszeile war seit laengerem auf einer alten Version stehen geblieben, jetzt
+nachgezogen), `test/11_test_boardcfg_save.c` NEU (voller Roundtrip inkl. `[cfN]`, `vmnet_*`-
+Default-Unterdrueckung, Fehlerfall), `integration_demo.c` Ver. 3.50 (`g_loaded_cfg`/`g_cfg_loaded`,
+`save_q9_config()`, Taste S, Hinweistext ergaenzt). ROOT `make test` (nicht nur der tool-lokale)
+komplett gruen, Build ohne jede Warnung. Per echtem Pseudo-Terminal-Test bestaetigt: Datei mit
+`[cf0]`-Abschnitt laden, Name:-Feld per Hand erweitern, S druecken -- Datei zeigt danach den
+geaenderten Namen UND den unveraenderten `[cf0]`-Abschnitt; Speichern ohne gewaehlte Datei zeigt
+die erwartete Fehlermeldung. `filedialog_smoke3.exp` erneut gruen.
+
+**Noch offen:** `[cfN]`-Abschnitte im Editor selbst anzeigen/bearbeiten (bisher nur beim Speichern
+unangetastet durchgereicht), mechanische Uebernahme von NUMERIC fuer die restlichen Felder,
+eventuell ein eigenes Symbol fuer BOOLEAN-Felder, "Neu anlegen" als expliziter, vom Laden
+unabhaengiger Weg (aktuell nur implizit ueber einen noch nicht existierenden Dateinamen im
+Datei:-Feld erreichbar).
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

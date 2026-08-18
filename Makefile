@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 4.30
+# File:   Makefile                                                                        Ver. 4.40
 # Owner:  AF
 # Desc.:  Q9-Flux Build-System (68030-Emulator fuer echtes OS-9/68k, seit 6.5/6.8 mit RISC-V32-
 #         Bring-up-Vorbereitung).
@@ -56,6 +56,10 @@
 #         │      │ -- Grundlage fuer den Datei-Auswahl-Dialog)                                    │
 # 26-08-17│ 4.30 │ test-filedialog dazu (q9_filedialog.h/.c, modaler Datei-Auswahl-Dialog -- task  │ Cld
 #         │      │ #20, komponiert filelist+listview+screenbuf)                                   │
+# 26-08-18│ 4.40 │ NACHTRAG (Versionsbump beim Original-Commit vergessen): EOF-Fusszeile war noch  │ Cld
+#         │      │ auf 3.60 stehen geblieben, jetzt nachgezogen. test-boardcfg-save dazu            │
+#         │      │ (q9_board_cfg_save() in boardcfg.h/.c -- Q9FLUX_EDITOR_de.md 4.7, Andreas:       │
+#         │      │ "Speichern-Funktion")                                                            │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 CC      = gcc
@@ -218,7 +222,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot
+test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
 # ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
@@ -244,6 +248,15 @@ test-useslot:
 	$(CC) $(CFLAGS) test/10_test_useslot.c src/kernel/boardcfg.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_useslot
 	cd $(BUILD)/$(PLATFORM_DIR) && ./test_useslot
+
+# Q9FLUX_EDITOR_de.md 4.7: q9_board_cfg_save() (boardcfg.h/.c) -- Gegenstueck zu q9_board_cfg_load(),
+# reine Datenstruktur-/Serialisierungs-Pruefung (Load+Save+Load-Roundtrip inkl. [cfN]-Abschnitte und
+# relativer Pfade). Schreibt wegwerfbare Scratch-.q9-Dateien im PLATFORM_DIR (wie test-useslot).
+test-boardcfg-save:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) test/11_test_boardcfg_save.c src/kernel/boardcfg.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/test_boardcfg_save
+	cd $(BUILD)/$(PLATFORM_DIR) && ./test_boardcfg_save
 
 # 5.18 (zweiter Teilschritt): gezielte Absicherung fuer die neue I/O-Dispatch-Tabelle in m68krt.c
 # (eindeutiger Slot / kleineres Fenster als der Slot / mehrdeutiger Slot MC6845+CLUT / komplett
@@ -560,5 +573,5 @@ distclean: clean
 .PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 3.60
+# EOF Makefile                                                                            Ver. 4.40
 #─────────────────────────────────────────────────────────────────────────────────────────────────
