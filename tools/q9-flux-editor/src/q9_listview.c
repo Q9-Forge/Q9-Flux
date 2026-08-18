@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.60
+// File:   q9_listview.c                                                                   Ver. 1.70
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -21,6 +21,9 @@
 //         │      │ links und rechts am Hauptfenster sind unterschiedlich")                     │
 // 26-08-18│ 1.60 │ Erweiterbare Eintraege: q9_listview_item_rows()/_scroll_ex()/_move_ex()/     │ Cld
 //         │      │ _render_ex() dazu (s. q9_listview.h) -- bestehende Funktionen unveraendert    │
+// 26-08-18│ 1.70 │ Neuer Parameter exp_bg an render_ex() -- Kopfzeile eines aufgeklappten, nicht  │ Cld
+//         │      │ ausgewaehlten Eintrags bekommt einen eigenen Hintergrund (Andreas: "die        │
+//         │      │ Headerzeile geht ein wenig unter")                                             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -224,7 +227,8 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                             int sel_fg_r, int sel_fg_g, int sel_fg_b,
                             int sel_bg_r, int sel_bg_g, int sel_bg_b,
                             int line_fg_r, int line_fg_g, int line_fg_b,
-                            int detail_fg_r, int detail_fg_g, int detail_fg_b)
+                            int detail_fg_r, int detail_fg_g, int detail_fg_b,
+                            int exp_bg_r, int exp_bg_g, int exp_bg_b)
 {
     int content_width;
     int line_col;
@@ -262,6 +266,13 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
         if (is_selected) {
             q9_screenbuf_fill_rect(sb, screen_row, lv->col, 1, content_width, ' ',
                                     sel_fg_r, sel_fg_g, sel_fg_b, 1, sel_bg_r, sel_bg_g, sel_bg_b);
+        } else if (is_expanded) {
+            /* Aufgeklappt, aber NICHT ausgewaehlt -- eigener, gedaempfter Hintergrund (exp_bg) fuer
+               die Kopfzeile, damit sie sich von den (noch gedaempfteren) Detailzeilen darunter UND
+               von normalen, zugeklappten Eintraegen abhebt (Andreas' Feedback, 2026-08-18: "die
+               Headerzeile geht ein wenig unter"). sel_bg oben hat Vorrang, falls BEIDES zutrifft. */
+            q9_screenbuf_fill_rect(sb, screen_row, lv->col, 1, content_width, ' ',
+                                    use_fg_r, use_fg_g, use_fg_b, 1, exp_bg_r, exp_bg_g, exp_bg_b);
         }
         q9_screenbuf_puts(sb, screen_row, lv->col, marker, use_fg_r, use_fg_g, use_fg_b);
         q9_screenbuf_puts(sb, screen_row, lv->col + 2, items[idx].name ? items[idx].name : "",
@@ -342,5 +353,5 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.60
+// EOF q9_listview.c                                                                       Ver. 1.70
 //────────────────────────────────────────────────────────────────────────────────────────────────
