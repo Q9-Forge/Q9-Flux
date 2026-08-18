@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.30
+// File:   integration_demo.c                                                             Ver. 3.40
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -115,6 +115,10 @@
 //         │      │ Getestet:/Schreibschutz:) auf Q9_LISTVIEW_FIELD_BOOLEAN umgestellt, Leertaste        │
 //         │      │ schaltet um (q9_listview_field_toggle()), Hinweistext ergaenzt (Andreas: "Boolean    │
 //         │      │ Eingabe")                                                                            │
+// 26-08-18│ 3.40 │ Fuenfundzwanzigste Feedback-Runde: echtes Laden der .q9-Datei -- neue Felder Name:/  │ Cld
+//         │      │ ROM:/Netz:/CPU: bei Emulator-Konfiguration, load_q9_config_fields() ruft den ECHTEN  │
+//         │      │ Board-Config-Parser des Emulators (src/kernel/boardcfg.c) auf, kein zweiter eigener  │
+//         │      │ INI-Parser (Andreas: "echtes Laden/Auswerten der .q9-Datei")                         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -128,6 +132,13 @@
 #include "../src/q9_listview.h"
 #include "../src/q9_input.h"
 #include "../src/q9_filedialog.h"
+/* Andreas' Wunsch (2026-08-18, fuenfundzwanzigste Runde): "echtes Laden/Auswerten der .q9-Datei"
+   -- der ECHTE Board-Config-Parser des Emulators (derselbe, den q9.exe beim Start liest), KEIN
+   zweiter, eigener INI-Parser hier. boardcfg.c ist bewusst frei von weiteren Kernel-Funktions-
+   Aufrufen (nur q9board.h/devreg.h fuer ein paar Konstanten/Typen, s. dortiger Kopfkommentar) --
+   laesst sich daher unveraendert in dieses eigenstaendige Tool hineinlinken (s. Makefile),
+   garantiert dabei echte Formatkompatibilitaet statt eines zweiten, driftenden Parsers. */
+#include "../../../src/kernel/boardcfg.h"
 
 /* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. Erweiterbare, editierbare
    Eintraege (Andreas' Wunsch, 2026-08-18: "groessere Eintraege... minimiert ein oder zwei Zeilen,
@@ -145,12 +156,19 @@
    Konfigurationsdatei-Auswahl (Andreas' Wunsch, 2026-08-18, neunzehnte Runde). Zwei Felder: das
    Namensfeld (normaler TEXT, zeigt den gewaehlten Dateinamen -- von Hand tippbar UND per Button
    befuellbar) und ein BUTTON-Feld dahinter, das den bestehenden Datei-Dialog oeffnet (s.
-   Q9_KEY_ENTER-Behandlung in main()). CPU/Netzwerk bewusst NOCH NICHT dazu (Andreas' eigene
-   Ueberlegung: die waeren bis zum echten Laden ohnehin nur leere Platzhalter) -- eigene Runde,
-   sobald entweder echtes Laden steht oder Andreas sie schon als Platzhalter sehen will. */
+   Q9_KEY_ENTER-Behandlung in main()).
+   Name:/ROM:/Netz:/CPU: (fuenfundzwanzigste Runde, "echtes Laden/Auswerten der .q9-Datei") --
+   FESTE Positionen g_cfg_fields[2..5] (s. load_q9_config_fields()), werden erst nach erfolgreicher
+   Dateiauswahl befuellt (vorher "<leer>", bei Ladefehler "<Fehler>"). Reiner ANZEIGE-Zweck in
+   dieser Runde -- Aendern hier von Hand schreibt (noch) nicht in die Datei zurueck, das ist erst
+   Sache der kommenden Speichern-Funktion. */
 static q9_listview_field_t g_cfg_fields[] = {
     {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
     { "",       "Datei", Q9_LISTVIEW_FIELD_BUTTON },
+    {"Name:",  "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+    {"ROM:",   "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+    {"Netz:",  "<leer>", Q9_LISTVIEW_FIELD_TEXT},
+    {"CPU:",   "<leer>", Q9_LISTVIEW_FIELD_TEXT},
 };
 
 static q9_listview_field_t g_cf_fields[]     = { {"Bus:", "onboard", Q9_LISTVIEW_FIELD_TEXT},   {"Basis:", "FFFFE000", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
@@ -195,7 +213,7 @@ static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "FFFFA800", Q9_LISTV
                                                   {"Intervall:", "10ms", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
 
 static const q9_listview_item_t g_list_items[] = {
-    { "Emulator-Konfiguration",     g_cfg_fields,    2 },
+    { "Emulator-Konfiguration",     g_cfg_fields,    6 },
     { "CF-Interface (onboard, c0)", g_cf_fields,     4 },
     { "Netz-Terminal x1",           g_net1_fields,   4 },
     { "Netz-Terminal x2",           g_net2_fields,   4 },
@@ -526,6 +544,63 @@ static void compute_dialog_geometry(int rows, int cols, int *dlg_row, int *dlg_c
     if (*dlg_col < 1) { *dlg_col = 1; }
 }
 
+/* ~/.q9-flux -- das ECHTE Zielverzeichnis fuer Config-Dateien (Andreas' Wunsch, 2026-08-18,
+   zwanzigste Runde), wird bei Bedarf angelegt (mkdir, Fehler bewusst ignoriert -- existiert es
+   schon, ist das kein Problem). Kein HOME gesetzt -> Rueckfall auf ".". Ausgelagert aus
+   run_file_dialog() (fuenfundzwanzigste Runde), damit load_q9_config_fields() unten DIESELBE
+   Verzeichnisermittlung verwendet -- der Dateiname, den der Dialog liefert, ist relativ zu genau
+   diesem Verzeichnis, nicht zum CWD. */
+static void q9flux_dir(char *out, unsigned out_size)
+{
+    const char *home = getenv("HOME");
+    if (home) {
+        snprintf(out, out_size, "%s/.q9-flux", home);
+        mkdir(out, 0755);
+    } else {
+        snprintf(out, out_size, ".");
+    }
+}
+
+/* Andreas' Wunsch (2026-08-18, fuenfundzwanzigste Runde): "echtes Laden/Auswerten der .q9-Datei"
+   -- ruft den ECHTEN Board-Config-Parser des Emulators auf (src/kernel/boardcfg.c/.h, s. Include
+   oben), KEIN zweiter, eigener INI-Parser hier. Fuellt Name:/ROM:/Netz:/CPU: (g_cfg_fields[2..5],
+   FESTE Positionen -- s. Kommentar dort) aus der geladenen Datei; leere Config-Werte werden als
+   "<leer>" angezeigt (unterscheidet "im Feld steht nichts" von "wurde noch nie geladen" nicht
+   extra -- beides sieht fuer den Nutzer gleich aus, das ist in dieser Runde bewusst so einfach
+   gehalten). Schlaegt das Laden fehl (kaputte/unlesbare Datei), werden alle vier Felder auf
+   "<Fehler>" gesetzt und msg traegt die genaue Fehlermeldung (inkl. Zeilennummer, s.
+   q9_board_cfg_load()) -- reiner ANZEIGE-Zweck in dieser Runde, kein Zurueckschreiben in die Datei
+   (das ist Sache der kommenden Speichern-Funktion). */
+static void load_q9_config_fields(const char *filename, char *msg, unsigned msg_size)
+{
+    q9_board_cfg_t cfg;
+    char dir[512];
+    char path[Q9_CFG_PATH_MAX];
+    char err[160];
+
+    q9flux_dir(dir, sizeof(dir));
+    snprintf(path, sizeof(path), "%s/%s", dir, filename);
+
+    q9_board_cfg_default(&cfg);
+    if (q9_board_cfg_load(&cfg, path, err, sizeof(err)) != 0) {
+        snprintf(g_cfg_fields[2].value, sizeof(g_cfg_fields[2].value), "<Fehler>");
+        snprintf(g_cfg_fields[3].value, sizeof(g_cfg_fields[3].value), "<Fehler>");
+        snprintf(g_cfg_fields[4].value, sizeof(g_cfg_fields[4].value), "<Fehler>");
+        snprintf(g_cfg_fields[5].value, sizeof(g_cfg_fields[5].value), "<Fehler>");
+        snprintf(msg, msg_size, "Laden fehlgeschlagen: %s", err);
+        return;
+    }
+    snprintf(g_cfg_fields[2].value, sizeof(g_cfg_fields[2].value), "%s",
+             cfg.name[0]     ? cfg.name     : "<leer>");
+    snprintf(g_cfg_fields[3].value, sizeof(g_cfg_fields[3].value), "%s",
+             cfg.rom_path[0] ? cfg.rom_path : "<leer>");
+    snprintf(g_cfg_fields[4].value, sizeof(g_cfg_fields[4].value), "%s",
+             cfg.net_mode[0] ? cfg.net_mode : "<leer>");
+    snprintf(g_cfg_fields[5].value, sizeof(g_cfg_fields[5].value), "%s",
+             cfg.cpu[0]      ? cfg.cpu      : "<leer>");
+    snprintf(msg, msg_size, "Konfiguration geladen: %s", filename);
+}
+
 /* Oeffnet den modalen Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20) zentriert ueber dem
    aktuellen Bildschirm, scannt ~/.q9-flux (wird bei Bedarf angelegt) mit *.q9 als Standardfilter
    (Andreas' Wunsch, 2026-08-18, zwanzigste Runde) -- das ECHTE Zielverzeichnis fuer
@@ -574,16 +649,9 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
        bewusst ignoriert -- existiert es schon, ist das kein Problem; schlaegt es aus anderem Grund
        fehl, zeigt der Dialog einfach eine leere Liste, s. q9_filedialog.c rescan()). */
     static const char *const filters[] = { ".q9", "*.*" };
-    const char *home = getenv("HOME");
     char dir_buf[512];
-    const char *dir;
-    if (home) {
-        snprintf(dir_buf, sizeof(dir_buf), "%s/.q9-flux", home);
-        mkdir(dir_buf, 0755);
-        dir = dir_buf;
-    } else {
-        dir = ".";                                           /* kein HOME gesetzt -- Rueckfall */
-    }
+    const char *dir = dir_buf;
+    q9flux_dir(dir_buf, sizeof(dir_buf));
     q9_filedialog_palette_t pal;
     q9_filedialog_t dlg;
     int dlg_row, dlg_col, dlg_rows, dlg_cols;
@@ -904,6 +972,10 @@ int main(void)
                             q9_listview_field_t *namefield =
                                 &g_list_items[lv.selected].fields[lv.field_focus - 1];
                             snprintf(namefield->value, sizeof(namefield->value), "%s", chosen);
+                            /* Fuenfundzwanzigste Runde: nicht nur den Namen uebernehmen, sondern
+                               die Datei auch WIRKLICH laden (ueberschreibt last_dialog_msg mit dem
+                               genaueren Lade-Ergebnis statt der reinen Auswahl-Bestaetigung). */
+                            load_q9_config_fields(chosen, last_dialog_msg, sizeof(last_dialog_msg));
                         } else if (r == 0) {
                             running = 0;                     /* Strg-C/EOF waehrend des Dialogs */
                         }
