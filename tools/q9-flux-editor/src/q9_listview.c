@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.90
+// File:   q9_listview.c                                                                   Ver. 2.00
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -30,6 +30,9 @@
 // 26-08-18│ 1.90 │ Neuer q9_listview_field_kind_t (TEXT/BUTTON) -- field_putc()/_backspace()       │ Cld
 //         │      │ ignorieren BUTTON-Felder (Andreas: "dahinter ein Button um den Dialog zu         │
 //         │      │ oeffnen")                                                                        │
+// 26-08-18│ 2.00 │ TEXT+BUTTON-Paar jetzt Sonderfall: 3 Zeilen statt 2, echter dreizeiliger Button  │ Cld
+//         │      │ wie im Datei-Dialog (Halbblock-Kappen), Wert-Box (box_fg/bg NEU) statt Fliesstext │
+//         │      │ (Andreas: "wie im Dialog... zentrisch hinter Datei ausgerichtet")                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -37,6 +40,13 @@
    q9_listview_render_ex()) -- feste Ausrichtung, damit alle Werte untereinander in einer Spalte
    stehen, unabhaengig von der Laenge des jeweiligen Labels (formularaehnlicher Look). */
 #define Q9_LISTVIEW_FIELD_VALUE_COL 16
+
+/* Nur fuer den TEXT+BUTTON-Sonderfall (s. q9_listview.h): feste Breite der Wert-Box, Luftspalte
+   zum Button, und Breite des Buttons selbst (dieselbe Groessenordnung wie OK/Abbrechen im
+   Datei-Dialog -- "Datei" zentriert darin). */
+#define Q9_LISTVIEW_VALUE_BOX_WIDTH 20
+#define Q9_LISTVIEW_BUTTON_GAP       3
+#define Q9_LISTVIEW_BUTTON_WIDTH     8
 
 int q9_listview_scroll(int selected, int offset, int height, int item_count)
 {
@@ -180,15 +190,37 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
     }
 }
 
+/* TEXT-Feld field[j], DIREKT gefolgt von einem BUTTON-Feld -- der Sonderfall aus q9_listview.h
+   (dreizeiliger Button, vertikal zentriert neben dem Textfeld statt darunter). Von
+   q9_listview_item_rows() UND q9_listview_render_ex() genutzt, damit beide exakt dieselbe
+   Definition verwenden (sonst koennten Zeilenzahl und tatsaechliches Rendering auseinanderlaufen). */
+static int is_text_button_pair(const q9_listview_item_t *items, int index, int j)
+{
+    int fc = items[index].field_count;
+    if (j + 1 >= fc) { return 0; }
+    return items[index].fields[j].kind == Q9_LISTVIEW_FIELD_TEXT
+        && items[index].fields[j + 1].kind == Q9_LISTVIEW_FIELD_BUTTON;
+}
+
 int q9_listview_item_rows(const q9_listview_item_t *items, const int *expanded, int index)
 {
-    int fc;
+    int fc, j, rows;
 
     if (!items)                       { return 1; }
     if (!expanded || !expanded[index]) { return 1; }
     fc = items[index].field_count;
     if (fc <= 0) { return 1; }
-    return 1 /* Kopfzeile */ + fc /* Felder */ + 1 /* Trennlinie */;
+
+    rows = 1;                                               /* Kopfzeile */
+    for (j = 0; j < fc; j++) {
+        if (is_text_button_pair(items, index, j)) {
+            rows += 3;                                      /* Kappe oben + gemeinsame Zeile + Kappe unten */
+            j++;                                             /* das BUTTON-Feld ist schon mitgezaehlt */
+        } else {
+            rows += 1;
+        }
+    }
+    return rows + 1;                                        /* Trennlinie danach */
 }
 
 int q9_listview_scroll_ex(int selected, int offset, int height,
@@ -307,7 +339,9 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                             int sel_bg_r, int sel_bg_g, int sel_bg_b,
                             int line_fg_r, int line_fg_g, int line_fg_b,
                             int detail_fg_r, int detail_fg_g, int detail_fg_b,
-                            int exp_bg_r, int exp_bg_g, int exp_bg_b)
+                            int exp_bg_r, int exp_bg_g, int exp_bg_b,
+                            int box_fg_r, int box_fg_g, int box_fg_b,
+                            int box_bg_r, int box_bg_g, int box_bg_b)
 {
     int content_width;
     int line_col;
@@ -373,24 +407,103 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                Unterscheidung Kopf/Feld (Andreas' gewaehlter Stil, s. q9_listview.h). Das FOKUSSIERTE
                Feld (field_focus==j, NUR beim ausgewaehlten Eintrag moeglich) bekommt stattdessen
                sel_fg/sel_bg -- deutlich als "hier tippst du gerade" erkennbar (Andreas' Wunsch,
-               2026-08-18: Feld-Navigation/-Bearbeitung). */
+               2026-08-18: Feld-Navigation/-Bearbeitung). TEXT+BUTTON-Paar: s. q9_listview.h fuer
+               den Sonderfall (dreizeiliger Button wie im Datei-Dialog). */
             for (j = 0; j < items[idx].field_count && row_cursor < lv->height; j++) {
-                int field_row = lv->row + row_cursor;
-                int is_field_focused = is_selected && lv->field_focus == j;
-                int fld_fg_r = is_field_focused ? sel_fg_r : detail_fg_r;
-                int fld_fg_g = is_field_focused ? sel_fg_g : detail_fg_g;
-                int fld_fg_b = is_field_focused ? sel_fg_b : detail_fg_b;
+                if (is_text_button_pair(items, idx, j)) {
+                    int cap_above_row = lv->row + row_cursor;
+                    int mid_row       = lv->row + row_cursor + 1;
+                    int cap_below_row = lv->row + row_cursor + 2;
+                    int is_text_focused   = is_selected && lv->field_focus == j;
+                    int is_button_focused = is_selected && lv->field_focus == j + 1;
+                    int btn_fg_r = is_button_focused ? sel_fg_r : box_fg_r;
+                    int btn_fg_g = is_button_focused ? sel_fg_g : box_fg_g;
+                    int btn_fg_b = is_button_focused ? sel_fg_b : box_fg_b;
+                    int btn_bg_r = is_button_focused ? sel_bg_r : box_bg_r;
+                    int btn_bg_g = is_button_focused ? sel_bg_g : box_bg_g;
+                    int btn_bg_b = is_button_focused ? sel_bg_b : box_bg_b;
+                    int button_col = lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL
+                                      + Q9_LISTVIEW_VALUE_BOX_WIDTH + Q9_LISTVIEW_BUTTON_GAP;
 
-                if (is_field_focused) {
-                    q9_screenbuf_fill_rect(sb, field_row, lv->col, 1, content_width, ' ',
-                                            sel_fg_r, sel_fg_g, sel_fg_b, 1,
-                                            sel_bg_r, sel_bg_g, sel_bg_b);
+                    if (row_cursor + 2 >= lv->height) { break; }  /* die 3 Zeilen passen nicht mehr
+                                                                       komplett -- lieber ganz weglassen
+                                                                       als abgeschnitten darstellen */
+
+                    /* Label + Wert-Box (TEXT-Feld) -- fokussiert: normale sel_fg/bg-Zeile wie jedes
+                       andere Feld. Unfokussiert: feste, sichtbare Box (box_fg/bg) statt reinem
+                       Fliesstext, damit die Laenge/Ausdehnung des Werts erkennbar bleibt (Andreas'
+                       Wunsch: "einen anderen Farbton, so dass man erkennen kann wie lang es ist"). */
+                    if (is_text_focused) {
+                        q9_screenbuf_fill_rect(sb, mid_row, lv->col, 1, content_width, ' ',
+                                                sel_fg_r, sel_fg_g, sel_fg_b, 1,
+                                                sel_bg_r, sel_bg_g, sel_bg_b);
+                        q9_screenbuf_puts(sb, mid_row, lv->col + 2, items[idx].fields[j].label,
+                                           sel_fg_r, sel_fg_g, sel_fg_b);
+                        q9_screenbuf_puts(sb, mid_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                           items[idx].fields[j].value, sel_fg_r, sel_fg_g, sel_fg_b);
+                    } else {
+                        q9_screenbuf_puts(sb, mid_row, lv->col + 2, items[idx].fields[j].label,
+                                           detail_fg_r, detail_fg_g, detail_fg_b);
+                        q9_screenbuf_fill_rect(sb, mid_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                                1, Q9_LISTVIEW_VALUE_BOX_WIDTH, ' ',
+                                                box_fg_r, box_fg_g, box_fg_b, 1,
+                                                box_bg_r, box_bg_g, box_bg_b);
+                        q9_screenbuf_puts(sb, mid_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                           items[idx].fields[j].value, box_fg_r, box_fg_g, box_fg_b);
+                    }
+
+                    /* Button -- Text in eigener Farbflaeche, Kappen darueber/darunter, genau wie
+                       draw_button() in q9_filedialog.c (Q9_GLYPH_LOWER_HALF/UPPER_HALF). Kappen
+                       OHNE eigenen Hintergrund (use_bg=0) -- die "gefuellte" Haelfte des Zeichens
+                       zeigt dadurch die Buttonfarbe auf dem normalen Zeilenhintergrund. */
+                    {
+                        char text[Q9_LISTVIEW_BUTTON_WIDTH + 1];
+                        int len = 0, left, k;
+                        while (items[idx].fields[j + 1].value[len] != '\0'
+                               && len < Q9_LISTVIEW_BUTTON_WIDTH) { len++; }
+                        left = (Q9_LISTVIEW_BUTTON_WIDTH - len) / 2;
+                        if (left < 0) { left = 0; }
+                        for (k = 0; k < Q9_LISTVIEW_BUTTON_WIDTH; k++) { text[k] = ' '; }
+                        for (k = 0; k < len && left + k < Q9_LISTVIEW_BUTTON_WIDTH; k++) {
+                            text[left + k] = items[idx].fields[j + 1].value[k];
+                        }
+                        text[Q9_LISTVIEW_BUTTON_WIDTH] = '\0';
+
+                        q9_screenbuf_fill_rect(sb, mid_row, button_col, 1, Q9_LISTVIEW_BUTTON_WIDTH,
+                                                ' ', btn_fg_r, btn_fg_g, btn_fg_b, 1,
+                                                btn_bg_r, btn_bg_g, btn_bg_b);
+                        q9_screenbuf_puts(sb, mid_row, button_col, text, btn_fg_r, btn_fg_g, btn_fg_b);
+                    }
+                    q9_screenbuf_fill_rect(sb, cap_above_row, button_col, 1, Q9_LISTVIEW_BUTTON_WIDTH,
+                                            (char)Q9_GLYPH_LOWER_HALF, btn_bg_r, btn_bg_g, btn_bg_b,
+                                            0, 0, 0, 0);
+                    q9_screenbuf_fill_rect(sb, cap_below_row, button_col, 1, Q9_LISTVIEW_BUTTON_WIDTH,
+                                            (char)Q9_GLYPH_UPPER_HALF, btn_bg_r, btn_bg_g, btn_bg_b,
+                                            0, 0, 0, 0);
+
+                    row_cursor += 3;
+                    j++;                                     /* BUTTON-Feld ist mit erledigt */
+                    continue;
                 }
-                q9_screenbuf_puts(sb, field_row, lv->col + 2, items[idx].fields[j].label,
-                                   fld_fg_r, fld_fg_g, fld_fg_b);
-                q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
-                                   items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
-                row_cursor++;
+
+                {
+                    int field_row = lv->row + row_cursor;
+                    int is_field_focused = is_selected && lv->field_focus == j;
+                    int fld_fg_r = is_field_focused ? sel_fg_r : detail_fg_r;
+                    int fld_fg_g = is_field_focused ? sel_fg_g : detail_fg_g;
+                    int fld_fg_b = is_field_focused ? sel_fg_b : detail_fg_b;
+
+                    if (is_field_focused) {
+                        q9_screenbuf_fill_rect(sb, field_row, lv->col, 1, content_width, ' ',
+                                                sel_fg_r, sel_fg_g, sel_fg_b, 1,
+                                                sel_bg_r, sel_bg_g, sel_bg_b);
+                    }
+                    q9_screenbuf_puts(sb, field_row, lv->col + 2, items[idx].fields[j].label,
+                                       fld_fg_r, fld_fg_g, fld_fg_b);
+                    q9_screenbuf_puts(sb, field_row, lv->col + 2 + Q9_LISTVIEW_FIELD_VALUE_COL,
+                                       items[idx].fields[j].value, fld_fg_r, fld_fg_g, fld_fg_b);
+                    row_cursor++;
+                }
             }
             /* Trennlinie danach -- volle content_width, in line_fg (dieselbe Rolle wie die rechte
                Rahmenlinie: strukturell, nicht Text). */
@@ -456,5 +569,5 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.90
+// EOF q9_listview.c                                                                       Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────

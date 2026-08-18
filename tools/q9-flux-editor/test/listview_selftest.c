@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.70
+// File:   listview_selftest.c                                                             Ver. 1.80
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -27,6 +27,8 @@
 // 26-08-18│ 1.70 │ Bestehende Feld-Initialisierer um explizites Q9_LISTVIEW_FIELD_TEXT ergaenzt│ Cld
 //         │      │ (neues drittes Struct-Feld kind, s. q9_listview.h), neuer Test: BUTTON-Feld │
 //         │      │ ignoriert putc()/_backspace()                                               │
+// 26-08-18│ 1.80 │ render_ex()-Aufrufe um box_fg/bg ergaenzt, neue Tests fuer TEXT+BUTTON-Paar  │ Cld
+//         │      │ (item_rows()==3, Box-Farbe, dreizeiliger Button mit Kappen, Fokus-Wechsel)   │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -219,6 +221,30 @@ int main(void)
                   q9_listview_item_rows(rows_items, exp_item1, 1), 4);
     }
 
+    printf("=== q9_listview_item_rows: TEXT+BUTTON-Paar zaehlt als 3 Zeilen (Andreas' Wunsch, "
+           "2026-08-18: \"der dreizeilige Button wie im Dialog\") ===\n");
+    {
+        static q9_listview_field_t pair_fields[] = {
+            {"Datei:", "x", Q9_LISTVIEW_FIELD_TEXT}, {"", "Datei", Q9_LISTVIEW_FIELD_BUTTON},
+        };
+        static q9_listview_field_t mixed_fields[] = {
+            {"L0:", "v0", Q9_LISTVIEW_FIELD_TEXT},                    /* normales Feld, 1 Zeile     */
+            {"Datei:", "x", Q9_LISTVIEW_FIELD_TEXT},                  /* TEXT+BUTTON-Paar, 3 Zeilen */
+            {"", "Datei", Q9_LISTVIEW_FIELD_BUTTON},
+            {"L3:", "v3", Q9_LISTVIEW_FIELD_TEXT},                    /* wieder normal, 1 Zeile     */
+        };
+        static const q9_listview_item_t pair_items[] = {
+            { "NurPaar", pair_fields, 2 },
+            { "Gemischt", mixed_fields, 4 },
+        };
+        int exp_all[2] = { 1, 1 };
+
+        check_int("nur ein TEXT+BUTTON-Paar: 1 (Kopf) + 3 (Paar) + 1 (Trennlinie) == 5",
+                  q9_listview_item_rows(pair_items, exp_all, 0), 5);
+        check_int("gemischt (1 normal + Paar + 1 normal): 1 + 1 + 3 + 1 + 1 == 7",
+                  q9_listview_item_rows(pair_items, exp_all, 1), 7);
+    }
+
     printf("=== q9_listview_scroll_ex: identisch zu q9_listview_scroll() bei items==NULL ===\n");
     /* Ohne Items/Zustand muss sich _ex() exakt wie das einfache q9_listview_scroll() verhalten
        (alle Zeilenzahlen == 1) -- direkter Regressionsnachweis anhand derselben Faelle wie oben. */
@@ -298,7 +324,8 @@ int main(void)
         q9_listview_init(&lv, 5, 10, 6, 30, 2);
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
                                200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
-                               111, 122, 133);
+                               111, 122, 133,
+                               200, 210, 220, 230, 240, 250);
 
         check_int("Item0 (nicht erweiterbar): Leerzeichen statt Pfeil-Symbol an (5,10)",
                   sb.cell[5][10].ch, ' ');
@@ -333,7 +360,8 @@ int main(void)
         q9_listview_init(&lv, 5, 10, 6, 30, 1);                 /* selected startet bei 0 -- ausgewaehlt */
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
                                200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
-                               111, 122, 133);
+                               111, 122, 133,
+                               200, 210, 220, 230, 240, 250);
         check_true("ausgewaehlt UND aufgeklappt (field_focus==-1): sel_bg (255) gewinnt, nicht exp_bg",
                    sb.cell[5][10].has_bg == 1 && sb.cell[5][10].bg_g == 255);
     }
@@ -349,7 +377,8 @@ int main(void)
         lv.field_focus = 1;                                     /* zweites Feld fokussiert */
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
                                200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
-                               111, 122, 133);
+                               111, 122, 133,
+                               200, 210, 220, 230, 240, 250);
         check_true("Kopfzeile faellt bei field_focus>=0 auf exp_bg zurueck (nicht sel_bg)",
                    sb.cell[5][10].has_bg == 1 && sb.cell[5][10].bg_r == 111);
         check_true("Feld 0 (nicht fokussiert): detail_fg, kein eigener Hintergrund",
@@ -357,6 +386,61 @@ int main(void)
         check_true("Feld 1 (fokussiert): sel_bg als Hintergrund", sb.cell[7][10].has_bg == 1
                    && sb.cell[7][10].bg_g == 255);
         check_true("Feld 1 (fokussiert): sel_fg als Textfarbe", sb.cell[7][12].fg_r == 0);
+    }
+
+    printf("=== q9_listview_render_ex: TEXT+BUTTON-Paar (Box + dreizeiliger Button, \"wie im "
+           "Dialog\", Andreas' Wunsch 2026-08-18) ===\n");
+    {
+        static q9_listview_field_t pair_fields[] = {
+            {"Datei:", "64K", Q9_LISTVIEW_FIELD_TEXT},
+            {"",       "Datei", Q9_LISTVIEW_FIELD_BUTTON},
+        };
+        static const q9_listview_item_t pair_items[] = { { "Konfiguration", pair_fields, 2 } };
+        int pair_expanded[1] = { 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 1);
+        q9_listview_render_ex(&lv, &sb, pair_items, pair_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133, 200, 210, 220, 230, 240, 250);
+
+        /* Zeile 5 = Kopf, 6 = Kappe oben, 7 = gemeinsame Zeile, 8 = Kappe unten, 9 = Trennlinie
+           (Button-Spalte = col+2+VALUE_COL(16)+VALUE_BOX_WIDTH(20)+GAP(3) = 10+2+16+20+3 = 51). */
+        check_int("Kappe oben (Zeile 6): Q9_GLYPH_LOWER_HALF im Button-Bereich (Spalte 51)",
+                  sb.cell[6][51].ch, Q9_GLYPH_LOWER_HALF);
+        check_true("Kappe oben: nichts ausserhalb des Button-Bereichs (Spalte 40, Luftspalte)",
+                   sb.cell[6][40].ch == ' ');
+        check_int("Label 'Datei:' an Spalte 12 (Zeile 7)", sb.cell[7][12].ch, 'D');
+        check_int("Box-Wert '64K' an fester Spalte (12+16=28)", sb.cell[7][28].ch, '6');
+        check_true("Box hat box_fg/bg (200/230), NICHT detail_fg (44)",
+                   sb.cell[7][28].fg_r == 200 && sb.cell[7][28].has_bg == 1 && sb.cell[7][28].bg_r == 230);
+        check_true("Box-Flaeche hat feste Breite -- Spalte 40 (hinter dem Wert) noch im Kasten",
+                   sb.cell[7][40].has_bg == 1 && sb.cell[7][40].bg_r == 230);
+        check_int("Button-Text 'Datei' zentriert im Button-Bereich (Spalte 52 = 51+1)",
+                  sb.cell[7][52].ch, 'D');
+        check_true("Button (nicht fokussiert) hat box_fg/bg, wie im Dialog",
+                   sb.cell[7][51].fg_r == 200 && sb.cell[7][51].bg_r == 230);
+        check_int("Kappe unten (Zeile 8): Q9_GLYPH_UPPER_HALF im Button-Bereich",
+                  sb.cell[8][51].ch, Q9_GLYPH_UPPER_HALF);
+        check_int("Trennlinie danach auf Zeile 9 (5+1+3)", sb.cell[9][10].ch, Q9_GLYPH_HLINE);
+    }
+    {
+        /* Fokussierter Button innerhalb des Paars -- sel_fg/bg statt box_fg/bg. */
+        static q9_listview_field_t pair_fields[] = {
+            {"Datei:", "64K", Q9_LISTVIEW_FIELD_TEXT},
+            {"",       "Datei", Q9_LISTVIEW_FIELD_BUTTON},
+        };
+        static const q9_listview_item_t pair_items[] = { { "Konfiguration", pair_fields, 2 } };
+        int pair_expanded[1] = { 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 1);
+        lv.field_focus = 1;                                     /* Button fokussiert */
+        q9_listview_render_ex(&lv, &sb, pair_items, pair_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133, 200, 210, 220, 230, 240, 250);
+        check_true("fokussierter Button: sel_fg (0)/sel_bg (255) statt box_fg/bg",
+                   sb.cell[7][51].fg_r == 0 && sb.cell[7][51].bg_g == 255);
     }
     {
         /* Zugeklappt: RIGHT_ARROW statt DOWN_ARROW, keine Felder/Trennlinie. */
@@ -370,7 +454,8 @@ int main(void)
         q9_listview_init(&lv, 5, 10, 6, 30, 1);
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
                                200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
-                               111, 122, 133);
+                               111, 122, 133,
+                               200, 210, 220, 230, 240, 250);
         check_int("zugeklappt: Q9_GLYPH_RIGHT_ARROW an (5,10)", sb.cell[5][10].ch, Q9_GLYPH_RIGHT_ARROW);
         check_int("zugeklappt: kein Feld sichtbar -- Zeile 6 bleibt leer", sb.cell[6][10].ch, ' ');
     }
@@ -386,7 +471,7 @@ int main(void)
         q9_screenbuf_init(&sb, 24, 80);
         q9_listview_init(&lv, 0, 0, 3, 30, 1);                  /* Hoehe 3 -- Eintrag braucht 7 */
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
-                               1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+                               1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
         check_true("kein Absturz bei ueberlangem aufgeklapptem Eintrag", 1);
     }
 
@@ -394,9 +479,9 @@ int main(void)
     {
         static const q9_listview_item_t rx_items[] = { { "X", NULL, 0 } };
         int rx_expanded[1] = { 0 };
-        q9_listview_render_ex(NULL, &sb, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
-        q9_listview_render_ex(&lv, NULL, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
-        q9_listview_render_ex(&lv, &sb, NULL, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(NULL, &sb, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(&lv, NULL, rx_items, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
+        q9_listview_render_ex(&lv, &sb, NULL, rx_expanded, 1,1,1, 0,0,0, 1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1, 1,1,1);
         check_true("kein Absturz bis hierher", 1);
     }
 
@@ -554,5 +639,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.70
+// EOF listview_selftest.c                                                                 Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────
