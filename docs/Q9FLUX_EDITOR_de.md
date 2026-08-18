@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.50
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.60
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -113,6 +113,10 @@
 #         │      │ Q9_LISTVIEW_FIELD_BOOLEAN als weiterer neuer kind-Wert, field_toggle() schaltet      │
 #         │      │ ja/nein um (Leertaste), alle bestehenden ja/nein-Felder umgestellt. Alle vier         │
 #         │      │ Eingabearten (Text/Datei/Numerisch/Boolean) jetzt vorhanden                          │
+# 26-08-18│ 4.60 │ Fuenfundzwanzigste Runde: echtes Laden der .q9-Datei -- integration_demo.c linkt      │ Cld
+#         │      │ jetzt src/kernel/boardcfg.c (den ECHTEN Board-Config-Parser des Emulators), neue      │
+#         │      │ Felder Name:/ROM:/Netz:/CPU: bei Emulator-Konfiguration werden nach Dateiauswahl      │
+#         │      │ befuellt, Fehleranzeige bei kaputter Datei                                            │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1077,9 +1081,48 @@ einer Leertaste sichtbar von "ja" auf "nein". `filedialog_smoke3.exp` erneut gru
 Damit sind alle vier von Andreas genannten Eingabearten fertig (Text, Dateiauswahl, Numerisch,
 Boolean).
 
-**Noch offen:** echtes Laden/Auswerten der `.q9`-Datei, Speichern-Funktion, mechanische Uebernahme
-von NUMERIC fuer die restlichen Felder (`Eintraege:`, `Groesse:` u.ae. sind aktuell noch TEXT),
-eventuell ein eigenes Symbol fuer BOOLEAN-Felder statt reinem "ja"/"nein"-Text.
+**Noch offen (bis zur naechsten Runde):** echtes Laden/Auswerten der `.q9`-Datei, Speichern-
+Funktion, mechanische Uebernahme von NUMERIC fuer die restlichen Felder (`Eintraege:`, `Groesse:`
+u.ae. sind aktuell noch TEXT), eventuell ein eigenes Symbol fuer BOOLEAN-Felder statt reinem
+"ja"/"nein"-Text.
+
+**Fuenfundzwanzigste Runde (2026-08-18) -- echtes Laden der `.q9`-Datei:**
+*"ja bitte ...."* -- naechster Punkt laut eigener Reihenfolge, nachdem alle vier Feldtypen standen.
+
+Statt einen zweiten, eigenen INI-Parser fuer den Editor zu schreiben, wird der ECHTE Board-Config-
+Parser des Emulators wiederverwendet: `src/kernel/boardcfg.c/.h` (derselbe, den `q9.exe` beim Start
+liest, s. `docs/HWCONFIG.md` Abschnitt 3). Vorab geprueft, ob das ueberhaupt sauber geht (die
+Sorge: der Kernel-Baum koennte schwere Abhaengigkeiten mitziehen) -- `boardcfg.c` braucht nur
+`q9board.h`/`devreg.h` fuer ein paar Konstanten/Typen, ruft aber KEINE Funktionen aus anderen
+Kernel-Modulen auf (per `nm -u` nachgewiesen: keine undefinierten Symbole ausser Libc). Laesst sich
+daher unveraendert in das eigenstaendige Tool hineinlinken, garantiert dabei echte Format-
+kompatibilitaet statt eines zweiten, potenziell driftenden Parsers.
+
+1. **Neue Felder** -- `Name:`/`ROM:`/`CPU:` bei "Emulator-Konfiguration" (`g_cfg_fields[2..5]`,
+   feste Positionen direkt nach dem bestehenden `Datei:`+Button-Paar), zunaechst `"<leer>"`.
+2. **`load_q9_config_fields()`** -- nach erfolgreicher Dateiauswahl (im BUTTON-Enter-Handler)
+   aufgerufen: baut den vollen Pfad (`~/.q9-flux/<Dateiname>`, ueber neuen gemeinsamen Helfer
+   `q9flux_dir()` -- vorher in `run_file_dialog()` dupliziert, jetzt einmal), ruft
+   `q9_board_cfg_default()` + `q9_board_cfg_load()` auf. Erfolg: die vier Felder zeigen `cfg.name`/
+   `cfg.rom_path`/`cfg.net_mode`/`cfg.cpu` (leerer Config-Wert -> `"<leer>"`). ROM-Pfade werden vom
+   echten Parser bereits relativ zur Config-DATEI aufgeloest (nicht zum CWD), s. Test unten.
+3. **Fehlerfall** -- kaputte/unlesbare Datei (Test: `useSlot = yes` ohne `slot`): alle vier Felder
+   zeigen `"<Fehler>"`, die Statuszeile die genaue Meldung von `q9_board_cfg_load()` (inkl.
+   Zeilennummer).
+4. **Reiner Anzeige-Zweck** -- von Hand in diesen Feldern tippen schreibt (noch) nicht in die Datei
+   zurueck, das ist Sache der kommenden Speichern-Funktion.
+
+`Makefile` Ver. 1.90 (linkt `../../src/kernel/boardcfg.c` zusaetzlich in `demo-integration`),
+`integration_demo.c` Ver. 3.40. `make test` komplett gruen, Build ohne jede Warnung. Per echtem
+Pseudo-Terminal-Test bestaetigt (zwei Testdateien in `~/.q9-flux` angelegt, danach wieder
+geloescht): eine gueltige Datei fuellt Name:/ROM:/Netz:/CPU: korrekt (ROM-Pfad relativ zur
+Config-Datei aufgeloest, z.B. `roms/testrom.bin` -> `/Users/afoe/.q9-flux/roms/testrom.bin`); eine
+kaputte Datei (`useSlot = yes` ohne `slot`) zeigt in allen vier Feldern `<Fehler>` und die passende
+Fehlermeldung in der Statuszeile. `filedialog_smoke3.exp` erneut gruen.
+
+**Noch offen:** Speichern-Funktion (komplett unimplementiert), mechanische Uebernahme von NUMERIC
+fuer die restlichen Felder, eventuell ein eigenes Symbol fuer BOOLEAN-Felder, `[cfN]`-Abschnitte der
+geladenen Datei (bisher wird nur `[board]` ausgewertet/angezeigt).
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
