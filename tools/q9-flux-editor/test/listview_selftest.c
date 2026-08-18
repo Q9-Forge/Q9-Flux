@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.80
+// File:   listview_selftest.c                                                             Ver. 1.90
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -29,6 +29,8 @@
 //         │      │ ignoriert putc()/_backspace()                                               │
 // 26-08-18│ 1.80 │ render_ex()-Aufrufe um box_fg/bg ergaenzt, neue Tests fuer TEXT+BUTTON-Paar  │ Cld
 //         │      │ (item_rows()==3, Box-Farbe, dreizeiliger Button mit Kappen, Fokus-Wechsel)   │
+// 26-08-18│ 1.90 │ Spaltenerwartungen auf VALUE_BOX_WIDTH=35 angepasst (Andreas: "im Dialog ca. │ Cld
+//         │      │ 35 Zeichen")                                                                 │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -405,10 +407,12 @@ int main(void)
                                111, 122, 133, 200, 210, 220, 230, 240, 250);
 
         /* Zeile 5 = Kopf, 6 = Kappe oben, 7 = gemeinsame Zeile, 8 = Kappe unten, 9 = Trennlinie
-           (Button-Spalte = col+2+VALUE_COL(16)+VALUE_BOX_WIDTH(20)+GAP(3) = 10+2+16+20+3 = 51). */
-        check_int("Kappe oben (Zeile 6): Q9_GLYPH_LOWER_HALF im Button-Bereich (Spalte 51)",
-                  sb.cell[6][51].ch, Q9_GLYPH_LOWER_HALF);
-        check_true("Kappe oben: nichts ausserhalb des Button-Bereichs (Spalte 40, Luftspalte)",
+           (Button-Spalte = col+2+VALUE_COL(16)+VALUE_BOX_WIDTH(35)+GAP(3) = 10+2+16+35+3 = 66 --
+           VALUE_BOX_WIDTH seit der zweiundzwanzigsten Runde 35 statt 20, Andreas: "im Dialog sind
+           es ca. 35 Zeichen"). */
+        check_int("Kappe oben (Zeile 6): Q9_GLYPH_LOWER_HALF im Button-Bereich (Spalte 66)",
+                  sb.cell[6][66].ch, Q9_GLYPH_LOWER_HALF);
+        check_true("Kappe oben: nichts ausserhalb des Button-Bereichs (Spalte 40)",
                    sb.cell[6][40].ch == ' ');
         check_int("Label 'Datei:' an Spalte 12 (Zeile 7)", sb.cell[7][12].ch, 'D');
         check_int("Box-Wert '64K' an fester Spalte (12+16=28)", sb.cell[7][28].ch, '6');
@@ -416,12 +420,12 @@ int main(void)
                    sb.cell[7][28].fg_r == 200 && sb.cell[7][28].has_bg == 1 && sb.cell[7][28].bg_r == 230);
         check_true("Box-Flaeche hat feste Breite -- Spalte 40 (hinter dem Wert) noch im Kasten",
                    sb.cell[7][40].has_bg == 1 && sb.cell[7][40].bg_r == 230);
-        check_int("Button-Text 'Datei' zentriert im Button-Bereich (Spalte 52 = 51+1)",
-                  sb.cell[7][52].ch, 'D');
+        check_int("Button-Text 'Datei' zentriert im Button-Bereich (Spalte 67 = 66+1)",
+                  sb.cell[7][67].ch, 'D');
         check_true("Button (nicht fokussiert) hat box_fg/bg, wie im Dialog",
-                   sb.cell[7][51].fg_r == 200 && sb.cell[7][51].bg_r == 230);
+                   sb.cell[7][66].fg_r == 200 && sb.cell[7][66].bg_r == 230);
         check_int("Kappe unten (Zeile 8): Q9_GLYPH_UPPER_HALF im Button-Bereich",
-                  sb.cell[8][51].ch, Q9_GLYPH_UPPER_HALF);
+                  sb.cell[8][66].ch, Q9_GLYPH_UPPER_HALF);
         check_int("Trennlinie danach auf Zeile 9 (5+1+3)", sb.cell[9][10].ch, Q9_GLYPH_HLINE);
     }
     {
@@ -440,7 +444,7 @@ int main(void)
                                200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
                                111, 122, 133, 200, 210, 220, 230, 240, 250);
         check_true("fokussierter Button: sel_fg (0)/sel_bg (255) statt box_fg/bg",
-                   sb.cell[7][51].fg_r == 0 && sb.cell[7][51].bg_g == 255);
+                   sb.cell[7][66].fg_r == 0 && sb.cell[7][66].bg_g == 255);
     }
     {
         /* Zugeklappt: RIGHT_ARROW statt DOWN_ARROW, keine Felder/Trennlinie. */
@@ -639,5 +643,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.80
+// EOF listview_selftest.c                                                                 Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────
