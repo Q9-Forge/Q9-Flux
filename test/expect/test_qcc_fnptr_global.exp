@@ -1,0 +1,30 @@
+#!/usr/bin/expect -f
+# Regression: QCC -largedata function pointer stored in a file-scope global.
+set timeout 120
+set send_slow {1 .003}
+set image local_images/OS9SYS.qcc-stage1-1m.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re {/dd/HOME/ROOT# ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<< GLOBAL-FNPTR LOGIN FAILED >>>\n"; exit 2 }
+
+send -s "/dd/CMDS/q9_fnptr_global\r"
+expect {
+    -re {global-fn: 1} { send_log "\n<<< GLOBAL-FNPTR OK >>>\n" }
+    -re {PMMU|FAIL|error|Error} { send_log "\n<<< GLOBAL-FNPTR ERROR >>>\n"; exit 1 }
+    timeout { send_log "\n<<< GLOBAL-FNPTR TIMEOUT >>>\n"; exit 1 }
+}
+expect -re {/dd/HOME/ROOT# ?$}
+send "\x1d"
+expect eof
