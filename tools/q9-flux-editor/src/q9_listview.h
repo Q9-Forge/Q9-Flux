@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.90
+// File:   q9_listview.h                                                                   Ver. 2.00
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -47,6 +47,11 @@
 // 26-08-18│ 1.90 │ Neuer q9_listview_field_kind_t (TEXT/BUTTON) -- ein BUTTON-Feld ignoriert Tippen │ Cld
 //         │      │ (putc/backspace), der Aufrufer erkennt am Typ, dass Enter eine eigene Aktion     │
 //         │      │ ausloesen soll (Andreas: "dahinter ein Button um den Dialog zu oeffnen")          │
+// 26-08-18│ 2.00 │ TEXT-Feld direkt gefolgt von einem BUTTON-Feld ist jetzt ein SONDERFALL: 3 Zeilen │ Cld
+//         │      │ statt 2 (q9_listview_item_rows()), render_ex() zeichnet den Wert in einer         │
+//         │      │ eigenen Box (neu: box_fg/bg) UND den Button ECHT wie im Datei-Dialog (Halbblock-  │
+//         │      │ Kappen, vertikal zentriert neben dem Textfeld) -- Andreas: "der dreizeilige       │
+//         │      │ Button wie im Dialog... zentrisch hinter Datei ausgerichtet"                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -108,8 +113,12 @@ typedef struct {
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_listview_item_rows
 // Desc.:    Wie viele Bildschirmzeilen Eintrag index braucht: 1 (nur die Kopfzeile), wenn er
-//           zugeklappt ist ODER field_count<=0 (nicht erweiterbar) -- sonst 1 (Kopf) +
-//           field_count (Felder) + 1 (Trennlinie danach). items/expanded duerfen NULL sein
+//           zugeklappt ist ODER field_count<=0 (nicht erweiterbar) -- sonst 1 (Kopf) + eine Zeile
+//           pro Feld + 1 (Trennlinie danach). SONDERFALL (Andreas' Wunsch, 2026-08-18, einund-
+//           zwanzigste Runde): ein TEXT-Feld, DIREKT gefolgt von einem BUTTON-Feld, zaehlt als 3
+//           Zeilen statt 2 -- der Button wird als echter, dreizeiliger Button wie im Datei-Dialog
+//           gezeichnet (Halbblock-Kappen ueber/unter der Textzeile, s. q9_listview_render_ex()),
+//           vertikal zentriert NEBEN dem Textfeld statt darunter. items/expanded duerfen NULL sein
 //           (liefert dann immer 1, wie ein ganz normaler Ein-Zeile-Eintrag) -- damit verhalten sich
 //           die "_ex"-Funktionen bei NULL/NULL exakt wie ihre einfachen Gegenstuecke oben.
 // Call:     int rows = q9_listview_item_rows(items, expanded, 3)
@@ -236,8 +245,25 @@ void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *it
 //           faellt die Kopfzeile auf exp_bg zurueck -- sel_bg wandert stattdessen auf die FOKUSSIERTE
 //           Feldzeile (Wert-Spalte in sel_fg/sel_bg statt detail_fg, deutlich als "hier tippst du
 //           gerade" erkennbar), es ist zu jedem Zeitpunkt genau EINE Zeile in sel_bg.
+//           TEXT+BUTTON-SONDERFALL (Andreas' Wunsch, 2026-08-18, einundzwanzigste Runde -- "das
+//           Feld mit dem Dateinamen einen anderen Farbton, so dass man erkennen kann wie lang es
+//           ist, wie im Dialog" + "der dreizeilige Button wie im Dialog... zentrisch hinter Datei
+//           ausgerichtet"): folgt auf ein TEXT-Feld DIREKT ein BUTTON-Feld, werden beide als EINE
+//           Einheit gezeichnet (s. q9_listview_item_rows() fuer die Zeilenzahl):
+//             - der WERT des TEXT-Feldes bekommt eine feste, sichtbare Box (box_fg/box_bg NEU --
+//               dieselben Farben wie das Namens-Kaestchen im Datei-Dialog, wenn der Aufrufer das
+//               so uebergibt) statt reinem Fliesstext in detail_fg -- die feste Breite macht sofort
+//               sichtbar, wie lang der Wert (noch) werden kann/ist.
+//             - der BUTTON wird wie im Datei-Dialog gezeichnet: Text in einer eigenen Farbflaeche,
+//               darueber/darunter je eine Halbblock-Kappenzeile (Q9_GLYPH_LOWER_HALF/UPPER_HALF,
+//               genau wie draw_button() in q9_filedialog.c) -- dadurch braucht das Feld-Paar
+//               INSGESAMT 3 Zeilen: Kappe oben, die gemeinsame Zeile (Textfeld-Label+Box LINKS, der
+//               eigentliche Button-Text RECHTS daneben, mit Abstand), Kappe unten -- der Button
+//               steht dadurch vertikal zentriert AUF HOEHE des Textfelds, nicht darunter. box_fg/bg
+//               gilt fuer den Button UNFOKUSSIERT (inkl. seiner Kappen); ist der Button fokussiert
+//               (field_focus zeigt auf ihn), springt er wie jedes andere Feld auf sel_fg/sel_bg um.
 // Call:     q9_listview_render_ex(&lv, &sb, items, expanded, 255,255,255, 0,0,0, 255,255,0,
-//                                  200,200,200, 150,120,80, 112,85,20)
+//                                  200,200,200, 150,120,80, 112,85,20, 255,248,225, 112,85,20)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                             const q9_listview_item_t *items, const int *expanded,
@@ -246,7 +272,9 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
                             int sel_bg_r, int sel_bg_g, int sel_bg_b,
                             int line_fg_r, int line_fg_g, int line_fg_b,
                             int detail_fg_r, int detail_fg_g, int detail_fg_b,
-                            int exp_bg_r, int exp_bg_g, int exp_bg_b);
+                            int exp_bg_r, int exp_bg_g, int exp_bg_b,
+                            int box_fg_r, int box_fg_g, int box_fg_b,
+                            int box_bg_r, int box_bg_g, int box_bg_b);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_listview_init
@@ -313,5 +341,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 1.90
+// EOF q9_listview.h                                                                       Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────
