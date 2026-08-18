@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 2.10
+// File:   listview_selftest.c                                                             Ver. 2.20
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -35,6 +35,9 @@
 //         │      │ automatisches "$"-Praefix bei NUMERIC_HEX (render_ex())                       │
 // 26-08-18│ 2.10 │ Neue Tests fuer field_toggle() -- ja/nein-Umschaltung, No-op bei TEXT-Feldern, │ Cld
 //         │      │ unerwarteter Ausgangswert wird zu "ja", NULL-Zeiger-Sicherheit                │
+// 26-08-18│ 2.20 │ NACHTRAG (Versionsbump beim Original-Commit vergessen): EOF-Fusszeile war noch │ Cld
+//         │      │ auf 2.00 stehen geblieben, jetzt nachgezogen. Neue Tests fuer das BOOLEAN-      │
+//         │      │ Kaestchen-Symbol (render_ex(), "ja" vs. "nein")                                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -673,6 +676,31 @@ int main(void)
         check_int("NUMERIC_DEC (Zeile 7): KEIN \"$\" -- Wert direkt an Spalte 28", sb.cell[7][28].ch, '5');
     }
 
+    printf("=== q9_listview_render_ex: BOOLEAN zeigt Kaestchen-Symbol vor dem Wert (Andreas' "
+           "Wunsch: \"eigenes Symbol fuer Boolean-Felder\") ===\n");
+    {
+        static q9_listview_field_t fields_a[] = {
+            {"Aktiv:", "ja",   Q9_LISTVIEW_FIELD_BOOLEAN},
+            {"Link:",  "nein", Q9_LISTVIEW_FIELD_BOOLEAN},
+        };
+        static const q9_listview_item_t rx_items[] = { { "Item0", fields_a, 2 } };
+        int rx_expanded[1] = { 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 1);
+        q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133, 200, 210, 220, 230, 240, 250);
+        /* Zeile 6 = erstes Feld. Symbol-Spalte = col+2+VALUE_COL = 28, Wert beginnt zwei Spalten
+           weiter (Symbol + Luftspalte) an Spalte 30 -- s. Kommentar in q9_listview.c. */
+        check_int("BOOLEAN \"ja\": Kaestchen mit Haken an der Symbol-Spalte (28)",
+                   (unsigned char)sb.cell[6][28].ch, Q9_GLYPH_CHECKBOX_ON);
+        check_int("BOOLEAN \"ja\": Wert beginnt zwei Spalten weiter (30)", sb.cell[6][30].ch, 'j');
+        check_int("BOOLEAN \"nein\": leeres Kaestchen an der Symbol-Spalte (28)",
+                   (unsigned char)sb.cell[7][28].ch, Q9_GLYPH_CHECKBOX_OFF);
+        check_int("BOOLEAN \"nein\": Wert beginnt zwei Spalten weiter (30)", sb.cell[7][30].ch, 'n');
+    }
+
     printf("=== q9_listview_field_toggle: schaltet BOOLEAN-Felder um (Andreas' Wunsch: \"Boolean "
            "Eingabe\") ===\n");
     {
@@ -738,5 +766,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 2.00
+// EOF listview_selftest.c                                                                 Ver. 2.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

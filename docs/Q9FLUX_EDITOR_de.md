@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.90
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.00
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -126,6 +126,9 @@
 # 26-08-18│ 4.90 │ Achtundzwanzigste Runde: mechanische NUMERIC-Uebernahme -- CLUT "Eintraege:" auf       │ Cld
 #         │      │ NUMERIC_DEC (einziger verbliebener reiner Zahlenwert), "Groesse:"-Felder bleiben       │
 #         │      │ bewusst TEXT (Einheit im Wert, K/MB/Leerzeichen waeren sonst nicht mehr tippbar)       │
+# 26-08-18│ 5.00 │ Neunundzwanzigste Runde: eigenes Symbol fuer BOOLEAN-Felder -- neue Glyphen             │ Cld
+#         │      │ Q9_GLYPH_CHECKBOX_ON/_OFF (☑/☐, q9_screenbuf.h), render_ex() zeichnet sie vor dem      │
+#         │      │ Wert (analog zum "$"-Praefix bei NUMERIC_HEX)                                          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1239,6 +1242,40 @@ genaueren Hinsehen als NICHT geeignet heraus:
 Warnung. Per Pseudo-Terminal-Test bestaetigt: Buchstabe wird im `Eintraege:`-Feld jetzt verworfen,
 Ziffer akzeptiert (`x` verworfen, `9` uebernommen -- Wert `2569` statt `256x9`).
 `filedialog_smoke3.exp` erneut gruen.
+
+**Noch offen (bis zur naechsten Runde):** eigenes Symbol fuer BOOLEAN-Felder, Basis/Slot/
+Descriptor bei CF-Images editierbar machen, "Neu anlegen" als expliziter Weg.
+
+**Neunundzwanzigste Runde (2026-08-18) -- eigenes Symbol fuer BOOLEAN-Felder:**
+Dritter und letzter der drei angebotenen offenen Punkte ("1 dann 2 dann 3"). BOOLEAN-Felder sahen
+bisher genauso aus wie TEXT (reiner "ja"/"nein"-Fliesstext, bewusste Einfachheit der ersten
+Fassung, s. Kommentar bei `Q9_LISTVIEW_FIELD_BOOLEAN`) -- jetzt ein echtes Kaestchen-Symbol davor.
+
+1. **Zwei neue Glyphen** -- `Q9_GLYPH_CHECKBOX_ON`/`_OFF` (☑/☐, U+2611/U+2610 "Ballot Box"-Block)
+   in `q9_screenbuf.h/.c`, derselbe Sentinel-Mechanismus wie alle bisherigen `Q9_GLYPH_*`
+   (Ein-Byte-Marker im sonst ungenutzten Steuerzeichen-Bereich, `glyph_utf8()` uebersetzt beim
+   Rendern in die echte 3-Byte-UTF-8-Folge). AUSSERHALB des bisherigen U+2500-U+257F-Bereichs,
+   aber gleiche 3-Byte-Laenge -- kein Sonderfall im Rendering-Code noetig.
+2. **Praefix-Mechanismus wie bei NUMERIC_HEX** -- `render_ex()` zeichnet das Symbol automatisch
+   vor dem Wert (`Q9_GLYPH_CHECKBOX_ON` bei `"ja"`, sonst `_OFF`), der Wert-TEXT selbst bleibt
+   unveraendert sichtbar daneben -- "☑ ja" / "☐ nein" statt reinem "ja"/"nein". Eine zusaetzliche
+   Luftspalte zwischen Symbol und Wert (anders als beim kompakten "$FFFF..." bei NUMERIC_HEX) --
+   "☑ja" ohne Leerzeichen waere schlechter lesbar.
+3. **Kein Struct-/Kind-Aenderung** -- reine Rendering-Erweiterung, `value` bleibt weiterhin
+   literal `"ja"`/`"nein"`, `field_toggle()` unveraendert.
+
+`q9_screenbuf.h/.c` Ver. 1.40, `q9_listview.h/.c` Ver. 2.30/2.40 (dabei NACHTRAG:
+`listview_selftest.c`s EOF-Fusszeile war seit der Boolean-Runde auf 2.00 stehen geblieben, jetzt
+nachgezogen), `listview_selftest.c` Ver. 2.20 (neue Tests: Symbol- und Wert-Spalte fuer "ja"/
+"nein"). `make test` (tool-lokal UND root) komplett gruen, Build ohne Warnung. Per echtem
+Pseudo-Terminal-Test bestaetigt: CF-Interface's "Aktiv:"-Feld zeigt "☑ ja", nach Leertaste "☐ nein".
+`filedialog_smoke3.exp` erneut gruen.
+
+Damit sind alle drei von Andreas in dieser Reihenfolge angebotenen offenen Punkte abgearbeitet.
+
+**Noch offen:** Basis/Slot/Descriptor bei CF-Images editierbar machen, "Neu anlegen" als
+expliziter Weg, echtes pro-Hardware-Typ-Datenfile aehnlich `devschema.h/.c` statt hartcodierter
+Demo-Felder.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

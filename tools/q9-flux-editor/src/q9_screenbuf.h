@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_screenbuf.h                                                                  Ver. 1.30
+// File:   q9_screenbuf.h                                                                  Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Bildschirmpuffer auf q9_ansi.h aufgesetzt -- der in Q9FLUX_EDITOR_de.md Abschnitt 2
 //         angekuendigte Baustein fuer den modalen Config-Auswahl-Dialog ("liegt UEBER dem Rest,
@@ -42,6 +42,8 @@
 //         │      │ Buttons per Halbblock-Zeichen + Dropdown-Pfeil beim Filter)                │
 // 26-08-18│ 1.30 │ Q9_GLYPH_RIGHT_ARROW dazu (q9_listview.c -- Einklapp-Symbol fuer erweiterbare│ Cld
 //         │      │ Listeneintraege, Andreas' Wunsch "erweiterbare Items")                      │
+// 26-08-18│ 1.40 │ Q9_GLYPH_CHECKBOX_OFF/_ON dazu (q9_listview.c -- Boolean-Feld-Symbol,        │ Cld
+//         │      │ Andreas' Wunsch "eigenes Symbol fuer Boolean-Felder")                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_SCREENBUF_H
 #define Q9_SCREENBUF_H
@@ -80,6 +82,13 @@
    0x0D ist CR, aus demselben Grund gemieden wie oben TAB/LF bei 0x09/0x0A. */
 #define Q9_GLYPH_RIGHT_ARROW 0x0E                         /* ▸ kleines Dreieck (eingeklappt, Pendant
                                                               zu DOWN_ARROW = aufgeklappt)            */
+/* Nachtrag (2026-08-18, q9_listview.c BOOLEAN-Feld-Symbol, Andreas: "eigenes Symbol fuer Boolean-
+   Felder"): 0x0F/0x10 (SI/DLE, aus demselben Grund gemieden wie oben TAB/LF/CR). AUSSERHALB des
+   bisherigen U+2500-U+257F-Box-Drawing-Bereichs (U+2610/U+2611, "Ballot Box"-Block) -- glyph_utf8()
+   (q9_screenbuf.c) bleibt trotzdem unveraendert bei fester 3-Byte-UTF-8-Laenge (beide Codepoints
+   liegen wie alle bisherigen im 3-Byte-UTF-8-Bereich). */
+#define Q9_GLYPH_CHECKBOX_OFF 0x0F                        /* ☐ leeres Kaestchen (Boolean "nein")     */
+#define Q9_GLYPH_CHECKBOX_ON  0x10                        /* ☑ Kaestchen mit Haken (Boolean "ja")    */
 
 typedef struct {
     char          ch;                                 /* 0/'\0' wird beim Rendern wie ' ' behandelt */
@@ -176,5 +185,5 @@ void q9_screenbuf_restore(q9_screenbuf_t *sb, int row, int col, const q9_screenb
 
 #endif /* Q9_SCREENBUF_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_screenbuf.h                                                                      Ver. 1.30
+// EOF q9_screenbuf.h                                                                      Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
