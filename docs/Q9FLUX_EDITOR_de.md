@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.10
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.20
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -101,6 +101,9 @@
 # 26-08-18│ 4.10 │ Zwanzigste Runde: Datei-Dialog scannt jetzt ~/.q9-flux (wird bei Bedarf angelegt)     │ Cld
 #         │      │ statt HOME, Filter auf .q9 umgestellt (Glob-Stil "*.q9" traf NICHT -- ext_matches()  │
 #         │      │ erwartet reine Endung, per pyte-Test gefunden+korrigiert)                             │
+# 26-08-18│ 4.20 │ Einundzwanzigste Runde: TEXT+BUTTON-Paar jetzt Sonderfall in q9_listview.c -- Wert-  │ Cld
+#         │      │ Box (box_fg/bg) + echter dreizeiliger Button mit Halbblock-Kappen "wie im Dialog",    │
+#         │      │ vertikal zentriert neben dem Textfeld (Andreas' Wunsch, per Mockup praezisiert)       │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -942,6 +945,51 @@ stat.h>`-Include fuer `mkdir()`). `make test` komplett gruen, Build ohne jede Wa
 Pseudo-Terminal-Test + pyte bestaetigt: Dialog zeigt nur `.q9`-Dateien aus `~/.q9-flux` (Testdatei
 `ignored.txt` im selben Verzeichnis bleibt korrekt aussen vor), Filter-Anzeige zeigt `.q9` als
 Standard. `filedialog_smoke3.exp` (mit eigener Fixture-Datei) erneut gruen.
+
+**Einundzwanzigste Runde (2026-08-18) -- echter dreizeiliger Button + Wert-Box "wie im Dialog":**
+*"Das Feld mit dem Dateinamen bitte einen anderen Farbton, so das man es erkennen kann wie lang es
+ist. (wie im Dialog) Dateil Wählen wäre natürlich ein Button gut, versuch mal bitte die Zeile Datei
+eine Zeile tiefer zu setzen und dahinter mit etwas Abstand ein Button 'Datei' mit der Darstellung
+wie im Dislog. Und ersetzt bitte noch '(keine ausgewählt' durch '<leer>'"* -- nach Rueckfrage per
+Mockup-Vorschau (leichte Variante vs. echter Dialog-Button) praezisiert: *"Ich dachte der
+dreizeilige Button wie im Dialog, der aussieht wie zwei Zeilen 1/2 Balken oben, 1/2 Balken unten,
+laesst sich dann zentrisch hinter Datei ausrichten."*
+
+Neuer SONDERFALL in `q9_listview.c`: ein TEXT-Feld, DIREKT gefolgt von einem BUTTON-Feld, wird als
+EINE Einheit gezeichnet (3 Zeilen statt 2 -- `q9_listview_item_rows()` und `render_ex()` teilen sich
+dieselbe `is_text_button_pair()`-Erkennung, damit Zeilenzahl und tatsaechliches Rendering nie
+auseinanderlaufen):
+1. **Wert-Box** -- der TEXT-Feld-Wert bekommt (unfokussiert) eine feste, sichtbare Box (neue
+   `box_fg`/`box_bg`-Parameter an `render_ex()`) statt reinem Fliesstext -- die feste Breite
+   (`Q9_LISTVIEW_VALUE_BOX_WIDTH` = 20 Zeichen) macht die Laenge/Ausdehnung sofort erkennbar.
+2. **Echter dreizeiliger Button** -- genau wie `draw_button()` im Datei-Dialog: Text in eigener
+   Farbflaeche, darueber/darunter je eine Halbblock-Kappenzeile (`Q9_GLYPH_LOWER_HALF`/
+   `UPPER_HALF`). Dadurch braucht das Paar INSGESAMT 3 Zeilen -- Kappe oben, gemeinsame Zeile
+   (Label+Box links, Button-Text rechts mit Abstand), Kappe unten. Der Button steht dadurch
+   vertikal ZENTRIERT auf Hoehe des Textfelds (erklaert auch "die Zeile Datei eine Zeile tiefer" --
+   das ist einfach die Konsequenz der neuen Kappe-oben-Zeile).
+3. **Farben identisch zum Dialog** -- `box_fg`/`box_bg` werden mit denselben Konstanten befuellt,
+   die der Datei-Dialog fuer sein Namens-Kaestchen UND seine OK/Abbrechen-Buttons nutzt
+   (`PAL_DIALOG_SUB_FG`/`PAL_DIALOG_SUB_BG`) -- wortwoertlich "wie im Dialog", keine neue Farbe
+   erfunden. Fokussiert springt der Button (wie jedes andere Feld) auf `sel_fg`/`sel_bg` um.
+4. Button-Feldwert von `"[ Datei waehlen... ]"` auf `"Datei"` gekuerzt (zentriert im Button), `"(keine
+   ausgewaehlt)"` durch `"<leer>"` ersetzt.
+
+BEKANNTE VEREINFACHUNG: die Wert-Box hat eine FESTE Breite -- ein sehr langer Dateiname (laenger als
+20 Zeichen) laeuft ueber die Box hinaus in die Luftspalte vor dem Button hinein (im Test mit
+`smoke_test_fixture.q9`, 22 Zeichen, beobachtet) -- bei Bedarf spaeter nachruestbar (z.B. Box
+verbreitern oder den Wert in der Box abschneiden).
+
+`q9_listview.h/.c` Ver. 2.00 (neue `box_fg`/`box_bg`-Parameter, `is_text_button_pair()`,
+`Q9_LISTVIEW_VALUE_BOX_WIDTH`/`_BUTTON_GAP`/`_BUTTON_WIDTH`), `integration_demo.c` Ver. 3.10 (Button-
+Text gekuerzt, Platzhalter ersetzt, `render_ex()`-Aufruf um `PAL_DIALOG_SUB_FG/BG` ergaenzt),
+`listview_selftest.c` Ver. 1.80 (neue Tests: `item_rows()` fuer das Paar, Box-Farbe, Kappen-Position,
+fokussierter vs. unfokussierter Button). `make test` komplett gruen, Build ohne jede Warnung. Per
+echtem Pseudo-Terminal-Test + direkter pyte-Farbpruefung bestaetigt: Box zeigt `PAL_DIALOG_SUB_FG`/
+`_BG` (unfokussiert), Button ebenso, Kappen exakt eine Zeile ueber/unter der gemeinsamen Zeile,
+fokussierter Button zeigt korrekt `sel_fg`/`sel_bg`. Kompletter End-zu-Ende-Ablauf getestet: Pfeil
+rechts -> Pfeil runter (Button fokussiert) -> Enter (Dialog oeffnet) -> Enter (Datei waehlen) ->
+Dateiname landet in der Box. `filedialog_smoke3.exp` erneut gruen -- keine Regression.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
