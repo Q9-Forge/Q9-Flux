@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.10
+// File:   integration_demo.c                                                             Ver. 3.20
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -108,6 +108,9 @@
 // 26-08-18│ 3.10 │ Einundzwanzigste Feedback-Runde: Button-Feldwert auf "Datei" gekuerzt, Platzhalter  │ Cld
 //         │      │ "(keine ausgewaehlt)" durch "<leer>" ersetzt, render_ex()-Aufruf um box_fg/bg       │
 //         │      │ (PAL_DIALOG_SUB_FG/BG, "wie im Dialog") ergaenzt                                    │
+// 26-08-18│ 3.20 │ Dreiundzwanzigste Feedback-Runde: Basis:/IRQ:/Port:-Felder auf NUMERIC_HEX/_DEC      │ Cld
+//         │      │ umgestellt ("$" faellt aus dem Wert, wird jetzt automatisch gezeichnet), Slot:-Feld │
+//         │      │ bei RC2014-CF mit Bereichs-Beispiel (0-255, clamp_field_range())                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -146,45 +149,45 @@ static q9_listview_field_t g_cfg_fields[] = {
     { "",       "Datei", Q9_LISTVIEW_FIELD_BUTTON },
 };
 
-static q9_listview_field_t g_cf_fields[]     = { {"Bus:", "onboard", Q9_LISTVIEW_FIELD_TEXT},   {"Basis:", "$FFFFE000", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_cf_fields[]     = { {"Bus:", "onboard", Q9_LISTVIEW_FIELD_TEXT},   {"Basis:", "FFFFE000", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
                                                   {"Slot:", "-", Q9_LISTVIEW_FIELD_TEXT},        {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net1_fields[]   = { {"Port:", "2001", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net1_fields[]   = { {"Port:", "2001", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net2_fields[]   = { {"Port:", "2002", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net2_fields[]   = { {"Port:", "2002", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net3_fields[]   = { {"Port:", "2003", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net3_fields[]   = { {"Port:", "2003", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net4_fields[]   = { {"Port:", "2004", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net4_fields[]   = { {"Port:", "2004", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net5_fields[]   = { {"Port:", "2005", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net5_fields[]   = { {"Port:", "2005", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net6_fields[]   = { {"Port:", "2006", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net6_fields[]   = { {"Port:", "2006", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net7_fields[]   = { {"Port:", "2007", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net7_fields[]   = { {"Port:", "2007", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net8_fields[]   = { {"Port:", "2008", Q9_LISTVIEW_FIELD_TEXT},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_net8_fields[]   = { {"Port:", "2008", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_rtc_fields[]    = { {"Basis:", "$FFFFA000", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "-", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_rtc_fields[]    = { {"Basis:", "FFFFA000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "-", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_duart_fields[]  = { {"Basis:", "$FFFFA000", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "2", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_duart_fields[]  = { {"Basis:", "FFFFA000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "2", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
                                                   {"Kanal A:", "Konsole", Q9_LISTVIEW_FIELD_TEXT}, {"Kanal B:", "frei", Q9_LISTVIEW_FIELD_TEXT} };
 static q9_listview_field_t g_quicc_fields[]  = { {"MAC:", "00:1A:2B:03:04:05", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Link:", "nein", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "$FFFF9000", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "FFFF9000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
                                                   {"Modus:", "Text 80x25", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "$FFFF9800", Q9_LISTVIEW_FIELD_TEXT}, {"Eintraege:", "256", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "FFFF9800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Eintraege:", "256", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Tiefe:", "8 Bit", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_rc2014_fields[] = { {"Bus:", "rc2014", Q9_LISTVIEW_FIELD_TEXT},  {"Basis:", "$FFFFC010", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Slot:", "0", Q9_LISTVIEW_FIELD_TEXT},       {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_fb_fields[]     = { {"Basis:", "$00300000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "512K", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_rc2014_fields[] = { {"Bus:", "rc2014", Q9_LISTVIEW_FIELD_TEXT},  {"Basis:", "FFFFC010", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
+                                                  {"Slot:", "0", Q9_LISTVIEW_FIELD_NUMERIC_DEC}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_TEXT} };
+static q9_listview_field_t g_fb_fields[]     = { {"Basis:", "00300000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "512K", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Aufloesung:", "640x480", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_ram_fields[]    = { {"Basis:", "$00000000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "4 MB", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_ram_fields[]    = { {"Basis:", "00000000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "4 MB", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Parity:", "nein", Q9_LISTVIEW_FIELD_TEXT},   {"Getestet:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_rom_fields[]    = { {"Basis:", "$00F00000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "256K", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_rom_fields[]    = { {"Basis:", "00F00000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "256K", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Schreibschutz:", "ja", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "$FFFFB000", Q9_LISTVIEW_FIELD_TEXT}, {"Groesse:", "2K", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "FFFFB000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "2K", Q9_LISTVIEW_FIELD_TEXT},
                                                   {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "$FFFFA800", Q9_LISTVIEW_FIELD_TEXT}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_TEXT},
+static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "FFFFA800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
                                                   {"Intervall:", "10ms", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_TEXT} };
 
 static const q9_listview_item_t g_list_items[] = {
@@ -713,6 +716,42 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
     return -1;
 }
 
+/* Andreas' Wunsch (2026-08-18, dreiundzwanzigste Runde): "Numerische Eingabe Dezimal/Hex opt. mit
+   Bereich" -- die Bibliothek selbst kennt KEINE Bereiche (Anwendungswissen, s.
+   q9_listview_field_kind_t in q9_listview.h), hier ein konkretes Beispiel dafuer, wie ein Aufrufer
+   das nachruesten kann: klemmt f->value auf [lo,hi], falls es (als Dezimal- oder Hex-Zahl, je nach
+   f->kind) ausserhalb liegt. Ein LEERER oder noch UNVOLLSTAENDIGER Wert (z.B. waehrend des Tippens)
+   wird NICHT angefasst -- nur ein bereits vollstaendiger, aber zu kleiner/grosser Wert wird beim
+   Verlassen des Feldes auf die naechstliegende Grenze gezogen. Bewusst nur EIN Beispiel (das
+   "Slot:"-Feld bei RC2014-CF, spiegelt die bestehende useSlot/slot-Pruefung 0-255 in
+   src/kernel/boardcfg.c) statt eines generischen Bereichs-Systems -- welche Felder ueberhaupt einen
+   Bereich brauchen, ist Teil des (noch offenen) echten Datenfiles pro Hardware-Typ. */
+static void clamp_field_range(q9_listview_field_t *f, long lo, long hi)
+{
+    long v;
+    char *end;
+    if (!f || f->value[0] == '\0') { return; }
+    v = strtol(f->value, &end, f->kind == Q9_LISTVIEW_FIELD_NUMERIC_HEX ? 16 : 10);
+    if (*end != '\0') { return; }                            /* unvollstaendig/ungueltig -- in Ruhe lassen */
+    if (v < lo) { v = lo; }
+    if (v > hi) { v = hi; }
+    snprintf(f->value, sizeof(f->value), f->kind == Q9_LISTVIEW_FIELD_NUMERIC_HEX ? "%lX" : "%ld", v);
+}
+
+/* Ruft clamp_field_range() fuer das gerade fokussierte Feld auf, WENN es das "Slot:"-Beispiel ist
+   (per Label erkannt -- reine Vorfuehrung, s. clamp_field_range()-Kommentar). Wird beim Verlassen
+   des Feldes aufgerufen (Pfeil links UND Esc, s. main()). */
+static void maybe_clamp_focused_field(q9_listview_t *lv)
+{
+    q9_listview_field_t *f;
+    if (lv->selected < 0 || lv->selected >= ITEM_COUNT || lv->field_focus < 0) { return; }
+    if (lv->field_focus >= g_list_items[lv->selected].field_count) { return; }
+    f = &g_list_items[lv->selected].fields[lv->field_focus];
+    if (f->label && strcmp(f->label, "Slot:") == 0) {
+        clamp_field_range(f, 0, 255);
+    }
+}
+
 int main(void)
 {
     int rows, cols;
@@ -815,14 +854,21 @@ int main(void)
                 case Q9_KEY_LEFT:
                     /* "mit ESC oder Pfeil links komme ich wieder raus" -- Pfeil links verlaesst NUR
                        das Feld (zurueck auf die Kopfzeile), der Eintrag bleibt aufgeklappt. Nur
-                       wirksam, wenn tatsaechlich ein Feld fokussiert ist. */
-                    if (!showing_overlay && lv.field_focus >= 0) { q9_listview_field_leave(&lv); }
+                       wirksam, wenn tatsaechlich ein Feld fokussiert ist. maybe_clamp_focused_field()
+                       VOR dem Verlassen (braucht field_focus noch) -- Bereichs-Beispiel, s. dort. */
+                    if (!showing_overlay && lv.field_focus >= 0) {
+                        maybe_clamp_focused_field(&lv);
+                        q9_listview_field_leave(&lv);
+                    }
                     break;
                 case Q9_KEY_ESCAPE:
                     /* "bei ESC wird das item auch geschlossen" -- wie Pfeil links, klappt den
                        Eintrag danach ZUSAETZLICH zu. Wirkt auch OHNE aktiven Feld-Fokus (klappt
                        einen bereits aufgeklappten Eintrag einfach zu). */
-                    if (!showing_overlay) { q9_listview_field_escape(&lv, g_expanded); }
+                    if (!showing_overlay) {
+                        maybe_clamp_focused_field(&lv);
+                        q9_listview_field_escape(&lv, g_expanded);
+                    }
                     break;
                 case Q9_KEY_ENTER:
                     if (showing_overlay) { break; }
@@ -911,5 +957,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 3.10
+// EOF integration_demo.c                                                                  Ver. 3.20
 //────────────────────────────────────────────────────────────────────────────────────────────────

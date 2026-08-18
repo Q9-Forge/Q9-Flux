@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 2.00
+// File:   q9_listview.h                                                                   Ver. 2.10
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -52,6 +52,9 @@
 //         │      │ eigenen Box (neu: box_fg/bg) UND den Button ECHT wie im Datei-Dialog (Halbblock-  │
 //         │      │ Kappen, vertikal zentriert neben dem Textfeld) -- Andreas: "der dreizeilige       │
 //         │      │ Button wie im Dialog... zentrisch hinter Datei ausgerichtet"                       │
+// 26-08-18│ 2.10 │ Numerische Feldtypen (Andreas: "Numerische Eingabe Dezimal/Hex opt. mit Bereich") │ Cld
+//         │      │ -- NUMERIC_DEC/_HEX als NEUE kind-Werte (kein neues Struct-Feld, s. dortiger      │
+//         │      │ Kommentar), field_putc() filtert die Zeichenklasse, render_ex() zeigt "$" vor Hex │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -92,9 +95,22 @@ typedef struct {
    integration_demo.c). Bestehende Initialisierer mit nur zwei Feldern ({label, value}) bleiben
    gueltig -- kind wird dabei automatisch auf 0 = Q9_LISTVIEW_FIELD_TEXT genullt (C99-Aggregat-
    Initialisierung). */
+/* NUMERIC_DEC/_HEX (Andreas' Wunsch von Anfang an, 2026-08-18: "Numerische Eingabe Dezimal/Hex
+   opt. mit Bereich") -- BEWUSST als zwei neue kind-WERTE statt neuer Struct-Felder (die letzte
+   Runde mit dem BUTTON-Feldtyp hat gezeigt, wie muehsam ein neues Struct-Feld ist: ~108
+   bestehende {label,value}-Initialisierer mussten nachtraeglich um kind ergaenzt werden, sonst
+   -Wextra-Warnungen). q9_listview_field_putc() filtert bei diesen kinds die Zeichenklasse (nur
+   Ziffern bzw. nur Hex-Ziffern, s. dort) -- das ist die Kernfunktion "Dezimal/Hex". Die
+   BEREICHSPRUEFUNG ("opt. mit Bereich") ist bewusst NICHT Teil der Bibliothek -- welcher Bereich
+   fuer welches Feld gilt, ist Anwendungswissen, keine Listenansicht-Zustaendigkeit; der Aufrufer
+   prueft/klemmt selbst (z.B. beim Verlassen des Feldes), s. integration_demo.c fuer ein Beispiel
+   (Slot: 0-255). NUMERIC_HEX-Werte werden OHNE fuehrendes "$" gespeichert (reine Hex-Ziffern) --
+   q9_listview_render_ex() zeichnet das "$" automatisch davor, s. dort. */
 typedef enum {
     Q9_LISTVIEW_FIELD_TEXT = 0,
-    Q9_LISTVIEW_FIELD_BUTTON
+    Q9_LISTVIEW_FIELD_BUTTON,
+    Q9_LISTVIEW_FIELD_NUMERIC_DEC,
+    Q9_LISTVIEW_FIELD_NUMERIC_HEX
 } q9_listview_field_kind_t;
 
 #define Q9_LISTVIEW_FIELD_VALUE_MAX 40
@@ -202,10 +218,14 @@ void q9_listview_field_move(q9_listview_t *lv, int delta, const q9_listview_item
 // Desc.:    Waehrend ein Feld fokussiert ist: haengt ch an den WERT des fokussierten Feldes an
 //           (DIREKTE Manipulation -- kein separater Bearbeiten-Modus mit eigenem Bestaetigen/
 //           Abbrechen, Andreas' Wunsch: "kann dort alles aendern", tippen wirkt sofort). Ignoriert
-//           den Aufruf, wenn field_focus==-1, das fokussierte Feld kind!=Q9_LISTVIEW_FIELD_TEXT ist
-//           (ein BUTTON-Feld laesst sich nicht antippen, s. q9_listview_item_t) ODER der Wert
+//           den Aufruf, wenn field_focus==-1, das fokussierte Feld kind==Q9_LISTVIEW_FIELD_BUTTON
+//           ist (ein BUTTON-Feld laesst sich nicht antippen, s. q9_listview_item_t) ODER der Wert
 //           bereits Q9_LISTVIEW_FIELD_VALUE_MAX-1 Zeichen erreicht hat (Puffer bleibt IMMER
-//           NUL-terminiert, kein Ueberlauf).
+//           NUL-terminiert, kein Ueberlauf). Bei kind==Q9_LISTVIEW_FIELD_NUMERIC_DEC/_HEX wird ch
+//           zusaetzlich auf die passende Zeichenklasse geprueft (nur '0'-'9' bzw. zusaetzlich
+//           'a'-'f'/'A'-'F') -- ch wird bei falscher Klasse einfach verworfen (kein Fehler, kein
+//           Absturz), genau wie bei zu langem Wert. KEINE Bereichspruefung hier (s.
+//           q9_listview_field_kind_t-Kommentar) -- das bleibt Sache des Aufrufers.
 // Call:     q9_listview_field_putc(&lv, items, 'x')
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, char ch);
@@ -214,7 +234,10 @@ void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, 
 // Function: q9_listview_field_backspace
 // Desc.:    Waehrend ein Feld fokussiert ist: entfernt das LETZTE Zeichen aus dem Wert des
 //           fokussierten Feldes (kein Effekt bei bereits leerem Wert). Ignoriert den Aufruf, wenn
-//           field_focus==-1 oder kind!=Q9_LISTVIEW_FIELD_TEXT (s. q9_listview_field_putc()).
+//           field_focus==-1 oder kind==Q9_LISTVIEW_FIELD_BUTTON (s. q9_listview_field_putc()) --
+//           bei NUMERIC_DEC/_HEX ganz normal wirksam (keine Bereichspruefung beim Loeschen, ein
+//           kuerzerer Wert kann voruebergehend ausserhalb eines vom Aufrufer gedachten Bereichs
+//           liegen, das ist waehrend des Tippens ein normaler Zwischenzustand).
 // Call:     q9_listview_field_backspace(&lv, items)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *items);
@@ -227,7 +250,11 @@ void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *it
 //           nichts zum Auf-/Zuklappen). Aufgeklappte Felder werden um zwei Spalten eingerueckt
 //           (Pfeil + Luftspalte), Label und Wert nebeneinander in EINER EIGENEN Farbe (detail_fg,
 //           gedaempft/anders als der normale Eintragstext), danach eine volle Trennlinie
-//           (Q9_GLYPH_HLINE ueber content_width, in line_fg). Bewusst LEICHTGEWICHTIG (Andreas'
+//           (Q9_GLYPH_HLINE ueber content_width, in line_fg). Ein Feld mit kind==
+//           Q9_LISTVIEW_FIELD_NUMERIC_HEX bekommt vor dem Wert automatisch ein "$" gezeichnet
+//           (nicht Teil von value selbst, s. q9_listview_field_kind_t) -- NUMERIC_DEC und TEXT
+//           sehen sich sonst gleich (der Unterschied ist nur die Zeichenklassen-Filterung beim
+//           Tippen, s. q9_listview_field_putc()). Bewusst LEICHTGEWICHTIG (Andreas'
 //           Wahl, 2026-08-18, aus drei vorgeschlagenen Stilen): KEIN Rahmen um den aufgeklappten
 //           Bereich -- nur Einrueckung + die eine Trennlinie danach, spart am meisten Platz. Zeilen,
 //           die nicht mehr in den Viewport passen (Eintrag laeuft ueber das Fensterende hinaus),
@@ -341,5 +368,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 2.00
+// EOF q9_listview.h                                                                       Ver. 2.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
