@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 2.00
+// File:   q9_listview.c                                                                   Ver. 2.10
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -33,6 +33,8 @@
 // 26-08-18│ 2.00 │ TEXT+BUTTON-Paar jetzt Sonderfall: 3 Zeilen statt 2, echter dreizeiliger Button  │ Cld
 //         │      │ wie im Datei-Dialog (Halbblock-Kappen), Wert-Box (box_fg/bg NEU) statt Fliesstext │
 //         │      │ (Andreas: "wie im Dialog... zentrisch hinter Datei ausgerichtet")                │
+// 26-08-18│ 2.10 │ Q9_LISTVIEW_VALUE_BOX_WIDTH 20 -> 35 Zeichen -- dasselbe Mass wie das Namens-      │ Cld
+//         │      │ Kaestchen im Datei-Dialog (Andreas: "Im Dialog sind es ca. 35 Zeichen")           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -43,8 +45,12 @@
 
 /* Nur fuer den TEXT+BUTTON-Sonderfall (s. q9_listview.h): feste Breite der Wert-Box, Luftspalte
    zum Button, und Breite des Buttons selbst (dieselbe Groessenordnung wie OK/Abbrechen im
-   Datei-Dialog -- "Datei" zentriert darin). */
-#define Q9_LISTVIEW_VALUE_BOX_WIDTH 20
+   Datei-Dialog -- "Datei" zentriert darin). 35 Zeichen -- Andreas' Nachfrage, 2026-08-18,
+   zweiundzwanzigste Runde: "Im Dialog sind es ca. 35 Zeichen, sollen wir das hier auch nehmen?" --
+   dasselbe Mass wie das Namens-Kaestchen im Datei-Dialog (dort dynamisch aus der Dialogbreite
+   berechnet, hier als fester Wert uebernommen, da die Listenansicht keine eigene Breitenrechnung
+   dafuer hat). */
+#define Q9_LISTVIEW_VALUE_BOX_WIDTH 35
 #define Q9_LISTVIEW_BUTTON_GAP       3
 #define Q9_LISTVIEW_BUTTON_WIDTH     8
 
@@ -569,5 +575,5 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 2.00
+// EOF q9_listview.c                                                                       Ver. 2.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
