@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.40
+// File:   integration_demo.c                                                             Ver. 2.50
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -82,6 +82,12 @@
 //         │      │ status_fg/bg-Felder fuer die Dialog-Statuszeile (jetzt = Hauptfenster-Statuszeile),│
 //         │      │ run_file_dialog() behandelt Resize waehrend der Dialog offen ist (compute_dialog_  │
 //         │      │ geometry() zentriert dabei automatisch neu), rows/cols jetzt Zeiger                │
+// 26-08-17│ 2.50 │ Neunte Feedback-Runde ("da wird immer alles neu gezeichnet"): run_file_dialog()    │ Cld
+//         │      │ nutzt jetzt dasselbe Overlay-Settle-Muster wie main() -- waehrend des Ziehens nur  │
+//         │      │ billiges render_size_overlay(), teurer Dialog-Neuaufbau erst nach RESIZE_SETTLE_MS │
+//         │      │ Stille statt bei jedem Zwischenschritt; render_size_overlay() zeigt den Groessen-  │
+//         │      │ Text jetzt an fester Position (OVERLAY_ROW/_COL = 3,3) statt zentriert (huepfte     │
+//         │      │ sonst waehrend des Ziehens staendig an eine andere Stelle)                          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -223,46 +229,45 @@ static void clamp_dims(int *rows, int *cols)
     if (*cols > Q9_SCREENBUF_MAX_COLS) { *cols = Q9_SCREENBUF_MAX_COLS; }
 }
 
-/* Ersetzt die fruehere separate "Fenster zu klein"-Meldung: EIN einheitliches, zentriertes
-   Overlay fuer zwei Faelle -- (a) waehrend/kurz nach einer Groessenaenderung (too_small=0, wird nach
+/* Ersetzt die fruehere separate "Fenster zu klein"-Meldung: EIN einheitliches Overlay fuer zwei
+   Faelle -- (a) waehrend/kurz nach einer Groessenaenderung (too_small=0, wird nach
    RESIZE_SETTLE_MS Stille wieder durch den vollen Inhalt ersetzt) und (b) das Fenster ist
    (weiterhin) kleiner als die Mindestgroesse (too_small=1, bleibt dauerhaft sichtbar, zeigt
    zusaetzlich die Mindestgroesse). Beide Faelle sind bewusst DASSELBE einfache "nur die Groesse"-
-   Layout -- Andreas: "sieht doof aus, wenn man immer versucht den kompletten Inhalt darzustellen". */
+   Layout -- Andreas: "sieht doof aus, wenn man immer versucht den kompletten Inhalt darzustellen".
+
+   Feste Position OVERLAY_ROW/OVERLAY_COL statt zentriert (Andreas' Feedback, 2026-08-17,
+   fuenfzehnte Runde: "das duerfte auch nicht mehr so durch die Gegend huepfen") -- bei zentrierter
+   Position haengt die Zeichenposition selbst von rows/cols ab, der Text "sprang" beim Ziehen also
+   bei JEDEM Zwischenschritt an eine andere Bildschirmstelle. Feste Position bleibt stattdessen
+   immer an derselben Stelle stehen (dieselbe Spalte wie Kopfzeilen-Titel/Hinweistext/Listenansicht,
+   s. build_full_content()). */
+#define OVERLAY_ROW 3
+#define OVERLAY_COL 3
 static void render_size_overlay(int rows, int cols, int too_small)
 {
     q9_screenbuf_t sb;
     char out[4096];
     char line1[64];
-    int mid_row, mid_col;
-    int len1;
 
     q9_screenbuf_init(&sb, rows, cols);
 
     /* Columns vor Rows (Andreas' Wunsch, 2026-08-17: "Columns und Rows solltest du bitte
        tauschen") -- entspricht auch der ueblichen "80x24"-Schreibweise (Spalten x Zeilen). */
     snprintf(line1, sizeof(line1), "%d Columns - %d Rows", cols, rows);
-    len1 = (int)strlen(line1);
-    mid_row = rows / 2;
-    mid_col = (cols - len1) / 2;
-    if (mid_col < 0) { mid_col = 0; }
     /* PAL_STATUS_FG statt PAL_HEADER_FG (Andreas' Feedback, 2026-08-17): dieser Text steht auf
        KEINEM eigenen farbigen Hintergrund (nur q9_screenbuf_init(), also Terminal-Default,
        typischerweise dunkel) -- PAL_HEADER_FG wurde in der letzten Runde bewusst DUNKEL gemacht
        (Kontrast auf dem jetzt kraeftigen PAL_HEADER_BG), hier fehlte dieser Hintergrund also
        komplett und der Text war praktisch unsichtbar. PAL_STATUS_FG ist nach wie vor hell und
        genau fuer "Text ohne eigenen Hintergrund" gedacht. */
-    q9_screenbuf_puts(&sb, too_small ? mid_row - 1 : mid_row, mid_col, line1,
+    q9_screenbuf_puts(&sb, OVERLAY_ROW, OVERLAY_COL, line1,
                        PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
 
     if (too_small) {
         char line2[64];
-        int len2, mid_col2;
         snprintf(line2, sizeof(line2), "Fenster zu klein (mind. %dx%d)", MIN_COLS, MIN_ROWS);
-        len2 = (int)strlen(line2);
-        mid_col2 = (cols - len2) / 2;
-        if (mid_col2 < 0) { mid_col2 = 0; }
-        q9_screenbuf_puts(&sb, mid_row + 1, mid_col2, line2,
+        q9_screenbuf_puts(&sb, OVERLAY_ROW + 1, OVERLAY_COL, line2,
                            PAL_STATUS_FG_R, PAL_STATUS_FG_G, PAL_STATUS_FG_B);
     }
 
@@ -390,15 +395,22 @@ static void compute_dialog_geometry(int rows, int cols, int *dlg_row, int *dlg_c
    der Dialog selbst schon immer klein war).
    rows/cols sind jetzt Zeiger (nicht mehr nur Eingabe) -- ein Terminal-Resize WAEHREND der Dialog
    offen ist wird jetzt behandelt (Andreas' Feedback, elfte Runde: "Fenster Groesse aendern
-   waehrend ein Dialog auf ist funktioniert nicht richtig"): q9_term_size() wird neu abgefragt, der
-   Dialog wird MIT DENSELBEN Filtern/Verzeichnis/Palette neu initialisiert (compute_dialog_geometry,
-   s.o., zentriert automatisch neu -- erledigt gleichzeitig den zweiten Wunsch "immer wieder
-   mittig"). DEMO-GRENZE: das Neu-Initialisieren setzt Fokus/Auswahl/Filter auf ihre Startwerte
-   zurueck (kein Nachziehen des BISHERIGEN Zustands) -- ein echter Editor wuerde hier gezielter nur
-   die Geometrie aktualisieren; fuer die Demo ist das ein akzeptabler Kompromiss (Resize mitten in
-   der Dateiauswahl ist ein Randfall). Die Zeiger werden aktualisiert, damit der Aufrufer nach
-   Rueckkehr die dann aktuelle Terminal-Groesse kennt. Strg-C/EOF waehrend des Dialogs wird
-   NICHT ignoriert (sonst liesse sich das Programm aus dem Dialog heraus nicht mehr beenden) --
+   waehrend ein Dialog auf ist funktioniert nicht richtig"). ZWEITER Anlauf, fuenfzehnte Runde
+   (Andreas: "geht immer noch nicht, da wird immer alles neu gezeichnet") -- der ERSTE Anlauf
+   (vierzehnte Runde) hat bei JEDEM einzelnen Q9_KEY_RESIZE (waehrend des Ziehens an der
+   Terminal-Ecke kommen davon viele kurz hintereinander, s. main()) sofort den KOMPLETTEN Dialog
+   per q9_filedialog_init() + vollem Redraw neu aufgebaut -- teuer und sichtbar ruckelig/
+   flackernd bei jedem Zwischenschritt. Jetzt dasselbe Overlay-Settle-Muster wie main() (s.
+   RESIZE_SETTLE_MS oben): waehrend gezogen wird, nur das billige render_size_overlay() (fixe
+   Position, kein Dialog-Redraw); q9_term_size() wird pro Q9_KEY_RESIZE-Ereignis neu abgefragt,
+   aber der teure Dialog-Neuaufbau (compute_dialog_geometry() + q9_filedialog_init(), zentriert
+   dabei automatisch neu -- erledigt den Wunsch "immer wieder mittig") passiert erst EINMAL, nach
+   RESIZE_SETTLE_MS Stille. DEMO-GRENZE: das Neu-Initialisieren setzt Fokus/Auswahl/Filter auf ihre
+   Startwerte zurueck (kein Nachziehen des BISHERIGEN Zustands) -- ein echter Editor wuerde hier
+   gezielter nur die Geometrie aktualisieren; fuer die Demo ist das ein akzeptabler Kompromiss
+   (Resize mitten in der Dateiauswahl ist ein Randfall). Die Zeiger werden aktualisiert, damit der
+   Aufrufer nach Rueckkehr die dann aktuelle Terminal-Groesse kennt. Strg-C/EOF waehrend des Dialogs
+   wird NICHT ignoriert (sonst liesse sich das Programm aus dem Dialog heraus nicht mehr beenden) --
    signalisiert per Rueckgabe 0 an den Aufrufer, der dann seinerseits sauber beendet.
    Rueckgabe: 1 = Datei ausgewaehlt (result_msg beschreibt sie), -1 = abgebrochen (result_msg
    entsprechend gesetzt), 0 = Strg-C/EOF (result_msg unveraendert -- Aufrufer beendet ohnehin).
@@ -415,6 +427,10 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
     int dlg_row, dlg_col, dlg_rows, dlg_cols;
     int done = 0;
     int want_quit = 0;
+    int showing_overlay = 0;                                 /* wie main(): billiges Groessen-
+                                                                 Overlay waehrend des Ziehens statt
+                                                                 teurem Dialog-Redraw bei jedem
+                                                                 Zwischenschritt, s.o. */
 
     compute_dialog_geometry(*rows, *cols, &dlg_row, &dlg_col, &dlg_rows, &dlg_cols);
 
@@ -459,41 +475,68 @@ static int run_file_dialog(int *rows, int *cols, q9_listview_t *lv,
     }
 
     for (;;) {
-        q9_screenbuf_t sb;
-        char out[1 << 16];
+        int too_small = (*rows < MIN_ROWS || *cols < MIN_COLS);
 
-        /* Echter Hauptbildschirm als Hintergrund (s. Funktionskommentar) -- der Dialog selbst
-           ueberschreibt danach nur sein EIGENES Rechteck (q9_filedialog_render() faengt mit
-           seinem eigenen fill_rect ueber dlg->row/col/rows/cols an), der Rest bleibt sichtbar. */
-        build_full_content(&sb, lv, *rows, *cols, result_msg);
-        q9_filedialog_render(&dlg, &sb);
-        {
-            unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
-            fwrite(out, 1, n, stdout);
-            fflush(stdout);
+        if (showing_overlay) {
+            /* Billig: nur die Groesse anzeigen, KEIN Dialog-/Hintergrund-Redraw (s.o.). */
+            render_size_overlay(*rows, *cols, too_small);
+        } else {
+            q9_screenbuf_t sb;
+            char out[1 << 16];
+
+            /* Echter Hauptbildschirm als Hintergrund (s. Funktionskommentar) -- der Dialog selbst
+               ueberschreibt danach nur sein EIGENES Rechteck (q9_filedialog_render() faengt mit
+               seinem eigenen fill_rect ueber dlg->row/col/rows/cols an), der Rest bleibt sichtbar. */
+            build_full_content(&sb, lv, *rows, *cols, result_msg);
+            q9_filedialog_render(&dlg, &sb);
+            {
+                unsigned n = q9_screenbuf_render(&sb, 0, 0, out, sizeof(out));
+                fwrite(out, 1, n, stdout);
+                fflush(stdout);
+            }
         }
 
         {
-            q9_key_t k = q9_input_read_key();
-            if (k.kind == Q9_KEY_CTRL_C || k.kind == Q9_KEY_EOF) { want_quit = 1; break; }
-            if (k.kind == Q9_KEY_RESIZE) {
-                /* Terminal-Groesse neu abfragen (wie main()'s eigene Behandlung von
-                   Q9_KEY_RESIZE, s.u.), Dialog-Geometrie neu berechnen (zentriert automatisch
-                   neu, s. compute_dialog_geometry()) und den Dialog MIT DENSELBEN Filtern/
-                   Verzeichnis/Palette neu aufsetzen -- s. Funktionskommentar zur DEMO-GRENZE
-                   (Fokus/Auswahl/Filter gehen dabei auf ihre Startwerte zurueck). */
-                if (q9_term_size(rows, cols) == 0) {
-                    clamp_dims(rows, cols);
-                }
-                compute_dialog_geometry(*rows, *cols, &dlg_row, &dlg_col, &dlg_rows, &dlg_cols);
-                if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
-                                        "Konfigurationsauswahl", dir, filters, 3, &pal) != 0) {
-                    snprintf(result_msg, result_msg_size,
-                             "Dateidialog: Fehler nach Groessenaenderung (Esc: abbrechen)");
-                    return -1;
+            q9_key_t k = showing_overlay ? q9_input_read_key_timeout(RESIZE_SETTLE_MS)
+                                          : q9_input_read_key();
+
+            if (showing_overlay && k.kind == Q9_KEY_NONE) {
+                /* RESIZE_SETTLE_MS ohne weiteres Resize-Ereignis abgelaufen -- JETZT (und nur
+                   jetzt) den teuren Dialog-Neuaufbau machen: Geometrie neu berechnen (zentriert
+                   automatisch neu, s. compute_dialog_geometry()) und den Dialog MIT DENSELBEN
+                   Filtern/Verzeichnis/Palette neu aufsetzen (s. Funktionskommentar zur
+                   DEMO-GRENZE). Bleibt das Fenster zu klein, einfach im Overlay bleiben (naechste
+                   Runde zeichnet es idempotent neu, wie in main()). */
+                if (!too_small) {
+                    compute_dialog_geometry(*rows, *cols, &dlg_row, &dlg_col, &dlg_rows, &dlg_cols);
+                    if (q9_filedialog_init(&dlg, dlg_row, dlg_col, dlg_rows, dlg_cols,
+                                            "Konfigurationsauswahl", dir, filters, 3, &pal) != 0) {
+                        snprintf(result_msg, result_msg_size,
+                                 "Dateidialog: Fehler nach Groessenaenderung (Esc: abbrechen)");
+                        return -1;
+                    }
+                    showing_overlay = 0;
                 }
                 continue;
             }
+
+            if (k.kind == Q9_KEY_CTRL_C || k.kind == Q9_KEY_EOF) { want_quit = 1; break; }
+
+            if (k.kind == Q9_KEY_RESIZE) {
+                /* Nur die neue Groesse merken und ins (billige) Overlay wechseln -- der teure
+                   Dialog-Neuaufbau passiert oben erst nach RESIZE_SETTLE_MS Stille, NICHT bei
+                   jedem einzelnen Zwischenschritt waehrend des Ziehens (das war der eigentliche
+                   Bug: "da wird immer alles neu gezeichnet"). */
+                if (q9_term_size(rows, cols) == 0) {
+                    clamp_dims(rows, cols);
+                }
+                showing_overlay = 1;
+                continue;
+            }
+
+            if (showing_overlay) { continue; }              /* andere Tasten waehrend des
+                                                                 Overlays: ignorieren (wie main()) */
+
             done = q9_filedialog_handle_key(&dlg, k);
             if (done != 0) { break; }
         }
@@ -629,5 +672,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.40
+// EOF integration_demo.c                                                                  Ver. 2.50
 //────────────────────────────────────────────────────────────────────────────────────────────────
