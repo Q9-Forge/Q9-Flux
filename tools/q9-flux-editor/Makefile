@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 1.80
+# File:   Makefile                                                                        Ver. 1.90
 # Owner:  Claudia
 # Desc.:  Q9-Flux-Launcher/Config-Editor -- Grundstein (docs/Q9FLUX_EDITOR_de.md). Bewusst C99 ohne
 #         TUI-Framework, s. src/q9_ansi.h Kopfkommentar (Vorgeschichte: gescheiterter Turbo-Vision-
@@ -31,6 +31,9 @@
 #         │      │ fuer den kommenden Datei-Auswahl-Dialog)                                 │
 # 26-08-17│ 1.80 │ filedialog_selftest dazu (q9_filedialog.h/.c, modaler Datei-Auswahl-    │ Cld
 #         │      │ Dialog -- task #20, letzter fehlender UI-Baustein aus dem Plan)          │
+# 26-08-18│ 1.90 │ demo-integration linkt jetzt zusaetzlich src/kernel/boardcfg.c (Andreas: │ Cld
+#         │      │ "echtes Laden/Auswerten der .q9-Datei") -- der ECHTE Board-Config-Parser │
+#         │      │ des Emulators, kein zweiter eigener INI-Parser hier                      │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 CC      ?= gcc
 CFLAGS  := -std=c99 -Wall -Wextra -O2
@@ -54,9 +57,9 @@ demo: $(BUILD)/ansi_selftest
 demo-integration: $(BUILD)/integration_demo
 	$(BUILD)/integration_demo
 
-$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c
+$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/boardcfg.h
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c -o $@
+	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c -o $@
 
 $(BUILD)/ansi_selftest: test/ansi_selftest.c src/q9_ansi.c src/q9_ansi.h
 	@mkdir -p $(BUILD)
@@ -98,5 +101,5 @@ clean:
 	rm -rf $(BUILD)
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF Makefile                                                                            Ver. 1.70
+# EOF Makefile                                                                            Ver. 1.90
 #─────────────────────────────────────────────────────────────────────────────────────────────────
