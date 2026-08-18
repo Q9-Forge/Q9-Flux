@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 2.70
+// File:   integration_demo.c                                                             Ver. 2.80
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -89,6 +89,10 @@
 // 26-08-18│ 2.70 │ Siebzehnte Feedback-Runde: neue PAL_LIST_EXP_BG (V=0.44) fuer die Kopfzeile eines  │ Cld
 //         │      │ aufgeklappten, nicht ausgewaehlten Eintrags (Andreas: "die Headerzeile geht ein    │
 //         │      │ wenig unter")                                                                       │
+// 26-08-18│ 2.80 │ Achtzehnte Feedback-Runde: Feld-Navigation -- g_items-Detailzeilen durch echte,     │ Cld
+//         │      │ editierbare Felder (label+value) ersetzt, Pfeil rechts betritt den Eintrag (erstes │
+//         │      │ Feld fokussiert), Pfeil links/Esc verlassen es (Esc klappt zusaetzlich zu), Zeichen/│
+//         │      │ Backspace aendern den fokussierten Feldwert direkt                                  │
 // 26-08-17│ 2.50 │ Neunte Feedback-Runde ("da wird immer alles neu gezeichnet"): run_file_dialog()    │ Cld
 //         │      │ nutzt jetzt dasselbe Overlay-Settle-Muster wie main() -- waehrend des Ziehens nur  │
 //         │      │ billiges render_size_overlay(), teurer Dialog-Neuaufbau erst nach RESIZE_SETTLE_MS │
@@ -107,82 +111,87 @@
 #include "../src/q9_input.h"
 #include "../src/q9_filedialog.h"
 
-/* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. Erweiterbare Eintraege
-   (Andreas' Wunsch, 2026-08-18: "groessere Eintraege... minimiert ein oder zwei Zeilen, aufgeklappt
-   so viele wie sie brauchen") -- jeder Eintrag hat jetzt eine Kopfzeile (name, wie vorher g_items[])
-   plus ein paar Detailzeilen, die nur sichtbar werden, wenn der Eintrag aufgeklappt ist (Enter auf
-   der Auswahl, s. main()). Zwei Zeilen je Eintrag reichen fuer die Vorfuehrung -- das Datenmodell
-   (q9_listview_item_t.detail_count, s. q9_listview.h) erlaubt aber pro Eintrag eine BELIEBIGE Anzahl,
-   das ist keine feste Grenze der Bibliothek. */
-static const char *const g_cf_detail[]     = { "Bus:    onboard         Basis:  $FFFFE000",
-                                                "Slot:   -               Aktiv:  ja" };
-static const char *const g_net1_detail[]   = { "Port:   2001            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_net2_detail[]   = { "Port:   2002            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_net3_detail[]   = { "Port:   2003            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_net4_detail[]   = { "Port:   2004            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_net5_detail[]   = { "Port:   2005            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_net6_detail[]   = { "Port:   2006            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_net7_detail[]   = { "Port:   2007            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_net8_detail[]   = { "Port:   2008            Protokoll: Telnet",
-                                                "Status: bereit          Baudrate: -" };
-static const char *const g_rtc_detail[]    = { "Basis:  $FFFFA000       IRQ:    -",
-                                                "Batterie: ok            Aktiv:  ja" };
-static const char *const g_duart_detail[]  = { "Basis:  $FFFFA000       IRQ:    2",
-                                                "Kanal A: Konsole        Kanal B: frei" };
-static const char *const g_quicc_detail[]  = { "MAC:    00:1A:2B:03:04:05",
-                                                "Link:   nein            Aktiv:  nein" };
-static const char *const g_mc6845_detail[] = { "Basis:  $FFFF9000       IRQ:    3",
-                                                "Modus:  Text 80x25      Aktiv:  ja" };
-static const char *const g_clut_detail[]   = { "Basis:  $FFFF9800       Eintraege: 256",
-                                                "Tiefe:  8 Bit           Aktiv:  ja" };
-static const char *const g_rc2014_detail[] = { "Bus:    rc2014          Basis:  $FFFFC010",
-                                                "Slot:   0               Aktiv:  nein" };
-static const char *const g_fb_detail[]     = { "Basis:  $00300000       Groesse: 512K",
-                                                "Aufloesung: 640x480     Aktiv:  ja" };
-static const char *const g_ram_detail[]    = { "Basis:  $00000000       Groesse: 4 MB",
-                                                "Parity: nein            Getestet: ja" };
-static const char *const g_rom_detail[]    = { "Basis:  $00F00000       Groesse: 256K",
-                                                "Schreibschutz: ja       Aktiv:  ja" };
-static const char *const g_nvram_detail[]  = { "Basis:  $FFFFB000       Groesse: 2K",
-                                                "Batterie: ok            Aktiv:  ja" };
-static const char *const g_timer_detail[]  = { "Basis:  $FFFFA800       IRQ:    3",
-                                                "Intervall: 10ms         Aktiv:  ja" };
+/* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. Erweiterbare, editierbare
+   Eintraege (Andreas' Wunsch, 2026-08-18: "groessere Eintraege... minimiert ein oder zwei Zeilen,
+   aufgeklappt so viele wie sie brauchen", dann siebzehnte Runde: "wie komme ich in das item rein um
+   dort Werte zu aendern?") -- jeder Eintrag hat eine Kopfzeile (name) plus ein paar FELDER (Label +
+   editierbarer Wert), die nur sichtbar werden, wenn der Eintrag aufgeklappt ist (Pfeil rechts auf
+   der Auswahl, s. main()). Vier Felder je Eintrag reichen fuer die Vorfuehrung -- das Datenmodell
+   (q9_listview_item_t.field_count, s. q9_listview.h) erlaubt aber pro Eintrag eine BELIEBIGE Anzahl,
+   das ist keine feste Grenze der Bibliothek. Die Feld-Arrays sind BEWUSST NICHT const (im Gegensatz
+   zu g_list_items[] selbst) -- q9_listview_field_t.value wird durch Tippen direkt veraendert (s.
+   q9_listview_field_putc()/_backspace()), reine Vorfuehrdaten, KEINE echte Config-Anbindung (s.
+   Kopfkommentar) -- das (noch offene) naechste Stueck waere, ein kleines Datenfile pro Hardware-Typ
+   auszuwerten (aehnlich devschema.h/.c) statt dieser fest verdrahteten Felder. */
+static q9_listview_field_t g_cf_fields[]     = { {"Bus:",   "onboard"},   {"Basis:", "$FFFFE000"},
+                                                  {"Slot:",  "-"},        {"Aktiv:", "ja"} };
+static q9_listview_field_t g_net1_fields[]   = { {"Port:",  "2001"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_net2_fields[]   = { {"Port:",  "2002"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_net3_fields[]   = { {"Port:",  "2003"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_net4_fields[]   = { {"Port:",  "2004"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_net5_fields[]   = { {"Port:",  "2005"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_net6_fields[]   = { {"Port:",  "2006"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_net7_fields[]   = { {"Port:",  "2007"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_net8_fields[]   = { {"Port:",  "2008"},     {"Protokoll:", "Telnet"},
+                                                  {"Status:", "bereit"}, {"Baudrate:", "-"} };
+static q9_listview_field_t g_rtc_fields[]    = { {"Basis:", "$FFFFA000"}, {"IRQ:",     "-"},
+                                                  {"Batterie:", "ok"},    {"Aktiv:",   "ja"} };
+static q9_listview_field_t g_duart_fields[]  = { {"Basis:", "$FFFFA000"}, {"IRQ:",     "2"},
+                                                  {"Kanal A:", "Konsole"}, {"Kanal B:", "frei"} };
+static q9_listview_field_t g_quicc_fields[]  = { {"MAC:",   "00:1A:2B:03:04:05"},
+                                                  {"Link:",  "nein"},    {"Aktiv:",   "nein"} };
+static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "$FFFF9000"}, {"IRQ:",     "3"},
+                                                  {"Modus:", "Text 80x25"}, {"Aktiv:", "ja"} };
+static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "$FFFF9800"}, {"Eintraege:", "256"},
+                                                  {"Tiefe:", "8 Bit"},   {"Aktiv:",   "ja"} };
+static q9_listview_field_t g_rc2014_fields[] = { {"Bus:",   "rc2014"},  {"Basis:",   "$FFFFC010"},
+                                                  {"Slot:",  "0"},       {"Aktiv:",   "nein"} };
+static q9_listview_field_t g_fb_fields[]     = { {"Basis:", "$00300000"}, {"Groesse:", "512K"},
+                                                  {"Aufloesung:", "640x480"}, {"Aktiv:", "ja"} };
+static q9_listview_field_t g_ram_fields[]    = { {"Basis:", "$00000000"}, {"Groesse:", "4 MB"},
+                                                  {"Parity:", "nein"},   {"Getestet:", "ja"} };
+static q9_listview_field_t g_rom_fields[]    = { {"Basis:", "$00F00000"}, {"Groesse:", "256K"},
+                                                  {"Schreibschutz:", "ja"}, {"Aktiv:", "ja"} };
+static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "$FFFFB000"}, {"Groesse:", "2K"},
+                                                  {"Batterie:", "ok"},   {"Aktiv:",   "ja"} };
+static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "$FFFFA800"}, {"IRQ:",     "3"},
+                                                  {"Intervall:", "10ms"}, {"Aktiv:",  "ja"} };
 
 static const q9_listview_item_t g_list_items[] = {
-    { "CF-Interface (onboard, c0)", g_cf_detail,     2 },
-    { "Netz-Terminal x1",           g_net1_detail,   2 },
-    { "Netz-Terminal x2",           g_net2_detail,   2 },
-    { "Netz-Terminal x3",           g_net3_detail,   2 },
-    { "Netz-Terminal x4",           g_net4_detail,   2 },
-    { "Netz-Terminal x5",           g_net5_detail,   2 },
-    { "Netz-Terminal x6",           g_net6_detail,   2 },
-    { "Netz-Terminal x7",           g_net7_detail,   2 },
-    { "Netz-Terminal x8",           g_net8_detail,   2 },
-    { "RTC72421 (Echtzeituhr)",     g_rtc_detail,    2 },
-    { "DUART 68681 (Konsole)",      g_duart_detail,  2 },
-    { "QUICC-Ethernet",             g_quicc_detail,  2 },
-    { "MC6845 (GDP/CRTC)",          g_mc6845_detail, 2 },
-    { "CLUT (Farbtabelle)",         g_clut_detail,   2 },
-    { "RC2014-CF (sekundaer)",      g_rc2014_detail, 2 },
-    { "Framebuffer (VRAM)",         g_fb_detail,     2 },
-    { "Systemspeicher (RAM)",       g_ram_detail,    2 },
-    { "ROM-Spiegel",                g_rom_detail,    2 },
-    { "NVRAM (Akku-gepuffert)",     g_nvram_detail,  2 },
-    { "Timer/IRQ3-Trigger",         g_timer_detail,  2 },
+    { "CF-Interface (onboard, c0)", g_cf_fields,     4 },
+    { "Netz-Terminal x1",           g_net1_fields,   4 },
+    { "Netz-Terminal x2",           g_net2_fields,   4 },
+    { "Netz-Terminal x3",           g_net3_fields,   4 },
+    { "Netz-Terminal x4",           g_net4_fields,   4 },
+    { "Netz-Terminal x5",           g_net5_fields,   4 },
+    { "Netz-Terminal x6",           g_net6_fields,   4 },
+    { "Netz-Terminal x7",           g_net7_fields,   4 },
+    { "Netz-Terminal x8",           g_net8_fields,   4 },
+    { "RTC72421 (Echtzeituhr)",     g_rtc_fields,    4 },
+    { "DUART 68681 (Konsole)",      g_duart_fields,  4 },
+    { "QUICC-Ethernet",             g_quicc_fields,  3 },
+    { "MC6845 (GDP/CRTC)",          g_mc6845_fields, 4 },
+    { "CLUT (Farbtabelle)",         g_clut_fields,   4 },
+    { "RC2014-CF (sekundaer)",      g_rc2014_fields, 4 },
+    { "Framebuffer (VRAM)",         g_fb_fields,     4 },
+    { "Systemspeicher (RAM)",       g_ram_fields,    4 },
+    { "ROM-Spiegel",                g_rom_fields,    4 },
+    { "NVRAM (Akku-gepuffert)",     g_nvram_fields,  4 },
+    { "Timer/IRQ3-Trigger",         g_timer_fields,  4 },
 };
 #define ITEM_COUNT (int)(sizeof(g_list_items) / sizeof(g_list_items[0]))
 
-/* 0 = zugeklappt (Default), 1 = aufgeklappt -- Enter auf der Hauptliste klappt den AUSGEWAEHLTEN
-   Eintrag auf/zu (s. main()), mehrere gleichzeitig aufgeklappte Eintraege sind ausdruecklich erlaubt
-   (kein "nur einer offen"-Akkordeon -- einfacher zu verstehen, kein ueberraschendes Zuklappen
-   anderer Eintraege). */
+/* 0 = zugeklappt (Default), 1 = aufgeklappt -- Pfeil rechts auf der Hauptliste klappt den
+   AUSGEWAEHLTEN Eintrag auf und setzt den Feld-Fokus aufs erste Feld (q9_listview_field_enter()),
+   mehrere gleichzeitig aufgeklappte Eintraege sind ausdruecklich erlaubt (kein "nur einer offen"-
+   Akkordeon -- einfacher zu verstehen, kein ueberraschendes Zuklappen anderer Eintraege). */
 static int g_expanded[ITEM_COUNT];
 
 /* Warme Gelb-/Orange-Palette. Neunte Feedback-Runde (Andreas, 2026-08-17): "die ganzen Farben
@@ -397,8 +406,8 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
 
     q9_screenbuf_puts(sb, rows - 2, 3,
                        (hint && hint[0]) ? hint
-                                         : "Pfeiltasten: navigieren   Enter: auf-/zuklappen   "
-                                           "O: Datei oeffnen   Strg-C: beenden",
+                                         : "Pfeiltasten: navigieren   Rechts: oeffnen+bearbeiten   "
+                                           "Esc: schliessen   O: Datei oeffnen   Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     lv->row    = 2;
@@ -721,21 +730,60 @@ int main(void)
                     running = 0;
                     break;
                 case Q9_KEY_UP:
-                    if (!showing_overlay) { q9_listview_move_ex(&lv, -1, g_list_items, g_expanded); }
+                    /* Waehrend ein Feld fokussiert ist: NUR zwischen den Feldern DIESES Eintrags
+                       bewegen (field_move), nicht zum vorigen/naechsten LISTENEINTRAG springen --
+                       sonst wuerde man beim Tippen versehentlich aus dem Eintrag herausnavigieren. */
+                    if (!showing_overlay) {
+                        if (lv.field_focus >= 0) { q9_listview_field_move(&lv, -1, g_list_items); }
+                        else                      { q9_listview_move_ex(&lv, -1, g_list_items, g_expanded); }
+                    }
                     break;
                 case Q9_KEY_DOWN:
-                    if (!showing_overlay) { q9_listview_move_ex(&lv, 1, g_list_items, g_expanded); }
+                    if (!showing_overlay) {
+                        if (lv.field_focus >= 0) { q9_listview_field_move(&lv, 1, g_list_items); }
+                        else                      { q9_listview_move_ex(&lv, 1, g_list_items, g_expanded); }
+                    }
+                    break;
+                case Q9_KEY_RIGHT:
+                    /* Andreas' Wunsch (2026-08-18, achtzehnte Runde): "anstatt ENTER kann ich Pfeil
+                       rechts druecken, item geht auf, und ich komme auf den ersten Eintrag" -- klappt
+                       den ausgewaehlten Eintrag auf (falls noch zu) UND setzt den Feld-Fokus auf das
+                       erste Feld, in einem Schritt (q9_listview_field_enter()). Nur auf Item-Ebene
+                       sinnvoll (field_focus<0) -- waehrend ein Feld schon fokussiert ist, tut Pfeil
+                       rechts nichts (kein Rechts-Cursor INNERHALB eines Feldwerts fuer diese erste
+                       Fassung, s. Doku). */
+                    if (!showing_overlay && lv.field_focus < 0) {
+                        q9_listview_field_enter(&lv, g_expanded, g_list_items);
+                    }
+                    break;
+                case Q9_KEY_LEFT:
+                    /* "mit ESC oder Pfeil links komme ich wieder raus" -- Pfeil links verlaesst NUR
+                       das Feld (zurueck auf die Kopfzeile), der Eintrag bleibt aufgeklappt. Nur
+                       wirksam, wenn tatsaechlich ein Feld fokussiert ist. */
+                    if (!showing_overlay && lv.field_focus >= 0) { q9_listview_field_leave(&lv); }
+                    break;
+                case Q9_KEY_ESCAPE:
+                    /* "bei ESC wird das item auch geschlossen" -- wie Pfeil links, klappt den
+                       Eintrag danach ZUSAETZLICH zu. Wirkt auch OHNE aktiven Feld-Fokus (klappt
+                       einen bereits aufgeklappten Eintrag einfach zu). */
+                    if (!showing_overlay) { q9_listview_field_escape(&lv, g_expanded); }
                     break;
                 case Q9_KEY_ENTER:
-                    /* Andreas' Wunsch (2026-08-18): "erweiterbare Items" -- Enter klappt den
-                       AUSGEWAEHLTEN Eintrag auf/zu. delta=0 bewegt die Auswahl nicht, richtet aber
-                       scroll_offset neu aus (der aufgeklappte/zugeklappte Eintrag hat jetzt eine
-                       andere Zeilenzahl, s. q9_listview_move_ex()). Eintraege ohne Detailzeilen
-                       (detail_count<=0) haben ohnehin kein Pfeil-Symbol -- toggeln ist fuer sie
-                       wirkungslos (q9_listview_item_rows() liefert immer 1), kein Sonderfall noetig. */
-                    if (!showing_overlay && lv.selected >= 0 && lv.selected < ITEM_COUNT) {
+                    /* Weiterhin als Kurzform auf Item-Ebene erhalten (frueheres Verhalten, sechzehnte
+                       Runde) -- klappt den AUSGEWAEHLTEN Eintrag auf/zu, OHNE in die Felder zu
+                       springen (das macht seit dieser Runde gezielt Pfeil rechts). Nur auf
+                       Item-Ebene sinnvoll (field_focus<0) -- waehrend ein Feld fokussiert ist, hat
+                       Enter (noch) keine Wirkung (kein Bestaetigen noetig, s. field_putc()-Kommentar
+                       zur direkten Manipulation). */
+                    if (!showing_overlay && lv.field_focus < 0
+                        && lv.selected >= 0 && lv.selected < ITEM_COUNT) {
                         g_expanded[lv.selected] = !g_expanded[lv.selected];
                         q9_listview_move_ex(&lv, 0, g_list_items, g_expanded);
+                    }
+                    break;
+                case Q9_KEY_BACKSPACE:
+                    if (!showing_overlay && lv.field_focus >= 0) {
+                        q9_listview_field_backspace(&lv, g_list_items);
                     }
                     break;
                 case Q9_KEY_RESIZE:
@@ -749,7 +797,12 @@ int main(void)
                                                                  machen */
                     break;
                 case Q9_KEY_CHAR:
-                    if (!showing_overlay && (k.ch == 'o' || k.ch == 'O')) {
+                    /* Waehrend ein Feld fokussiert ist: das Zeichen geht DIREKT in den Feldwert
+                       (Andreas' Wunsch: "kann dort alles aendern") -- 'o'/'O' oeffnet dann bewusst
+                       NICHT den Datei-Dialog (sonst liesse sich kein "o" in einen Wert tippen). */
+                    if (!showing_overlay && lv.field_focus >= 0) {
+                        q9_listview_field_putc(&lv, g_list_items, k.ch);
+                    } else if (!showing_overlay && (k.ch == 'o' || k.ch == 'O')) {
                         /* task #22: modaler Datei-Auswahl-Dialog (q9_filedialog.h/.c, task #20). */
                         int r = run_file_dialog(&rows, &cols, &lv, last_dialog_msg, sizeof(last_dialog_msg));
                         if (r == 0) { running = 0; }         /* Strg-C/EOF waehrend des Dialogs */
@@ -778,5 +831,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 2.70
+// EOF integration_demo.c                                                                  Ver. 2.80
 //────────────────────────────────────────────────────────────────────────────────────────────────

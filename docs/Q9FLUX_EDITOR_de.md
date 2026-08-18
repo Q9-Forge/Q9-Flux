@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.80
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.90
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -92,6 +92,9 @@
 # 26-08-18│ 3.80 │ Siebzehnte Runde: neuer exp_bg-Parameter an render_ex() -- Kopfzeile eines           │ Cld
 #         │      │ aufgeklappten, nicht ausgewaehlten Eintrags bekommt eigenen Hintergrund (Andreas:    │
 #         │      │ "die Headerzeile geht ein wenig unter"); Feld-Bearbeitung IM Eintrag noch offen       │
+# 26-08-18│ 3.90 │ Achtzehnte Runde (Phase 1/4): Feld-Navigation + Text-Bearbeitung -- q9_listview_     │ Cld
+#         │      │ field_t (Label+editierbarer Wert), field_enter/_leave/_escape/_move/_putc/_backspace,│
+#         │      │ Pfeil rechts/links/Esc; Dateiauswahl/Numerisch/Boolean noch offen                    │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -797,6 +800,66 @@ zu Ändern?"* -- ist NOCH NICHT umgesetzt: Auf-/Zuklappen zeigt bisher nur STATI
 aufgeklappten Eintrags waere der naechste groessere Baustein (eigene Planungsrunde noetig -- Fokus-
 Modell zwischen Eintraegen und Feldern, Bearbeitungsmodus je Feldtyp text/enum/hex-Zahl, o.ae.),
 noch nicht angefangen.
+
+**Achtzehnte Runde (2026-08-18) -- Feld-Navigation + Text-Bearbeitung (Phase 1 von 4):**
+*"Ja, die Markierung ist super... das mit den Pfeilen rechts links ist vielleicht nicht schlecht,
+anstatt ENTER kann ich Pfeil rechts drücken, item geht auf, und ich komme auf den erste Eintrag,
+dann kann ich nur innerhalb des Item navigieren. Kann dort alles ändern. mit ESC oder Pfeil links
+komme ich wieder raus, bei ESC wir das idem auch geschlossen ? Ja ganu wir brauchen Texteingabe,
+Dateiauswahl (mit dem Dialog), Numerische Eingabe Dezimal/Hex opt. mit Bereich, Boolean Eingabe...
+denke das ist das Mindeste"*
+
+Vier Feldtypen sind das Ziel (Text/Dateiauswahl/Numerisch/Boolean) -- zu gross fuer einen Rutsch,
+deshalb bewusst in Phasen: **Phase 1 = Navigation + Text** (dieses Mal), Dateiauswahl/Numerisch/
+Boolean folgen als eigene Runden auf demselben Fundament. Die Navigations-Semantik (Rechts/Links/
+Esc) hat Claudia vorgeschlagen, Andreas hat sie mit der Frage nach dem ESC-Verhalten bestaetigt.
+
+1. **Datenmodell umgestellt** -- `detail_lines`/`detail_count` (reine Anzeige-Strings) ersetzt durch
+   echte Felder: `q9_listview_field_t` (Label konstant, `value` MUTABLE, `Q9_LISTVIEW_FIELD_VALUE_MAX`
+   = 40 Zeichen). `q9_listview_item_t.fields` ist bewusst NICHT const (im Gegensatz zum Item-Array
+   selbst) -- Werte werden direkt in place veraendert.
+2. **Feld-Fokus** -- neues `lv->field_focus` (-1 = Fokus auf der Kopfzeile/Item-Ebene, sonst Index
+   ins Feld-Array des AUSGEWAEHLTEN Eintrags). `q9_listview_init()`/`_move_ex()` setzen es defensiv
+   zurueck (Feld-Fokus ergibt bei einem anderen Eintrag keinen Sinn).
+3. **Navigation** (Andreas' Vorgabe, direkt umgesetzt):
+   - **Pfeil rechts** (`q9_listview_field_enter()`) -- Eintrag aufklappen (falls noch zu) + Fokus
+     aufs erste Feld, in einem Schritt.
+   - **Pfeil hoch/runter WAEHREND ein Feld fokussiert ist** (`q9_listview_field_move()`) -- bewegt
+     NUR zwischen den Feldern DIESES Eintrags, verlaesst ihn nicht ueber die Feldgrenzen hinaus.
+   - **Pfeil links** (`q9_listview_field_leave()`) -- verlaesst NUR das Feld, Eintrag bleibt offen.
+   - **Esc** (`q9_listview_field_escape()`) -- wie Pfeil links, klappt den Eintrag danach ZUSAETZLICH
+     zu (Claudias Vorschlag, von Andreas bestaetigt: "ESC = ganz zurueck", passt zu "Esc: Abbruch"
+     im Datei-Dialog).
+   - **Enter** bleibt als Kurzform auf Item-Ebene erhalten (Auf-/Zuklappen ohne in die Felder zu
+     springen, frueheres Verhalten aus der sechzehnten Runde).
+4. **Text-Bearbeitung DIREKT, kein separater Modus** (Andreas: "kann dort alles ändern") --
+   `q9_listview_field_putc()`/`_backspace()` aendern den Wert des fokussierten Feldes SOFORT bei
+   jedem Tastendruck, kein Enter-zum-Bestaetigen/Esc-zum-Abbrechen-Zyklus wie beim "Datei:"-Kaestchen
+   im Dialog (das ist ohnehin nur eine READ-ONLY-Anzeige der Listenauswahl, kein echtes Textfeld --
+   Nachschau ergab: es gibt bisher GAR KEIN freies Text-Eingabefeld im Code, dies ist das erste).
+   `'o'`/`'O'` oeffnet waehrend eines aktiven Feld-Fokus bewusst NICHT den Datei-Dialog (sonst liesse
+   sich kein "o" in einen Wert tippen) -- per echtem Pseudo-Terminal-Test verifiziert (getippt "o" in
+   ein Feld mit Wert "onboard" -> "onboardo", Dialog blieb geschlossen).
+5. **Rendering** -- die fokussierte Feldzeile bekommt `sel_fg`/`sel_bg` (wie eine Auswahl), die
+   Kopfzeile faellt dabei TROTZ Auswahl auf `exp_bg` zurueck (aus der vorigen Runde) -- zu jedem
+   Zeitpunkt zeigt genau EINE Zeile die starke `sel_bg`-Hervorhebung, nie zwei gleichzeitig.
+
+`q9_listview.h/.c` Ver. 1.70 (neues `q9_listview_field_t`, `field_focus`, sechs neue Funktionen:
+`field_enter`/`_leave`/`_escape`/`_move`/`_putc`/`_backspace`), `integration_demo.c` Ver. 2.80 (alle
+20 Eintraege auf echte Felder umgestellt, je 3-4 Felder statt zwei kombinierter Anzeige-Zeilen,
+Tastatur-Verdrahtung fuer Rechts/Links/Esc/Zeichen/Backspace, Enter gegen Feld-Fokus abgesichert),
+`listview_selftest.c` Ver. 1.60 (neue Tests fuer alle sechs Funktionen inkl. Ueberlauf-/NULL-
+Randfaelle, render_ex-Tests fuer die fokussierte Feldzeile). `make test` komplett gruen. Per echtem
+Pseudo-Terminal-Test + pyte bestaetigt: Pfeil rechts oeffnet + fokussiert erstes Feld, Tippen aendert
+den Wert sofort sichtbar ("onboard" -> "onboardXY"), Pfeil runter wechselt zum naechsten Feld, Pfeil
+links verlaesst das Feld (Kopfzeile zeigt wieder die starke Auswahlfarbe, Eintrag bleibt offen), Esc
+klappt den Eintrag zusaetzlich zu (zurueck zum Ausgangszustand). Bestehender `filedialog_smoke3.exp`
+erneut gruen -- keine Regression.
+
+**Noch offen (naechste Runden auf diesem Fundament):** Dateiauswahl-Feldtyp (den bestehenden
+Datei-Dialog aus einem Feld heraus oeffnen), numerische Eingabe (Dezimal/Hex, optional mit
+Bereichspruefung), Boolean-Eingabe. Und laengerfristig: ein echtes, pro Hardware-Typ auswertbares
+Datenfile (aehnlich `devschema.h/.c`) statt der fest verdrahteten Vorfuehrdaten in `integration_demo.c`.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 

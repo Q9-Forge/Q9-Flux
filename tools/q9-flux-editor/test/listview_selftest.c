@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   listview_selftest.c                                                             Ver. 1.50
+// File:   listview_selftest.c                                                             Ver. 1.60
 // Owner:  Claudia
 // Desc.:  Automatischer Nachweis fuer q9_listview.h/.c: die reine Scroll-Logik (q9_listview_scroll)
 //         haelt die Auswahl immer im Sichtfenster, ohne unnoetig zu scrollen; render() zeichnet die
@@ -21,6 +21,9 @@
 //         │      │ dazu (erweiterbare Eintraege, s. q9_listview.h)                            │
 // 26-08-18│ 1.50 │ render_ex()-Aufrufe um neuen exp_bg-Parameter ergaenzt, neue Checks fuer   │ Cld
 //         │      │ Kopfzeilen-Hintergrund (aufgeklappt+nicht ausgewaehlt vs. ausgewaehlt)      │
+// 26-08-18│ 1.60 │ Feld-Navigation: detail_lines/detail_count-Testdaten auf echte Felder      │ Cld
+//         │      │ (label+value) umgestellt, neue Tests fuer field_enter/_leave/_escape/_move/│
+//         │      │ _putc/_backspace + fokussierte Feldzeile in render_ex()                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -189,27 +192,27 @@ int main(void)
 
     printf("=== q9_listview_item_rows: erweiterbare Eintraege (Andreas' Wunsch, 2026-08-18) ===\n");
     {
-        static const char *const detail_a[] = { "Zeile A1", "Zeile A2" };
+        static q9_listview_field_t fields_a[] = { {"L1", "V1"}, {"L2", "V2"} };
         static const q9_listview_item_t rows_items[] = {
-            { "Item0", NULL,     0 },                       /* nicht erweiterbar (kein detail_lines) */
-            { "Item1", detail_a, 2 },
+            { "Item0", NULL,     0 },                       /* nicht erweiterbar (keine fields)  */
+            { "Item1", fields_a, 2 },
         };
         /* JE EIN eigenes 2-Element-Array pro Fall -- q9_listview_item_rows() liest expanded[index],
            ein Zeiger auf einen einzelnen int waere bei index==1 ein Zugriff ausserhalb des Arrays
            (undefiniertes Verhalten). */
         int exp_none[2]  = { 0, 0 };                        /* nichts aufgeklappt                */
         int exp_item0[2] = { 1, 0 };                        /* Item0 "aufgeklappt", hat aber keine
-                                                                 Detailzeilen (detail_count==0)    */
+                                                                 Felder (field_count==0)           */
         int exp_item1[2] = { 0, 1 };                        /* Item1 aufgeklappt                 */
 
         check_int("items==NULL -> immer 1", q9_listview_item_rows(NULL, exp_item1, 0), 1);
-        check_int("expanded==NULL -> immer 1 (auch bei detail_count>0)",
+        check_int("expanded==NULL -> immer 1 (auch bei field_count>0)",
                   q9_listview_item_rows(rows_items, NULL, 1), 1);
-        check_int("zugeklappt (expanded[i]==0) -> 1, egal wie viele Detailzeilen",
+        check_int("zugeklappt (expanded[i]==0) -> 1, egal wie viele Felder",
                   q9_listview_item_rows(rows_items, exp_none, 1), 1);
-        check_int("detail_count<=0 -> 1, auch wenn expanded[i]==1 (nichts zum Aufklappen)",
+        check_int("field_count<=0 -> 1, auch wenn expanded[i]==1 (nichts zum Aufklappen)",
                   q9_listview_item_rows(rows_items, exp_item0, 0), 1);
-        check_int("aufgeklappt, detail_count==2 -> 1 (Kopf) + 2 (Details) + 1 (Trennlinie) == 4",
+        check_int("aufgeklappt, field_count==2 -> 1 (Kopf) + 2 (Felder) + 1 (Trennlinie) == 4",
                   q9_listview_item_rows(rows_items, exp_item1, 1), 4);
     }
 
@@ -229,10 +232,10 @@ int main(void)
     {
         /* 5 Eintraege: Item0 (1 Zeile), Item1 aufgeklappt (1+2+1=4 Zeilen), Item2-4 (je 1 Zeile).
            Viewport-Hoehe 4. */
-        static const char *const detail_a[] = { "A1", "A2" };
+        static q9_listview_field_t fields_a[] = { {"L1", "V1"}, {"L2", "V2"} };
         static const q9_listview_item_t mix_items[] = {
             { "Item0", NULL,     0 },
-            { "Item1", detail_a, 2 },
+            { "Item1", fields_a, 2 },
             { "Item2", NULL,     0 },
             { "Item3", NULL,     0 },
             { "Item4", NULL,     0 },
@@ -253,10 +256,10 @@ int main(void)
 
     printf("=== q9_listview_move_ex: delta==0 richtet nur den Scroll neu aus (nach Auf-/Zuklappen) ===\n");
     {
-        static const char *const detail_a[] = { "A1", "A2" };
+        static q9_listview_field_t fields_a[] = { {"L1", "V1"}, {"L2", "V2"} };
         static const q9_listview_item_t mix_items[] = {
             { "Item0", NULL,     0 },
-            { "Item1", detail_a, 2 },
+            { "Item1", fields_a, 2 },
             { "Item2", NULL,     0 },
             { "Item3", NULL,     0 },
             { "Item4", NULL,     0 },
@@ -281,10 +284,10 @@ int main(void)
 
     printf("=== q9_listview_render_ex: Pfeil-Symbol, Einrueckung, Trennlinie ===\n");
     {
-        static const char *const detail_a[] = { "Detail A1", "Detail A2" };
+        static q9_listview_field_t fields_a[] = { {"L1:", "Wert1"}, {"L2:", "Wert2"} };
         static const q9_listview_item_t rx_items[] = {
             { "Fest",     NULL,     0 },                    /* nicht erweiterbar             */
-            { "Klappbar", detail_a, 2 },                    /* erweiterbar, hier AUFGEKLAPPT  */
+            { "Klappbar", fields_a, 2 },                    /* erweiterbar, hier AUFGEKLAPPT  */
         };
         int rx_expanded[2] = { 0, 1 };
 
@@ -297,9 +300,8 @@ int main(void)
         check_int("Item0 (nicht erweiterbar): Leerzeichen statt Pfeil-Symbol an (5,10)",
                   sb.cell[5][10].ch, ' ');
         check_int("Item0: Name beginnt an Spalte 12 (col+2)", sb.cell[5][12].ch, 'F');
-        /* Item0 ist nach q9_listview_init() automatisch ausgewaehlt (selected==0) -- bekommt daher
-           ganz normal sel_bg, NICHT exp_bg (nicht erweiterbar, aber Auswahl bleibt unabhaengig davon
-           wie gewohnt sichtbar). */
+        /* Item0 ist nach q9_listview_init() automatisch ausgewaehlt (selected==0) UND field_focus
+           startet bei -1 -- bekommt daher ganz normal sel_bg (header_is_focused), NICHT exp_bg. */
         check_true("Item0 (ausgewaehlt, nicht erweiterbar): normaler sel_bg-Hintergrund",
                    sb.cell[5][10].has_bg == 1 && sb.cell[5][10].bg_g == 255);
         check_int("Item1 (aufgeklappt): Q9_GLYPH_DOWN_ARROW an (6,10)",
@@ -308,17 +310,20 @@ int main(void)
         check_true("Item1 (aufgeklappt, NICHT ausgewaehlt): Kopfzeile hat exp_bg als Hintergrund "
                    "(Andreas' Feedback, 2026-08-18: \"die Headerzeile geht ein wenig unter\")",
                    sb.cell[6][10].has_bg == 1 && sb.cell[6][10].bg_r == 111);
-        check_int("Detailzeile 1 eingerueckt (Spalte 12), Zeile 7", sb.cell[7][12].ch, 'D');
-        check_true("Detailzeile hat detail_fg (44), nicht die normale fg (200)",
+        check_int("Feld 1 Label eingerueckt (Spalte 12), Zeile 7", sb.cell[7][12].ch, 'L');
+        check_int("Feld 1 Wert an fester Spalte (12+16=28), Zeile 7", sb.cell[7][28].ch, 'W');
+        check_true("Feldzeile (nicht fokussiert) hat detail_fg (44), nicht die normale fg (200)",
                    sb.cell[7][12].fg_r == 44);
-        check_int("Detailzeile 2, Zeile 8", sb.cell[8][12].ch, 'D');
+        check_true("Feldzeile (nicht fokussiert) hat KEINEN eigenen Hintergrund",
+                   sb.cell[7][12].has_bg == 0);
+        check_int("Feld 2 Label, Zeile 8", sb.cell[8][12].ch, 'L');
         check_int("Trennlinie danach (Zeile 9): Q9_GLYPH_HLINE", sb.cell[9][10].ch, Q9_GLYPH_HLINE);
         check_true("Trennlinie hat line_fg (77), nicht detail_fg", sb.cell[9][10].fg_r == 77);
     }
     {
-        /* Ausgewaehlt UND aufgeklappt -- sel_bg gewinnt, NICHT exp_bg (staerkere Hervorhebung). */
-        static const char *const detail_a[] = { "Detail A1", "Detail A2" };
-        static const q9_listview_item_t rx_items[] = { { "Klappbar", detail_a, 2 } };
+        /* Ausgewaehlt UND aufgeklappt, field_focus==-1 (Kopfzeile) -- sel_bg gewinnt, NICHT exp_bg. */
+        static q9_listview_field_t fields_a[] = { {"L1:", "Wert1"}, {"L2:", "Wert2"} };
+        static const q9_listview_item_t rx_items[] = { { "Klappbar", fields_a, 2 } };
         int rx_expanded[1] = { 1 };
 
         q9_screenbuf_init(&sb, 24, 80);
@@ -326,14 +331,35 @@ int main(void)
         q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
                                200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
                                111, 122, 133);
-        check_true("ausgewaehlt UND aufgeklappt: sel_bg (255) gewinnt, nicht exp_bg (111)",
+        check_true("ausgewaehlt UND aufgeklappt (field_focus==-1): sel_bg (255) gewinnt, nicht exp_bg",
                    sb.cell[5][10].has_bg == 1 && sb.cell[5][10].bg_g == 255);
     }
     {
-        /* Zugeklappt: RIGHT_ARROW statt DOWN_ARROW, keine Detailzeilen/Trennlinie. */
-        static const char *const detail_a[] = { "Detail A1", "Detail A2" };
+        /* field_focus>=0 -- die fokussierte Feldzeile bekommt sel_fg/sel_bg, die Kopfzeile faellt
+           TROTZ Auswahl auf exp_bg zurueck (Andreas' Wunsch, achtzehnte Runde: Feld-Navigation). */
+        static q9_listview_field_t fields_a[] = { {"L1:", "Wert1"}, {"L2:", "Wert2"} };
+        static const q9_listview_item_t rx_items[] = { { "Klappbar", fields_a, 2 } };
+        int rx_expanded[1] = { 1 };
+
+        q9_screenbuf_init(&sb, 24, 80);
+        q9_listview_init(&lv, 5, 10, 6, 30, 1);
+        lv.field_focus = 1;                                     /* zweites Feld fokussiert */
+        q9_listview_render_ex(&lv, &sb, rx_items, rx_expanded,
+                               200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
+                               111, 122, 133);
+        check_true("Kopfzeile faellt bei field_focus>=0 auf exp_bg zurueck (nicht sel_bg)",
+                   sb.cell[5][10].has_bg == 1 && sb.cell[5][10].bg_r == 111);
+        check_true("Feld 0 (nicht fokussiert): detail_fg, kein eigener Hintergrund",
+                   sb.cell[6][12].fg_r == 44 && sb.cell[6][12].has_bg == 0);
+        check_true("Feld 1 (fokussiert): sel_bg als Hintergrund", sb.cell[7][10].has_bg == 1
+                   && sb.cell[7][10].bg_g == 255);
+        check_true("Feld 1 (fokussiert): sel_fg als Textfarbe", sb.cell[7][12].fg_r == 0);
+    }
+    {
+        /* Zugeklappt: RIGHT_ARROW statt DOWN_ARROW, keine Felder/Trennlinie. */
+        static q9_listview_field_t fields_a[] = { {"L1:", "Wert1"}, {"L2:", "Wert2"} };
         static const q9_listview_item_t rx_items[] = {
-            { "Klappbar", detail_a, 2 },
+            { "Klappbar", fields_a, 2 },
         };
         int rx_expanded[1] = { 0 };
 
@@ -343,13 +369,14 @@ int main(void)
                                200, 200, 200, 0, 0, 0, 255, 255, 0, 77, 88, 99, 44, 55, 66,
                                111, 122, 133);
         check_int("zugeklappt: Q9_GLYPH_RIGHT_ARROW an (5,10)", sb.cell[5][10].ch, Q9_GLYPH_RIGHT_ARROW);
-        check_int("zugeklappt: keine Detailzeile -- Zeile 6 bleibt leer", sb.cell[6][10].ch, ' ');
+        check_int("zugeklappt: kein Feld sichtbar -- Zeile 6 bleibt leer", sb.cell[6][10].ch, ' ');
     }
     {
         /* Eintrag laeuft ueber das Fensterende hinaus -- wird abgeschnitten, kein Absturz. */
-        static const char *const detail_c[] = { "C1", "C2", "C3", "C4", "C5" };
+        static q9_listview_field_t fields_c[] = { {"L1:","1"}, {"L2:","2"}, {"L3:","3"},
+                                                   {"L4:","4"}, {"L5:","5"} };
         static const q9_listview_item_t rx_items[] = {
-            { "Gross", detail_c, 5 },
+            { "Gross", fields_c, 5 },
         };
         int rx_expanded[1] = { 1 };
 
@@ -370,11 +397,134 @@ int main(void)
         check_true("kein Absturz bis hierher", 1);
     }
 
+    printf("=== q9_listview_field_enter/_leave/_escape: Navigation hinein/heraus ===\n");
+    {
+        static q9_listview_field_t fields_a[] = { {"L1:", "V1"}, {"L2:", "V2"} };
+        static const q9_listview_item_t nav_items[] = {
+            { "Item0", NULL,     0 },                       /* nicht erweiterbar */
+            { "Item1", fields_a, 2 },
+        };
+        int nav_expanded[2] = { 0, 0 };
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 2);
+        q9_listview_move_ex(&lv, 1, nav_items, nav_expanded);       /* Item1 auswaehlen */
+        check_int("field_focus startet bei -1 (Item-Ebene)", lv.field_focus, -1);
+
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);
+        check_int("field_enter: field_focus auf 0 (erstes Feld)", lv.field_focus, 0);
+        check_int("field_enter: Eintrag automatisch aufgeklappt", nav_expanded[1], 1);
+
+        q9_listview_field_leave(&lv);
+        check_int("field_leave: field_focus zurueck auf -1", lv.field_focus, -1);
+        check_int("field_leave: Eintrag BLEIBT aufgeklappt", nav_expanded[1], 1);
+
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);
+        q9_listview_field_escape(&lv, nav_expanded);
+        check_int("field_escape: field_focus zurueck auf -1", lv.field_focus, -1);
+        check_int("field_escape: Eintrag WIRD zusaetzlich zugeklappt (Andreas: \"ESC schliesst\")",
+                  nav_expanded[1], 0);
+
+        /* field_enter auf einem NICHT erweiterbaren Eintrag tut nichts. */
+        q9_listview_move_ex(&lv, -1, nav_items, nav_expanded);      /* zurueck auf Item0 */
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);
+        check_int("field_enter auf Eintrag ohne Felder: field_focus bleibt -1", lv.field_focus, -1);
+    }
+
+    printf("=== q9_listview_field_move: nur INNERHALB der Felder des Eintrags ===\n");
+    {
+        static q9_listview_field_t fields_a[] = { {"L1:","V1"}, {"L2:","V2"}, {"L3:","V3"} };
+        static const q9_listview_item_t nav_items[] = { { "Item0", fields_a, 3 } };
+        int nav_expanded[1] = { 0 };
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 1);
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);
+        check_int("field_focus startet bei 0", lv.field_focus, 0);
+        q9_listview_field_move(&lv, 1, nav_items);
+        check_int("field_move(+1): field_focus auf 1", lv.field_focus, 1);
+        q9_listview_field_move(&lv, 1, nav_items);
+        check_int("field_move(+1): field_focus auf 2 (letztes Feld)", lv.field_focus, 2);
+        q9_listview_field_move(&lv, 1, nav_items);
+        check_int("field_move(+1) am Ende: field_focus geklemmt auf 2", lv.field_focus, 2);
+        q9_listview_field_move(&lv, -100, nav_items);
+        check_int("field_move(-100) weit ueber den Anfang: field_focus geklemmt auf 0",
+                  lv.field_focus, 0);
+
+        q9_listview_field_leave(&lv);
+        q9_listview_field_move(&lv, 1, nav_items);
+        check_int("field_move() ohne aktiven Feld-Fokus: tut nichts, bleibt -1", lv.field_focus, -1);
+    }
+
+    printf("=== q9_listview_field_putc/_backspace: direkte Wert-Bearbeitung ===\n");
+    {
+        static q9_listview_field_t fields_a[] = { {"L1:", ""}, {"L2:", "xy"} };
+        static const q9_listview_item_t nav_items[] = { { "Item0", fields_a, 2 } };
+        int nav_expanded[1] = { 0 };
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 1);
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);       /* field_focus == 0 */
+
+        q9_listview_field_putc(&lv, nav_items, 'a');
+        q9_listview_field_putc(&lv, nav_items, 'b');
+        check_true("putc haengt Zeichen an", strcmp(fields_a[0].value, "ab") == 0);
+
+        q9_listview_field_backspace(&lv, nav_items);
+        check_true("backspace entfernt letztes Zeichen", strcmp(fields_a[0].value, "a") == 0);
+
+        q9_listview_field_backspace(&lv, nav_items);
+        q9_listview_field_backspace(&lv, nav_items);                 /* bei leerem Wert: kein Effekt */
+        check_true("backspace bei leerem Wert: kein Absturz, bleibt leer",
+                   strcmp(fields_a[0].value, "") == 0);
+
+        q9_listview_field_move(&lv, 1, nav_items);                   /* Feld 1 fokussieren */
+        q9_listview_field_putc(&lv, nav_items, 'Z');
+        check_true("putc wirkt auf das RICHTIGE (fokussierte) Feld -- Feld 0 bleibt unveraendert",
+                   strcmp(fields_a[0].value, "") == 0 && strcmp(fields_a[1].value, "xyZ") == 0);
+
+        q9_listview_field_leave(&lv);
+        q9_listview_field_putc(&lv, nav_items, 'Q');
+        check_true("putc ohne aktiven Feld-Fokus: kein Effekt", strcmp(fields_a[1].value, "xyZ") == 0);
+    }
+
+    printf("=== q9_listview_field_putc: Puffer laeuft nicht ueber ===\n");
+    {
+        static q9_listview_field_t fields_a[] = { {"L1:", ""} };
+        static const q9_listview_item_t nav_items[] = { { "Item0", fields_a, 1 } };
+        int nav_expanded[1] = { 0 };
+        int i;
+
+        q9_listview_init(&lv, 0, 0, 4, 20, 1);
+        q9_listview_field_enter(&lv, nav_expanded, nav_items);
+        for (i = 0; i < Q9_LISTVIEW_FIELD_VALUE_MAX + 5; i++) {
+            q9_listview_field_putc(&lv, nav_items, 'x');
+        }
+        check_int("Wert bleibt auf Q9_LISTVIEW_FIELD_VALUE_MAX-1 Zeichen begrenzt",
+                  (int)strlen(fields_a[0].value), Q9_LISTVIEW_FIELD_VALUE_MAX - 1);
+    }
+
+    printf("=== q9_listview_field_*: Randfaelle (NULL-Zeiger), kein Absturz ===\n");
+    {
+        static q9_listview_field_t fields_a[] = { {"L1:", "V1"} };
+        static const q9_listview_item_t nav_items[] = { { "Item0", fields_a, 1 } };
+        int nav_expanded[1] = { 0 };
+
+        q9_listview_field_enter(NULL, nav_expanded, nav_items);
+        q9_listview_field_enter(&lv, nav_expanded, NULL);
+        q9_listview_field_leave(NULL);
+        q9_listview_field_escape(NULL, nav_expanded);
+        q9_listview_field_move(NULL, 1, nav_items);
+        q9_listview_field_move(&lv, 1, NULL);
+        q9_listview_field_putc(NULL, nav_items, 'x');
+        q9_listview_field_putc(&lv, NULL, 'x');
+        q9_listview_field_backspace(NULL, nav_items);
+        q9_listview_field_backspace(&lv, NULL);
+        check_true("kein Absturz bis hierher", 1);
+    }
+
     printf("\n=== Zusammenfassung ===\n");
     printf("  Gesamt: %d Checks fehlgeschlagen\n", g_fails);
     return g_fails ? 1 : 0;
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF listview_selftest.c                                                                 Ver. 1.50
+// EOF listview_selftest.c                                                                 Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
