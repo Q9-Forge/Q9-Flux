@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.20
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.30
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -104,6 +104,8 @@
 # 26-08-18│ 4.20 │ Einundzwanzigste Runde: TEXT+BUTTON-Paar jetzt Sonderfall in q9_listview.c -- Wert-  │ Cld
 #         │      │ Box (box_fg/bg) + echter dreizeiliger Button mit Halbblock-Kappen "wie im Dialog",    │
 #         │      │ vertikal zentriert neben dem Textfeld (Andreas' Wunsch, per Mockup praezisiert)       │
+# 26-08-18│ 4.30 │ Zweiundzwanzigste Runde: Wert-Box-Breite von 20 auf 35 Zeichen (Andreas: "im Dialog   │ Cld
+#         │      │ sind es ca. 35 Zeichen") -- dasselbe Mass wie das Namens-Kaestchen im Datei-Dialog     │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -990,6 +992,14 @@ echtem Pseudo-Terminal-Test + direkter pyte-Farbpruefung bestaetigt: Box zeigt `
 fokussierter Button zeigt korrekt `sel_fg`/`sel_bg`. Kompletter End-zu-Ende-Ablauf getestet: Pfeil
 rechts -> Pfeil runter (Button fokussiert) -> Enter (Dialog oeffnet) -> Enter (Datei waehlen) ->
 Dateiname landet in der Box. `filedialog_smoke3.exp` erneut gruen -- keine Regression.
+
+**Zweiundzwanzigste Runde (2026-08-18) -- Wert-Box-Breite an den Dialog angeglichen:**
+*"Im Dialog sind es ca. 35 Zeichen, sollen wir das hier auch nehmen?"* -- ja, `Q9_LISTVIEW_
+VALUE_BOX_WIDTH` von 20 auf 35 Zeichen erhoeht (dasselbe Mass wie das Namens-Kaestchen im
+Datei-Dialog, dort dynamisch berechnet, hier als fester Wert uebernommen). Behebt nebenbei den
+zuvor dokumentierten Ueberlauf bei laengeren Dateinamen (`smoke_test_fixture.q9`, 22 Zeichen, passt
+jetzt bequem hinein). `q9_listview.c` Ver. 2.10, `listview_selftest.c` Ver. 1.90 (Spaltenerwartungen
+in den TEXT+BUTTON-Tests auf die neue Breite angepasst). `make test` komplett gruen.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
