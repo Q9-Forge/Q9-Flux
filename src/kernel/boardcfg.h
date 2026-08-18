@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.h                                                                      Ver. 1.50
+// File:   boardcfg.h                                                                      Ver. 1.60
 // Owner:  AF
 // Desc.:  5.19: Board-Konfigurationsdatei fuer den Q9-Emulator (INI-artig, C99-Parser ohne
 //         Fremdbibliothek, s. docs/HWCONFIG.md Abschnitt 3). Erster Positionsparameter der
@@ -30,6 +30,8 @@
 //         │      │ wirksam (nicht mehr nur Schema-Beschreibung), s. q9boardrun.c            │
 // 26-08-15│ 1.50 │ Q9FLUX_EDITOR_de.md 4.1: [board]-Key "cpu" -- CPU-Typ-Auswahl, bisher nur │ Cld
 //         │      │ per Q9_CPU=ec030-Env-Var versteckt (s. m68krt.h q9_cpu_type_t)            │
+// 26-08-18│ 1.60 │ q9_board_cfg_save() NEU -- Gegenstueck zu q9_board_cfg_load() (Q9FLUX_EDITOR_ │ Cld
+//         │      │ de.md, Andreas: "Speichern-Funktion"), s. dortigen Kopfkommentar             │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARDCFG_H
 #define Q9_BOARDCFG_H
@@ -118,6 +120,25 @@ void q9_board_cfg_resolve_path(const char *arg, char *out, unsigned out_max);
 int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsigned err_max);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
+// Function: q9_board_cfg_save
+// Desc.:    Schreibt cfg als .q9-Datei nach cfg_path (ueberschreibt eine bestehende Datei komplett).
+//           Q9FLUX_EDITOR_de.md 4.6 (Andreas: "Speichern-Funktion"), erste Fassung.
+//           BEKANNTE VEREINFACHUNG: kein "diff-Save" -- Kommentare und die exakte Formatierung
+//           einer zuvor geladenen Datei gehen dabei verloren (der Struct-INHALT bleibt
+//           vollstaendig erhalten, nur die Text-Repraesentation wird neu erzeugt). Pfade
+//           (rom/image/descriptorName), die im Struct bereits relativ zum Config-Verzeichnis
+//           aufgeloest sind (s. q9_board_cfg_load()/cfg_resolve_rel()), werden -- wo moeglich --
+//           wieder RELATIV zu cfg_path geschrieben (Umkehrung von cfg_resolve_rel()), damit ein
+//           Load+Save-Zyklus eine portable Config auch portabel laesst. vmnet_ip/_gateway/
+//           _netmask/_dhcp_end werden nur geschrieben, wenn sie vom eingebauten Default abweichen
+//           (sonst waere jede gespeicherte Datei mit den vier Zeilen vollgestellt, obwohl sie nur
+//           bei net=vmnet wirken, s. q9board.example.q9). Gibt 0 bei Erfolg zurueck, sonst -1 und
+//           eine erklaerende Meldung in err.
+// Call:     if (q9_board_cfg_save(&cfg, "mysystem.q9", err, sizeof(err)) != 0) fprintf(stderr, "%s\n", err);
+//════════════════════════════════════════════════════════════════════════════════════════════════
+int q9_board_cfg_save(const q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsigned err_max);
+
+//════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_cfg_cf_effective_base
 // Desc.:    Berechnet die tatsaechliche ATA-Basisadresse fuer einen CF-Abschnitt -- EINZIGE Stelle
 //           fuer diese Regel (2026-08-14 aus drei duplizierten Inline-Berechnungen zusammengezogen,
@@ -133,5 +154,5 @@ uint32_t q9_cfg_cf_effective_base(const q9_cfg_cf_t *cf);
 
 #endif /* Q9_BOARDCFG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF boardcfg.h                                                                          Ver. 1.50
+// EOF boardcfg.h                                                                          Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
