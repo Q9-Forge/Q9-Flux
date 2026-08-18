@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.50
+// File:   q9_listview.c                                                                   Ver. 1.60
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -19,6 +19,8 @@
 // 26-08-17│ 1.50 │ Neuer Parameter line_fg -- die rechte Linie/Bildlaufleiste bekommt jetzt    │ Cld
 //         │      │ eine EIGENE Farbe statt die normale Text-fg zu erben (Andreas: "die Striche  │
 //         │      │ links und rechts am Hauptfenster sind unterschiedlich")                     │
+// 26-08-18│ 1.60 │ Erweiterbare Eintraege: q9_listview_item_rows()/_scroll_ex()/_move_ex()/     │ Cld
+//         │      │ _render_ex() dazu (s. q9_listview.h) -- bestehende Funktionen unveraendert    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -162,6 +164,183 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
     }
 }
 
+int q9_listview_item_rows(const q9_listview_item_t *items, const int *expanded, int index)
+{
+    int dc;
+
+    if (!items)                       { return 1; }
+    if (!expanded || !expanded[index]) { return 1; }
+    dc = items[index].detail_count;
+    if (dc <= 0) { return 1; }
+    return 1 /* Kopfzeile */ + dc /* Detailzeilen */ + 1 /* Trennlinie */;
+}
+
+int q9_listview_scroll_ex(int selected, int offset, int height,
+                           const q9_listview_item_t *items, const int *expanded, int item_count)
+{
+    int sum;
+    int i;
+
+    if (item_count <= 0 || height <= 0) { return 0; }
+    if (selected < 0)              { selected = 0; }
+    if (selected > item_count - 1) { selected = item_count - 1; }
+    if (offset < 0)                { offset = 0; }
+    if (offset > item_count - 1)   { offset = item_count - 1; }
+
+    if (selected < offset) {
+        return selected;                                  /* nach oben rausgelaufen -- nachziehen,
+                                                                wie beim einfachen q9_listview_scroll() */
+    }
+
+    /* Zeilen von offset bis einschliesslich selected aufsummieren, dann offset so lange nach vorn
+       schieben (Eintraege von oben "abschneiden"), bis die Summe wieder ins Fenster passt ODER
+       offset==selected erreicht ist (dann bleibt zumindest die Kopfzeile von selected sichtbar,
+       s. Kopfkommentar zur bekannten Vereinfachung bei ueberlangen Eintraegen). */
+    sum = 0;
+    for (i = offset; i <= selected; i++) {
+        sum += q9_listview_item_rows(items, expanded, i);
+    }
+    while (sum > height && offset < selected) {
+        sum -= q9_listview_item_rows(items, expanded, offset);
+        offset++;
+    }
+    return offset;
+}
+
+void q9_listview_move_ex(q9_listview_t *lv, int delta,
+                          const q9_listview_item_t *items, const int *expanded)
+{
+    if (!lv || lv->item_count <= 0) { return; }
+    lv->selected += delta;
+    if (lv->selected < 0)                  { lv->selected = 0; }
+    if (lv->selected > lv->item_count - 1) { lv->selected = lv->item_count - 1; }
+    lv->scroll_offset = q9_listview_scroll_ex(lv->selected, lv->scroll_offset, lv->height,
+                                               items, expanded, lv->item_count);
+}
+
+void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
+                            const q9_listview_item_t *items, const int *expanded,
+                            int fg_r, int fg_g, int fg_b,
+                            int sel_fg_r, int sel_fg_g, int sel_fg_b,
+                            int sel_bg_r, int sel_bg_g, int sel_bg_b,
+                            int line_fg_r, int line_fg_g, int line_fg_b,
+                            int detail_fg_r, int detail_fg_g, int detail_fg_b)
+{
+    int content_width;
+    int line_col;
+    int idx;
+    int row_cursor;
+    int total_rows;
+    int i;
+
+    if (!lv || !sb || !items) { return; }
+
+    content_width = lv->width - 2;
+    if (content_width < 1) { content_width = 1; }
+    line_col = lv->col + lv->width - 1;
+
+    row_cursor = 0;
+    for (idx = lv->scroll_offset; idx < lv->item_count && row_cursor < lv->height; idx++) {
+        int screen_row = lv->row + row_cursor;
+        int has_details = items[idx].detail_count > 0;
+        int is_expanded = has_details && expanded && expanded[idx];
+        int is_selected = (idx == lv->selected);
+        int use_fg_r = is_selected ? sel_fg_r : fg_r;
+        int use_fg_g = is_selected ? sel_fg_g : fg_g;
+        int use_fg_b = is_selected ? sel_fg_b : fg_b;
+        char marker[2];
+
+        /* Kopfzeile: Pfeil-Symbol (auf-/zugeklappt, s. q9_listview.h) + Luftspalte + Name --
+           zwei separate puts() statt einem zusammengesetzten String (spart eine feste Puffergroesse
+           fuer beliebig lange Namen, s. q9_screenbuf_puts()-Klemmung an der Puffergrenze). Eintraege
+           ohne Detailzeilen bekommen KEIN Pfeil-Symbol (nichts zum Auf-/Zuklappen) -- ein Leerzeichen
+           an derselben Stelle, damit der Name trotzdem an derselben Spalte wie bei erweiterbaren
+           Eintraegen beginnt. */
+        marker[0] = has_details ? (is_expanded ? (char)Q9_GLYPH_DOWN_ARROW : (char)Q9_GLYPH_RIGHT_ARROW)
+                                 : ' ';
+        marker[1] = '\0';
+        if (is_selected) {
+            q9_screenbuf_fill_rect(sb, screen_row, lv->col, 1, content_width, ' ',
+                                    sel_fg_r, sel_fg_g, sel_fg_b, 1, sel_bg_r, sel_bg_g, sel_bg_b);
+        }
+        q9_screenbuf_puts(sb, screen_row, lv->col, marker, use_fg_r, use_fg_g, use_fg_b);
+        q9_screenbuf_puts(sb, screen_row, lv->col + 2, items[idx].name ? items[idx].name : "",
+                           use_fg_r, use_fg_g, use_fg_b);
+        row_cursor++;
+
+        if (is_expanded) {
+            int j;
+            /* Detailzeilen -- um zwei Spalten eingerueckt (Pfeil + Luftspalte, dieselbe Einrueckung
+               wie der Name in der Kopfzeile), EIGENE Farbe (detail_fg) statt der normalen Text-fg --
+               optische Unterscheidung Kopf/Detail (Andreas' gewaehlter Stil, s. q9_listview.h). */
+            for (j = 0; j < items[idx].detail_count && row_cursor < lv->height; j++) {
+                q9_screenbuf_puts(sb, lv->row + row_cursor, lv->col + 2, items[idx].detail_lines[j],
+                                   detail_fg_r, detail_fg_g, detail_fg_b);
+                row_cursor++;
+            }
+            /* Trennlinie danach -- volle content_width, in line_fg (dieselbe Rolle wie die rechte
+               Rahmenlinie: strukturell, nicht Text). */
+            if (row_cursor < lv->height) {
+                char hl[2];
+                int k;
+                hl[0] = (char)Q9_GLYPH_HLINE; hl[1] = '\0';
+                for (k = 0; k < content_width; k++) {
+                    q9_screenbuf_puts(sb, lv->row + row_cursor, lv->col + k, hl,
+                                       line_fg_r, line_fg_g, line_fg_b);
+                }
+                row_cursor++;
+            }
+        }
+    }
+
+    /* Rechte Spalte -- wie q9_listview_render(), aber ROW-basiert statt item-basiert (s.
+       q9_listview.h): total_rows zaehlt alle Bildschirmzeilen ueber ALLE Eintraege (inkl.
+       aufgeklappter), nicht mehr nur item_count. */
+    {
+        char track_str[2];
+        track_str[0] = (char)Q9_GLYPH_VLINE; track_str[1] = '\0';
+        for (i = 0; i < lv->height; i++) {
+            q9_screenbuf_puts(sb, lv->row + i, line_col, track_str, line_fg_r, line_fg_g, line_fg_b);
+        }
+    }
+
+    total_rows = 0;
+    for (i = 0; i < lv->item_count; i++) {
+        total_rows += q9_listview_item_rows(items, expanded, i);
+    }
+
+    if (total_rows > lv->height) {
+        int offset_rows;
+        int max_offset_rows;
+        int thumb_height, thumb_start, max_thumb_start;
+        char thumb_str[2];
+        thumb_str[0] = (char)Q9_GLYPH_BLOCK; thumb_str[1] = '\0';
+
+        offset_rows = 0;
+        for (i = 0; i < lv->scroll_offset && i < lv->item_count; i++) {
+            offset_rows += q9_listview_item_rows(items, expanded, i);
+        }
+        max_offset_rows = total_rows - lv->height;
+        if (max_offset_rows < 1) { max_offset_rows = 1; }
+
+        thumb_height = (lv->height * lv->height) / total_rows;
+        if (thumb_height < 1)              { thumb_height = 1; }
+        if (thumb_height > lv->height - 1) { thumb_height = lv->height - 1; }
+        if (thumb_height < 1)              { thumb_height = 1; }   /* height==1: height-1==0-Randfall */
+
+        max_thumb_start = lv->height - thumb_height;
+        if (max_thumb_start < 1) { max_thumb_start = 1; }
+        thumb_start = (offset_rows * max_thumb_start) / max_offset_rows;
+        if (thumb_start > lv->height - thumb_height) { thumb_start = lv->height - thumb_height; }
+        if (thumb_start < 0)                          { thumb_start = 0; }
+
+        for (i = 0; i < thumb_height; i++) {
+            q9_screenbuf_puts(sb, lv->row + thumb_start + i, line_col, thumb_str,
+                               sel_bg_r, sel_bg_g, sel_bg_b);
+        }
+    }
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.50
+// EOF q9_listview.c                                                                       Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────
