@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.h                                                                   Ver. 1.70
+// File:   q9_listview.h                                                                   Ver. 1.90
 // Owner:  Claudia
 // Desc.:  Scrollbare Listenansicht auf q9_screenbuf.h aufgesetzt -- Andreas' Frage (2026-08-16):
 //         "Könnte man einen Bereich Scrollbar machen?" fuer den Config-Startbildschirm (mehr Felder/
@@ -44,6 +44,9 @@
 //         │      │ aendern?") -- detail_lines/detail_count durch echte, EDITIERBARE Felder ersetzt │
 //         │      │ (q9_listview_field_t: label + value), lv->field_focus NEU (-1 = Item-Ebene),    │
 //         │      │ q9_listview_field_enter()/_leave()/_escape()/_move()/_putc()/_backspace() NEU    │
+// 26-08-18│ 1.90 │ Neuer q9_listview_field_kind_t (TEXT/BUTTON) -- ein BUTTON-Feld ignoriert Tippen │ Cld
+//         │      │ (putc/backspace), der Aufrufer erkennt am Typ, dass Enter eine eigene Aktion     │
+//         │      │ ausloesen soll (Andreas: "dahinter ein Button um den Dialog zu oeffnen")          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_LISTVIEW_H
 #define Q9_LISTVIEW_H
@@ -74,11 +77,26 @@ typedef struct {
    fields/field_count bleiben beim Aufrufer (wie items bei den einfachen Funktionen oben) --
    q9_listview_item_t selbst kopiert nichts. field_count<=0 bedeutet "nicht erweiterbar" (kein
    Pfeil-Symbol, q9_listview_item_rows() liefert dafuer immer 1, egal was im expanded-Array steht,
-   q9_listview_field_enter() tut dann nichts). */
+   q9_listview_field_enter() tut dann nichts).
+   kind unterscheidet TEXT (Standard, Tippen aendert value direkt) von BUTTON (Andreas' Wunsch,
+   2026-08-18, neunzehnte Runde: "dahinter ein button um den Dialog zu oeffnen") -- ein BUTTON-Feld
+   ignoriert Tippen (q9_listview_field_putc()/_backspace() tun bei kind!=TEXT nichts), der AUFRUFER
+   erkennt am Feld-Typ, dass Enter WAEHREND dieses Feld fokussiert ist stattdessen eine eigene Aktion
+   ausloesen soll (die Bibliothek selbst kennt keine Aktionen/Callbacks, bleibt bewusst "nur
+   Buchhaltung" -- der Aufrufer prueft `items[selected].fields[field_focus].kind` direkt, s.
+   integration_demo.c). Bestehende Initialisierer mit nur zwei Feldern ({label, value}) bleiben
+   gueltig -- kind wird dabei automatisch auf 0 = Q9_LISTVIEW_FIELD_TEXT genullt (C99-Aggregat-
+   Initialisierung). */
+typedef enum {
+    Q9_LISTVIEW_FIELD_TEXT = 0,
+    Q9_LISTVIEW_FIELD_BUTTON
+} q9_listview_field_kind_t;
+
 #define Q9_LISTVIEW_FIELD_VALUE_MAX 40
 typedef struct {
     const char *label;
     char value[Q9_LISTVIEW_FIELD_VALUE_MAX];
+    q9_listview_field_kind_t kind;
 } q9_listview_field_t;
 
 typedef struct {
@@ -175,8 +193,10 @@ void q9_listview_field_move(q9_listview_t *lv, int delta, const q9_listview_item
 // Desc.:    Waehrend ein Feld fokussiert ist: haengt ch an den WERT des fokussierten Feldes an
 //           (DIREKTE Manipulation -- kein separater Bearbeiten-Modus mit eigenem Bestaetigen/
 //           Abbrechen, Andreas' Wunsch: "kann dort alles aendern", tippen wirkt sofort). Ignoriert
-//           den Aufruf, wenn field_focus==-1 ODER der Wert bereits Q9_LISTVIEW_FIELD_VALUE_MAX-1
-//           Zeichen erreicht hat (Puffer bleibt IMMER NUL-terminiert, kein Ueberlauf).
+//           den Aufruf, wenn field_focus==-1, das fokussierte Feld kind!=Q9_LISTVIEW_FIELD_TEXT ist
+//           (ein BUTTON-Feld laesst sich nicht antippen, s. q9_listview_item_t) ODER der Wert
+//           bereits Q9_LISTVIEW_FIELD_VALUE_MAX-1 Zeichen erreicht hat (Puffer bleibt IMMER
+//           NUL-terminiert, kein Ueberlauf).
 // Call:     q9_listview_field_putc(&lv, items, 'x')
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, char ch);
@@ -185,7 +205,7 @@ void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, 
 // Function: q9_listview_field_backspace
 // Desc.:    Waehrend ein Feld fokussiert ist: entfernt das LETZTE Zeichen aus dem Wert des
 //           fokussierten Feldes (kein Effekt bei bereits leerem Wert). Ignoriert den Aufruf, wenn
-//           field_focus==-1.
+//           field_focus==-1 oder kind!=Q9_LISTVIEW_FIELD_TEXT (s. q9_listview_field_putc()).
 // Call:     q9_listview_field_backspace(&lv, items)
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *items);
@@ -293,5 +313,5 @@ void q9_listview_render(const q9_listview_t *lv, q9_screenbuf_t *sb, const char 
 
 #endif /* Q9_LISTVIEW_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.h                                                                       Ver. 1.60
+// EOF q9_listview.h                                                                       Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────

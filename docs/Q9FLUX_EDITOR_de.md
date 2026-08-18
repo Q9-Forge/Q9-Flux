@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 3.90
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.00
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -95,6 +95,9 @@
 # 26-08-18│ 3.90 │ Achtzehnte Runde (Phase 1/4): Feld-Navigation + Text-Bearbeitung -- q9_listview_     │ Cld
 #         │      │ field_t (Label+editierbarer Wert), field_enter/_leave/_escape/_move/_putc/_backspace,│
 #         │      │ Pfeil rechts/links/Esc; Dateiauswahl/Numerisch/Boolean noch offen                    │
+# 26-08-18│ 4.00 │ Neunzehnte Runde (Phase 2/4): erster fester Eintrag "Emulator-Konfiguration" +       │ Cld
+#         │      │ neuer BUTTON-Feldtyp (q9_listview_field_kind_t), run_file_dialog() liefert jetzt      │
+#         │      │ optional den rohen Dateinamen zurueck; Numerisch/Boolean noch offen                  │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -860,6 +863,54 @@ erneut gruen -- keine Regression.
 Datei-Dialog aus einem Feld heraus oeffnen), numerische Eingabe (Dezimal/Hex, optional mit
 Bereichspruefung), Boolean-Eingabe. Und laengerfristig: ein echtes, pro Hardware-Typ auswertbares
 Datenfile (aehnlich `devschema.h/.c`) statt der fest verdrahteten Vorfuehrdaten in `integration_demo.c`.
+
+**Neunzehnte Runde (2026-08-18) -- erster fester Eintrag "Emulator-Konfiguration" + Button-Feldtyp
+(Phase 2 von 4):**
+*"Ja dann lass uns den ersten festen Eintrag Anlegen, Konfigurationsdatei, auszuwählen mit dem
+Dialog. Der Name ist aber blöd, weisst du was besseres als Konfigurationsdatei? Emulatortype?
+passt auch nicht so richtig??? Dahinter auf jeden Fall das Namensfeld mit dem Dateinamen, dahinter
+ein button um den Dialog zu öffnen. Als Überschrift schlage ich mal 'Emulator Konfiguration' vor,
+Da drin dann einfach 'Datei:' ??? Sollen wir dort auch gleich CPU und Netzerk mit rein bringen? Die
+sind natürlich erst da wenn die Datei geladen ist, oder ich geben sie von Hand ein und speichere
+dann (fehlt uns auch noch)"*
+
+Claudia hat Andreas' eigenen Vorschlag "Emulator-Konfiguration" (mit korrektem Bindestrich)
+bestaetigt statt "Konfigurationsdatei"/"Emulatortyp" (beide trafen's nicht) -- Alternative
+"Board-Konfiguration" (knuepft an das bestehende `boardcfg.c` im Kernel) angeboten, aber bei
+Andreas' Vorschlag geblieben. CPU/Netzwerk BEWUSST NOCH NICHT dazugenommen (Claudias Empfehlung,
+von Andreas mitgetragen) -- waeren bis zum echten Laden nur leere Platzhalter, vermischt sonst
+"neuer Feldtyp" mit "mehr Platzhalter-Eintraege" in einer Runde. "Speichern" fehlt ebenfalls noch,
+bleibt als offener Punkt vermerkt (s.u.).
+
+1. **Neuer Feldtyp** -- `q9_listview_field_kind_t` (`Q9_LISTVIEW_FIELD_TEXT`/`_BUTTON`) als drittes
+   Struct-Feld an `q9_listview_field_t`. Ein BUTTON-Feld ignoriert Tippen
+   (`field_putc()`/`_backspace()` tun bei `kind!=TEXT` nichts) -- der AUFRUFER erkennt am Typ, dass
+   Enter waehrend dieses Feldes eine eigene Aktion ausloesen soll (die Bibliothek selbst kennt keine
+   Aktionen/Callbacks, bleibt "nur Buchhaltung"). Bestehende Feld-Initialisierer (`{label, value}`,
+   ~108 Stellen in `integration_demo.c` + `listview_selftest.c`) automatisiert per Skript um
+   `Q9_LISTVIEW_FIELD_TEXT` als explizites drittes Element ergaenzt (sonst haette `-Wextra`
+   `-Wmissing-field-initializers` bei jeder Stelle angeschlagen -- C99-Aggregat-Initialisierung
+   haette den Wert zwar korrekt auf 0 genullt, aber eben mit Warnung).
+2. **`run_file_dialog()` liefert jetzt optional den rohen Dateinamen zurueck** (neue Parameter
+   `out_name`/`out_name_size`, NULL = "interessiert nicht", wie beim bisherigen `'o'`-Tasten-Aufruf
+   in `main()`) -- fuer den neuen Button-Feld-Anwendungsfall, der den Namen ins Feld DAVOR
+   uebernehmen will (bisher gab die Funktion nur eine formatierte Hinweis-Nachricht zurueck).
+3. **Erster fester Eintrag** "Emulator-Konfiguration" ganz oben in `g_list_items[]` -- zwei Felder:
+   "Datei:" (normaler TEXT, zeigt/erlaubt den Dateinamen, Default "(keine ausgewaehlt)") und ein
+   BUTTON-Feld ("[ Datei waehlen... ]") dahinter. `Q9_KEY_ENTER`-Behandlung in `main()` erweitert:
+   bei `field_focus>=0` UND `kind==BUTTON` oeffnet Enter den Dialog, das Ergebnis geht ins Feld
+   `field_focus-1` (Konvention: das Namensfeld liegt immer direkt vor seinem Button).
+
+`q9_listview.h/.c` Ver. 1.90 (dabei auch einen Versionsbump-Fehler aus der achtzehnten Runde
+nachgetragen -- der Original-Commit hatte sechs neue Funktionen ohne Versions-/Edition-History-
+Eintrag verschifft, jetzt als eigene 1.80-Zeile nachgeholt), `integration_demo.c` Ver. 2.90 (neuer
+`g_cfg_fields`, erster Listeneintrag, `run_file_dialog()`-Signatur erweitert, Enter-Handler fuer
+BUTTON-Felder), `listview_selftest.c` Ver. 1.70 (Feld-Initialisierer ergaenzt, neuer Test: BUTTON-
+Feld ignoriert `putc()`/`_backspace()`). `make test` komplett gruen, Build ohne jede Warnung. Per
+echtem Pseudo-Terminal-Test + pyte bestaetigt: Pfeil rechts oeffnet "Emulator-Konfiguration" auf dem
+"Datei:"-Feld, Pfeil runter wechselt zum Button, Enter oeffnet den Dialog, eine Auswahl (hier "64K")
+landet korrekt im "Datei:"-Feld darueber ("(keine ausgewaehlt)" -> "64K"), der Button bleibt darunter
+sichtbar. Bestehender `filedialog_smoke3.exp` erneut gruen -- keine Regression.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
