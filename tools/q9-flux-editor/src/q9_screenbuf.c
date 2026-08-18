@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_screenbuf.c                                                                  Ver. 1.30
+// File:   q9_screenbuf.c                                                                  Ver. 1.40
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_screenbuf.h.
 //
@@ -12,6 +12,7 @@
 //         │      │ in echte UTF-8-Box-Drawing-Zeichen uebersetzt (Andreas: "volle Linien")    │
 // 26-08-17│ 1.20 │ glyph_utf8(): DOWN_ARROW/UPPER_HALF/LOWER_HALF dazu (q9_filedialog.c)      │ Cld
 // 26-08-18│ 1.30 │ glyph_utf8(): RIGHT_ARROW dazu (q9_listview.c erweiterbare Eintraege)      │ Cld
+// 26-08-18│ 1.40 │ glyph_utf8(): CHECKBOX_OFF/_ON dazu (q9_listview.c Boolean-Feld-Symbol)     │ Cld
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_screenbuf.h"
 #include "q9_ansi.h"
@@ -40,8 +41,10 @@ static unsigned rem(unsigned out_max, unsigned n)
 }
 
 /* Uebersetzt einen Q9_GLYPH_*-Sentinel (s. q9_screenbuf.h) in seine UTF-8-Bytefolge (immer 3 Byte
-   fuer den Bereich U+2500-U+257F). *len bleibt 0 / Rueckgabe NULL, wenn ch KEIN Glyph-Sentinel ist
-   -- der Aufrufer (render()) faellt dann auf die normale Ein-Byte-Behandlung zurueck. */
+   -- ganz ueberwiegend der Bereich U+2500-U+257F, seit der Boolean-Feld-Symbol-Runde zusaetzlich
+   der "Ballot Box"-Block U+2610/U+2611, ebenfalls 3-Byte-UTF-8, s. q9_screenbuf.h). *len bleibt 0
+   / Rueckgabe NULL, wenn ch KEIN Glyph-Sentinel ist -- der Aufrufer (render()) faellt dann auf die
+   normale Ein-Byte-Behandlung zurueck. */
 static const char *glyph_utf8(unsigned char ch, unsigned *len)
 {
     switch (ch) {
@@ -56,6 +59,8 @@ static const char *glyph_utf8(unsigned char ch, unsigned *len)
         case Q9_GLYPH_UPPER_HALF: *len = 3; return "\xe2\x96\x80";  /* U+2580 ▀ */
         case Q9_GLYPH_LOWER_HALF: *len = 3; return "\xe2\x96\x84";  /* U+2584 ▄ */
         case Q9_GLYPH_RIGHT_ARROW: *len = 3; return "\xe2\x96\xb8";  /* U+25B8 ▸ */
+        case Q9_GLYPH_CHECKBOX_OFF: *len = 3; return "\xe2\x98\x90";  /* U+2610 ☐ */
+        case Q9_GLYPH_CHECKBOX_ON:  *len = 3; return "\xe2\x98\x91";  /* U+2611 ☑ */
         default:              *len = 0; return NULL;
     }
 }
@@ -227,5 +232,5 @@ void q9_screenbuf_restore(q9_screenbuf_t *sb, int row, int col, const q9_screenb
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_screenbuf.c                                                                      Ver. 1.30
+// EOF q9_screenbuf.c                                                                      Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
