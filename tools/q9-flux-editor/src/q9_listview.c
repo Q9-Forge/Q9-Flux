@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_listview.c                                                                   Ver. 1.70
+// File:   q9_listview.c                                                                   Ver. 1.90
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_listview.h.
 //
@@ -24,6 +24,12 @@
 // 26-08-18│ 1.70 │ Neuer Parameter exp_bg an render_ex() -- Kopfzeile eines aufgeklappten, nicht  │ Cld
 //         │      │ ausgewaehlten Eintrags bekommt einen eigenen Hintergrund (Andreas: "die        │
 //         │      │ Headerzeile geht ein wenig unter")                                             │
+// 26-08-18│ 1.80 │ NACHTRAG (Versionsbump beim Original-Commit vergessen): Feld-Navigation --      │ Cld
+//         │      │ field_enter()/_leave()/_escape()/_move()/_putc()/_backspace() dazu (Andreas:    │
+//         │      │ "wie komme ich in das item rein um dort Werte zu aendern?")                     │
+// 26-08-18│ 1.90 │ Neuer q9_listview_field_kind_t (TEXT/BUTTON) -- field_putc()/_backspace()       │ Cld
+//         │      │ ignorieren BUTTON-Felder (Andreas: "dahinter ein Button um den Dialog zu         │
+//         │      │ oeffnen")                                                                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_listview.h"
 
@@ -272,6 +278,8 @@ void q9_listview_field_putc(q9_listview_t *lv, const q9_listview_item_t *items, 
     if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
     if (lv->field_focus >= items[lv->selected].field_count) { return; }
     f = &items[lv->selected].fields[lv->field_focus];
+    if (f->kind != Q9_LISTVIEW_FIELD_TEXT) { return; }       /* BUTTON-Feld -- nicht antippbar,
+                                                                  s. q9_listview_item_t */
     len = 0;
     while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
     if (len >= Q9_LISTVIEW_FIELD_VALUE_MAX - 1) { return; }  /* voll -- kein Ueberlauf */
@@ -286,6 +294,7 @@ void q9_listview_field_backspace(q9_listview_t *lv, const q9_listview_item_t *it
     if (!lv || !items || lv->selected < 0 || lv->field_focus < 0) { return; }
     if (lv->field_focus >= items[lv->selected].field_count) { return; }
     f = &items[lv->selected].fields[lv->field_focus];
+    if (f->kind != Q9_LISTVIEW_FIELD_TEXT) { return; }       /* BUTTON-Feld -- nicht antippbar */
     len = 0;
     while (len < Q9_LISTVIEW_FIELD_VALUE_MAX - 1 && f->value[len] != '\0') { len++; }
     if (len > 0) { f->value[len - 1] = '\0'; }
@@ -447,5 +456,5 @@ void q9_listview_render_ex(const q9_listview_t *lv, q9_screenbuf_t *sb,
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_listview.c                                                                       Ver. 1.70
+// EOF q9_listview.c                                                                       Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────
