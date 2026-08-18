@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.70
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 4.80
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -120,6 +120,9 @@
 # 26-08-18│ 4.70 │ Sechsundzwanzigste Runde: Speichern-Funktion -- q9_board_cfg_save() NEU in            │ Cld
 #         │      │ boardcfg.h/.c (Gegenstueck zu q9_board_cfg_load(), voller Roundtrip inkl. [cfN] und   │
 #         │      │ relativer Pfade), Taste S im Editor schreibt Name:/ROM:/Netz:/CPU: zurueck            │
+# 26-08-18│ 4.80 │ Siebenundzwanzigste Runde: [cfN]-Abschnitte jetzt als eigene CF-Image-#N-Eintraege im  │ Cld
+#         │      │ Editor sichtbar/editierbar (Typ:/Bus:/Unit:/Datei:), fest verankert am Ende der Liste │
+#         │      │ (g_item_count waechst/schrumpft dynamisch), voll ins Speichern eingebunden            │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1168,11 +1171,52 @@ komplett gruen, Build ohne jede Warnung. Per echtem Pseudo-Terminal-Test bestaet
 geaenderten Namen UND den unveraenderten `[cf0]`-Abschnitt; Speichern ohne gewaehlte Datei zeigt
 die erwartete Fehlermeldung. `filedialog_smoke3.exp` erneut gruen.
 
-**Noch offen:** `[cfN]`-Abschnitte im Editor selbst anzeigen/bearbeiten (bisher nur beim Speichern
-unangetastet durchgereicht), mechanische Uebernahme von NUMERIC fuer die restlichen Felder,
-eventuell ein eigenes Symbol fuer BOOLEAN-Felder, "Neu anlegen" als expliziter, vom Laden
-unabhaengiger Weg (aktuell nur implizit ueber einen noch nicht existierenden Dateinamen im
-Datei:-Feld erreichbar).
+**Noch offen (bis zur naechsten Runde):** `[cfN]`-Abschnitte im Editor selbst anzeigen/bearbeiten
+(bisher nur beim Speichern unangetastet durchgereicht), mechanische Uebernahme von NUMERIC fuer
+die restlichen Felder, eventuell ein eigenes Symbol fuer BOOLEAN-Felder, "Neu anlegen" als
+expliziter, vom Laden unabhaengiger Weg (aktuell nur implizit ueber einen noch nicht existierenden
+Dateinamen im Datei:-Feld erreichbar).
+
+**Siebenundzwanzigste Runde (2026-08-18) -- [cfN]-Abschnitte im Editor:**
+*"1 dann 2 dann 3 würde ich sagen :-)"* -- von drei angebotenen offenen Punkten als erstes gewaehlt
+(danach: NUMERIC-Umstellung restlicher Felder, dann ein eigenes Boolean-Symbol).
+
+Die [cfN]-Abschnitte einer geladenen Datei (`g_loaded_cfg.cf[]`) waren bisher nur beim Speichern
+unangetastet durchgereicht, im Editor selbst aber unsichtbar. Jetzt erscheinen sie als eigene
+Listeneintraege "CF-Image #0".."CF-Image #3" (`Q9_CFG_MAX_CF`=4 feste Slots aus `boardcfg.h`).
+
+1. **Feste Slots am ENDE der Liste** -- `g_list_items[]` bekommt vier zusaetzliche Eintraege ganz
+   am Ende (nach den 20 hardcodierten Hardware-Demo-Eintraegen), mit eigenen Feld-Arrays
+   `g_cfimg_fields[4][4]`. Dadurch braucht ein wechselnder `cf_count` KEINE Verschiebung anderer
+   Eintraege -- nur eine neue Laufzeit-Variable `g_item_count` (statt der bisherigen Compile-Zeit-
+   Konstante `ITEM_COUNT`, die zu `MAX_ITEM_COUNT`/`BASE_ITEM_COUNT` wurde) waechst/schrumpft nach
+   jedem Laden um `cf_count` (0-4). `g_expanded[]` bleibt bei voller `MAX_ITEM_COUNT`-Groesse
+   (auch unsichtbare Slots brauchen einen gueltigen Speicherplatz).
+2. **Vier Felder je Slot** -- Typ:/Bus:/Unit: (die kurzen Enum-Werte aus `q9_cfg_cf_t`) und
+   Datei: (der Image-Pfad, wie ROM: beim Laden bereits absolut aufgeloest angezeigt). BEKANNTE
+   VEREINFACHUNG: Basis/Slot/Descriptor bleiben (noch) nicht editierbar -- das waere ein eigener,
+   groesserer Schritt (Bereichspruefung, useSlot/base-Wechselspiel).
+3. **String<->Enum-Umwandlung bewusst dupliziert** -- `cf_format_str()`/`_bus_str()`/`_unit_str()`
+   (Anzeige) und ihre Umkehrung `parse_cf_format()`/`_bus()`/`_unit()` (Speichern) statt
+   `boardcfg.c`s private `cfg_parse_*()`-Helfer freizulegen (die sind absichtlich `static`, kein
+   Teil der oeffentlichen `boardcfg.h`-API). Duplikation hier klein/risikoarm (feste, stabile
+   Wertelisten) -- im Unterschied zur vollen INI-Syntax, die deshalb WEITERHIN nicht dupliziert
+   wird. Ein ungueltiger Wert faellt spaetestens beim naechsten Laden auf.
+4. **Speichern erweitert** -- `save_q9_config()` schreibt jetzt zusaetzlich Typ:/Bus:/Unit:/Datei:
+   der SICHTBAREN CF-Image-Eintraege zurueck (`cfg.cf_count` entsprechend gesetzt); alles darueber
+   hinaus bleibt unberuehrt.
+
+`integration_demo.c` Ver. 3.60 (dabei NACHTRAG: die EOF-Fusszeile war seit der numerischen Runde
+auf 3.20 stehen geblieben, jetzt nachgezogen). `make test` (tool-lokal UND root) komplett gruen,
+Build ohne jede Warnung. Per echtem Pseudo-Terminal-Test bestaetigt: Datei mit zwei `[cfN]`-
+Abschnitten laden -- CF-Image #0 zeigt korrekt Typ: rbf/Bus: onboard/Unit: master/Datei: (absolut
+aufgeloest), CF-Image #1 pcf/rc2014/slave; Datei:-Feld von CF-Image #0 per Hand auf einen neuen
+Namen geaendert, gespeichert -- `[cf0].image` aendert sich, `[cf1]` UND alle anderen `[cf0]`-Werte
+bleiben unveraendert. `filedialog_smoke3.exp` erneut gruen.
+
+**Noch offen:** mechanische Uebernahme von NUMERIC fuer die restlichen Felder, eventuell ein
+eigenes Symbol fuer BOOLEAN-Felder, Basis/Slot/Descriptor bei CF-Images editierbar machen,
+"Neu anlegen" als expliziter Weg.
 
 ## 3. Nach der Auswahl: weitere Bereiche
 
