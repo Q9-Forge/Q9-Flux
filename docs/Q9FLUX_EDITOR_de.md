@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.00
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.10
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -129,6 +129,12 @@
 # 26-08-18│ 5.00 │ Neunundzwanzigste Runde: eigenes Symbol fuer BOOLEAN-Felder -- neue Glyphen             │ Cld
 #         │      │ Q9_GLYPH_CHECKBOX_ON/_OFF (☑/☐, q9_screenbuf.h), render_ex() zeichnet sie vor dem      │
 #         │      │ Wert (analog zum "$"-Praefix bei NUMERIC_HEX)                                          │
+# 26-08-20│ 5.10 │ Dreissigste Runde ("Anlegen/Loeschen von Hardware-Instanzen", Andreas' Vorgabe: pro     │ Cld
+#         │      │ Hardware ein eigenes Sourcefile, Fokus Ausfuehrungsgeschwindigkeit): Pilot-Vertical-    │
+#         │      │ Slice am Beispiel "cf" -- neues q9_devdesc_t (devdesc.h) vereint Vtable+Feldschema+     │
+#         │      │ Fast-Table-Flag, CF komplett nach src/devices/cf/cf.c verschoben, boardcfg.c-Schema-    │
+#         │      │ Gegenprobe, echte Tasten N/D fuer die vier CF-Image-Slots im Editor. Abschnitt 4        │
+#         │      │ ("Hardware hinzufuegen" fuer BELIEBIGE Typen) bleibt Folgeschritt, s. dort              │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1277,6 +1283,73 @@ Damit sind alle drei von Andreas in dieser Reihenfolge angebotenen offenen Punkt
 expliziter Weg, echtes pro-Hardware-Typ-Datenfile aehnlich `devschema.h/.c` statt hartcodierter
 Demo-Felder.
 
+**Dreissigste Runde (2026-08-20) -- "Anlegen/Loeschen von Hardware-Instanzen", der eigentliche
+Auftrag dieser Runde:** Andreas' Rueckfrage ergab: gemeint war NICHT nur ein "Neu anlegen"-Weg fuer
+Config-Dateien, sondern das generische `## 4. Hardware-Bereich`-Ziel ("Hardware hinzufuegen" fuer
+beliebige Geraete-Instanzen) -- mit einer zusaetzlichen Vorgabe: Hardware-*Beschreibung* und
+-*Aufruf* sollen vereinheitlicht werden, **pro Hardware-Typ ein eigenes Sourcefile**, mit Fokus auf
+Ausfuehrungsgeschwindigkeit (bei vielen simulierten Geraeten soll nicht jeder Speicherzugriff alle
+Geraete linear abfragen muessen -- ein neues Boolean-Feld je Typ steuert, ob er in eine schnelle
+Adress-Index-Tabelle aufgenommen wird).
+
+*Wichtiger Fund bei der Recherche:* Diese Fast-Table-Optimierung existierte bereits
+(`io_table_build()`/`devreg_hit()`, `m68krt.c`, seit 2026-08-14/5.18) -- aber automatisch fuer den
+festen I/O-Cluster, ohne explizites Pro-Geraet-Flag. Ebenso existierte bereits eine reine
+Feldbeschreibungstabelle (`devschema.c`), aber NICHT ins Haupt-Binary gelinkt und NICHT mit dem
+Parser verdrahtet. Die eigentliche Geraete-Instanziierung lief ueber zehn hartcodierte
+`q9_devreg_add()`-Aufrufe in `m68krt.c`. Bereits gelebtes Vorbild fuer "ein Sourcefile je Typ":
+mc6845/clut/framebuf/quicc liegen seit der "6.6"-Migration (2026-08-11) schon in `src/devices/<typ>/`
+-- nur die vier aeltesten, 5.17-Ära-Geraete (duart68681/cf/rtc72421/timer_irq) steckten noch
+gebuendelt in `q9board.c`.
+
+**Umfang dieser Runde (Plan-Modus, Andreas' Freigabe):** ein vollstaendiger Pilot-Vertical-Slice am
+Beispiel "cf" -- bewusst nicht alle neun Typen auf einmal:
+1. **`q9_device_t.use_table`** (NEU, `devreg.h`) -- explizite Fast-Table-Teilnahme statt impliziter
+   Cluster-Annahme. `io_table_build()` (`m68krt.c`) traegt Geraete mit `use_table==0` als
+   "ambiguous" ein (erzwingt zuverlaessig den linearen Scan-Fallback). Alle zehn bestehenden
+   `q9_devreg_add()`-Aufrufstellen explizit gesetzt (neun `=1`, Framebuffer `=0` -- liegt ohnehin
+   unterhalb des Clusters, $FD000000 < $FFFF0000).
+2. **`q9_devdesc_t`** (NEU, `src/kernel/devdesc.h/.c`) -- vereint Vtable (devreg-Stil) + typspezifische
+   Feldbeschreibung (devschema-Stil) + `use_table_default` an einem Ort. Gemeinsame Basisfelder
+   (Name/Basisadresse/Endadresse) sind KEINE eigene Tabelle -- die sind schon strukturelle
+   `q9_device_t`-Member. Die zwei echten gemeinsamen Editor-Felder (`descriptor`/`descriptorName`)
+   sind jetzt EINMAL in `q9_devschema_common_fields[]` definiert statt pro Typ wiederholt.
+3. **CF komplett umgezogen**: `q9_cf_t`/`q9_cf_attach`/das ATA-PIO-Protokoll/`q9_devtype_cf`
+   (~850 der 1077 Zeilen von `q9board.c`) nach `src/devices/cf/cf.c`+`cf.h` -- reine Verschiebung,
+   KEINE Verhaltensaenderung (per `make test` UND echtem Boot-Test mit einer lokalen `.q9`-Datei bis
+   zum Login bit-identisch bestaetigt). `devschema.c`s bisheriges `"cf"`-Schema entfaellt (jetzt
+   `q9_devdesc_cf` in `cf.c`) -- neuer Test `test/12_test_devdesc.c` (34 Checks) uebernimmt die
+   bisherigen `"cf"`-Testfaelle aus `test/08_test_devschema.c`.
+4. **`boardcfg.c`-Schema-Gegenprobe**: `cfg_schema_confirm_invalid_enum()` (NEU) -- bewusst NUR auf
+   dem bereits-ungueltig-Pfad von `type`/`bus`/`unit` (kein Eingriff in den Erfolgspfad/die
+   bestehenden Fehlermeldungen), bestaetigt per `q9_devdesc_lookup("cf")`, dass das Schema
+   denselben Wert ebenfalls ablehnt -- Beweis, dass das Schema jetzt load-bearing ist statt reiner
+   Zukunftsmusik.
+5. **Editor: echte Tasten `N`/`D`** fuer die vier bereits vorhandenen CF-Image-Slots (statt nur
+   passivem Wachsen/Schrumpfen beim Laden) -- `add_cfimg_slot()`/`delete_cfimg_slot()`/
+   `cfimg_reset_slot()` (NEU, `integration_demo.c`). `save_q9_config()` brauchte KEINE Aenderung
+   (war laut eigenem Kommentar schon bewusst robust dafuer ausgelegt). Per echtem
+   Pseudo-Terminal-Rauchtest verifiziert: vier Slots anlegen, fuenfter Versuch meldet korrekt "voll",
+   alle vier wieder loeschen (Auswahl wandert dabei korrekt zum vorherigen Slot bzw. zurueck auf den
+   letzten Hardware-Demo-Eintrag), `D` auf einem Nicht-CF-Eintrag ist ein sauberes No-op mit Meldung.
+
+`make test` (Root, inkl. neuem `test-devdesc`) UND `make test`/`make demo-integration` (Editor)
+komplett gruen, kein neues Warning. Zwei echte Boot-Tests (vor/nach der CF-Migration) bit-identisch
+(8 devices online, Login, funktionierende Shell).
+
+**Ausdruecklich NICHT Teil dieser Runde (naechste Schritte, dasselbe Muster):**
+- Dieselbe Migration fuer die restlichen acht Typen (duart68681/rtc72421/timer_irq/nettty/quicc/
+  mc6845/framebuf/clut) -- rein mechanische Wiederholung des jetzt bewiesenen Vorgehens.
+- `boardcfg.c`: generische Abschnittserkennung fuer BELIEBIGE Typnamen (nicht nur die laxe
+  `cf*`-Erkennung) ueber `q9_devdesc_lookup()`, inkl. generischer Instanziierungs-Schleife in
+  `q9boardrun.c` (ersetzt die heutige CF-spezifische Sonderbehandlung).
+- Editor: echtes **"Hardware hinzufuegen"** als Typ-Auswahl-Dialog ueber alle `q9_devdesc_get(i)`-
+  Eintraege (nicht nur die vier CF-Slots) -- der eigentliche, generische Teil von Abschnitt 4 oben,
+  inkl. Adress-Kollisionspruefung zwischen Instanzen unterschiedlichen Typs.
+- `q9_board_cfg_save()` generisch fuer beliebige Geraete-Abschnitte statt nur `[cfN]`.
+- Die 20 hartcodierten Demo-Hardware-Eintraege in `integration_demo.c` durch echte, aus
+  `q9_devdesc_get()` abgeleitete Eintraege ersetzen.
+
 ## 3. Nach der Auswahl: weitere Bereiche
 
 - Kurzbeschreibung der gewaehlten Config
@@ -1304,6 +1377,13 @@ Ereignisschleife, s.u.), und welchen Config-Pfad/welche Argumente genau uebergeb
 
 An erster Stelle immer **Speicher** (Memory), danach **CPU-Auswahl**, dann Button
 **"Hardware hinzufuegen"** fuer beliebig viele weitere Geraete-Instanzen.
+
+**Architektur-Grundstein FUER dieses Ziel FERTIG (2026-08-20, Pilot "cf", s. "Dreissigste Runde" in
+Abschnitt 2):** `q9_devdesc_t` (`src/kernel/devdesc.h/.c`) vereint pro Hardware-Typ Vtable +
+Feldbeschreibung + Fast-Table-Flag an einem Ort, bewiesen am Beispiel "cf" (jetzt in
+`src/devices/cf/cf.c`). **Noch offen bis zum echten "Hardware hinzufuegen"-Button:** dieselbe
+Migration fuer die restlichen acht Typen, generische `boardcfg.c`-Abschnittserkennung fuer
+beliebige Typnamen, und der eigentliche Typ-Auswahl-Dialog im Editor.
 
 ### 4.1 CPU-Auswahl — technisch machbar, geringer Aufwand
 
