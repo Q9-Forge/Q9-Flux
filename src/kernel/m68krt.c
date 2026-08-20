@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.41
+// File:   m68krt.c                                                                        Ver. 1.50
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -57,6 +57,11 @@
 //         │      │ Env-Var bleibt als Diagnose-Override ERHALTEN, greift aber nur noch, wenn      │
 //         │      │ der Aufrufer den Default (Q9_CPU_68030) uebergeben hat (kein stiller           │
 //         │      │ Ueberschreiber einer expliziten Wahl)                                          │
+// 26-08-20│ 1.50 │ Hardware-Vereinheitlichung, Pilot "cf": q9_device_t.use_table (devreg.h) --      │ Cld
+//         │      │ io_table_build() traegt Geraete mit use_table==0 als "ambiguous" ein (erzwingt   │
+//         │      │ linearen Scan-Fallback statt automatischer Cluster-Zugehoerigkeit); alle zehn     │
+//         │      │ q9_devreg_add()-Aufrufstellen explizit gesetzt (neun =1, framebuf =0 da unterhalb │
+//         │      │ des Clusters)                                                                     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
@@ -495,7 +500,14 @@ static void io_table_build(void)
         slot = (lo - Q9_IO_CLUSTER_BASE) >> Q9_IO_SLOT_SHIFT;
         end  = (hi - Q9_IO_CLUSTER_BASE) >> Q9_IO_SLOT_SHIFT;  /* hi <= 0xFFFFFFFF, passt immer in 0..255 */
         for (; slot <= end; slot++) {
-            if (g_io_table[slot] == NULL) {
+            /* 2026-08-20: d->use_table==0 heisst "dieses Geraet bewusst NICHT eintragen" (s. devreg.h) --
+               NICHT einfach ueberspringen (das liesse den Slot faelschlich NULL/"kein Geraet", falls
+               kein anderes Geraet ihn beansprucht), sondern wie einen Kollisionsfall behandeln: der
+               Sentinel erzwingt zuverlaessig den linearen Scan-Fallback unten in devreg_hit(), der das
+               Geraet ganz normal ueber die Registry findet -- nur eben ohne den Tabellen-Vorteil. */
+            if (!d->use_table) {
+                g_io_table[slot] = g_io_ambiguous;
+            } else if (g_io_table[slot] == NULL) {
                 g_io_table[slot] = d;
             } else if (g_io_table[slot] != d) {
                 g_io_table[slot] = g_io_ambiguous;
@@ -1148,6 +1160,7 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.irq_level  = 3;
         d.irq_vector = -1;                            /* dynamisch, s. irq_vector_fn            */
         d.level_held = 1;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_duart68681;
         d.state      = board;
         q9_devreg_add(d);
@@ -1164,6 +1177,7 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_cf;
         d.state      = &board->cf;
         q9_devreg_add(d);
@@ -1179,6 +1193,7 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_rtc72421;
         d.state      = board;
         q9_devreg_add(d);
@@ -1197,6 +1212,7 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.irq_level  = 4;
         d.irq_vector = -1;                            /* dynamisch, s. irq_vector_fn (pro Kanal) */
         d.level_held = 1;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_nettty;
         d.state      = NULL;                          /* nutzt das globale channels[]-Array      */
         q9_devreg_add(d);
@@ -1229,6 +1245,7 @@ void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
         d.irq_level  = Q9_QUICC_IRQ_LEVEL;
         d.irq_vector = Q9_QUICC_IRQ_VECTOR;            /* fest, s. q9_devtype_quicc-Kommentar    */
         d.level_held = 1;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_quicc;
         d.state      = quicc;
         q9_devreg_add(d);
@@ -1241,6 +1258,7 @@ void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
         d.irq_level  = 6;
         d.irq_vector = -1;
         d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_timer_irq;
         d.state      = g_board;
         q9_devreg_add(d);
@@ -1269,6 +1287,7 @@ void q9_m68krt_attach_cf_at(q9_cf_t *cf, uint32_t base, const char *name)
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_cf;
         d.state      = cf;
         q9_devreg_add(d);
@@ -1292,6 +1311,7 @@ void q9_m68krt_attach_mc6845(q9_mc6845_t *crtc)
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_mc6845;
         d.state      = crtc;
         q9_devreg_add(d);
@@ -1315,6 +1335,9 @@ void q9_m68krt_attach_framebuf(q9_framebuf_t *fb)
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
+        d.use_table  = 0;                             /* liegt UNTERHALB des Fast-Table-Clusters   */
+                                                        /* ($FD000000 < $FFFF0000) -- Tabelle greift */
+                                                        /* hier ohnehin nie, s. devreg.h/m68krt.c    */
         d.vt         = &q9_devtype_framebuf;
         d.state      = fb;
         q9_devreg_add(d);
@@ -1337,6 +1360,7 @@ void q9_m68krt_attach_clut(q9_clut_t *clut)
         d.irq_level  = 0;
         d.irq_vector = -1;
         d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_clut;
         d.state      = clut;
         q9_devreg_add(d);

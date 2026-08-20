@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 1.90
+# File:   Makefile                                                                        Ver. 2.00
 # Owner:  Claudia
 # Desc.:  Q9-Flux-Launcher/Config-Editor -- Grundstein (docs/Q9FLUX_EDITOR_de.md). Bewusst C99 ohne
 #         TUI-Framework, s. src/q9_ansi.h Kopfkommentar (Vorgeschichte: gescheiterter Turbo-Vision-
@@ -34,6 +34,9 @@
 # 26-08-18│ 1.90 │ demo-integration linkt jetzt zusaetzlich src/kernel/boardcfg.c (Andreas: │ Cld
 #         │      │ "echtes Laden/Auswerten der .q9-Datei") -- der ECHTE Board-Config-Parser │
 #         │      │ des Emulators, kein zweiter eigener INI-Parser hier                      │
+# 26-08-20│ 2.00 │ Hardware-Vereinheitlichung, Pilot "cf": demo-integration linkt jetzt      │ Cld
+#         │      │ zusaetzlich devdesc.c/devschema.c/cf.c (boardcfg.c ruft seit dieser Runde │
+#         │      │ q9_devdesc_lookup() fuer eine Schema-Gegenprobe auf)                       │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 CC      ?= gcc
 CFLAGS  := -std=c99 -Wall -Wextra -O2
@@ -57,9 +60,9 @@ demo: $(BUILD)/ansi_selftest
 demo-integration: $(BUILD)/integration_demo
 	$(BUILD)/integration_demo
 
-$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/boardcfg.h
+$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/boardcfg.h ../../src/kernel/devdesc.c ../../src/kernel/devschema.c ../../src/devices/cf/cf.c
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c -o $@
+	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/devdesc.c ../../src/kernel/devschema.c ../../src/devices/cf/cf.c -o $@
 
 $(BUILD)/ansi_selftest: test/ansi_selftest.c src/q9_ansi.c src/q9_ansi.h
 	@mkdir -p $(BUILD)

@@ -38,6 +38,8 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-14│ 1.00 │ 5.17: Erster Wurf — q9_device_t/Vtable, Instanz-Registry, Typ-Registry   │ CF
+// 26-08-20│ 1.10 │ Hardware-Vereinheitlichung, Pilot "cf": neues use_table-Feld -- explizite │ Cld
+//         │      │ Fast-Table-Teilnahme statt impliziter Cluster-Annahme, s. m68krt.c         │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVREG_H
 #define Q9_DEVREG_H
@@ -89,6 +91,13 @@ struct q9_device {
        nur vom Hauptschleifen-Poll (q9boardrun.c) ueber irq_pending() unmittelbar nach poll()
        abgefragt, s. ARBEITSPLAN 5.17. */
     int         level_held;
+    /* 2026-08-20: explizite Fast-Table-Teilnahme (statt der bisherigen impliziten Annahme "alles im
+       Cluster ist automatisch schnell", s. m68krt.c io_table_build). 1 = Kandidat fuer die Adress-
+       Index-Tabelle im festen I/O-Cluster ($FFFF0000-$FFFFFFFF); 0 = bewusst NICHT eingetragen, faellt
+       IMMER auf den linearen Scan zurueck (z.B. fuer Geraete mit unregelmaessigen/laufzeitveraender-
+       lichen Adressfenstern, wo ein Tabelleneintrag nicht sinnvoll waere). Wirkt nur innerhalb des
+       Clusters -- Geraete ausserhalb (z.B. Framebuffer $FD000000) sind ohnehin nie in der Tabelle. */
+    int         use_table;
     const q9_device_vtable_t *vt;
     void       *state;               /* typspezifischer Zustand, statisch alloziert (kein malloc) */
 };
