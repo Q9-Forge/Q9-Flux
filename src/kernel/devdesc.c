@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devdesc.c                                                                       Ver. 1.20
+// File:   devdesc.c                                                                       Ver. 1.30
 // Owner:  Cld
 // Desc.:  Implementierung, siehe devdesc.h. Enthaelt NUR die Registry-Tabelle -- die einzelnen
 //         q9_devdesc_t-Instanzen (z.B. q9_devdesc_cf) sind in den jeweiligen Pro-Typ-Dateien
@@ -18,6 +18,11 @@
 //         │      │ q9board.c gebuendelt waren, jetzt ebenfalls eigene Dateien. Damit sind acht   │
 //         │      │ von neun heutigen Hardware-Typen registriert -- nur nettty (m68krt.c,         │
 //         │      │ EIN Geraet fuer alle acht Netz-Terminal-Kanaele) fehlt noch                   │
+// 26-08-21│ 1.30 │ nettty dazu -- letzter Typ, damit sind ALLE NEUN heutigen Hardware-Typen       │ Cld
+//         │      │ registriert. nettty.c bewusst OHNE Musashi-Abhaengigkeit gehalten (Funktions-  │
+//         │      │ zeiger-Hook statt direktem m68k_set_irq()), sonst haette DEVDESC_SRC jeden      │
+//         │      │ Aufrufer (Editor, leichte Testziele) gezwungen, die volle CPU-Kernobjekte       │
+//         │      │ mitzulinken -- s. nettty.c-Kopfkommentar                                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devdesc.h"
 #include "../devices/cf/cf.h"
@@ -28,6 +33,7 @@
 #include "../devices/duart68681/duart68681.h"
 #include "../devices/rtc72421/rtc72421.h"
 #include "../devices/timer_irq/timer_irq.h"
+#include "../devices/nettty/nettty.h"
 #include <string.h>
 
 /* Descriptor/DescriptorName -- EINMAL definiert (s. devdesc.h-Kopfkommentar), Inhalt entspricht
@@ -58,6 +64,7 @@ static const q9_devdesc_t *const g_devdesc_registry[] = {
     &q9_devdesc_duart68681,
     &q9_devdesc_rtc72421,
     &q9_devdesc_timer_irq,
+    &q9_devdesc_nettty,
 };
 #define Q9_DEVDESC_COUNT (int)(sizeof(g_devdesc_registry) / sizeof(g_devdesc_registry[0]))
 
@@ -89,5 +96,5 @@ const q9_devdesc_t *q9_devdesc_get(int index)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF devdesc.c                                                                           Ver. 1.20
+// EOF devdesc.c                                                                           Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
