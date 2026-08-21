@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devreg.c                                                                        Ver. 1.00
+// File:   devreg.c                                                                        Ver. 1.10
 // Owner:  AF
 // Desc.:  Implementierung der Geraete-Registry, siehe devreg.h.
 //
@@ -9,9 +9,12 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-14│ 1.00 │ 5.17: Erster Wurf — Instanz-Registry + generische Zugriffs-Helfer;       │ CF
 //         │      │ Typ-Registry startet mit "duart68681" (waechst mit jedem Migrationsschritt) │
+// 26-08-21│ 1.10 │ Hardware-Vereinheitlichung: q9_devtype_duart68681 kommt jetzt ueber          │ Cld
+//         │      │ duart68681.h statt transitiv ueber q9board.h (das re-exportiert es nicht    │
+//         │      │ mehr, s. dortiger Kommentar) -- reine Include-Anpassung                       │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devreg.h"
-#include "q9board.h"
+#include "../devices/duart68681/duart68681.h"          /* 2026-08-21: q9_devtype_duart68681, s.u. */
 #include <string.h>
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
@@ -205,5 +208,5 @@ const q9_device_type_entry_t *q9_devtype_get(int index)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF devreg.c                                                                            Ver. 1.00
+// EOF devreg.c                                                                            Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────

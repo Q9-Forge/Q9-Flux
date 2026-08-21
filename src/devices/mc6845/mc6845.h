@@ -74,6 +74,7 @@
 
 #include <stdint.h>
 #include "../../kernel/devreg.h"                        /* q9_device_t/Vtable                     */
+#include "../../kernel/devdesc.h"                       /* 2026-08-21: q9_devdesc_mc6845, s.u.     */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_MC6845_BASE       0xFFFFA000u               /* Q9-Frame WORK_PACKAGES.md WP03          */
@@ -170,6 +171,7 @@ uint32_t q9_mc6845_net_update_hz(const q9_mc6845_t *c);
 
 //─── Geraete-Vtable fuer die Registry (devreg.h) ────────────────────────────────────────────────
 extern const q9_device_vtable_t q9_devtype_mc6845;
+extern const q9_devdesc_t       q9_devdesc_mc6845;         /* 2026-08-21: Vtable+Schema vereint    */
 
 #endif /* Q9_MC6845_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
