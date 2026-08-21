@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.30
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.31
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -144,6 +144,11 @@
 #         │      │ einzeln, eigener Descriptor, eigene Adresse, im Array" -- acht separate devreg-           │
 #         │      │ Eintraege statt einem, Musashi-Entkopplung per Funktionszeiger-Hook. ALLE NEUN Typen      │
 #         │      │ jetzt vereinheitlicht                                                                     │
+# 26-08-21│ 5.31 │ Dreiunddreissigste Runde: REMAP-Trigger als zehntes Geraet -- Andreas' eigene Idee        │ Cld
+#         │      │ (Bootflag/RAM-Umschaltung). Bewusst zweigeteilt: nur der Trigger selbst wandert nach       │
+#         │      │ src/devices/remap/, die RAM/ROM-Interpretation bleibt im Performance-Fast-Path. Ein        │
+#         │      │ neuer Testfall deckte einen echten Registrierungsfehler auf, echter Boot-Test bestaetigt   │
+#         │      │ die Korrektur                                                                              │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1453,6 +1458,42 @@ Rahmens dieser Runde).
 Damit sind **alle neun heutigen Hardware-Typen** (cf/quicc/mc6845/framebuf/clut/duart68681/
 rtc72421/timer_irq/nettty) auf das einheitliche `q9_devdesc_t`-Muster umgestellt.
 
+**Dreiunddreissigste Runde (2026-08-21) -- der REMAP-Trigger als zehntes Geraet:** Andreas' eigene
+Idee, unangekuendigt eingebracht: "da muss es noch so ein Bootflag geben, nach dem Starten liegt
+das ROM ab Adresse 0 (und gespiegelt bis oben), und wenn auf eine bestimmte Adresse zugegriffen
+wird, wird unten das RAM eingeblendet" -- ob sich das ebenfalls als simuliertes Geraet einbauen
+liesse, und wie der dadurch entstehende Zustand an die anderen Module weitergegeben wird.
+
+**Antwort auf die Zustandsfrage:** kein neuer Mechanismus noetig -- `dev->state` zeigt (wie schon
+bei duart68681/rtc72421/timer_irq) direkt auf das gemeinsame `q9_board_t`, der bereits vorhandene
+RAM-Fast-Path in `m68krt.c` liest denselben `remapped`-Wert weiterhin ueber den globalen
+`g_board`-Zeiger.
+
+**Bewusst zweigeteilter Vorschlag, nur Teil 1 umgesetzt:** der REMAP-Trigger selbst
+($FFFF8000-$FFFF8FFF, reiner Adress-Trigger ohne Datenwert, kein IRQ) wandert nach
+`src/devices/remap/remap.c` -- exakt das `timer_irq`-Muster ("reiner Adress-Trigger"). Die
+RAM/ROM-**Interpretation** (welcher Speicherbereich nach dem Trigger wo erscheint) bleibt
+ausdruecklich in `q9board.c`/`m68krt.c`s RAM-Fast-Path -- Performance (heissester Pfad der
+gesamten Emulation) und die bestehende, bewaehrte Fast-Path-Logik waeren durch eine
+Geraete-Indirektion nur verschlechtert worden, ohne einen Nutzen fuer die Editor-Zielsetzung
+("Hardware hinzufuegen") zu bringen: REMAP ist kein Geraet, das ein Nutzer je an-/abwaehlen wuerde.
+
+**Ergebnis:** `q9board.c`s `board_is_remap_reg()` entfaellt vollstaendig, `board_read_byte`/
+`board_write_byte` kennen nur noch RAM/ROM. `test/09_test_io_dispatch.c` bekam einen sechsten
+Pruefblock (Lese- UND Schreibzugriff auf Basis/oberes Fensterende schalten `board.remapped`
+korrekt, der Trigger liefert dabei immer 0) -- **dieser Test deckte einen echten Fehler auf**: die
+eigentliche `q9_devreg_add()`-Registrierung in `m68krt.c` fehlte zunaechst (nur Kommentare/Historie
+waren schon angepasst), OS-9 waere ohne diesen Fund beim naechsten Boot an der RAM-Umschaltung
+gescheitert. Nach dem Fix: `make test` (Root + Editor) komplett gruen, echter Boot-Test
+(`docs/q9board.example.q9`-Profil, angepasste Pfade) im Transkript bis zum vollstaendigen Login UND
+funktionierender Shell bestaetigt ("8 devices online", `Process #22 logged on`, `/dd/HOME/ROOT#`-
+Prompt) -- die RAM/ROM-Umschaltung funktioniert im echten Betrieb weiterhin bit-identisch. (Das
+automatisierte `expect`-Skript selbst meldete trotzdem "LOGIN FEHLGESCHLAGEN", weil sein
+Prompt-Regex `\$` auf den tatsaechlichen Prompt `/dd/HOME/ROOT#` dieses Profils nicht passt --
+Skript-/Profil-Mismatch, keine REMAP-Regression, per manueller Transkript-Pruefung verifiziert.)
+
+Damit sind **alle zehn heutigen Hardware-/Adressraum-Typen** auf das einheitliche Muster umgestellt.
+
 ## 3. Nach der Auswahl: weitere Bereiche
 
 - Kurzbeschreibung der gewaehlten Config
@@ -1499,8 +1540,12 @@ interner Suche bei jedem Zugriff) jetzt ACHT separate Eintraege, je einer mit ei
 gefunden: nettty ruft als EINZIGER der neun Typen `m68k_set_irq()` DIREKT auf (fuer minimale
 Latenz bei ankommenden Bytes) -- ein Funktionszeiger-Hook (`q9_nettty_set_irq_hook()`) entkoppelt
 das von Musashi, sonst haette jeder `devdesc.c`-Aufrufer (Editor, leichte Testziele) die volle
-CPU-Kernobjekte mitlinken muessen. Damit sind **ALLE NEUN heutigen Hardware-Typen** auf das
-einheitliche Muster umgestellt. **Noch offen bis zum echten "Hardware hinzufuegen"-Button:**
+CPU-Kernobjekte mitlinken muessen. **Zehntes Geraet FERTIG (2026-08-21, "Dreiunddreissigste
+Runde"):** der REMAP-Trigger ($FFFF8000-$FFFF8FFF, Boot-ROM-Spiegel -> RAM-Umschaltung), Andreas'
+eigener Vorschlag -- nach `src/devices/remap/remap.c` umgezogen (reiner Adress-Trigger, kein
+Datenwert, kein IRQ), die eigentliche RAM/ROM-Interpretation bleibt bewusst im Performance-
+Fast-Path von `q9board.c`/`m68krt.c`. Damit sind **ALLE ZEHN heutigen Hardware-/Adressraum-Typen**
+auf das einheitliche Muster umgestellt. **Noch offen bis zum echten "Hardware hinzufuegen"-Button:**
 generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen (bisher nur "cf"
 config-gesteuert instanziierbar), und der eigentliche Typ-Auswahl-Dialog im Editor.
 

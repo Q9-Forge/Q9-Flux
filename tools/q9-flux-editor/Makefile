@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 2.20
+# File:   Makefile                                                                        Ver. 2.30
 # Owner:  Claudia
 # Desc.:  Q9-Flux-Launcher/Config-Editor -- Grundstein (docs/Q9FLUX_EDITOR_de.md). Bewusst C99 ohne
 #         TUI-Framework, s. src/q9_ansi.h Kopfkommentar (Vorgeschichte: gescheiterter Turbo-Vision-
@@ -44,6 +44,8 @@
 # 26-08-21│ 2.20 │ nettty dazu -- letzter Typ, DEVDESC_SRC vollstaendig (alle neun Hardware-    │ Cld
 #         │      │ Typen). Bewusst OHNE eigene HAL/Musashi-Abhaengigkeit (Funktionszeiger-Hook   │
 #         │      │ statt direktem m68k_set_irq(), s. nettty.c-Kopfkommentar)                     │
+# 26-08-21│ 2.30 │ remap dazu (der REMAP-Trigger, vormals Sonderfall in q9board.c, jetzt eigenes │ Cld
+#         │      │ devreg-Geraet, s. devdesc.c-Historie)                                          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 CC      ?= gcc
 CFLAGS  := -std=c99 -Wall -Wextra -O2
@@ -72,7 +74,8 @@ DEVDESC_SRC := ../../src/kernel/devdesc.c ../../src/kernel/devschema.c ../../src
                ../../src/devices/mc6845/mc6845.c ../../src/devices/framebuf/framebuf.c \
                ../../src/devices/clut/clut.c \
                ../../src/devices/duart68681/duart68681.c ../../src/devices/rtc72421/rtc72421.c \
-               ../../src/devices/timer_irq/timer_irq.c ../../src/devices/nettty/nettty.c
+               ../../src/devices/timer_irq/timer_irq.c ../../src/devices/nettty/nettty.c \
+               ../../src/devices/remap/remap.c
 # duart68681.c/rtc72421.c brauchen q9_hal_* (UART/RTC-Codepfade) -- der Editor bindet dafuer den
 # schon vorhandenen Root-Testsstub statt der vollen nativen HAL ein (kein eigener Terminal-
 # Rohmodus-Konflikt mit q9_input.h, s. dortiger Kopfkommentar).

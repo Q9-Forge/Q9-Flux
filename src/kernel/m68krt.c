@@ -80,6 +80,7 @@
                                                         /* aus q9board.h ausgelagert                */
 #include "../devices/rtc72421/rtc72421.h"               /* 2026-08-21: q9_devtype_rtc72421          */
 #include "../devices/timer_irq/timer_irq.h"             /* 2026-08-21: q9_devtype_timer_irq         */
+#include "../devices/remap/remap.h"                       /* 2026-08-21: q9_devtype_remap             */
 #include "../devices/nettty/nettty.h"                    /* 2026-08-21: q9_devtype_nettty, aus       */
                                                           /* q9board.h/m68krt.c ausgelagert           */
 #include "devreg.h"
@@ -125,9 +126,11 @@ static q9_quicc_t  *g_quicc;                          /* 5.11: QUICC-Ethernet, o
    Eintrag zeigt trotzdem auf das (einzige) Geraet dieses Slots; q9_device_hit() prueft danach
    weiterhin das ECHTE Fenster -- Adressen ausserhalb liefern wie bisher "kein Geraet" (Board-
    Fallback), nur ohne den unnoetigen Scan ueber alle anderen Geraete davor.
-   NICHT REGISTRIERTE BEREICHE (z.B. REMAP-Register $FFFF8000-$FFFF8FFF -- reiner Adress-Trigger,
-   wird direkt im Board-Fallback behandelt, s. q9board.c board_is_remap_reg): Tabelleneintrag NULL,
-   Cluster-Abdeckung ist vollstaendig -> sofort "kein Geraet" statt jeder Schleife.
+   NICHT REGISTRIERTE BEREICHE (z.B. Luecken zwischen Geraete-Fenstern innerhalb des Clusters):
+   Tabelleneintrag NULL, Cluster-Abdeckung ist vollstaendig -> sofort "kein Geraet" statt jeder
+   Schleife. 2026-08-21: das REMAP-Register ($FFFF8000-$FFFF8FFF, vormals das Beispiel hier) ist
+   jetzt selbst ein registriertes devreg-Geraet (src/devices/remap/remap.c) und faellt deshalb
+   nicht mehr in diesen Fall.
 
    Aufbau EINMALIG, lazy beim ersten Zugriff (nicht bei jedem q9_devreg_add -- die Registry fuellt
    sich erst ueber mehrere q9_m68krt_attach_*-Aufrufe in q9boardrun.c, ein fruehzeitiger Aufbau
@@ -867,6 +870,22 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.level_held = 0;
         d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_rtc72421;
+        d.state      = board;
+        q9_devreg_add(d);
+
+        /* 2026-08-21 (Hardware-Vereinheitlichung, Andreas' Idee): der REMAP-Trigger selbst -- kein
+           IRQ, Registrierungsreihenfolge daher egal (kein IRQ-Prioritaetskonflikt moeglich). state
+           zeigt wie bei duart68681/rtc72421 auf das ganze q9_board_t. */
+        memset(&d, 0, sizeof(d));
+        d.type       = "remap";
+        d.name       = "remap0";
+        d.base       = Q9_BOARD_REMAP_REG_BASE;
+        d.size       = Q9_BOARD_REMAP_REG_TOP - Q9_BOARD_REMAP_REG_BASE + 1u;
+        d.irq_level  = 0;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
+        d.vt         = &q9_devtype_remap;
         d.state      = board;
         q9_devreg_add(d);
 
