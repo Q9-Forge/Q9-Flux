@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9board.h                                                                         Ver. 2.40
+// File:   q9board.h                                                                         Ver. 2.50
 // Owner:  AF
 // Desc.:  Board-Emulation (Schritt 5.2, docs/BOARD.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit einem originalen, proprietaeren OS-9-Boot-ROM.
@@ -66,6 +66,9 @@
 // 26-08-21│ 2.40 │ Hardware-Vereinheitlichung, Folgeschritt: OS-9-Netzwerk-Terminal-Server-        │ Cld
 //         │      │ Definitionen (MAX_CHANNELS/os9_uart_t/Q9_BOARD_NET_*) nach                       │
 //         │      │ src/devices/nettty/nettty.h umgezogen -- letzter noch fehlender Typ von neun     │
+// 26-08-21│ 2.50 │ Hardware-Vereinheitlichung, Andreas' Idee: REMAP-Trigger-Konstanten nach          │ Cld
+//         │      │ src/devices/remap/remap.h umgezogen (der Trigger ist jetzt ein eigenes devreg-    │
+//         │      │ Geraet)                                                                            │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARD_H
 #define Q9_BOARD_H
@@ -87,8 +90,8 @@
                                                          0xFFFF_0000 bleibt frei) */
 #define Q9_BOARD_ROM_REMAP_BASE    0xFE000000u        /* Remap-Zustand: ROM liegt einmal hier   */
 #define Q9_BOARD_ROM_REMAP_TOP     0xFE07FFFFu
-#define Q9_BOARD_REMAP_REG_BASE    0xFFFF8000u        /* REMAP-Register: reiner Adress-Trigger  */
-#define Q9_BOARD_REMAP_REG_TOP     0xFFFF8FFFu
+/* Q9_BOARD_REMAP_REG_BASE/TOP: 2026-08-21 nach src/devices/remap/remap.h umgezogen
+   (Hardware-Vereinheitlichung, der Trigger selbst ist jetzt ein eigenes devreg-Geraet). */
 
 /* 2026-08-21: die OS-9-Netzwerk-Terminal-Server-Definitionen (MAX_CHANNELS/os9_uart_t/
    Q9_BOARD_NET_X1..X8_BASE/channels[]) sind nach src/devices/nettty/nettty.h/.c umgezogen
