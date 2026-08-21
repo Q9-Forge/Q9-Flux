@@ -46,6 +46,7 @@
 
 #include <stdint.h>
 #include "../../kernel/devreg.h"                        /* q9_device_t/Vtable                     */
+#include "../../kernel/devdesc.h"                       /* 2026-08-21: q9_devdesc_framebuf, s.u.   */
 #include "../mc6845/mc6845.h"                          /* q9_mc6845_stride() fuers Dirty-Mapping  */
 
 //─── Adressfenster (Q9-Frame WORK_PACKAGES.md WP02) ─────────────────────────────────────────────
@@ -104,6 +105,7 @@ void                q9_framebuf_dirty_clear(q9_framebuf_t *fb);
 
 //─── Geraete-Vtable fuer die Registry (devreg.h) ────────────────────────────────────────────────
 extern const q9_device_vtable_t q9_devtype_framebuf;
+extern const q9_devdesc_t       q9_devdesc_framebuf;       /* 2026-08-21: Vtable+Schema vereint    */
 
 #endif /* Q9_FRAMEBUF_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────

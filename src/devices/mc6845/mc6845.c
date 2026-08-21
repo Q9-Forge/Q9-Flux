@@ -110,6 +110,21 @@ const q9_device_vtable_t q9_devtype_mc6845 = {
     .reset         = NULL,
     .irq_vector_fn = NULL,
 };
+
+/* 2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): q9_devdesc_mc6845 --
+   noch OHNE extra_fields (kein Config-Schema, immer hartkodiert instanziiert, s. m68krt.c
+   q9_m68krt_attach_mc6845 -- eigener, spaeterer Schritt). use_table_default=1, teilt sich aber
+   heute noch einen Fast-Table-Slot mit CLUT (ambiguous, s. m68krt.c io_table_build) -- faellt
+   deshalb ohnehin auf den linearen Scan zurueck, das Flag bleibt trotzdem ehrlich gesetzt. */
+const q9_devdesc_t q9_devdesc_mc6845 = {
+    .type              = "mc6845",
+    .desc              = "MC6845-CRT-Controller (GDP-Grundlage)",
+    .vt                = &q9_devtype_mc6845,
+    .use_table_default = 1,
+    .extra_fields      = NULL,
+    .extra_field_count = 0,
+};
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // EOF mc6845.c                                                                            Ver. 1.03
 //────────────────────────────────────────────────────────────────────────────────────────────────

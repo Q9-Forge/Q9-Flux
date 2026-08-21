@@ -42,6 +42,7 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "quicc.h"
 #include "../../kernel/devreg.h"                        /* 5.17: q9_device_t/Vtable, s. devreg.h  */
+#include "../../kernel/devdesc.h"                       /* 2026-08-21: q9_devdesc_quicc, s.u.      */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -852,6 +853,18 @@ const q9_device_vtable_t q9_devtype_quicc = {
     .irq_pending   = quicc_dev_irq_pending,
     .reset         = NULL,
     .irq_vector_fn = NULL,                            /* fester Vektor, s. dev->irq_vector       */
+};
+
+/* 2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): q9_devdesc_quicc --
+   noch OHNE extra_fields (kein Config-Schema fuer diesen Typ vorhanden, QUICC wird bisher immer
+   hartkodiert instanziiert, s. m68krt.c q9_m68krt_attach_quicc -- eigener, spaeterer Schritt). */
+const q9_devdesc_t q9_devdesc_quicc = {
+    .type              = "quicc",
+    .desc              = "QUICC-Ethernet (MC68360 SCC1, 10Base-T)",
+    .vt                = &q9_devtype_quicc,
+    .use_table_default = 1,                            /* liegt im Fast-Table-Cluster              */
+    .extra_fields      = NULL,
+    .extra_field_count = 0,
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────

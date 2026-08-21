@@ -140,13 +140,22 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 
+# 2026-08-21 (Hardware-Vereinheitlichung): alle q9_devdesc_t-Definitionen (devdesc.c's Registry
+# g_devdesc_registry[] referenziert JEDEN Eintrag unbedingt, s. dortiger Kommentar) -- jeder
+# Aufrufer von devdesc.c braucht deshalb ALLE hier gelisteten Dateien im Link, nicht nur devdesc.c
+# selbst. Eigene Variable statt Wiederholung an jeder Aufrufstelle (Root-Binary + mehrere
+# Testziele + Editor-Makefile) -- ein neuer Typ traegt sich hier EINMAL ein.
+DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c \
+              src/devices/cf/cf.c src/devices/quicc/quicc.c src/devices/mc6845/mc6845.c \
+              src/devices/framebuf/framebuf.c src/devices/clut/clut.c \
+              src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
+              src/devices/timer_irq/timer_irq.c
+
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
 BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/devreg.c src/kernel/boardcfg.c \
-            src/kernel/devdesc.c src/kernel/devschema.c \
-            src/devices/cf/cf.c \
-            src/devices/quicc/quicc.c src/devices/mc6845/mc6845.c src/devices/framebuf/framebuf.c \
-            src/devices/clut/clut.c src/devices/videobridge/videobridge.c
+            $(DEVDESC_SRC) \
+            src/devices/videobridge/videobridge.c
 BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src/kernel/boardcfg.h \
             src/devices/cf/cf.h \
             src/devices/quicc/quicc.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
@@ -236,7 +245,7 @@ test: test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test
 test-cf-sector:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) test/07_test_cf_sector512.c test/07_hal_stub.c \
-	    src/devices/cf/cf.c src/kernel/q9board.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
+	    src/devices/cf/cf.c src/devices/duart68681/duart68681.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 	$(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 
 # 6.7-Pilot: Rauchtest fuer die selbstbeschreibenden Geraete-Schemata (devschema.h/.c) -- reine
@@ -253,8 +262,8 @@ test-devschema:
 # Abhaengigkeit trotz cf.c im Link (dessen ATA-PIO-Funktionen werden hier gar nicht aufgerufen).
 test-devdesc:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) test/12_test_devdesc.c src/kernel/devdesc.c src/kernel/devschema.c \
-	    src/devices/cf/cf.c -o $(BUILD)/$(PLATFORM_DIR)/test_devdesc
+	$(CC) $(CFLAGS) test/12_test_devdesc.c test/07_hal_stub.c $(DEVDESC_SRC) \
+	    -o $(BUILD)/$(PLATFORM_DIR)/test_devdesc
 	$(BUILD)/$(PLATFORM_DIR)/test_devdesc
 
 # 5.18-Fortsetzung: useSlot/slot (boardcfg.h/.c) -- Adressberechnung + Parser-Fehlerpfade, reine
@@ -262,8 +271,8 @@ test-devdesc:
 # im PLATFORM_DIR (portabel statt /tmp, von "make clean" erfasst).
 test-useslot:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) test/10_test_useslot.c src/kernel/boardcfg.c \
-	    src/kernel/devdesc.c src/kernel/devschema.c src/devices/cf/cf.c \
+	$(CC) $(CFLAGS) test/10_test_useslot.c test/07_hal_stub.c src/kernel/boardcfg.c \
+	    $(DEVDESC_SRC) \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_useslot
 	cd $(BUILD)/$(PLATFORM_DIR) && ./test_useslot
 
@@ -272,8 +281,8 @@ test-useslot:
 # relativer Pfade). Schreibt wegwerfbare Scratch-.q9-Dateien im PLATFORM_DIR (wie test-useslot).
 test-boardcfg-save:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) test/11_test_boardcfg_save.c src/kernel/boardcfg.c \
-	    src/kernel/devdesc.c src/kernel/devschema.c src/devices/cf/cf.c \
+	$(CC) $(CFLAGS) test/11_test_boardcfg_save.c test/07_hal_stub.c src/kernel/boardcfg.c \
+	    $(DEVDESC_SRC) \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_boardcfg_save
 	cd $(BUILD)/$(PLATFORM_DIR) && ./test_boardcfg_save
 
@@ -287,6 +296,8 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	    test/09_test_io_dispatch.c test/07_hal_stub.c \
 	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/devreg.c \
 	    src/devices/cf/cf.c \
+	    src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
+	    src/devices/timer_irq/timer_irq.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
 	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
