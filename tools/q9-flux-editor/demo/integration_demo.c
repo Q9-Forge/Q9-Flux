@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.70
+// File:   integration_demo.c                                                             Ver. 3.80
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
@@ -131,6 +131,12 @@
 //         │      │ verbliebener reiner Zahlenwert (CLUT "Eintraege:") auf NUMERIC_DEC umgestellt; die    │
 //         │      │ "Groesse:"-Felder (512K/4 MB/256K/2K) bleiben bewusst TEXT (Einheit im Wert, keine    │
 //         │      │ reine Zahl -- NUMERIC_DEC wuerde K/MB/Leerzeichen beim Tippen verwerfen)               │
+// 26-08-20│ 3.80 │ Dreissigste Runde ("Anlegen/Loeschen von Hardware-Instanzen", Andreas): echte Tasten   │ Cld
+//         │      │ N/D fuer die vier CF-Image-Slots -- add_cfimg_slot()/delete_cfimg_slot()/              │
+//         │      │ cfimg_reset_slot() NEU, save_q9_config() unveraendert (war schon robust dafuer         │
+//         │      │ ausgelegt, s. dortiger Kommentar). Pilot am Beispiel des einzigen heute schon Config-  │
+//         │      │ gesteuerten Hardware-Typs -- generisches "Hardware hinzufuegen" fuer beliebige Typen   │
+//         │      │ bleibt Folgeschritt (s. Q9FLUX_EDITOR_de.md)                                           │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -516,7 +522,8 @@ static void build_full_content(q9_screenbuf_t *sb, q9_listview_t *lv, int rows, 
                        (hint && hint[0]) ? hint
                                          : "Pfeiltasten: navigieren   Rechts: oeffnen+bearbeiten   "
                                            "Leertaste: ja/nein   Esc: schliessen   O: Datei oeffnen   "
-                                           "S: speichern   Strg-C: beenden",
+                                           "S: speichern   N: CF-Image anlegen   D: CF-Image loeschen "
+                                           "  Strg-C: beenden",
                        PAL_FRAME_R, PAL_FRAME_G, PAL_FRAME_B);
 
     lv->row    = 2;
@@ -675,6 +682,76 @@ static void sync_cfimg_items(q9_listview_t *lv)
         if (lv->selected >= g_item_count) { lv->selected = g_item_count - 1; }
         q9_listview_move_ex(lv, 0, g_list_items, g_expanded);   /* Scroll-Offset neu ausrichten */
     }
+}
+
+/* Dreissigste Runde ("Anlegen/Loeschen von Hardware-Instanzen", Andreas 2026-08-19/20, Pilot am
+   Beispiel der bereits vorhandenen CF-Image-Slots -- s. Q9FLUX_EDITOR_de.md): setzt EINEN Slot auf
+   die Werte, die ein frisch von q9_board_cfg_default() genulltes q9_cfg_cf_t haette (Typ:auto/
+   Bus:onboard/Unit:master -- alles gueltige, kanonische Enum-Werte, KEIN reines "<leer>" wie bei
+   nie geladenen Slots, weil Typ/Bus/Unit anders als Datei: keinen "nichts eingetragen"-Zustand
+   kennen, s. q9_cfg_cf_t/parse_cf_*() oben). Nur Datei: bleibt "<leer>" -- das ist das einzige
+   wirklich fehlende Pflichtfeld (boardcfg.c verlangt image=, s. dortige Validierung). */
+static void cfimg_reset_slot(int slot)
+{
+    snprintf(g_cfimg_fields[slot][0].value, sizeof(g_cfimg_fields[slot][0].value), "%s",
+             cf_format_str(Q9_CF_FMT_AUTO));
+    snprintf(g_cfimg_fields[slot][1].value, sizeof(g_cfimg_fields[slot][1].value), "%s",
+             cf_bus_str(Q9_CFG_BUS_ONBOARD));
+    snprintf(g_cfimg_fields[slot][2].value, sizeof(g_cfimg_fields[slot][2].value), "%s",
+             cf_unit_str(0));
+    snprintf(g_cfimg_fields[slot][3].value, sizeof(g_cfimg_fields[slot][3].value), "%s", "<leer>");
+}
+
+/* Taste 'N': naechsten freien CF-Image-Slot aktivieren (g_item_count++, s. BASE_ITEM_COUNT-
+   Kommentar), Defaults setzen, Auswahl+Scroll draufsetzen. save_q9_config() braucht dafuer KEINE
+   Anpassung -- cf_visible = g_item_count - BASE_ITEM_COUNT wird dort schon bei jedem Speichern neu
+   berechnet (s. dortiger Kommentar "ein kuenftiges 'neuen CF-Image-Slot hinzufuegen'", der genau
+   diese Runde vorwegnimmt). Voll (alle Q9_LISTVIEW_CFIMG_SLOTS aktiv): No-op, msg erklaert warum. */
+static void add_cfimg_slot(q9_listview_t *lv, char *msg, unsigned msg_size)
+{
+    int slot = g_item_count - BASE_ITEM_COUNT;
+    if (slot >= Q9_LISTVIEW_CFIMG_SLOTS) {
+        snprintf(msg, msg_size, "CF-Image-Slots voll (max. %d)", Q9_LISTVIEW_CFIMG_SLOTS);
+        return;
+    }
+    cfimg_reset_slot(slot);
+    g_item_count++;
+    lv->item_count = g_item_count;
+    lv->selected = BASE_ITEM_COUNT + slot;
+    lv->field_focus = -1;
+    q9_listview_move_ex(lv, 0, g_list_items, g_expanded);
+    snprintf(msg, msg_size, "CF-Image #%d angelegt", slot);
+}
+
+/* Taste 'D': den AUSGEWAEHLTEN CF-Image-Slot entfernen -- nur wirksam, wenn die Auswahl
+   ueberhaupt auf einem CF-Image-Eintrag liegt (Index >= BASE_ITEM_COUNT), sonst No-op (kein
+   versehentliches Loeschen eines Hardware-Demo-Eintrags durch denselben Tastendruck). Slots
+   bleiben IMMER lueckenlos am Anfang (Position i = CF-Image #i, s. Kopfkommentar bei
+   g_cfimg_fields) -- nachfolgende Slot-INHALTE ruecken deshalb eine Position nach vorn (memcpy,
+   Label/Kind sind je Zeile ohnehin identisch), statt nur die Sichtbarkeitsgrenze zu verschieben.
+   Alle CF-Image-Eintraege klappen dabei zu (g_expanded zurueckgesetzt) -- verschobene Slot-Inhalte
+   hinter einem weiterhin aufgeklappten Eintrag waeren sonst verwirrend, einfacher Neustart. */
+static void delete_cfimg_slot(q9_listview_t *lv, char *msg, unsigned msg_size)
+{
+    int slot, i, visible;
+
+    if (lv->selected < BASE_ITEM_COUNT || lv->selected >= g_item_count) {
+        snprintf(msg, msg_size, "Loeschen: Auswahl ist kein CF-Image-Eintrag");
+        return;
+    }
+    slot = lv->selected - BASE_ITEM_COUNT;
+    visible = g_item_count - BASE_ITEM_COUNT;
+    for (i = slot; i < visible - 1; i++) {
+        memcpy(g_cfimg_fields[i], g_cfimg_fields[i + 1], sizeof(g_cfimg_fields[i]));
+    }
+    cfimg_reset_slot(visible - 1);
+    g_item_count--;
+    for (i = BASE_ITEM_COUNT; i < MAX_ITEM_COUNT; i++) { g_expanded[i] = 0; }
+    lv->item_count = g_item_count;
+    lv->field_focus = -1;
+    if (lv->selected >= g_item_count && g_item_count > 0) { lv->selected = g_item_count - 1; }
+    q9_listview_move_ex(lv, 0, g_list_items, g_expanded);
+    snprintf(msg, msg_size, "CF-Image #%d geloescht", slot);
 }
 
 /* Andreas' Wunsch (2026-08-18, fuenfundzwanzigste Runde): "echtes Laden/Auswerten der .q9-Datei"
@@ -1244,6 +1321,12 @@ int main(void)
                         /* Sechsundzwanzigste Runde (Andreas: "Speichern-Funktion") -- global wie
                            'o'/'O', kein Feld muss fokussiert sein. */
                         save_q9_config(last_dialog_msg, sizeof(last_dialog_msg));
+                    } else if (!showing_overlay && (k.ch == 'n' || k.ch == 'N')) {
+                        /* Dreissigste Runde ("Anlegen/Loeschen von Hardware-Instanzen") -- global
+                           wie 'o'/'s', kein Feld muss fokussiert sein. */
+                        add_cfimg_slot(&lv, last_dialog_msg, sizeof(last_dialog_msg));
+                    } else if (!showing_overlay && (k.ch == 'd' || k.ch == 'D')) {
+                        delete_cfimg_slot(&lv, last_dialog_msg, sizeof(last_dialog_msg));
                     }
                     break;
                 default:
@@ -1268,5 +1351,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 3.60
+// EOF integration_demo.c                                                                  Ver. 3.80
 //────────────────────────────────────────────────────────────────────────────────────────────────

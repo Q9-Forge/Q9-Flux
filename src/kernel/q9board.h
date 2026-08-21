@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9board.h                                                                         Ver. 2.20
+// File:   q9board.h                                                                         Ver. 2.30
 // Owner:  AF
 // Desc.:  Board-Emulation (Schritt 5.2, docs/BOARD.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit einem originalen, proprietaeren OS-9-Boot-ROM.
@@ -58,6 +58,10 @@
 //         │      │ umgestellt (eigener I/O-Tabellenplatz je Kanal, Andreas' Entscheidung).      │
 //         │      │ NUR die Basisadressen -- Register-Offsets/Dispatch-Logik unveraendert. Muss  │
 //         │      │ mit systype.d im Q9-Port-Repo synchron bleiben, s. Kommentar bei den Defines │
+// 26-08-20│ 2.30 │ Hardware-Vereinheitlichung, Pilot "cf": Compact-Flash-Konstanten/-Structs/     │ Cld
+//         │      │ -Vtable nach src/devices/cf/cf.h umgezogen (Andreas' Vorgabe: ein eigenes     │
+//         │      │ Sourcefile je Hardware-Typ) -- via #include weiterhin transitiv sichtbar,      │
+//         │      │ q9_board_cf_attach bleibt duenner Wrapper hier                                 │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARD_H
 #define Q9_BOARD_H
@@ -65,6 +69,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "devreg.h"                                    /* 5.17: q9_device_t/Vtable, s. devreg.h  */
+#include "../devices/cf/cf.h"                          /* 2026-08-20: q9_cf_t/q9_devtype_cf, aus  */
+                                                        /* q9board.c/.h hierher verschoben          */
 
 #define Q9_BOARD_OK          0
 #define Q9_BOARD_ERR_RAM    -1                       /* RAM fehlt */
@@ -149,24 +155,8 @@ typedef struct {
 #define Q9_BOARD_RTC_BASE          0xFFFFD000u
 #define Q9_BOARD_RTC_TOP           0xFFFFD00Fu
 
-/* 5.2c: Compact-Flash-Interface (docs/BOARD.md, Abschnitt "Compact-Flash-Interface"). */
-#define Q9_BOARD_CF_BASE           0xFFFFE000u
-#define Q9_BOARD_CF_TOP            0xFFFFE0FFu
-/* 5.19a: Zweites CF-Interface — SC145-CF-Kartenleser im RC2014-Erweiterungsslot, Adresse aus
-   dem MWOS-Q9-Port (systype.d: RC2014_CF_Base = Slot-Basis $FFFFC000 + Offset $10; Descriptoren
-   e0 = Master / f0 = Slave, beide DrvNum-gesteuert ueber das DEV-Bit in LBA3: $E0/$F0). Fenster
-   sind die 8 ATA-Register $FFFFC010–$FFFFC017. Wird NUR registriert, wenn die Board-Config
-   (boardcfg.h) dort Images anhaengt — ohne Config existiert das Fenster nicht (Board wie bisher). */
-#define Q9_BOARD_CF2_BASE          0xFFFFC010u
-#define Q9_BOARD_CF2_TOP           0xFFFFC017u
-#define Q9_BOARD_CF_CMD_READ       0x20u              /* READ SECTOR(S)  */
-#define Q9_BOARD_CF_CMD_WRITE      0x30u              /* WRITE SECTOR(S) */
-#define Q9_BOARD_CF_CMD_SETFEAT    0xEFu              /* SET FEATURES (8-Bit-Mode etc.) */
-#define Q9_BOARD_CF_STAT_BSY       0x80u
-#define Q9_BOARD_CF_STAT_DRQ       0x08u
-#define Q9_BOARD_CF_STAT_RDY       0x40u
-#define Q9_BOARD_CF_STAT_ERR       0x01u
-#define Q9_BOARD_CF_SECTOR_SIZE    512u
+/* 2026-08-20: Compact-Flash-Adress-/Registerkonstanten sind nach src/devices/cf/cf.h umgezogen
+   (Hardware-Vereinheitlichung, Pilot "cf") -- via #include oben weiterhin hier sichtbar. */
 
 /* 5.2b: 68681-DUART (docs/BOARD.md, Abschnitt "68681 DUART"). Nur die Adressen, die Aufrufer/
    Selbsttest wirklich brauchen, sind hier exponiert — der Rest des Registersatzes bleibt intern
@@ -176,42 +166,6 @@ typedef struct {
 #define Q9_BOARD_UART_SRA    (Q9_BOARD_UART_BASE + 0x02u)  /* Status A (lesen)                 */
 #define Q9_BOARD_UART_THRA   (Q9_BOARD_UART_BASE + 0x06u)  /* Tx-Holding (schreiben) = RHRA-Adr.*/
 #define Q9_BOARD_UART_RX_FIFO_SIZE (4u * 1024u * 1024u)
-
-/* 5.19a: Image-Format eines angehaengten CF-Images (aus der Board-Config, s. boardcfg.h) —
-   steuert NUR die Host-seitige Sektorgroessen-Erkennung und die IDENTIFY-Sektorzahl, nicht das
-   ATA-Protokoll selbst:
-   AUTO/RBF = bisherige RBF-Heuristik (256-Byte-LSNs alter OS-9-Images erkennen, DD_TOT aus LSN0);
-   PCF      = FAT12/16-Image: immer 512-Byte-Sektoren, keine RBF-Heuristik (die FAT-Bootsektor-
-              Bytes wuerden sonst als LSN0 fehlgedeutet), IDENTIFY-Sektorzahl aus der Dateigroesse. */
-#define Q9_CF_FMT_AUTO 0
-#define Q9_CF_FMT_RBF  1
-#define Q9_CF_FMT_PCF  2
-
-/* 5.19a: Eine CF-EINHEIT (Master oder Slave) — Backing-Datei + erkannte Sektorgroesse. */
-typedef struct {
-    const char *path;                                  /* NULL = Einheit nicht bestueckt          */
-    FILE       *file;                                  /* lazy geoeffnet (Muster wie q9disk.img)  */
-    uint32_t    image_sector_size;                     /* 0 = noch unerkannt; 256/512             */
-    uint32_t    start_sector;                          /* Host-LBA, auf den Gast-LBA 0 abgebildet wird */
-    int         format;                                /* Q9_CF_FMT_*                             */
-} q9_cf_unit_t;
-
-/* 5.19a: Ein CF-INTERFACE (ATA-Registersatz + Sektorpuffer), mehrfach instanziierbar (Onboard-CF
-   $FFFFE000 + RC2014-SC145 $FFFFC010). Beide Einheiten teilen sich Registersatz und Puffer wie
-   bei echtem ATA — welche Einheit ein Kommando bedient, entscheidet das DEV-Bit (Bit 4) in LBA3
-   ($E0 = Master, $F0 = Slave, exakt die Werte der e0/f0-Descriptoren im MWOS-Q9-Port). */
-typedef struct {
-    q9_cf_unit_t unit[2];                              /* [0] = Master, [1] = Slave              */
-    uint32_t     lba;
-    uint8_t      lba3;                                 /* LBA bits 27..24 + DEV/LBA-Flags        */
-    uint8_t      sectcnt;
-    uint8_t      status;
-    uint8_t      sector[Q9_BOARD_CF_SECTOR_SIZE];
-    uint32_t     pos;                                  /* Index in sector, 0..SECTOR_SIZE        */
-    uint32_t     transfer_size;                        /* 256 fuer alte RBF-Daten, IDENTIFY 512  */
-    int          write_pending;                        /* 1 waehrend WRITE-SECTOR-Datenphase     */
-    uint32_t     remaining;                            /* 5.5a: ausstehende Sektoren im Kommando */
-} q9_cf_t;
 
 typedef struct q9_board {
     const uint8_t *rom;                               /* Boot-ROM-Inhalt, nur lesend            */
@@ -288,17 +242,8 @@ void q9_board_reset(q9_board_t *b);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int q9_board_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t *out_len);
 
-//════════════════════════════════════════════════════════════════════════════════════════════════
-// Function: q9_cf_attach
-// Desc.:    5.19a: Haengt ein Backing-Image an EINE Einheit (0 = Master, 1 = Slave) eines
-//           CF-Interfaces — die Datei selbst wird lazy beim ersten Kommando geoeffnet/angelegt
-//           (Muster wie die native HAL bei q9disk.img). path muss die gesamte Lebensdauer von c
-//           ueberleben (wird nur als Zeiger gehalten, nicht kopiert). format = Q9_CF_FMT_*
-//           (s.o.). Setzt den Interface-Registersatz zurueck (wie ein Kartenwechsel).
-// Call:     q9_cf_attach(&b.cf, 0, "local_images/board_cf.img", Q9_CF_FMT_AUTO)
-//════════════════════════════════════════════════════════════════════════════════════════════════
-void q9_cf_attach(q9_cf_t *c, int unit, const char *path, int format);
-void q9_cf_set_start_sector(q9_cf_t *c, int unit, uint32_t start_sector);
+/* 2026-08-20: q9_cf_attach/q9_cf_set_start_sector sind jetzt in src/devices/cf/cf.h deklariert
+   (Hardware-Vereinheitlichung, Pilot "cf") -- via #include oben weiterhin hier sichtbar. */
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_board_cf_attach
@@ -367,7 +312,7 @@ void q9_board_write32(q9_board_t *b, uint32_t addr, uint32_t val);
 // board_write_byte in die generische Registry). Instanzen werden von m68krt.c angelegt.
 //════════════════════════════════════════════════════════════════════════════════════════════════
 extern const q9_device_vtable_t q9_devtype_duart68681;   /* 5.17: 68681-DUART                    */
-extern const q9_device_vtable_t q9_devtype_cf;            /* 5.17: Compact-Flash (eigene 16/32-Bit-Pfade) */
+/* q9_devtype_cf: jetzt in cf.h deklariert (s.o., #include), Hardware-Vereinheitlichung 2026-08-20 */
 extern const q9_device_vtable_t q9_devtype_timer_irq;      /* 5.17: TI_IRQ_ON/OFF-Adress-Trigger    */
 extern const q9_device_vtable_t q9_devtype_rtc72421;        /* 5.17: RTC72421-Echtzeituhr             */
 

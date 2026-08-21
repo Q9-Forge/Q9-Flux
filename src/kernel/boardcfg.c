@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   boardcfg.c                                                                      Ver. 1.50
+// File:   boardcfg.c                                                                      Ver. 1.60
 // Owner:  AF
 // Desc.:  Implementierung des Board-Config-Parsers, siehe boardcfg.h. INI-artig, C99, ohne
 //         Fremdbibliothek. Bewusst schlank: nur die Abschnitte/Keys, die 5.19a heute braucht
@@ -25,9 +25,15 @@
 // 26-08-18│ 1.50 │ q9_board_cfg_save() NEU (Gegenstueck zu q9_board_cfg_load(), Q9FLUX_EDITOR_ │ Cld
 //         │      │ de.md, Andreas: "Speichern-Funktion") + Hilfsfunktion cfg_relativize()      │
 //         │      │ (Umkehrung von cfg_resolve_rel())                                           │
+// 26-08-20│ 1.60 │ Hardware-Vereinheitlichung, Pilot "cf": cfg_schema_confirm_invalid_enum()    │ Cld
+//         │      │ NEU -- reine Diagnose-Gegenprobe auf dem bereits-ungueltig-Pfad von          │
+//         │      │ type/bus/unit gegen q9_devdesc_lookup("cf") (devdesc.h), beweist dass das    │
+//         │      │ Schema jetzt load-bearing ist. KEINE Aenderung am eigentlichen Parse-/        │
+//         │      │ Fehlerpfad (Rueckgabewert/err-Text unveraendert)                              │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "boardcfg.h"
 #include "q9board.h"                                     /* Q9_CF_FMT_*                            */
+#include "devdesc.h"                                     /* 2026-08-20: Schema-Gegenprobe, s.u.    */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -220,6 +226,38 @@ static int cfg_parse_bool(const char *v, int *out)
     return -1;
 }
 
+/* 2026-08-20 (Hardware-Vereinheitlichung, Pilot "cf"): reine Diagnose-Gegenprobe -- wird NUR
+   aufgerufen, NACHDEM cfg_parse_bus/unit/format() einen Wert bereits als ungueltig verworfen hat
+   (der eigentliche Fehlerpfad/die zurueckgegebene Meldung bleiben unveraendert, s. Aufrufstellen).
+   Bestaetigt per q9_devdesc_lookup("cf") + q9_devschema_check_enum(), dass das jetzt in
+   src/devices/cf/cf.c gepflegte Schema denselben Wert ebenfalls ablehnt -- ein Auseinanderlaufen
+   waere ein Bug (Schema kopiert dieselben Wertelisten wie cfg_parse_bus/unit/format, s. cf.c
+   g_cf_bus/unit/format_values), koennte aber unbemerkt bleiben, wenn niemand je danach sucht.
+   Case-sensitiv (anders als cfg_ieq) -- deshalb bewusst NUR auf dem bereits-ungueltig-Pfad
+   verwendet, nie auf dem Erfolgspfad (dort waere Grossschreibung ein falscher Alarm, s. cf.c-
+   Kommentar bei g_cf_bus_values "bekannte, bewusst nicht behobene Vereinfachung"). */
+static void cfg_schema_confirm_invalid_enum(const char *field, const char *val)
+{
+    const q9_devdesc_t *cf = q9_devdesc_lookup("cf");
+    q9_devschema_t view;
+    int idx;
+    char schema_err[128];
+
+    if (!cf) {
+        return;
+    }
+    view.type = cf->type;
+    view.fields = cf->extra_fields;
+    view.field_count = cf->extra_field_count;
+    idx = q9_devschema_find_field(&view, field);
+    if (idx < 0) {
+        return;
+    }
+    if (q9_devschema_check_enum(&view.fields[idx], val, schema_err, sizeof(schema_err)) != 0) {
+        fprintf(stderr, "[boardcfg] Schema bestaetigt: %s\n", schema_err);
+    }
+}
+
 static int cfg_parse_u32(const char *v, uint32_t *out)
 {
     char *end;
@@ -405,6 +443,7 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 int fmt = cfg_parse_format(val);
                 if (fmt < 0) {
                     snprintf(err, err_max, "Zeile %d: unbekannter CF-Typ '%s' (rbf|pcf)", lineno, val);
+                    cfg_schema_confirm_invalid_enum("type", val);
                     fclose(f);
                     return -1;
                 }
@@ -414,6 +453,7 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 if (bus < 0) {
                     snprintf(err, err_max, "Zeile %d: unbekannter CF-Bus '%s' (onboard|rc2014)",
                              lineno, val);
+                    cfg_schema_confirm_invalid_enum("bus", val);
                     fclose(f);
                     return -1;
                 }
@@ -423,6 +463,7 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 if (unit < 0) {
                     snprintf(err, err_max, "Zeile %d: unbekannte CF-Unit '%s' (master|slave)",
                              lineno, val);
+                    cfg_schema_confirm_invalid_enum("unit", val);
                     fclose(f);
                     return -1;
                 }

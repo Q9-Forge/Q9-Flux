@@ -143,9 +143,12 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
 BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/devreg.c src/kernel/boardcfg.c \
+            src/kernel/devdesc.c src/kernel/devschema.c \
+            src/devices/cf/cf.c \
             src/devices/quicc/quicc.c src/devices/mc6845/mc6845.c src/devices/framebuf/framebuf.c \
             src/devices/clut/clut.c src/devices/videobridge/videobridge.c
 BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src/kernel/boardcfg.h \
+            src/devices/cf/cf.h \
             src/devices/quicc/quicc.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
             src/devices/clut/clut.h src/devices/videobridge/videobridge.h
 
@@ -222,14 +225,18 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save
+test: test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save
 
-# 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (q9board.c) -- reines
-# ATA-PIO-Protokoll gegen q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber.
+# 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (2026-08-20: nach
+# src/devices/cf/cf.c umgezogen, s. dortige Historie) -- reines ATA-PIO-Protokoll gegen
+# q9_cf_attach/q9_devtype_cf, ohne 68k-CPU/OS-9/RBF/PCF-Treiber. q9board.c/07_hal_stub.c bleiben
+# im Link (cf.c selbst braucht sie nicht mehr, aber devreg.c's Typ-Registry verweist weiterhin
+# unbedingt auf q9_devtype_duart68681 aus q9board.c -- vorbestehende Kopplung, s. devreg.c
+# g_device_types[], nicht Teil dieser Migration).
 test-cf-sector:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) test/07_test_cf_sector512.c test/07_hal_stub.c \
-	    src/kernel/q9board.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
+	    src/devices/cf/cf.c src/kernel/q9board.c src/kernel/devreg.c -o $(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 	$(BUILD)/$(PLATFORM_DIR)/test_cf_sector512
 
 # 6.7-Pilot: Rauchtest fuer die selbstbeschreibenden Geraete-Schemata (devschema.h/.c) -- reine
@@ -240,12 +247,23 @@ test-devschema:
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_devschema
 	$(BUILD)/$(PLATFORM_DIR)/test_devschema
 
+# Hardware-Vereinheitlichung (2026-08-20), Pilot "cf": Rauchtest fuer devdesc.h/.c -- Registry-
+# Lookup + typspezifische Felder (q9_devdesc_cf.extra_fields aus cf.c) + gemeinsame Basisfelder
+# (q9_devschema_common_fields). Reine Datenstruktur-Pruefung wie test-devschema, keine Board-/CPU-
+# Abhaengigkeit trotz cf.c im Link (dessen ATA-PIO-Funktionen werden hier gar nicht aufgerufen).
+test-devdesc:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) test/12_test_devdesc.c src/kernel/devdesc.c src/kernel/devschema.c \
+	    src/devices/cf/cf.c -o $(BUILD)/$(PLATFORM_DIR)/test_devdesc
+	$(BUILD)/$(PLATFORM_DIR)/test_devdesc
+
 # 5.18-Fortsetzung: useSlot/slot (boardcfg.h/.c) -- Adressberechnung + Parser-Fehlerpfade, reine
 # Datenstruktur-/Parser-Pruefung, kein Board/keine CPU. Schreibt eine wegwerfbare Scratch-.q9-Datei
 # im PLATFORM_DIR (portabel statt /tmp, von "make clean" erfasst).
 test-useslot:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) test/10_test_useslot.c src/kernel/boardcfg.c \
+	    src/kernel/devdesc.c src/kernel/devschema.c src/devices/cf/cf.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_useslot
 	cd $(BUILD)/$(PLATFORM_DIR) && ./test_useslot
 
@@ -255,6 +273,7 @@ test-useslot:
 test-boardcfg-save:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) test/11_test_boardcfg_save.c src/kernel/boardcfg.c \
+	    src/kernel/devdesc.c src/kernel/devschema.c src/devices/cf/cf.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_boardcfg_save
 	cd $(BUILD)/$(PLATFORM_DIR) && ./test_boardcfg_save
 
@@ -267,6 +286,7 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	$(CC) $(CFLAGS) -DQ9_HAVE_M68K -I$(MUSASHI_DIR) -I$(MUSASHI_GEN) \
 	    test/09_test_io_dispatch.c test/07_hal_stub.c \
 	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/devreg.c \
+	    src/devices/cf/cf.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
 	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
@@ -570,7 +590,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 4.40
