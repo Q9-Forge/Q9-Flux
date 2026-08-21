@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9board.h                                                                         Ver. 2.30
+// File:   q9board.h                                                                         Ver. 2.40
 // Owner:  AF
 // Desc.:  Board-Emulation (Schritt 5.2, docs/BOARD.md) — Bootstrap/Validierungs-Zwischenschritt
 //         fuer die Musashi-Integration (5.1) mit einem originalen, proprietaeren OS-9-Boot-ROM.
@@ -63,6 +63,9 @@
 //         │      │ -Vtable nach src/devices/cf/cf.h umgezogen (Andreas' Vorgabe: ein eigenes     │
 //         │      │ Sourcefile je Hardware-Typ) -- via #include weiterhin transitiv sichtbar,      │
 //         │      │ q9_board_cf_attach bleibt duenner Wrapper hier                                 │
+// 26-08-21│ 2.40 │ Hardware-Vereinheitlichung, Folgeschritt: OS-9-Netzwerk-Terminal-Server-        │ Cld
+//         │      │ Definitionen (MAX_CHANNELS/os9_uart_t/Q9_BOARD_NET_*) nach                       │
+//         │      │ src/devices/nettty/nettty.h umgezogen -- letzter noch fehlender Typ von neun     │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_BOARD_H
 #define Q9_BOARD_H
@@ -87,58 +90,9 @@
 #define Q9_BOARD_REMAP_REG_BASE    0xFFFF8000u        /* REMAP-Register: reiner Adress-Trigger  */
 #define Q9_BOARD_REMAP_REG_TOP     0xFFFF8FFFu
 
-// ===============================================================================================
-// OS-9 Netzwerk Terminal Server Peripherie-Definitionen (Erweiterung Ver. 1.30; 5.10: 8 Kanaele)
-// ===============================================================================================
-#define MAX_CHANNELS 8
-#define MAIN_LISTEN_PORT 2000
-
-/* I/O-Bloecke je Kanal (3 Register: +0 Status, +2 RX-Data, +4 TX-Data), freie Luecke zwischen
-   ROM-Spiegelgrenze (bis 0xFFFF_0000 frei, s. Q9_BOARD_ROM_MIRROR_TOP) und REMAP-Register
-   (Q9_BOARD_REMAP_REG_BASE ab 0xFFFF_8000) — kollidiert bewusst NICHT mit dem RAM (anders als
-   die urspruengliche 0x00FF00xx-Adressierung, die mitten im 16-MByte-RAM lag).
-   5.10: OS-9-Geraetenamen sind /x1../x8 (t1.. existiert im MWOS-Port schon anderweitig).
-
-   2026-08-14 (ARBEITSPLAN 5.18-Fortsetzung, Andreas' Entscheidung: eigener 256-Byte-Bereich statt
-   Index/Daten-Registerpaar -- "denke das ist erst mal einfacher"): Abstand von 16 auf 256 Byte
-   erhoeht, damit jeder Kanal seinen EIGENEN Slot in der I/O-Dispatch-Tabelle bekommt (s. m68krt.c
-   g_io_table, ARBEITSPLAN 5.18) -- vorher teilten sich alle acht Kanaele einen einzigen 256-Byte-
-   Slot ($FFFF1000-$FFFF10FF), was fuer die Tabelle kein Problem war (EIN gemeinsamer devreg-
-   Eintrag fuer alle acht, s.u.), aber keine Trennung auf Registry-Ebene erlaubte. Die eigentliche
-   Registerdispatch-Logik (m68krt.c network_read8/write8) vergleicht ausschliesslich gegen
-   channels[i].base_addr -- KEINE Annahme ueber den Abstand im Code, daher genuegt hier die reine
-   Konstantenaenderung, keine Logikaenderung. NUR die x1..x8-Basisadressen selbst haben sich
-   geaendert (x1 z.B. $FFFF1010 -> $FFFF1000) -- die Register-OFFSETS innerhalb eines Kanals
-   (+0/+2/+4) sind unveraendert. MUSS mit den entsprechenden Konstanten in der OS-9-seitigen
-   systype.d (Q9-Port-Repo, _NETX1_Base.._NETX8_Base/_NETX_Spacing) synchron gehalten werden --
-   sonst findet der Treiber die Kanaele nicht mehr. */
-#define Q9_BOARD_NET_X1_BASE       0xFFFF1000u
-#define Q9_BOARD_NET_X2_BASE       0xFFFF1100u
-#define Q9_BOARD_NET_X3_BASE       0xFFFF1200u
-#define Q9_BOARD_NET_X4_BASE       0xFFFF1300u
-#define Q9_BOARD_NET_X5_BASE       0xFFFF1400u
-#define Q9_BOARD_NET_X6_BASE       0xFFFF1500u
-#define Q9_BOARD_NET_X7_BASE       0xFFFF1600u
-#define Q9_BOARD_NET_X8_BASE       0xFFFF1700u
-#define Q9_BOARD_NET_BASE          Q9_BOARD_NET_X1_BASE
-#define Q9_BOARD_NET_TOP           0xFFFF17FFu             /* X8_BASE + 0xFF: letzter Kanal-Slot voll erfasst */
-
-typedef struct {
-    int client_fd;
-    unsigned char rx_data;
-    unsigned char tx_data;
-    unsigned char status;  // Bit 0 = RX Ready, Bit 1 = TX Empty
-    unsigned int base_addr;
-    int irq_level;
-    int irq_vector;
-    unsigned char last_was_cr;  // Telnet-NVT-Normalisierung: LF nach CR verwerfen (5.16)
-    unsigned char telnet_state; // IAC-Optionsverhandlung rausfiltern statt an OS-9 durchzureichen
-                                 // (0=Daten, 1=nach IAC, 2=nach WILL/WONT/DO/DONT, 3=in SB, 4=in SB nach IAC)
-} os9_uart_t;
-
-/* Die Kanaltabelle selbst (channels[]) lebt seit 5.10 in m68krt.c — sie war hier als static im
-   Header definiert und haette jeder weiteren einbindenden Uebersetzungseinheit eine eigene,
-   unbenutzte Kopie beschert. */
+/* 2026-08-21: die OS-9-Netzwerk-Terminal-Server-Definitionen (MAX_CHANNELS/os9_uart_t/
+   Q9_BOARD_NET_X1..X8_BASE/channels[]) sind nach src/devices/nettty/nettty.h/.c umgezogen
+   (Hardware-Vereinheitlichung) -- s. dort. */
 
 /* 5.2d: Timer/IRQ3 — reine Adress-Trigger, kein Datenwert. */
 #define Q9_BOARD_TIRQ_OFF_BASE     0xFFFF9000u

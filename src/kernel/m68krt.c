@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.60
+// File:   m68krt.c                                                                        Ver. 1.70
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -66,6 +66,12 @@
 //         │      │ eigene Dateien verschoben (waren zuvor in q9board.c) -- explizite Includes hier,    │
 //         │      │ da q9board.h ihre Vtables nicht mehr transitiv re-exportiert (s. dortiger           │
 //         │      │ Kommentar)                                                                          │
+// 26-08-21│ 1.70 │ Hardware-Vereinheitlichung, letzter Typ: nettty (Netz-Terminals) komplett nach        │ Cld
+//         │      │ src/devices/nettty/ verschoben. Andreas' Vorgabe "jedes Geraet einzeln, mit eigenem   │
+//         │      │ Descriptor, eigener Adresse, im Array" -- ACHT separate devreg-Eintraege statt einem  │
+//         │      │ gemeinsamen (q9_nettty_attach()), kein irq_vector_fn mehr noetig. Musashi-Entkopplung │
+//         │      │ per Funktionszeiger-Hook (q9_nettty_set_irq_hook), hier mit q9_m68krt_set_irq          │
+//         │      │ verdrahtet -- damit ist devdesc.c's Registry jetzt vollstaendig (alle neun Typen)      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
@@ -74,6 +80,8 @@
                                                         /* aus q9board.h ausgelagert                */
 #include "../devices/rtc72421/rtc72421.h"               /* 2026-08-21: q9_devtype_rtc72421          */
 #include "../devices/timer_irq/timer_irq.h"             /* 2026-08-21: q9_devtype_timer_irq         */
+#include "../devices/nettty/nettty.h"                    /* 2026-08-21: q9_devtype_nettty, aus       */
+                                                          /* q9board.h/m68krt.c ausgelagert           */
 #include "devreg.h"
 #include "m68k.h"
 #include "q9_sockcompat.h"    /* Windows-Build: Windows/Winsock-Portabilitaet fuer die Netz-Terminals */
@@ -93,356 +101,11 @@ static uint32_t     g_ram_len;
 static q9_board_t  *g_board;
 static q9_quicc_t  *g_quicc;                          /* 5.11: QUICC-Ethernet, optional (attach) */
 
-// === Forward-Deklarationen für den Netzwerk-Server ===
-static void init_network_terminals(void);
-static void update_network_terminals(void);
-static unsigned char network_read8(unsigned int address);
-static void network_write8(unsigned int address, unsigned char value);
-static int main_server_fd = -1;
-
-/* 5.10: 8 virtuelle Netzwerk-Terminals /x1../x8 (vorher 4x /t1../t4) — Registerlayout je Kanal
-   s. q9board.h. Jeder Kanal hat seinen EIGENEN Autovektor (70..77), der IACK-Zyklus liefert genau
-   den Vektor des Kanals mit gesetztem RX-Ready-Bit (s. m68krt_board_int_ack). */
-static os9_uart_t channels[MAX_CHANNELS] = {
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X1_BASE, 4, 70, 0, 0}, // /x1
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X2_BASE, 4, 71, 0, 0}, // /x2
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X3_BASE, 4, 72, 0, 0}, // /x3
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X4_BASE, 4, 73, 0, 0}, // /x4
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X5_BASE, 4, 74, 0, 0}, // /x5
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X6_BASE, 4, 75, 0, 0}, // /x6
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X7_BASE, 4, 76, 0, 0}, // /x7
-    {-1, 0, 0, 0x02, Q9_BOARD_NET_X8_BASE, 4, 77, 0, 0}  // /x8
-};
-
-/* 5.10: Die IRQ-Leitung ist das ODER aller RX-Ready-Bits (level-getriggert). Nach jedem Verbrauch
-   eines Bytes bzw. nach jedem globalen Absenken (int_ack) muss sie erneut angehoben werden, wenn
-   IRGENDEIN anderer Kanal noch ein unabgeholtes Byte hat — sonst verliert der Kanal seinen
-   Interrupt und bekommt erst beim NAECHSTEN Byte wieder einen (die im ARBEITSPLAN dokumentierte
-   4-Kanal-Einschraenkung, vor dem 8-Kanal-Betrieb zu beheben). */
-static void network_irq_resync(void) {
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (channels[i].status & 0x01) {
-            m68k_set_irq((unsigned int)channels[i].irq_level);
-            return;
-        }
-    }
-    m68k_set_irq(0);
-}
-
-
-/* 5.20 (Andreas' Doppel-Echo-Bugreport): der Server hat bisher gar keine Telnet-Optionsverhandlung
-   gemacht -- reines Raw-TCP. Ein echter Telnet-Client (Windows telnet.exe, PuTTY) faengt deshalb
-   OHNE Gegensignal an, selbst lokal zu echoen (NVT-Default), UND der OS-9-Treiber echoet jedes
-   eingegangene Zeichen wie ein echtes serielles Terminal -- macht "dir" zu "ddiirr". Fix in zwei
-   Teilen: (1) bei Verbindungsaufbau IAC WILL ECHO + IAC WILL SUPPRESS-GO-AHEAD schicken, damit sich
-   ein RFC854-konformer Client selbst abschaltet; (2) die IAC-Antwortsequenzen, die der Client
-   daraufhin zurückschickt (z.B. IAC DO ECHO), aus dem eingehenden Bytestrom rausfiltern statt sie
-   als Tippzeichen an OS-9 durchzureichen -- sonst landet z.B. ein rohes 0xFF im Login-Prompt. */
-#define Q9_TELNET_IAC   0xFF
-#define Q9_TELNET_WILL  0xFB
-#define Q9_TELNET_WONT  0xFC
-#define Q9_TELNET_DO    0xFD
-#define Q9_TELNET_DONT  0xFE
-#define Q9_TELNET_SB    0xFA
-#define Q9_TELNET_SE    0xF0
-#define Q9_TELNET_ECHO           0x01
-#define Q9_TELNET_SUPPRESS_GA    0x03
-
-static const unsigned char g_telnet_negotiate[] = {
-    Q9_TELNET_IAC, Q9_TELNET_WILL, Q9_TELNET_ECHO,
-    Q9_TELNET_IAC, Q9_TELNET_WILL, Q9_TELNET_SUPPRESS_GA
-};
-
-/* Andreas' Wunsch (2026-08-07): ein Strg-Zeichen soll NUR die eigene Telnet-Verbindung sauber
-   trennen (wie ein Logout), ohne den Rest des Emulators anzufassen -- anders als der lokale
-   Ctrl-Q-Host-Escape (hal_windows.c/hal_posix.c), der den GANZEN Prozess beendet. Gleicher Buchstabe
-   (Ctrl-Q) als Default wie dort, bewusst: Andreas hatte instinktiv genau das in einer Telnet-Session
-   probiert, "mein Exit-Reflex" soll ueberall gleich funktionieren (nur die Reichweite unterscheidet
-   sich: lokal = ganzer Prozess, hier = nur die eine Verbindung). Per Env-Var
-   Q9_NET_DISCONNECT_CTRL (ein Buchstabe A-Z) uebersteuerbar, falls Ctrl-Q in einer Session gebraucht
-   wird (z.B. als XON fuer ein OS-9-Programm mit eigener Flow-Control). */
-static int g_net_disconnect_ctrl = 0x11;               /* Ctrl-Q (Default) */
-
-static int q9_net_ctrl_from_env(const char *var, int fallback) {
-    const char *s = getenv(var);
-    char        c;
-    if (!s || !s[0] || s[1] != '\0') return fallback;
-    c = (char)toupper((unsigned char)s[0]);
-    return (c >= 'A' && c <= 'Z') ? (c - 'A' + 1) : fallback;
-}
-
-/* Rueckgabe 1: byte_in ist echtes Nutzdatum (an OS-9 weiterreichen). Rueckgabe 0: Teil einer
-   IAC-Sequenz, verschluckt -- naechstes Byte kommt im naechsten Poll-Durchlauf (recv liest ohnehin
-   nur je 1 Byte pro Aufruf, s. update_network_terminals). */
-static int telnet_filter_byte(os9_uart_t *ch, unsigned char byte_in) {
-    switch (ch->telnet_state) {
-    case 0:                                            /* ST_DATA */
-        if (byte_in == Q9_TELNET_IAC) { ch->telnet_state = 1; return 0; }
-        return 1;
-    case 1:                                            /* ST_IAC: Kommandobyte erwartet */
-        if (byte_in == Q9_TELNET_IAC) { ch->telnet_state = 0; return 1; }  /* IAC IAC = 0xFF-Nutzdatum */
-        if (byte_in == Q9_TELNET_SB)  { ch->telnet_state = 3; return 0; }
-        if (byte_in == Q9_TELNET_WILL || byte_in == Q9_TELNET_WONT ||
-            byte_in == Q9_TELNET_DO   || byte_in == Q9_TELNET_DONT) {
-            ch->telnet_state = 2;
-            return 0;
-        }
-        ch->telnet_state = 0;                          /* 1-Byte-Kommando (NOP, GA, ...) */
-        return 0;
-    case 2:                                             /* ST_OPT: Optionsbyte von WILL/WONT/DO/DONT */
-        ch->telnet_state = 0;
-        return 0;
-    case 3:                                             /* ST_SB: Subnegotiation, bis IAC ueberlesen */
-        if (byte_in == Q9_TELNET_IAC) ch->telnet_state = 4;
-        return 0;
-    case 4:                                             /* ST_SB_IAC: IAC innerhalb SB gesehen */
-        ch->telnet_state = (byte_in == Q9_TELNET_SE) ? 0 : 3;
-        return 0;
-    default:
-        ch->telnet_state = 0;
-        return 1;
-    }
-}
-
-static void init_network_terminals(void) {
-    struct sockaddr_in addr;
-    int opt = 1;
-    int listen_port = MAIN_LISTEN_PORT;
-    const char *port_env = getenv("Q9_NETTTY_PORT");
-
-    if (port_env != NULL && port_env[0] != '\0') {
-        int parsed = atoi(port_env);
-        if (parsed > 0 && parsed <= 65535) {
-            listen_port = parsed;
-        }
-    }
-
-    g_net_disconnect_ctrl = q9_net_ctrl_from_env("Q9_NET_DISCONNECT_CTRL", 0x11);
-
-    main_server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (main_server_fd < 0) return;
-
-    setsockopt(main_server_fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof(opt));
-    Q9_SOCK_NONBLOCK(main_server_fd);
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons((uint16_t)listen_port);
-
-    /* 2026-08-14 (beim Bau von test/09_test_io_dispatch.c gefunden, s. ARBEITSPLAN 5.18): bind()/
-       listen() wurden bisher UNGEPRUEFT aufgerufen -- bei einem belegten Port (z.B. eine zweite
-       q9.exe-Instanz oder ein eigener Testlauf auf demselben Port) blieb main_server_fd trotzdem
-       ein gueltiger, aber NICHT lauschender Socket-Deskriptor, und die "gestartet"-Meldung log
-       unveraendert weiter -- update_network_terminals()s spaetere accept()-Aufrufe (dort schon
-       gegen main_server_fd>=0 abgesichert) liefen dann fuer immer sinnlos ins Leere, ohne dass das
-       je sichtbar geworden waere. Jetzt: bei Fehlschlag Socket wieder schliessen UND
-       main_server_fd auf -1 zuruecksetzen -- der bestehende main_server_fd>=0-Schutz in
-       update_network_terminals() greift dann automatisch, keine weitere Aenderung dort noetig. */
-    if (bind(main_server_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        fprintf(stderr, "[OS-9 Net] WARNUNG: bind() auf Port %d fehlgeschlagen (Port belegt?) -- "
-                         "Netz-Terminals x1-x8 bleiben in dieser Sitzung nicht erreichbar.\r\n",
-                listen_port);
-        Q9_SOCK_CLOSE(main_server_fd);
-        main_server_fd = -1;
-        return;
-    }
-    if (listen(main_server_fd, 5) != 0) {
-        fprintf(stderr, "[OS-9 Net] WARNUNG: listen() auf Port %d fehlgeschlagen -- "
-                         "Netz-Terminals x1-x8 bleiben in dieser Sitzung nicht erreichbar.\r\n",
-                listen_port);
-        Q9_SOCK_CLOSE(main_server_fd);
-        main_server_fd = -1;
-        return;
-    }
-    printf("[OS-9 Net] Multi-Terminal Server gestartet auf Mac-Port %d\r\n", listen_port);
-}
-
-static void update_network_terminals(void) {
-    if (main_server_fd < 0) return;
-
-    int incoming = accept(main_server_fd, NULL, NULL);
-    if (incoming >= 0) {
-        Q9_SOCK_NONBLOCK(incoming);
-        int assigned = 0;
-        for (int i = 0; i < MAX_CHANNELS; i++) {
-            if (channels[i].client_fd < 0) {
-                channels[i].client_fd = incoming;
-                channels[i].last_was_cr = 0;
-                channels[i].telnet_state = 0;
-                send(incoming, (const char *)g_telnet_negotiate, (int)sizeof(g_telnet_negotiate), 0);
-                printf("[OS-9 Net] Gast dynamisch an /x%d uebergeben.\r\n", i + 1);
-                assigned = 1;
-                break;
-            }
-        }
-        if (!assigned) {
-            send(incoming, "OS-9: All lines busy.\r\n", 23, 0);
-            Q9_SOCK_CLOSE(incoming);
-        }
-    }
-
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (channels[i].client_fd < 0) {
-            continue;
-        }
-
-        /* 5.10: Solange das 1-Byte-Latch belegt ist, wird NICHT konsumiert — die Daten
-           stauen sich im TCP-Puffer (Backpressure), statt verworfen zu werden (vorher
-           gingen bei Burst-Eingabe auf mehreren Kanaelen Bytes verloren, z.B. 'super'
-           -> 'sper' beim 8-Kanal-Login-Test). Der Verbindungsabbruch wird trotzdem
-           erkannt: bei freiem Latch durch das normale read() (n==0), bei belegtem
-           Latch durch ein nicht-konsumierendes recv(MSG_PEEK) — damit bleibt der
-           CLOSE_WAIT-Bugfix vom 2026-07-10 wirksam. */
-        unsigned char byte_in;
-        int n;
-        if (!(channels[i].status & 0x01)) {
-            n = (int)recv(channels[i].client_fd, (char *)&byte_in, 1, 0);
-            if (n == 1 && telnet_filter_byte(&channels[i], byte_in)) {
-                if (byte_in == (unsigned char)g_net_disconnect_ctrl) {
-                    /* Selbst-Trennen der eigenen Verbindung (Andreas' Wunsch, s. Kommentar bei
-                       g_net_disconnect_ctrl oben) -- NUR dieser eine Kanal, Rest des Emulators
-                       laeuft unbeeindruckt weiter. Verschluckt, landet nie bei OS-9. */
-                    printf("[OS-9 Net] Gast von /x%d hat sich selbst getrennt (Ctrl-%c).\r\n",
-                           i + 1, (char)('A' + g_net_disconnect_ctrl - 1));
-                    Q9_SOCK_CLOSE(channels[i].client_fd);
-                    channels[i].client_fd    = -1;
-                    channels[i].status      &= ~0x01;
-                    channels[i].last_was_cr  = 0;
-                    channels[i].telnet_state = 0;
-                    continue;
-                }
-                if (byte_in == '\n' && channels[i].last_was_cr) {
-                    /* 5.16: Telnet-NVT-Normalisierung. Echte Telnet-Clients senden bei ENTER
-                       CR+LF, OS-9 kennt als klassisches serielles System nur ein einzelnes CR
-                       als Zeilenende. Ungefiltert landete das LF als erstes Byte im naechsten
-                       Login-Prompt und wurde dort als nicht druckbares Zeichen ('.') sichtbar
-                       und nicht mehr loeschbar (bestaetigt per Live-Test gegen Port 2000). */
-                    channels[i].last_was_cr = 0;
-                } else {
-                    channels[i].last_was_cr = (byte_in == '\r');
-                    channels[i].rx_data = byte_in;
-                    channels[i].status |= 0x01;
-                    m68k_set_irq((unsigned int)channels[i].irq_level);
-                }
-            }
-            /* n==1, aber telnet_filter_byte() hat 0 zurueckgegeben: Byte war Teil einer
-               IAC-Sequenz, verschluckt -- n bleibt 1, loest den Disconnect-Check unten NICHT
-               aus (der reagiert nur auf n==0/EOF oder n<0 mit echtem Socket-Fehler). */
-        } else {
-            n = (int)recv(channels[i].client_fd, (char *)&byte_in, 1, MSG_PEEK);
-        }
-        if (n == 0 || (n < 0 && !Q9_SOCK_WOULDBLOCK())) {
-            Q9_SOCK_CLOSE(channels[i].client_fd);
-            channels[i].client_fd = -1;
-            channels[i].status &= ~0x01;
-            channels[i].last_was_cr = 0;
-        printf("[OS-9 Net] Gast von /x%d getrennt.\r\n", i + 1);
-        }
-    }
-
-    /* 5.10: Leitung erneut anheben, falls noch irgendein Kanal ein unabgeholtes Byte hat —
-       deckt den Fall ab, dass int_ack die gemeinsame Leitung global gesenkt hat, bevor alle
-       anstehenden Kanaele bedient waren. Bewusst nur anheben, nie senken (das Senken passiert
-       ausschliesslich beim Verbrauch in network_read8, wie bisher). */
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (channels[i].status & 0x01) {
-            m68k_set_irq((unsigned int)channels[i].irq_level);
-            break;
-        }
-    }
-}
-
-
-static unsigned char network_read8(unsigned int address) {
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (address == channels[i].base_addr) {
-            return channels[i].status;
-        }
-        if (address == channels[i].base_addr + 2) {
-            channels[i].status &= ~0x01; // RX Ready löschen
-            network_irq_resync();        // Pin absenken — oder oben halten, wenn ein anderer
-                                         // Kanal noch ein unabgeholtes Byte hat (5.10)
-            return channels[i].rx_data;
-        }
-    }
-    return 0;
-}
-
-static void network_write8(unsigned int address, unsigned char value) {
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (address == channels[i].base_addr + 4) {
-            channels[i].tx_data = value;
-            if (channels[i].client_fd >= 0) {
-                send(channels[i].client_fd, (const char *)&channels[i].tx_data, 1, 0);
-            }
-            channels[i].status |= 0x02; // TX wieder leer/bereit
-            break;
-        }
-    }
-}
-
-//────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: nettty_dev_* / q9_devtype_nettty
-// Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), fuenftes umgezogenes Geraet.
-//           EIN einziges Geraet fuer alle acht Kanaele (statt acht Instanzen): read8/write8 delegieren
-//           unveraendert an network_read8/network_write8, die selbst schon ueber ALLE Kanaele suchen
-//           -- damit bleibt das bestehende Verhalten (inkl. des Randfalls einer 16/32-Bit-
-//           Adresse, die rechnerisch die Grenze zwischen zwei Kanaelen ueberschreitet) exakt
-//           erhalten, auch nach der generischen Byte-Synthese fuer read16/32 in devreg.c.
-//           Die acht Kanaele TEILEN sich Level 4 (level-getriggertes ODER aller RX-Ready-Bits,
-//           s. network_irq_resync) aber haben JEWEILS einen EIGENEN Vektor (70..77) -- deshalb
-//           wie bei der DUART ein irq_vector_fn statt eines statischen dev->irq_vector:
-//           nettty_dev_irq_vector liefert den Vektor des ERSTEN Kanals mit gesetztem RX-Ready-Bit,
-//           exakt die Suchreihenfolge des alten hartkodierten channels[]-Loops in
-//           m68krt_board_int_ack.
-//────────────────────────────────────────────────────────────────────────────────────────────────
-static uint8_t nettty_dev_read8(q9_device_t *dev, uint32_t addr)
-{
-    (void)dev;
-    return network_read8(addr);
-}
-
-static void nettty_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
-{
-    (void)dev;
-    network_write8(addr, val);
-}
-
-static int nettty_dev_irq_pending(q9_device_t *dev)
-{
-    (void)dev;
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (channels[i].status & 0x01) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int nettty_dev_irq_vector(q9_device_t *dev)
-{
-    (void)dev;
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (channels[i].status & 0x01) {
-            return channels[i].irq_vector;
-        }
-    }
-    return -1;
-}
-
-static const q9_device_vtable_t q9_devtype_nettty = {
-    .read8         = nettty_dev_read8,
-    .write8        = nettty_dev_write8,
-    .read16        = NULL,
-    .write16       = NULL,
-    .read32        = NULL,
-    .write32       = NULL,
-    .poll          = NULL,       /* update_network_terminals() laeuft weiterhin ueber q9_m68krt_execute */
-    .irq_pending   = nettty_dev_irq_pending,
-    .reset         = NULL,
-    .irq_vector_fn = nettty_dev_irq_vector,
-};
+/* 2026-08-21: die komplette Netzwerk-Terminal-Server-Implementierung (channels[]/network_
+   irq_resync/Telnet-Filterung/init_network_terminals/update_network_terminals/network_read8/
+   write8/nettty_dev_* / q9_devtype_nettty) ist nach src/devices/nettty/nettty.c umgezogen
+   (Hardware-Vereinheitlichung) -- s. dort, inkl. der Musashi-Entkopplung per Funktionszeiger-Hook
+   (q9_nettty_set_irq_hook), die nettty von einem direkten m68k_set_irq()-Aufruf befreit. */
 
 /* 5.18 (zweiter Teilschritt, 2026-08-14): direkt indizierte Tabelle fuer den festen I/O-Cluster
    $FFFF0000-$FFFFFFFF (64 KByte) -- ALLE heutigen Geraete ausser dem Framebuffer ($FD000000,
@@ -1139,7 +802,8 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
 
     // === NEU: Netzwerk-Server beim Start hochfahren ===
     q9_sock_startup();          /* Windows-Build: WSAStartup unter Windows, no-op auf POSIX */
-    init_network_terminals();
+    q9_nettty_set_irq_hook(q9_m68krt_set_irq);   /* 2026-08-21: Musashi-Entkopplung, s. nettty.c */
+    q9_nettty_init();
 
     return Q9_M68KRT_OK;
 }
@@ -1206,24 +870,15 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.state      = board;
         q9_devreg_add(d);
 
-        /* 5.17: Netz-Terminals, fuenftes umgezogenes Geraet -- EIN Geraete-Eintrag fuer alle acht
-           Kanaele (s. q9_devtype_nettty-Kommentar weiter oben). Registriert NACH DUART (Level 3),
-           damit die Registrierungsreihenfolge innerhalb von q9boardrun.c's erstem Poll-Durchgang
-           (Level < 5) aufsteigend bleibt (3 vor 4) -- wichtig fuer die "letzter Aufruf gewinnt"-
-           Semantik von q9_m68krt_set_irq(), s. Kommentar dort. channels[] existiert zwar auch ohne
-           Board, aber nettty wird nur beim echten Boot (immer MIT Board) gebraucht. */
-        memset(&d, 0, sizeof(d));
-        d.type       = "nettty";
-        d.name       = "x1-x8";
-        d.base       = Q9_BOARD_NET_BASE;
-        d.size       = Q9_BOARD_NET_TOP - Q9_BOARD_NET_BASE + 1u;
-        d.irq_level  = 4;
-        d.irq_vector = -1;                            /* dynamisch, s. irq_vector_fn (pro Kanal) */
-        d.level_held = 1;
-        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
-        d.vt         = &q9_devtype_nettty;
-        d.state      = NULL;                          /* nutzt das globale channels[]-Array      */
-        q9_devreg_add(d);
+        /* 5.17: Netz-Terminals, fuenftes umgezogenes Geraet. 2026-08-21 (Hardware-Vereinheitlichung,
+           Andreas' Vorgabe "jedes Geraet einzeln, mit eigenem Descriptor, eigener Adresse, im
+           Array"): ACHT separate devreg-Eintraege statt einem gemeinsamen -- q9_nettty_attach()
+           (nettty.c) registriert sie alle, je einer pro Kanal mit eigenem dev->state (der eigene
+           "Descriptor") und eigener, bereits seit 2026-08-14 vorhandener Adresse. Aufgerufen NACH
+           DUART/CF/RTC (Level 3), damit die Registrierungsreihenfolge weiterhin aufsteigend nach
+           Level bleibt (3 vor 4) -- wichtig fuer die "letzter Aufruf gewinnt"-Semantik von
+           q9_m68krt_set_irq(), s. Kommentar dort. */
+        q9_nettty_attach();
     }
 }
 
@@ -1384,7 +1039,7 @@ void q9_m68krt_reset(q9_m68krt_t *rt)
 int q9_m68krt_execute(q9_m68krt_t *rt, int cycles)
 {
     (void)rt;
-    update_network_terminals();
+    q9_nettty_poll();
     return m68k_execute(cycles);
 }
 
@@ -1396,11 +1051,7 @@ uint32_t q9_m68krt_get_d(q9_m68krt_t *rt, int n)
 
 void q9_m68krt_free(q9_m68krt_t *rt)
 {
-    
-    for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (channels[i].client_fd >= 0) Q9_SOCK_CLOSE(channels[i].client_fd);
-    }
-    if (main_server_fd >= 0) Q9_SOCK_CLOSE(main_server_fd);
+    q9_nettty_shutdown();       /* 2026-08-21: schliesst alle Kanal-/Server-Sockets, s. nettty.c */
     q9_sock_cleanup();          /* Windows-Build: WSACleanup unter Windows, no-op auf POSIX */
 
     g_ram     = NULL;
