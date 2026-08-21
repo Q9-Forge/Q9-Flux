@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.31
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.32
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -149,6 +149,11 @@
 #         │      │ src/devices/remap/, die RAM/ROM-Interpretation bleibt im Performance-Fast-Path. Ein        │
 #         │      │ neuer Testfall deckte einen echten Registrierungsfehler auf, echter Boot-Test bestaetigt   │
 #         │      │ die Korrektur                                                                              │
+# 26-08-21│ 5.32 │ Vierunddreissigste Runde: Editor zeigt echte Hardware-Eintraege statt Demo-Platzhalter --  │ Cld
+#         │      │ zwanzig hartcodierte integration_demo.c-Eintraege entfallen, init_items() baut sie jetzt   │
+#         │      │ zur Laufzeit aus q9_devdesc_get() (neun Typen, "cf" hat schon CF-Image-#N). Generische     │
+#         │      │ boardcfg.c-Mehrfach-Instanziierung + Typ-Auswahl-Dialog bewusst zurueckgestellt (kein      │
+#         │      │ akuter Nutzen -- nur "cf" braucht das ueberhaupt)                                          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1494,6 +1499,30 @@ Skript-/Profil-Mismatch, keine REMAP-Regression, per manueller Transkript-Pruefu
 
 Damit sind **alle zehn heutigen Hardware-/Adressraum-Typen** auf das einheitliche Muster umgestellt.
 
+**Vierunddreissigste Runde (2026-08-21) -- Editor zeigt echte Hardware-Eintraege statt Demo-
+Platzhalter:** Andreas' Rueckfrage "gibt es noch was zu tun an Q9-Flux" fuehrte zur Klaerung, was
+das verbleibende "Hardware hinzufuegen"-Ziel ueberhaupt noch braucht: bei genauerem Hinsehen haben
+von den zehn Hardware-Typen heute nur "cf" ueberhaupt Config-Felder -- die anderen neun sind fest
+verdrahtete Board-Peripherie ohne eigene Config-Optionen, und CF kann schon per N/D-Taste angelegt/
+geloescht werden (Dreissigste Runde). Andreas' Entscheidung (per `AskUserQuestion`-Rueckfrage):
+**"Editor zeigt echte Config statt Demo-Platzhalter"** -- statt generisches Mehrfach-Anlegen fuer
+ALLE Typen (ergibt fuer DUART/RTC/Timer/etc. physikalisch keinen Sinn, nur ein Chip auf dem Board)
+werden die zwanzig hartcodierten `integration_demo.c`-Demo-Eintraege (erfundene Basisadressen/
+Werte, s. Kopfkommentar-Historie) durch echte, aus `q9_devdesc_get()` abgeleitete Eintraege
+ersetzt -- EIN Eintrag pro registriertem Typ (Name = `devdesc->desc`, keine zweite, drift-
+anfaellige Kopie der Beschreibung mehr), AUSSER "cf" (hat schon seine eigene CF-Image-#N-
+Darstellung). `g_list_items[]`/das fruehere Compile-Zeit-Macro `BASE_ITEM_COUNT` wurden dafuer zu
+Laufzeit-Werten (`init_items()`, `g_base_item_count`) -- die Anzahl haengt jetzt von
+`q9_devdesc_count()` ab, nicht mehr von einer festen Liste. **Bewusst OHNE Basis-/Endadresse im
+Eintrag:** `devdesc.h`s eigener Kopfkommentar dokumentiert ausdruecklich, dass Basis/Groesse KEIN
+Teil von `q9_devdesc_t` sind (das ist eine `devreg`-Laufzeit-Instanz-Eigenschaft) -- der Editor
+bootet das Board nicht und haette dafuer keine echte Quelle, ein erfundener Wert waere wieder nur
+ein Demo-Platzhalter gewesen. Verifiziert: `make test` (Root + Editor) komplett gruen, echter
+Pseudo-Terminal-Rauchtest zeigt alle neun devdesc-Eintraege mit ihren echten Kernel-Beschreibungen
+(z.B. "68681-DUART (Konsole, Kanal A)", "REMAP-Trigger (ROM-Spiegel -> RAM-Umschaltung)"), keinen
+der alten erfundenen Eintraege mehr, UND bestaetigt, dass Taste N weiterhin korrekt einen
+CF-Image-Slot direkt hinter den neun Hardware-Eintraegen anlegt.
+
 ## 3. Nach der Auswahl: weitere Bereiche
 
 - Kurzbeschreibung der gewaehlten Config
@@ -1545,9 +1574,21 @@ Runde"):** der REMAP-Trigger ($FFFF8000-$FFFF8FFF, Boot-ROM-Spiegel -> RAM-Umsch
 eigener Vorschlag -- nach `src/devices/remap/remap.c` umgezogen (reiner Adress-Trigger, kein
 Datenwert, kein IRQ), die eigentliche RAM/ROM-Interpretation bleibt bewusst im Performance-
 Fast-Path von `q9board.c`/`m68krt.c`. Damit sind **ALLE ZEHN heutigen Hardware-/Adressraum-Typen**
-auf das einheitliche Muster umgestellt. **Noch offen bis zum echten "Hardware hinzufuegen"-Button:**
-generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen (bisher nur "cf"
-config-gesteuert instanziierbar), und der eigentliche Typ-Auswahl-Dialog im Editor.
+auf das einheitliche Muster umgestellt.
+
+**Editor zeigt jetzt echte Hardware-Eintraege (2026-08-21, "Vierunddreissigste Runde"):** Andreas'
+Rueckfrage "gibt es noch was zu tun" + Klaerung per `AskUserQuestion` ergab: von den zehn Typen hat
+nur "cf" ueberhaupt Config-Felder (die anderen neun sind fest verdrahtete Board-Peripherie, genau
+EIN Chip pro Typ) -- generisches Mehrfach-Anlegen fuer ALLE Typen ergaebe fuer DUART/RTC/Timer/etc.
+keinen Sinn. Statt der grossen, noch offenen Architektur-Frage (generische `boardcfg.c`-
+Abschnittserkennung fuer beliebige Typnamen + echter Typ-Auswahl-Dialog) wurde deshalb der kleinere,
+sofort werthaltige Schritt umgesetzt: die zwanzig hartcodierten `integration_demo.c`-Demo-Eintraege
+(erfundene Adressen/Werte) sind komplett durch echte, aus `q9_devdesc_get()` abgeleitete Eintraege
+ersetzt (Name = `devdesc->desc`, EINE Quelle statt einer zweiten, drift-anfaelligen Kopie) --
+"cf" ausgenommen (hat schon die echte CF-Image-#N-Darstellung mit Anlegen/Loeschen). **Weiterhin
+offen, jetzt bewusst zurueckgestellt** (kein akuter Nutzen ohne echte Mehrfach-Instanziierung
+ausserhalb von "cf"): generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen, und der
+eigentliche Typ-Auswahl-Dialog im Editor.
 
 ### 4.1 CPU-Auswahl — technisch machbar, geringer Aufwand
 
