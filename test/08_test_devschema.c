@@ -1,8 +1,12 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   08_test_devschema.c                                                             Ver. 1.50
+// File:   08_test_devschema.c                                                             Ver. 1.60
 // Owner:  Claudia
 // Desc.:  6.7-Pilot: Rauchtest fuer devschema.h/.c -- kein Board, keine CPU, reine Datenstruktur-
 //         Pruefung (Registry-Lookup, Int-Grenzen, Enum-Mitgliedschaft, Feld-Suche).
+//
+//         2026-08-20: die "cf"-Testfaelle sind nach test/12_test_devdesc.c umgezogen (Hardware-
+//         Vereinheitlichung, Pilot "cf" -- s. dort). Diese Datei deckt nur noch die hier
+//         verbliebenen Schemata "memory"/"board" ab.
 //
 // Call:   build/<platform>/test_devschema
 //════════════════════════════════════════════════════════════════════════════════════════════════
@@ -25,119 +29,14 @@ static void check(const char *label, int got_ok, int want_ok)
 
 int main(void)
 {
-    const q9_devschema_t *cf;
     char err[128];
     int idx;
 
+    /* 2026-08-20: das "cf"-Schema (Registry-Lookup, Feld-Suche, Int-Grenzen, Enum-Mitgliedschaft,
+       Ground-Truth, descriptor-Konflikt, useSlot/slot) ist nach test/12_test_devdesc.c umgezogen --
+       "cf" selbst lebt jetzt in src/devices/cf/cf.c (q9_devdesc_cf), nicht mehr in devschema.c. */
     printf("=== devschema: Registry ===\n");
-    cf = q9_devschema_lookup("cf");
-    if (!cf) {
-        printf("    FAIL Schema 'cf' nicht gefunden\n");
-        return 1;
-    }
-    printf("    OK   Schema 'cf' gefunden (%d Felder)\n", cf->field_count);
     check("unbekannter Typ liefert NULL", q9_devschema_lookup("gibtsnicht") == NULL ? 0 : -1, 1);
-
-    printf("=== devschema: Feld-Suche ===\n");
-    idx = q9_devschema_find_field(cf, "start_sector");
-    check("start_sector gefunden", idx >= 0 ? 0 : -1, 1);
-    idx = q9_devschema_find_field(cf, "unbekanntesfeld");
-    check("unbekanntes Feld liefert -1", idx == -1 ? 0 : -1, 1);
-
-    printf("=== devschema: Int-Grenzen (start_sector, 0..0xFFFFFFFF) ===\n");
-    idx = q9_devschema_find_field(cf, "start_sector");
-    check("0 ist gueltig", q9_devschema_check_int(&cf->fields[idx], 0, err, sizeof(err)), 1);
-    check("1000 ist gueltig", q9_devschema_check_int(&cf->fields[idx], 1000, err, sizeof(err)), 1);
-    check("-1 ist ungueltig", q9_devschema_check_int(&cf->fields[idx], -1, err, sizeof(err)), 0);
-
-    printf("=== devschema: Enum-Mitgliedschaft (type: auto|rbf|pcf|fat) ===\n");
-    idx = q9_devschema_find_field(cf, "type");
-    check("'rbf' ist gueltig", q9_devschema_check_enum(&cf->fields[idx], "rbf", err, sizeof(err)), 1);
-    check("'RBF' (Grossschreibung) ist ungueltig",
-          q9_devschema_check_enum(&cf->fields[idx], "RBF", err, sizeof(err)), 0);
-    check("'xml' ist ungueltig", q9_devschema_check_enum(&cf->fields[idx], "xml", err, sizeof(err)), 0);
-    if (q9_devschema_check_enum(&cf->fields[idx], "xml", err, sizeof(err)) != 0) {
-        printf("    (Meldung: %s)\n", err);
-    }
-
-    printf("=== devschema: Pflichtfeld-Kennzeichnung ===\n");
-    idx = q9_devschema_find_field(cf, "image");
-    check("image ist Pflichtfeld", cf->fields[idx].required ? 0 : -1, 1);
-    idx = q9_devschema_find_field(cf, "base");
-    check("base ist optional", cf->fields[idx].required ? -1 : 0, 1);
-
-    printf("=== devschema: Ground-Truth gegen ALLE echten .q9-Dateien im Repo (2026-08-14) ===\n");
-    printf("    (per grep ermittelte tatsaechlich verwendete [cfN]-Schluessel/Werte-Paare --\n");
-    printf("     faengt genau die Art Schema/Parser-Drift, die diese Korrektur ausgeloest hat)\n");
-    {
-        /* bus: alle real genutzten Werte (onboard, secondary -- rc2014/cf/sc145 sind Synonyme,
-           die kein reales File nutzt, aber der Parser akzeptiert -- s. devschema.c-Kommentar). */
-        static const char *const real_bus[]  = { "onboard", "secondary", NULL };
-        static const char *const real_unit[] = { "master", NULL };            /* kein File nutzt slave/0/1 */
-        static const char *const real_type[] = { "rbf", "pcf", NULL };
-        int i;
-
-        idx = q9_devschema_find_field(cf, "bus");
-        for (i = 0; real_bus[i]; i++) {
-            char label[64];
-            snprintf(label, sizeof(label), "bus='%s' (real genutzt) ist gueltig", real_bus[i]);
-            check(label, q9_devschema_check_enum(&cf->fields[idx], real_bus[i], err, sizeof(err)), 1);
-        }
-        idx = q9_devschema_find_field(cf, "unit");
-        for (i = 0; real_unit[i]; i++) {
-            char label[64];
-            snprintf(label, sizeof(label), "unit='%s' (real genutzt) ist gueltig", real_unit[i]);
-            check(label, q9_devschema_check_enum(&cf->fields[idx], real_unit[i], err, sizeof(err)), 1);
-        }
-        idx = q9_devschema_find_field(cf, "type");
-        for (i = 0; real_type[i]; i++) {
-            char label[64];
-            snprintf(label, sizeof(label), "type='%s' (real genutzt) ist gueltig", real_type[i]);
-            check(label, q9_devschema_check_enum(&cf->fields[idx], real_type[i], err, sizeof(err)), 1);
-        }
-    }
-
-    printf("=== devschema: descriptor-Konflikt geloest (2026-08-14, projektweit Bool) ===\n");
-    {
-        int desc_idx, name_idx;
-        desc_idx = q9_devschema_find_field(cf, "descriptor");
-        check("cf.descriptor ist Q9_FIELD_BOOL", cf->fields[desc_idx].kind == Q9_FIELD_BOOL ? 0 : -1, 1);
-        check("cf.descriptor: 'yes' ist gueltig",
-              q9_devschema_check_bool(&cf->fields[desc_idx], "yes", err, sizeof(err)), 1);
-
-        name_idx = q9_devschema_find_field(cf, "descriptorName");
-        check("cf.descriptorName gefunden", name_idx >= 0 ? 0 : -1, 1);
-        check("cf.descriptorName ist Q9_FIELD_STR", cf->fields[name_idx].kind == Q9_FIELD_STR ? 0 : -1, 1);
-
-        printf("=== devschema: q9_devschema_field_relevant (depends_on) ===\n");
-        check("descriptorName relevant wenn descriptor='yes'",
-              q9_devschema_field_relevant(&cf->fields[name_idx], "yes") ? 0 : -1, 1);
-        check("descriptorName NICHT relevant wenn descriptor='no'",
-              q9_devschema_field_relevant(&cf->fields[name_idx], "no") ? -1 : 0, 1);
-        check("descriptorName NICHT relevant wenn aktueller Wert unbekannt (NULL)",
-              q9_devschema_field_relevant(&cf->fields[name_idx], NULL) ? -1 : 0, 1);
-        check("image (kein depends_on) ist IMMER relevant, unabhaengig vom uebergebenen Wert",
-              q9_devschema_field_relevant(&cf->fields[q9_devschema_find_field(cf, "image")], NULL) ? 0 : -1, 1);
-    }
-
-    printf("=== devschema: cf.useSlot/slot (I/O-Tabellenplatz-Wahl, 5.18-Fortsetzung) ===\n");
-    {
-        int use_idx, slot_idx;
-        use_idx = q9_devschema_find_field(cf, "useSlot");
-        check("cf.useSlot gefunden", use_idx >= 0 ? 0 : -1, 1);
-        check("cf.useSlot ist Q9_FIELD_BOOL", cf->fields[use_idx].kind == Q9_FIELD_BOOL ? 0 : -1, 1);
-
-        slot_idx = q9_devschema_find_field(cf, "slot");
-        check("cf.slot gefunden", slot_idx >= 0 ? 0 : -1, 1);
-        check("cf.slot: 0 ist gueltig", q9_devschema_check_int(&cf->fields[slot_idx], 0, err, sizeof(err)), 1);
-        check("cf.slot: 255 ist gueltig", q9_devschema_check_int(&cf->fields[slot_idx], 255, err, sizeof(err)), 1);
-        check("cf.slot: 256 ist ungueltig (nur 0-255)",
-              q9_devschema_check_int(&cf->fields[slot_idx], 256, err, sizeof(err)), 0);
-        check("cf.slot relevant wenn useSlot='yes'",
-              q9_devschema_field_relevant(&cf->fields[slot_idx], "yes") ? 0 : -1, 1);
-        check("cf.slot NICHT relevant wenn useSlot='no'",
-              q9_devschema_field_relevant(&cf->fields[slot_idx], "no") ? -1 : 0, 1);
-    }
 
     printf("=== devschema: Schema 'memory' (RAM/ROM/NVRAM) ===\n");
     {
@@ -206,5 +105,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 08_test_devschema.c                                                                 Ver. 1.50
+// EOF 08_test_devschema.c                                                                 Ver. 1.60
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devschema.c                                                                     Ver. 1.50
+// File:   devschema.c                                                                     Ver. 1.60
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe devschema.h. Pilot-Schema fuer "cf" -- die Feldnamen/Wertebereiche
 //         entsprechen 1:1 q9_cfg_cf_t (boardcfg.h) und Q9_CF_FMT_*/Q9_CFG_BUS_* (q9board.h/
@@ -28,6 +28,9 @@
 // 26-08-15│ 1.50 │ Neues Schema "board" (cpu-Feld, ENUM) -- Q9FLUX_EDITOR_de.md 4.1, ECHTES   │ Cld
 //         │      │ boardcfg.c-Schluesselwort (anders als "memory" oben, das noch vorausschauend│
 //         │      │ ohne Parser-Anschluss ist)                                                  │
+// 26-08-20│ 1.60 │ Hardware-Vereinheitlichung, Pilot "cf": "cf"-Schema entfernt (umgezogen nach │ Cld
+//         │      │ src/devices/cf/cf.c als q9_devdesc_cf, s. devdesc.h) -- "memory"/"board"     │
+//         │      │ bleiben hier (noch kein eigenes Sourcefile)                                  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devschema.h"
 #include <string.h>
@@ -50,87 +53,11 @@
    Repo-Dateien tun das ebenfalls (verifiziert), daher aktuell nur ein theoretisches, kein
    beobachtetes Auseinanderklaffen. Nicht "repariert", um Case-sensitive Enums nicht generell fuer
    alle kuenftigen Schemata aufzuweichen. */
-static const char *const g_cf_bus_values[]    = { "onboard", "cf", "rc2014", "sc145", "secondary", NULL };
-static const char *const g_cf_unit_values[]   = { "master", "0", "slave", "1", NULL };
-static const char *const g_cf_format_values[] = { "auto", "rbf", "pcf", "fat", NULL };
-
-/* descriptor/descriptorName (2026-08-14, mit Andreas geklaert): "descriptor" ist PROJEKTWEIT
-   einheitlich Q9_FIELD_BOOL ("braucht dieses Geraet einen Descriptor" -- bei cf i.d.R. yes). Der
-   bisherige String-Wert (Descriptor-NAME fuer den ROM-Generator) heisst jetzt "descriptorName"
-   und ist nur relevant, wenn descriptor=yes (depends_on). ECHTES boardcfg.c-Schluesselwort, s.
-   dortige Kommentare -- alle 9 betroffenen .q9-Dateien im Repo wurden mitmigriert. */
-static const q9_field_schema_t g_cf_fields[] = {
-    /* KORREKTUR (2026-08-14): Feldnamen sind die .q9-DATEI-Schluesselwoerter (wie sie in JEDER
-       echten Config im Repo tatsaechlich stehen -- verifiziert per grep ueber alle *.q9), NICHT
-       die internen C-Struct-Feldnamen aus q9_cfg_cf_t (boardcfg.h). Der urspruengliche Pilot-Stand
-       hatte hier "path"/"format" -- die tatsaechliche .q9-Syntax ist "image"/"type" (s.
-       cfg_ieq(key,"image")||cfg_ieq(key,"file") bzw. cfg_ieq(key,"type")||cfg_ieq(key,"format") in
-       boardcfg.c). boardcfg.c akzeptiert zusaetzlich die synonymen Schluesselnamen "file"/
-       "format"/"drive"/"offset_sector"/"part_size"/"lsn_offset" -- die sind hier NICHT als
-       Alternative modelliert (kein Feldname-Synonym-Mechanismus in q9_field_schema_t, anders als
-       bei Enum-WERTEN), weil keine einzige reale Config im Repo sie nutzt; bewusste
-       Vereinfachung, kein Anspruch auf Vollstaendigkeit der Parser-Akzeptanz. */
-    {
-        .name = "image", .kind = Q9_FIELD_STR, .required = 1,
-        .desc = "Pfad zum Image (relativ zur Config-Datei aufgeloest)",
-    },
-    {
-        .name = "descriptor", .kind = Q9_FIELD_BOOL,
-        .desc = "braucht dieses Geraet einen OS-9-Descriptor (Default: yes)",
-    },
-    {
-        .name = "descriptorName", .kind = Q9_FIELD_STR,
-        .depends_on = "descriptor", .depends_on_value = "yes",
-        .desc = "Descriptorname fuer den ROM-Generator -- nur relevant wenn descriptor=yes",
-    },
-    {
-        .name = "bus", .kind = Q9_FIELD_ENUM, .enum_values = g_cf_bus_values,
-        .desc = "welches emulierte CF-Interface (Default onboard)",
-    },
-    {
-        .name = "unit", .kind = Q9_FIELD_ENUM, .enum_values = g_cf_unit_values,
-        .desc = "Master/Slave am ATA-Bus (Default master)",
-    },
-    {
-        .name = "type", .kind = Q9_FIELD_ENUM, .enum_values = g_cf_format_values,
-        .desc = "Image-Format, auto erkennt RBF/PCF an der Groesse (Default auto)",
-    },
-    /* 2026-08-14 (Andreas' Vorschlag, Fortsetzung von ARBEITSPLAN 5.18 "Config-seitig bewusst
-       BEIDES anbieten"): Wahl zwischen einem automatisch zugeteilten I/O-Tabellenplatz (schneller
-       Dispatch, s. m68krt.c g_io_table) und einer frei gewaehlten Adresse. Nur additiv beschrieben,
-       NOCH KEIN boardcfg.c-Anschluss (die eigentliche Config-gesteuerte Instanziierung ueber die
-       Tabelle ist selbst noch nicht gebaut, s. 5.18 "Weiterhin offen"). Gehoert nur zu Geraeten im
-       festen 64-KB-I/O-Cluster ($FFFF0000-$FFFFFFFF) -- NICHT zu "memory" (RAM liegt ausserhalb). */
-    {
-        .name = "useSlot", .kind = Q9_FIELD_BOOL,
-        .desc = "vordefinierten I/O-Tabellenplatz nutzen (schneller Dispatch, 256-Byte-Raster ab "
-                "$FFFF0000) statt einer frei gewaehlten Adresse -- Default no",
-    },
-    {
-        .name = "slot", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 255,
-        .depends_on = "useSlot", .depends_on_value = "yes",
-        .desc = "I/O-Tabellenplatz-Nummer (0-255); Adresse = $FFFF0000 + slot*256 -- nur relevant "
-                "wenn useSlot=yes",
-    },
-    {
-        .name = "base", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
-        .desc = "ATA-Basisadresse; 0 = Standard-Base anhand von bus. Wenn useSlot=yes wird dieser "
-                "Wert automatisch aus slot berechnet (Editor: nur anzeigen, nicht eingeben lassen)",
-    },
-    {
-        .name = "start_sector", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
-        .desc = "Host-Startsektor, der als Gast-LBA 0 erscheint (Default 0)",
-    },
-    {
-        .name = "length_sectors", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
-        .desc = "logische Partitionslaenge fuer Descriptor/Pruefung",
-    },
-    {
-        .name = "descriptor_lsn", .kind = Q9_FIELD_INT, .has_range = 1, .min = 0, .max = 0xFFFFFFFFL,
-        .desc = "PD_LSNOffs im OS-9-Descriptor -- fuer spaeteren Descriptor-Abgleich",
-    },
-};
-#define Q9_CF_FIELD_COUNT (int)(sizeof(g_cf_fields) / sizeof(g_cf_fields[0]))
+/* 2026-08-20 (Hardware-Vereinheitlichung, Pilot "cf"): das "cf"-Schema ist nach
+   src/devices/cf/cf.c umgezogen (q9_devdesc_cf, devdesc.h) -- Vtable und Feldbeschreibung jetzt an
+   einem Ort statt getrennt hier und in q9board.c. descriptor/descriptorName kommen dort aus dem
+   neuen, projektweit gemeinsamen q9_devschema_common_fields (devdesc.h) statt hier separat
+   definiert zu sein. */
 
 /* "memory": Andreas' Beispiel-Feldsatz aus der Editor-Planung (docs/Q9FLUX_EDITOR_de.md) fuer
    RAM/ROM/NVRAM-Bereiche -- entspricht noch keinem bestehenden C-Struct (boardcfg.h hat bisher
@@ -207,7 +134,6 @@ static const q9_field_schema_t g_board_fields[] = {
 #define Q9_BOARD_FIELD_COUNT (int)(sizeof(g_board_fields) / sizeof(g_board_fields[0]))
 
 static const q9_devschema_t g_device_schemas[] = {
-    { "cf",     g_cf_fields,     Q9_CF_FIELD_COUNT },
     { "memory", g_memory_fields, Q9_MEMORY_FIELD_COUNT },
     { "board",  g_board_fields,  Q9_BOARD_FIELD_COUNT },
 };
