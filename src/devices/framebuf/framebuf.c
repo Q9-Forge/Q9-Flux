@@ -207,6 +207,21 @@ const q9_device_vtable_t q9_devtype_framebuf = {
     .reset         = NULL,
     .irq_vector_fn = NULL,
 };
+
+/* 2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): q9_devdesc_framebuf
+   -- noch OHNE extra_fields (kein Config-Schema, immer hartkodiert instanziiert, s. m68krt.c
+   q9_m68krt_attach_framebuf -- eigener, spaeterer Schritt). use_table_default=0 -- der Framebuffer
+   liegt bei $FD000000, UNTERHALB des Fast-Table-Clusters ($FFFF0000-$FFFFFFFF); die Tabelle
+   greift hier nie, s. devreg.h/m68krt.c io_table_build(). */
+const q9_devdesc_t q9_devdesc_framebuf = {
+    .type              = "framebuf",
+    .desc              = "VRAM-Framebuffer (Q9 Frame/Host-Video-Bridge)",
+    .vt                = &q9_devtype_framebuf,
+    .use_table_default = 0,
+    .extra_fields      = NULL,
+    .extra_field_count = 0,
+};
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // EOF framebuf.c                                                                          Ver. 1.00
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -60,6 +60,7 @@
 
 #include <stdint.h>
 #include "../../kernel/devreg.h"                        /* 5.17: q9_device_t/Vtable, s. devreg.h  */
+#include "../../kernel/devdesc.h"                       /* 2026-08-21: q9_devdesc_quicc, s.u.      */
 #include "../net/vmnet_net.h"                          /* vmnet-Konfiguration aus .q9            */
 #include "../net/slirp_net.h"                          /* 5.14: slirp-Konfiguration aus .q9      */
 
@@ -142,6 +143,7 @@ void     q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len);
 /* 5.17: Vtable fuer die Geraete-Registry (devreg.h) -- Instanz wird in m68krt.c angelegt,
    dev->state zeigt auf das q9_quicc_t-Handle. */
 extern const q9_device_vtable_t q9_devtype_quicc;
+extern const q9_devdesc_t       q9_devdesc_quicc;         /* 2026-08-21: Vtable+Schema vereint      */
 
 #endif /* Q9_QUICC_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────

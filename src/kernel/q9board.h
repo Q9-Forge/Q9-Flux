@@ -11,17 +11,18 @@
 //         der Fremdhardware nicht durch den gesamten Baum zieht; wer die Registerbelegung mit dem
 //         realen Vorbild abgleichen will, findet die Einordnung hier und in docs/BOARD.md.
 //
-//         5.2a: RAM/ROM/Remap-Speicherlogik. 5.2b: 68681-DUART (nur SRA+THRA/RHRA wirklich
-//         aktiv, Rest wird sauber angenommen). 5.2c: Compact-Flash (ATA-PIO-Minimalprotokoll,
-//         Backing Store = Host-Datei). 5.2d: Timer/IRQ3 (kooperativ, s. q9_board_poll_timer).
-//         Bewusst KEINE Musashi-Abhaengigkeit hier (q9board.c bleibt eigenstaendig testbar) — den
-//         eigentlichen `m68k_set_irq()`-Aufruf macht der Aufrufer (m68krt.c/kernel.c), s.
-//         q9_board_poll_timer's Rueckgabewert.
+//         5.2a: RAM/ROM/Remap-Speicherlogik -- der einzige Teil, der HEUTE NOCH tatsaechlich hier
+//         liegt (board_read_byte/board_write_byte). DUART/CF/RTC/Timer waren urspruenglich
+//         ebenfalls hier (5.2b/5.2c/5.6/5.2d), sind aber im Zuge der Hardware-Vereinheitlichung
+//         (2026-08-20/21) nach src/devices/duart68681/, src/devices/cf/, src/devices/rtc72421/
+//         bzw. src/devices/timer_irq/ umgezogen -- q9_board_t buendelt weiterhin deren
+//         Registerzustand als Struct-Member (keine eigene Instanz-Struct wie bei CF, s. dortige
+//         Kopfkommentare), aber die Dispatch-/Registerlogik selbst lebt jetzt dort. Bewusst KEINE
+//         Musashi-Abhaengigkeit hier (q9board.c bleibt eigenstaendig testbar).
 //
 // Call:   q9_board_t b; q9_board_init(&b, rom, rom_len, ram, ram_len);
 //         v = q9_board_read8(&b, addr); q9_board_write8(&b, addr, v); q9_board_reset(&b);
 //         q9_board_cf_attach(&b, "local_images/board_cf.img");
-//         if (q9_board_poll_timer(&b, q9_hal_ticks_ms())) q9_m68krt_set_irq(3);
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -253,27 +254,10 @@ int q9_board_rom_load(const char *path, uint8_t *buf, uint32_t buf_max, uint32_t
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_board_cf_attach(q9_board_t *b, const char *path);
 
-//════════════════════════════════════════════════════════════════════════════════════════════════
-// Function: q9_board_poll_timer
-// Desc.:    5.2d: Kooperative Zeitpruefung (KEIN echter Host-Interrupt, s. docs/BOARD.md) — muss
-//           regelmaessig vom Aufrufer aufgerufen werden (dort, wo auch m68k_execute() angestossen
-//           wird). Liefert 1 zurueck, wenn seit dem letzten Auslösen >= Q9_BOARD_TIMER_PERIOD_MS
-//           vergangen sind UND der Timer per TI_IRQ_ON aktiv ist — der Aufrufer muss dann
-//           q9_m68krt_set_irq(3) aufrufen (q9board.c kennt Musashi bewusst nicht). Liefert sonst 0.
-// Call:     if (q9_board_poll_timer(&b, q9_hal_ticks_ms())) q9_m68krt_set_irq(3);
-//════════════════════════════════════════════════════════════════════════════════════════════════
-int q9_board_poll_timer(q9_board_t *b, uint32_t now_ms);
-
-//════════════════════════════════════════════════════════════════════════════════════════════════
-// Function: q9_board_uart_irq_pending
-// Desc.:    5.4: Liefert 1, wenn die DUART laut Interrupt-Maske (IMR) einen Interrupt anfordern
-//           wuerde — TxRDYA (Bit 0, bei uns immer sendebereit) oder RxRDYA (Bit 1, Zeichen im
-//           Empfangspuffer; pollt dazu die HAL nach). Der Aufrufer legt dann IRQ3 an (dieselbe
-//           Leitung wie der 100Hz-Timer — OS-9 verteilt geteilte Level ueber seine IRQ-Polling-
-//           Tabelle). Wie beim Timer gilt: kooperativ, der Aufrufer fragt regelmaessig ab.
-// Call:     if (q9_board_poll_timer(&b, now) | q9_board_uart_irq_pending(&b)) q9_m68krt_set_irq(3);
-//════════════════════════════════════════════════════════════════════════════════════════════════
-int q9_board_uart_irq_pending(q9_board_t *b);
+/* 2026-08-21: q9_board_poll_timer/q9_board_uart_irq_pending sind nach src/devices/timer_irq/
+   timer_irq.c bzw. src/devices/duart68681/duart68681.c umgezogen (Hardware-Vereinheitlichung) --
+   dort jetzt `static` (kein externer Aufrufer ausser der jeweils eigenen Vtable, s. dortige
+   Kommentare). Kein Ersatz noetig -- niemand ausserhalb rief sie je direkt auf. */
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_board_read8/16/32
@@ -306,15 +290,13 @@ void q9_board_write16(q9_board_t *b, uint32_t addr, uint16_t val);
 void q9_board_write32(q9_board_t *b, uint32_t addr, uint32_t val);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// 5.17: Geraete-Vtables der bisher hier eingebauten Board-Geraete (s. devreg.h fuer das Konzept).
-// dev->state zeigt bei allen dreien auf das q9_board_t-Board selbst (kein separater Zustand noetig
-// -- die Register/Puffer bleiben in q9_board_t, nur der DISPATCH wandert aus board_read_byte/
-// board_write_byte in die generische Registry). Instanzen werden von m68krt.c angelegt.
-//════════════════════════════════════════════════════════════════════════════════════════════════
-extern const q9_device_vtable_t q9_devtype_duart68681;   /* 5.17: 68681-DUART                    */
-/* q9_devtype_cf: jetzt in cf.h deklariert (s.o., #include), Hardware-Vereinheitlichung 2026-08-20 */
-extern const q9_device_vtable_t q9_devtype_timer_irq;      /* 5.17: TI_IRQ_ON/OFF-Adress-Trigger    */
-extern const q9_device_vtable_t q9_devtype_rtc72421;        /* 5.17: RTC72421-Echtzeituhr             */
+/* 2026-08-21: q9_devtype_duart68681/timer_irq/rtc72421 (wie schon q9_devtype_cf seit 2026-08-20)
+   sind jetzt in ihren jeweils eigenen Headern deklariert (src/devices/duart68681/duart68681.h,
+   src/devices/timer_irq/timer_irq.h, src/devices/rtc72421/rtc72421.h) -- ANDERS als cf.h binden
+   diese q9board.h selbst ein (sie brauchen q9_board_t, s. dortige Kopfkommentare), q9board.h bindet
+   NICHT umgekehrt sie ein (vermeidet die Include-Zirkel-Falle) -- ein Aufrufer, der diese Vtables
+   braucht (m68krt.c, devdesc.c), included sie deshalb explizit selbst statt sich auf eine
+   transitive Weiterreichung durch q9board.h zu verlassen. */
 
 #endif // Q9_BOARD_H
 

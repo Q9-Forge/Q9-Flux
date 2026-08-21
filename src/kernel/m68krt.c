@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   m68krt.c                                                                        Ver. 1.50
+// File:   m68krt.c                                                                        Ver. 1.60
 // Owner:  AF
 // Desc.:  Implementierung des Musashi-Wrappers, siehe m68krt.h. Definiert die sechs Speicherzugriffs-
 //         Funktionen, die Musashi vom Host verlangt (m68k_read/write_memory_8/16/32 — deklariert in
@@ -62,10 +62,18 @@
 //         │      │ linearen Scan-Fallback statt automatischer Cluster-Zugehoerigkeit); alle zehn     │
 //         │      │ q9_devreg_add()-Aufrufstellen explizit gesetzt (neun =1, framebuf =0 da unterhalb │
 //         │      │ des Clusters)                                                                     │
+// 26-08-21│ 1.60 │ Hardware-Vereinheitlichung, Folgeschritt: duart68681/rtc72421/timer_irq nach       │ Cld
+//         │      │ eigene Dateien verschoben (waren zuvor in q9board.c) -- explizite Includes hier,    │
+//         │      │ da q9board.h ihre Vtables nicht mehr transitiv re-exportiert (s. dortiger           │
+//         │      │ Kommentar)                                                                          │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
 #include "../devices/quicc/quicc.h"
+#include "../devices/duart68681/duart68681.h"          /* 2026-08-21: q9_devtype_duart68681,      */
+                                                        /* aus q9board.h ausgelagert                */
+#include "../devices/rtc72421/rtc72421.h"               /* 2026-08-21: q9_devtype_rtc72421          */
+#include "../devices/timer_irq/timer_irq.h"             /* 2026-08-21: q9_devtype_timer_irq         */
 #include "devreg.h"
 #include "m68k.h"
 #include "q9_sockcompat.h"    /* Windows-Build: Windows/Winsock-Portabilitaet fuer die Netz-Terminals */

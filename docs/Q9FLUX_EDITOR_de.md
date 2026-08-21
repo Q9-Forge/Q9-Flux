@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.10
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.20
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -135,6 +135,11 @@
 #         │      │ Fast-Table-Flag, CF komplett nach src/devices/cf/cf.c verschoben, boardcfg.c-Schema-    │
 #         │      │ Gegenprobe, echte Tasten N/D fuer die vier CF-Image-Slots im Editor. Abschnitt 4        │
 #         │      │ ("Hardware hinzufuegen" fuer BELIEBIGE Typen) bleibt Folgeschritt, s. dort              │
+# 26-08-21│ 5.20 │ Einunddreissigste Runde: dasselbe Muster fuer alle restlichen Typen -- quicc/mc6845/     │ Cld
+#         │      │ framebuf/clut (nur q9_devdesc_t-Eintrag, lebten schon eigenstaendig) UND               │
+#         │      │ duart68681/rtc72421/timer_irq (komplette Verschiebung aus q9board.c, bit-identisch      │
+#         │      │ per Boot-Test bestaetigt). q9board.c auf reine RAM/ROM/REMAP-Logik geschrumpft.         │
+#         │      │ Nur noch nettty (Sonderfall, s. Abschnitt 4) fehlt fuer volle Abdeckung                 │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1350,6 +1355,54 @@ komplett gruen, kein neues Warning. Zwei echte Boot-Tests (vor/nach der CF-Migra
 - Die 20 hartcodierten Demo-Hardware-Eintraege in `integration_demo.c` durch echte, aus
   `q9_devdesc_get()` abgeleitete Eintraege ersetzen.
 
+**Einunddreissigste Runde (2026-08-21) -- dasselbe Muster fuer alle restlichen Typen:** Andreas'
+Auftrag nach dem "cf"-Piloten: "kannst du... mit den weiteren Hardware-Typen nach dem gleichen
+Muster umbauen". Zwei Gruppen, unterschiedlich viel Arbeit:
+
+1. **quicc/mc6845/framebuf/clut** -- lebten dank der frueheren "6.6"-Migration (2026-08-11) bereits
+   in eigenen Dateien (`src/devices/<typ>/`). Brauchten nur einen neuen `q9_devdesc_t`-Eintrag am
+   Dateiende (noch OHNE `extra_fields` -- keiner dieser vier Typen hat bisher ein Config-Schema,
+   sie werden weiterhin hartcodiert instanziiert). `framebuf` bekam bewusst `use_table_default=0`
+   (liegt bei $FD000000, unterhalb des Fast-Table-Clusters -- die Tabelle greift dort nie).
+2. **duart68681/rtc72421/timer_irq** -- die letzten drei Typen, die noch gebuendelt in `q9board.c`
+   steckten. Komplette Verschiebung nach `src/devices/duart68681/`, `src/devices/rtc72421/`,
+   `src/devices/timer_irq/`, exakt nach dem "cf"-Muster: reine Verschiebung der Register-/
+   Dispatch-Logik, KEINE Verhaltensaenderung. **Wichtiger Unterschied zu "cf":** anders als CF
+   (das schon vor der Migration eine eigene, mehrfach instanziierbare Struct `q9_cf_t` hatte)
+   stecken DUART/RTC/Timer-Zustand weiterhin direkt IN `q9_board_t` -- eine Struct-Extraktion
+   waere ein deutlich groesserer, riskanterer Schritt gewesen (viele Aufrufstellen von
+   `q9_board_t` im ganzen Baum) und war fuer Andreas' eigentliche Anforderung ("ein eigenes
+   Sourcefile") nicht noetig. `q9_board_uart_irq_pending()`/`q9_board_poll_timer()` wurden dabei
+   `static` (verifiziert: kein externer Aufrufer ausser der jeweils eigenen Vtable). `q9board.c`
+   ist dadurch von 1077 auf ca. 200 Zeilen geschrumpft -- enthaelt jetzt nur noch die reine
+   RAM/ROM/REMAP-Speicherlogik (5.2a) plus `q9_board_init`/`_reset`/`_rom_load` und die duenne
+   `q9_board_cf_attach`-Bruecke.
+
+**Dabei gefundene/geloeste Kopplungsfalle:** `devdesc.c`s Registry `g_devdesc_registry[]`
+referenziert JEDEN registrierten Typ unbedingt (statisches Array, kein Lazy-Loading) -- jeder
+Aufrufer von `devdesc.c` (Root-Binary, mehrere Testziele, der Editor) braucht deshalb ALLE
+gelisteten Geraete-Dateien im Link, nicht nur die, die er tatsaechlich benutzt. Neue
+Makefile-Variable `DEVDESC_SRC` fasst das an einer Stelle zusammen (statt Wiederholung/Drift an
+4+ Aufrufstellen). Zusaetzliche Folge: `duart68681.c`/`rtc72421.c` brauchen echte `q9_hal_*`-
+Symbole (Konsole/Uhr) -- dafuer wird ueberall dort der bereits vorhandene `test/07_hal_stub.c`
+(bisher nur fuer den CF-Sektortest gedacht, jetzt umbenannt/umgewidmet als allgemeiner Test-Stub)
+mitgelinkt, NICHT die volle native HAL. Auch `devreg.c` (dessen alte, kaum genutzte Typ-Registry
+`g_device_types[]` `q9_devtype_duart68681` fest referenziert) musste auf ein explizites Include
+von `duart68681.h` statt der bisherigen transitiven Weiterreichung durch `q9board.h` umgestellt
+werden (letzteres reicht seit dieser Runde bewusst NICHTS mehr transitiv weiter, s. dortiger
+Kommentar -- vermeidet eine Include-Zirkel-Falle, da die neuen Geraete-Header umgekehrt `q9board.h`
+brauchen, um `q9_board_t` zu sehen).
+
+`make test` (Root, inkl. `test-devdesc` mit jetzt 8 registrierten Typen) UND `make test`/
+`make demo-integration` (Editor) komplett gruen, kein neues Warning. Zwei weitere echte Boot-Tests
+(vor/nach der DUART/RTC/Timer-Migration) bit-identisch -- RTC-Uhrzeit korrekt, DUART-Konsole/Login
+funktioniert, Timer treibt OS-9 wie gewohnt an. N/D-Rauchtest (CF-Image-Slots) erneut gruen als
+Regressionscheck.
+
+**Noch offen (unveraendert seit der Dreissigsten Runde, s.o.):** `nettty` nachziehen (Sonderfall,
+s. Abschnitt 4), generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen, echter
+Typ-Auswahl-Dialog im Editor.
+
 ## 3. Nach der Auswahl: weitere Bereiche
 
 - Kurzbeschreibung der gewaehlten Config
@@ -1378,12 +1431,21 @@ Ereignisschleife, s.u.), und welchen Config-Pfad/welche Argumente genau uebergeb
 An erster Stelle immer **Speicher** (Memory), danach **CPU-Auswahl**, dann Button
 **"Hardware hinzufuegen"** fuer beliebig viele weitere Geraete-Instanzen.
 
-**Architektur-Grundstein FUER dieses Ziel FERTIG (2026-08-20, Pilot "cf", s. "Dreissigste Runde" in
-Abschnitt 2):** `q9_devdesc_t` (`src/kernel/devdesc.h/.c`) vereint pro Hardware-Typ Vtable +
-Feldbeschreibung + Fast-Table-Flag an einem Ort, bewiesen am Beispiel "cf" (jetzt in
-`src/devices/cf/cf.c`). **Noch offen bis zum echten "Hardware hinzufuegen"-Button:** dieselbe
-Migration fuer die restlichen acht Typen, generische `boardcfg.c`-Abschnittserkennung fuer
-beliebige Typnamen, und der eigentliche Typ-Auswahl-Dialog im Editor.
+**Architektur-Grundstein FUER dieses Ziel FERTIG (2026-08-20/21):** `q9_devdesc_t`
+(`src/kernel/devdesc.h/.c`) vereint pro Hardware-Typ Vtable + Feldbeschreibung + Fast-Table-Flag an
+einem Ort. Nach dem Pilot am Beispiel "cf" (2026-08-20, "Dreissigste Runde" in Abschnitt 2) folgten
+direkt danach ALLE verbliebenen Typen nach demselben Muster ("Einunddreissigste Runde",
+2026-08-21): quicc/mc6845/framebuf/clut (lebten bereits in eigenen Dateien seit "6.6", brauchten
+nur einen `q9_devdesc_t`-Eintrag) sowie duart68681/rtc72421/timer_irq (komplette Verschiebung aus
+`q9board.c` nach `src/devices/duart68681/`, `src/devices/rtc72421/`, `src/devices/timer_irq/`,
+analog zu "cf" -- bit-identisch per Boot-Test bestaetigt: RTC-Uhrzeit, DUART-Konsole, Timer-Tick
+alle unveraendert). `q9board.c` ist damit auf die reine RAM/ROM/REMAP-Speicherlogik geschrumpft
+(1077 -> ~200 Zeilen seit Beginn der Vereinheitlichung). Einziger noch fehlender Typ: `nettty`
+(Netz-Terminals, `m68krt.c`) -- ein Sonderfall, da EIN Geraete-Eintrag alle acht Kanaele bedient
+und der Vtable-Zustand nicht in einer eigenen Struct, sondern im globalen `channels[]`-Array
+steckt; noch nicht migriert. **Noch offen bis zum echten "Hardware hinzufuegen"-Button:** `nettty`
+nachziehen, generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen (bisher nur "cf"
+config-gesteuert instanziierbar), und der eigentliche Typ-Auswahl-Dialog im Editor.
 
 ### 4.1 CPU-Auswahl — technisch machbar, geringer Aufwand
 

@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 2.00
+# File:   Makefile                                                                        Ver. 2.10
 # Owner:  Claudia
 # Desc.:  Q9-Flux-Launcher/Config-Editor -- Grundstein (docs/Q9FLUX_EDITOR_de.md). Bewusst C99 ohne
 #         TUI-Framework, s. src/q9_ansi.h Kopfkommentar (Vorgeschichte: gescheiterter Turbo-Vision-
@@ -37,6 +37,10 @@
 # 26-08-20│ 2.00 │ Hardware-Vereinheitlichung, Pilot "cf": demo-integration linkt jetzt      │ Cld
 #         │      │ zusaetzlich devdesc.c/devschema.c/cf.c (boardcfg.c ruft seit dieser Runde │
 #         │      │ q9_devdesc_lookup() fuer eine Schema-Gegenprobe auf)                       │
+# 26-08-21│ 2.10 │ Hardware-Vereinheitlichung, Folgeschritte: quicc/mc6845/framebuf/clut/     │ Cld
+#         │      │ duart68681/rtc72421/timer_irq dazu (DEVDESC_SRC erweitert) -- die letzten   │
+#         │      │ beiden brauchen q9_hal_*, dafuer neu HAL_STUB_SRC (Root-Teststub statt      │
+#         │      │ voller nativer HAL)                                                          │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 CC      ?= gcc
 CFLAGS  := -std=c99 -Wall -Wextra -O2
@@ -60,9 +64,20 @@ demo: $(BUILD)/ansi_selftest
 demo-integration: $(BUILD)/integration_demo
 	$(BUILD)/integration_demo
 
-$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/boardcfg.h ../../src/kernel/devdesc.c ../../src/kernel/devschema.c ../../src/devices/cf/cf.c
+DEVDESC_SRC := ../../src/kernel/devdesc.c ../../src/kernel/devschema.c \
+               ../../src/devices/cf/cf.c ../../src/devices/quicc/quicc.c \
+               ../../src/devices/mc6845/mc6845.c ../../src/devices/framebuf/framebuf.c \
+               ../../src/devices/clut/clut.c \
+               ../../src/devices/duart68681/duart68681.c ../../src/devices/rtc72421/rtc72421.c \
+               ../../src/devices/timer_irq/timer_irq.c
+# duart68681.c/rtc72421.c brauchen q9_hal_* (UART/RTC-Codepfade) -- der Editor bindet dafuer den
+# schon vorhandenen Root-Testsstub statt der vollen nativen HAL ein (kein eigener Terminal-
+# Rohmodus-Konflikt mit q9_input.h, s. dortiger Kopfkommentar).
+HAL_STUB_SRC := ../../test/07_hal_stub.c
+
+$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/boardcfg.h $(DEVDESC_SRC)
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/devdesc.c ../../src/kernel/devschema.c ../../src/devices/cf/cf.c -o $@
+	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c $(DEVDESC_SRC) $(HAL_STUB_SRC) -o $@
 
 $(BUILD)/ansi_selftest: test/ansi_selftest.c src/q9_ansi.c src/q9_ansi.h
 	@mkdir -p $(BUILD)

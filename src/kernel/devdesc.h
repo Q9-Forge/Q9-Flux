@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devdesc.h                                                                       Ver. 1.00
+// File:   devdesc.h                                                                       Ver. 1.10
 // Owner:  Cld
 // Desc.:  Hardware-Vereinheitlichung (2026-08-20, Pilot "cf", s. Q9FLUX_EDITOR_de.md): Ein
 //         "Device-Deskriptor" q9_devdesc_t buendelt pro Geraetetyp das, was bisher ueber drei Stellen
@@ -30,6 +30,9 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-08-20│ 1.00 │ Hardware-Vereinheitlichung, Pilot "cf": Erster Wurf                      │ Cld
+// 26-08-21│ 1.10 │ Vier weitere Deskriptoren registriert (quicc/mc6845/framebuf/clut, alle    │ Cld
+//         │      │ bereits eigene Dateien seit "6.6") -- noch ohne extra_fields (kein Config-  │
+//         │      │ Schema fuer diese Typen)                                                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_DEVDESC_H
 #define Q9_DEVDESC_H
@@ -69,5 +72,5 @@ const q9_devdesc_t  *q9_devdesc_get(int index);          /* NULL wenn ausserhalb
 
 #endif /* Q9_DEVDESC_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF devdesc.h                                                                           Ver. 1.00
+// EOF devdesc.h                                                                           Ver. 1.10
 //────────────────────────────────────────────────────────────────────────────────────────────────
