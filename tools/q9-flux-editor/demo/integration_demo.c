@@ -1,12 +1,14 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   integration_demo.c                                                             Ver. 3.80
+// File:   integration_demo.c                                                             Ver. 3.90
 // Owner:  Claudia
 // Desc.:  Reine SICHTPRUEFUNG (kein automatisierter Test, wie ansi_selftest --demo) -- zeigt alle
 //         sechs Bausteine zusammen in einem einzigen, echten Bildschirm: Rahmen (q9_widgets),
 //         scrollbare Liste (q9_listview) in einem Bildschirmpuffer (q9_screenbuf), Tastatur-
 //         Navigation + dynamische Groessenanpassung (q9_input). NICHT der eigentliche Q9-Flux-
-//         Editor (keine echte Config-Anbindung, keine Hardware-Typen, keine Buttons) -- nur der
-//         Nachweis, dass die Bausteine zusammenpassen.
+//         Editor (kein "Hardware hinzufuegen"-Dialog, kein echtes Speichern beliebiger Geraete-
+//         Abschnitte) -- aber seit der fuenfundzwanzigsten/sechsundzwanzigsten Runde echtes Laden/
+//         Speichern der .q9-Datei (boardcfg.c) UND seit der Vierunddreissigsten Runde echte, aus
+//         der devdesc-Registry abgeleitete Hardware-Eintraege (kein erfundener Demo-Kram mehr).
 //
 //         Farbpalette (Andreas' Wunsch, 2026-08-17): "aehnliche" Toene statt bunt gemischt --
 //         warme Amber-/Beige-/Braun-Palette (Vorbild: Hermes-Farbschema). Eine "kuehle" Variante
@@ -137,6 +139,16 @@
 //         │      │ ausgelegt, s. dortiger Kommentar). Pilot am Beispiel des einzigen heute schon Config-  │
 //         │      │ gesteuerten Hardware-Typs -- generisches "Hardware hinzufuegen" fuer beliebige Typen   │
 //         │      │ bleibt Folgeschritt (s. Q9FLUX_EDITOR_de.md)                                           │
+// 26-08-21│ 3.90 │ Vierunddreissigste Runde ("gibt es noch was zu tun", Andreas' Klaerung: "Editor zeigt │ Cld
+//         │      │ echte Config statt Demo-Platzhalter"): die zwanzig hartcodierten Hardware-Demo-        │
+//         │      │ Eintraege (g_cf_fields..g_timer_fields, erfundene Adressen/Werte) entfallen komplett   │
+//         │      │ -- init_items() NEU baut stattdessen zur Laufzeit EINEN Eintrag je devdesc-Registry-    │
+//         │      │ Typ (q9_devdesc_get(), 9 Stueck ausser "cf", das schon die echte CF-Image-#N-           │
+//         │      │ Darstellung hat). g_list_items[]/BASE_ITEM_COUNT sind dafuer von Compile-Zeit-          │
+//         │      │ Konstanten zu Laufzeit-Werten geworden (g_base_item_count). Bewusst OHNE Adresse im     │
+//         │      │ Eintrag -- devdesc.h dokumentiert ausdruecklich, dass Basis/Groesse KEIN Teil von       │
+//         │      │ q9_devdesc_t sind (devreg-Laufzeit-Instanz-Eigenschaft), ein erfundener Wert waere     │
+//         │      │ wieder nur ein Demo-Platzhalter gewesen                                                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include <stdio.h>
 #include <string.h>
@@ -162,19 +174,12 @@
    dokumentiert das explizit, s. dort). q9board.h selbst bindet nur devreg.h (Konstanten/Typen,
    kein Funktionsaufruf) -- bleibt daher ebenso gefahrlos linkbar wie boardcfg.c. */
 #include "../../../src/kernel/q9board.h"
+/* Vierunddreissigste Runde (Hardware-Vereinheitlichung, "echte Config statt Demo-Platzhalter"):
+   q9_devdesc_get()/_count() liefern die zehn registrierten Hardware-Typen (s. init_items() unten)
+   -- devdesc.c ist Teil von DEVDESC_SRC (Makefile), das dieses Ziel schon vorher mitlinkte
+   (boardcfg.c ruft seit der cf-Pilot-Runde q9_devdesc_lookup() auf), keine neue Link-Abhaengigkeit. */
+#include "../../../src/kernel/devdesc.h"
 
-/* Rein zur Demonstration -- kein echtes Hardware-Modell, s. Kopfkommentar. Erweiterbare, editierbare
-   Eintraege (Andreas' Wunsch, 2026-08-18: "groessere Eintraege... minimiert ein oder zwei Zeilen,
-   aufgeklappt so viele wie sie brauchen", dann siebzehnte Runde: "wie komme ich in das item rein um
-   dort Werte zu aendern?") -- jeder Eintrag hat eine Kopfzeile (name) plus ein paar FELDER (Label +
-   editierbarer Wert), die nur sichtbar werden, wenn der Eintrag aufgeklappt ist (Pfeil rechts auf
-   der Auswahl, s. main()). Vier Felder je Eintrag reichen fuer die Vorfuehrung -- das Datenmodell
-   (q9_listview_item_t.field_count, s. q9_listview.h) erlaubt aber pro Eintrag eine BELIEBIGE Anzahl,
-   das ist keine feste Grenze der Bibliothek. Die Feld-Arrays sind BEWUSST NICHT const (im Gegensatz
-   zu g_list_items[] selbst) -- q9_listview_field_t.value wird durch Tippen direkt veraendert (s.
-   q9_listview_field_putc()/_backspace()), reine Vorfuehrdaten, KEINE echte Config-Anbindung (s.
-   Kopfkommentar) -- das (noch offene) naechste Stueck waere, ein kleines Datenfile pro Hardware-Typ
-   auszuwerten (aehnlich devschema.h/.c) statt dieser fest verdrahteten Felder. */
 /* Erster fester Eintrag -- KEIN Hardware-Ding wie die Eintraege darunter, sondern die eigentliche
    Konfigurationsdatei-Auswahl (Andreas' Wunsch, 2026-08-18, neunzehnte Runde). Zwei Felder: das
    Namensfeld (normaler TEXT, zeigt den gewaehlten Dateinamen -- von Hand tippbar UND per Button
@@ -194,57 +199,37 @@ static q9_listview_field_t g_cfg_fields[] = {
     {"CPU:",   "<leer>", Q9_LISTVIEW_FIELD_TEXT},
 };
 
-static q9_listview_field_t g_cf_fields[]     = { {"Bus:", "onboard", Q9_LISTVIEW_FIELD_TEXT},   {"Basis:", "FFFFE000", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
-                                                  {"Slot:", "-", Q9_LISTVIEW_FIELD_TEXT},        {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_net1_fields[]   = { {"Port:", "2001", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net2_fields[]   = { {"Port:", "2002", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net3_fields[]   = { {"Port:", "2003", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net4_fields[]   = { {"Port:", "2004", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net5_fields[]   = { {"Port:", "2005", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net6_fields[]   = { {"Port:", "2006", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net7_fields[]   = { {"Port:", "2007", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_net8_fields[]   = { {"Port:", "2008", Q9_LISTVIEW_FIELD_NUMERIC_DEC},     {"Protokoll:", "Telnet", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Status:", "bereit", Q9_LISTVIEW_FIELD_TEXT}, {"Baudrate:", "-", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_rtc_fields[]    = { {"Basis:", "FFFFA000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "-", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},    {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_duart_fields[]  = { {"Basis:", "FFFFA000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "2", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
-                                                  {"Kanal A:", "Konsole", Q9_LISTVIEW_FIELD_TEXT}, {"Kanal B:", "frei", Q9_LISTVIEW_FIELD_TEXT} };
-static q9_listview_field_t g_quicc_fields[]  = { {"MAC:", "00:1A:2B:03:04:05", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Link:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_mc6845_fields[] = { {"Basis:", "FFFF9000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
-                                                  {"Modus:", "Text 80x25", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_clut_fields[]   = { {"Basis:", "FFFF9800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Eintraege:", "256", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
-                                                  {"Tiefe:", "8 Bit", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_rc2014_fields[] = { {"Bus:", "rc2014", Q9_LISTVIEW_FIELD_TEXT},  {"Basis:", "FFFFC010", Q9_LISTVIEW_FIELD_NUMERIC_HEX},
-                                                  {"Slot:", "0", Q9_LISTVIEW_FIELD_NUMERIC_DEC}, {"Aktiv:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_fb_fields[]     = { {"Basis:", "00300000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "512K", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Aufloesung:", "640x480", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_ram_fields[]    = { {"Basis:", "00000000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "4 MB", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Parity:", "nein", Q9_LISTVIEW_FIELD_BOOLEAN}, {"Getestet:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_rom_fields[]    = { {"Basis:", "00F00000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "256K", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Schreibschutz:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_nvram_fields[]  = { {"Basis:", "FFFFB000", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"Groesse:", "2K", Q9_LISTVIEW_FIELD_TEXT},
-                                                  {"Batterie:", "ok", Q9_LISTVIEW_FIELD_TEXT},   {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
-static q9_listview_field_t g_timer_fields[]  = { {"Basis:", "FFFFA800", Q9_LISTVIEW_FIELD_NUMERIC_HEX}, {"IRQ:", "3", Q9_LISTVIEW_FIELD_NUMERIC_DEC},
-                                                  {"Intervall:", "10ms", Q9_LISTVIEW_FIELD_TEXT}, {"Aktiv:", "ja", Q9_LISTVIEW_FIELD_BOOLEAN} };
+/* Einunddreissigste/Dreiunddreissigste Runde (Hardware-Vereinheitlichung, 2026-08-20/21) brachten
+   ALLE zehn Hardware-Typen auf ein einheitliches q9_devdesc_t-Muster (src/kernel/devdesc.h/.c).
+   Andreas' Rueckfrage danach ("gibt es noch was zu tun") + Klaerung: die zwanzig vorherigen
+   HARDCODIERTEN Demo-Eintraege (g_cf_fields..g_timer_fields, erfundene Basisadressen/Werte) werden
+   jetzt durch ECHTE, aus q9_devdesc_get() abgeleitete Eintraege ersetzt (Vierunddreissigste Runde,
+   2026-08-21) -- init_items() unten baut sie zur Laufzeit auf, EIN Eintrag pro registriertem Typ
+   AUSSER "cf" (das hat schon seine eigene, echte CF-Image-#N-Darstellung mit Anlegen/Loeschen,
+   s.u. -- ein zweiter, redundanter "cf"-Eintrag hier waere verwirrend). Name = devdesc->desc
+   (dieselbe Beschreibung, die auch der Kernel selbst kennt -- KEINE zweite, drift-anfaellige
+   Kopie mehr). BEWUSST OHNE Basis-/Endadresse-Feld: devdesc.h dokumentiert ausdruecklich, dass
+   Basis/Groesse absichtlich NICHT Teil von q9_devdesc_t sind (das ist eine devreg-Laufzeit-
+   Instanz-Eigenschaft, s. dortiger Kopfkommentar) -- der Editor bootet das Board nicht und haette
+   dafuer keine echte Quelle, ein erfundener Wert waere wieder ein Demo-Platzhalter. Alle neun
+   Nicht-cf-Typen haben heute ausserdem KEINE extra_fields (kein Config-Schema fuer sie) -- die
+   Eintraege sind also bewusst schlicht: eine Kopfzeile, field_count=0 (nicht aufklappbar, s.
+   q9_listview_field_enter() "field_count<=0 -- nichts zum Betreten"), ehrlich statt erfunden. */
+#define Q9_HW_ITEM_MAX 16                                  /* Obergrenze fuer devdesc-Eintraege --
+                                                                grosszuegig ueber den heutigen neun
+                                                                (zehn Typen minus "cf"), falls
+                                                                kuenftig weitere Typen dazukommen  */
 
 /* Siebenundzwanzigste Runde ("CF-Image-Abschnitte im Editor selbst anzeigen/bearbeiten") -- die
-   [cfN]-Abschnitte einer GELADENEN Datei (g_loaded_cfg.cf[], s. load_q9_config_fields()), NICHT
-   zu verwechseln mit den obigen Hardware-DEMO-Eintraegen (die bleiben reine Vorfuehrdaten, s.
-   Kopfkommentar). Q9_CFG_MAX_CF (boardcfg.h) feste Slots, IMMER am ENDE von g_list_items[]
-   (s. dort) -- dadurch braucht ein wechselnder cf_count keine Verschiebung anderer Eintraege,
-   nur g_item_count (s. dort) waechst/schrumpft. Vier Felder je Slot: Typ:/Bus:/Unit: (die drei
-   kurzen Enum-Werte aus q9_cfg_cf_t, s. boardcfg.h) und Datei: (der Image-Pfad, wie ROM: beim
-   Laden bereits aufgeloest angezeigt). BEKANNTE VEREINFACHUNG: Basis/Slot/Descriptor sind (noch)
-   NICHT editierbar hier -- bleiben beim Speichern unangetastet wie bisher (s. save_q9_config()),
-   das waere ein eigener, noch groesserer Schritt (Bereichspruefung, useSlot/base-Wechselspiel). */
+   [cfN]-Abschnitte einer GELADENEN Datei (g_loaded_cfg.cf[], s. load_q9_config_fields()). Vier
+   feste Slots (Q9_CFG_MAX_CF, boardcfg.h), Position in g_list_items[] wird seit der
+   Vierunddreissigsten Runde LAUFZEIT-bestimmt (direkt hinter den devdesc-Hardware-Eintraegen,
+   s. init_items()), nicht mehr ueber einen festen Compile-Zeit-Offset. Vier Felder je Slot:
+   Typ:/Bus:/Unit: (die drei kurzen Enum-Werte aus q9_cfg_cf_t, s. boardcfg.h) und Datei: (der
+   Image-Pfad, wie ROM: beim Laden bereits aufgeloest angezeigt). BEKANNTE VEREINFACHUNG:
+   Basis/Slot/Descriptor sind (noch) NICHT editierbar hier -- bleiben beim Speichern unangetastet
+   wie bisher (s. save_q9_config()), das waere ein eigener, noch groesserer Schritt
+   (Bereichspruefung, useSlot/base-Wechselspiel). */
 #define Q9_LISTVIEW_CFIMG_SLOTS Q9_CFG_MAX_CF
 static q9_listview_field_t g_cfimg_fields[Q9_LISTVIEW_CFIMG_SLOTS][4] = {
     { {"Typ:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Bus:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
@@ -256,44 +241,25 @@ static q9_listview_field_t g_cfimg_fields[Q9_LISTVIEW_CFIMG_SLOTS][4] = {
     { {"Typ:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Bus:", "<leer>", Q9_LISTVIEW_FIELD_TEXT},
       {"Unit:", "<leer>", Q9_LISTVIEW_FIELD_TEXT}, {"Datei:", "<leer>", Q9_LISTVIEW_FIELD_TEXT} },
 };
-
-static const q9_listview_item_t g_list_items[] = {
-    { "Emulator-Konfiguration",     g_cfg_fields,    6 },
-    { "CF-Interface (onboard, c0)", g_cf_fields,     4 },
-    { "Netz-Terminal x1",           g_net1_fields,   4 },
-    { "Netz-Terminal x2",           g_net2_fields,   4 },
-    { "Netz-Terminal x3",           g_net3_fields,   4 },
-    { "Netz-Terminal x4",           g_net4_fields,   4 },
-    { "Netz-Terminal x5",           g_net5_fields,   4 },
-    { "Netz-Terminal x6",           g_net6_fields,   4 },
-    { "Netz-Terminal x7",           g_net7_fields,   4 },
-    { "Netz-Terminal x8",           g_net8_fields,   4 },
-    { "RTC72421 (Echtzeituhr)",     g_rtc_fields,    4 },
-    { "DUART 68681 (Konsole)",      g_duart_fields,  4 },
-    { "QUICC-Ethernet",             g_quicc_fields,  3 },
-    { "MC6845 (GDP/CRTC)",          g_mc6845_fields, 4 },
-    { "CLUT (Farbtabelle)",         g_clut_fields,   4 },
-    { "RC2014-CF (sekundaer)",      g_rc2014_fields, 4 },
-    { "Framebuffer (VRAM)",         g_fb_fields,     4 },
-    { "Systemspeicher (RAM)",       g_ram_fields,    4 },
-    { "ROM-Spiegel",                g_rom_fields,    4 },
-    { "NVRAM (Akku-gepuffert)",     g_nvram_fields,  4 },
-    { "Timer/IRQ3-Trigger",         g_timer_fields,  4 },
-    /* CF-Image #0..#3 (s. Kommentar oben) -- IMMER am Ende, nur die ersten g_item_count-
-       BASE_ITEM_COUNT davon sind tatsaechlich sichtbar/erreichbar, s. dort. */
-    { "CF-Image #0", g_cfimg_fields[0], 4 },
-    { "CF-Image #1", g_cfimg_fields[1], 4 },
-    { "CF-Image #2", g_cfimg_fields[2], 4 },
-    { "CF-Image #3", g_cfimg_fields[3], 4 },
+static const char *const g_cfimg_names[Q9_LISTVIEW_CFIMG_SLOTS] = {
+    "CF-Image #0", "CF-Image #1", "CF-Image #2", "CF-Image #3",
 };
-/* MAX_ITEM_COUNT: volle Array-Kapazitaet (Compile-Zeit-Konstante fuer g_expanded[]s Groesse, s.
-   unten). BASE_ITEM_COUNT: Emulator-Konfiguration + alle hardcodierten Hardware-Demo-Eintraege,
-   OHNE die vier CF-Image-Slots am Ende. g_item_count (Laufzeit-Variable, s. unten) ist die
-   tatsaechlich AKTIVE Anzahl -- startet bei BASE_ITEM_COUNT (kein Datei geladen, keine CF-Image-
-   Slots sichtbar) und waechst nach einem erfolgreichen Laden um g_loaded_cfg.cf_count (0-4),
-   s. load_q9_config_fields(). */
-#define MAX_ITEM_COUNT  (int)(sizeof(g_list_items) / sizeof(g_list_items[0]))
-#define BASE_ITEM_COUNT (MAX_ITEM_COUNT - Q9_LISTVIEW_CFIMG_SLOTS)
+
+/* MAX_ITEM_COUNT: volle Array-Kapazitaet (Compile-Zeit-Konstante fuer g_list_items[]/g_expanded[]s
+   Groesse) -- 1 (Emulator-Konfiguration) + Q9_HW_ITEM_MAX (devdesc-Hardware, Obergrenze) + die vier
+   CF-Image-Slots. g_list_items[] ist seit dieser Runde NICHT MEHR const (init_items() befuellt
+   Name/Felder/field_count zur Laufzeit aus der devdesc-Registry, s.o.) -- anders als z.B.
+   g_cfg_fields/g_cfimg_fields aendert sich hier auch .name selbst, nicht nur .fields[].value.
+   g_base_item_count (Laufzeit-Variable, ersetzt das fruehere Compile-Zeit-Macro BASE_ITEM_COUNT):
+   Emulator-Konfiguration + tatsaechliche Anzahl devdesc-Hardware-Eintraege (haengt von
+   q9_devdesc_count() ab, s. init_items()), OHNE die CF-Image-Slots. g_item_count (Laufzeit,
+   ebenfalls in init_items() gesetzt) ist die tatsaechlich AKTIVE Anzahl -- startet bei
+   g_base_item_count (kein Datei geladen, keine CF-Image-Slots sichtbar) und waechst nach einem
+   erfolgreichen Laden um g_loaded_cfg.cf_count (0-4), s. load_q9_config_fields(). */
+#define MAX_ITEM_COUNT (1 + Q9_HW_ITEM_MAX + Q9_LISTVIEW_CFIMG_SLOTS)
+static q9_listview_item_t g_list_items[MAX_ITEM_COUNT];
+static int                g_base_item_count;
+static int                g_item_count;
 
 /* 0 = zugeklappt (Default), 1 = aufgeklappt -- Pfeil rechts auf der Hauptliste klappt den
    AUSGEWAEHLTEN Eintrag auf und setzt den Feld-Fokus aufs erste Feld (q9_listview_field_enter()),
@@ -304,9 +270,39 @@ static const q9_listview_item_t g_list_items[] = {
    auch wenn main() sie nie erreicht, solange g_item_count kleiner ist). */
 static int g_expanded[MAX_ITEM_COUNT];
 
-/* Laufzeit-Anzahl der AKTIVEN Eintraege (s. Kommentar bei BASE_ITEM_COUNT oben) -- startet ohne
-   geladene Datei bei BASE_ITEM_COUNT, load_q9_config_fields() passt sie nach jedem Laden an. */
-static int g_item_count = BASE_ITEM_COUNT;
+/* Baut g_list_items[]/g_base_item_count/g_item_count einmalig zur Laufzeit auf (s. Kommentar
+   oben) -- MUSS vor dem ersten Zugriff (main()s q9_listview_init()) aufgerufen werden. Index 0
+   bleibt "Emulator-Konfiguration" (unveraendert), Indizes [1 .. g_base_item_count) kommen aus der
+   devdesc-Registry (jeder Typ ausser "cf"), direkt danach die vier CF-Image-Slots. */
+static void init_items(void)
+{
+    int i, n, idx;
+
+    g_list_items[0].name        = "Emulator-Konfiguration";
+    g_list_items[0].fields      = g_cfg_fields;
+    g_list_items[0].field_count = (int)(sizeof(g_cfg_fields) / sizeof(g_cfg_fields[0]));
+
+    idx = 1;
+    n = q9_devdesc_count();
+    for (i = 0; i < n && idx < 1 + Q9_HW_ITEM_MAX; i++) {
+        const q9_devdesc_t *d = q9_devdesc_get(i);
+        if (!d || strcmp(d->type, "cf") == 0) { continue; }   /* cf: eigene CF-Image-#N-Darstellung */
+        g_list_items[idx].name        = d->desc;
+        g_list_items[idx].fields      = NULL;
+        g_list_items[idx].field_count = 0;                    /* heute keine extra_fields, s.o. */
+        idx++;
+    }
+    g_base_item_count = idx;
+
+    for (i = 0; i < Q9_LISTVIEW_CFIMG_SLOTS; i++) {
+        g_list_items[g_base_item_count + i].name        = g_cfimg_names[i];
+        g_list_items[g_base_item_count + i].fields       = g_cfimg_fields[i];
+        g_list_items[g_base_item_count + i].field_count = 4;
+    }
+
+    g_item_count = g_base_item_count;                         /* keine Datei geladen -> keine
+                                                                    CF-Image-Slots sichtbar        */
+}
 
 /* Warme Gelb-/Orange-Palette. Neunte Feedback-Runde (Andreas, 2026-08-17): "die ganzen Farben
    sind jetzt alle so in Richtung Braun abgerutscht... mehr in Richtung gelb orange" -- alle Toene
@@ -659,7 +655,7 @@ static const char *cf_unit_str(int unit) { return unit ? "slave" : "master"; }
 
 /* Traegt die CF-Image-Felder (g_cfimg_fields[0..g_loaded_cfg.cf_count-1]) aus g_loaded_cfg.cf[]
    ein und richtet lv NEU aus (item_count/g_item_count wachsen um cf_count, s. Kommentar bei
-   BASE_ITEM_COUNT). lv darf NULL sein (z.B. wenn kein Listview-Kontext verfuegbar ist) -- dann
+   g_base_item_count). lv darf NULL sein (z.B. wenn kein Listview-Kontext verfuegbar ist) -- dann
    werden nur die Felder befuellt, ohne Sichtbarkeits-/Fokus-Anpassung. */
 static void sync_cfimg_items(q9_listview_t *lv)
 {
@@ -675,7 +671,7 @@ static void sync_cfimg_items(q9_listview_t *lv)
         snprintf(g_cfimg_fields[i][3].value, sizeof(g_cfimg_fields[i][3].value), "%s",
                  cf->path[0] ? cf->path : "<leer>");
     }
-    g_item_count = BASE_ITEM_COUNT + (g_loaded_cfg.cf_count < Q9_LISTVIEW_CFIMG_SLOTS
+    g_item_count = g_base_item_count + (g_loaded_cfg.cf_count < Q9_LISTVIEW_CFIMG_SLOTS
                                        ? g_loaded_cfg.cf_count : Q9_LISTVIEW_CFIMG_SLOTS);
     if (lv) {
         lv->item_count = g_item_count;
@@ -702,14 +698,14 @@ static void cfimg_reset_slot(int slot)
     snprintf(g_cfimg_fields[slot][3].value, sizeof(g_cfimg_fields[slot][3].value), "%s", "<leer>");
 }
 
-/* Taste 'N': naechsten freien CF-Image-Slot aktivieren (g_item_count++, s. BASE_ITEM_COUNT-
+/* Taste 'N': naechsten freien CF-Image-Slot aktivieren (g_item_count++, s. g_base_item_count-
    Kommentar), Defaults setzen, Auswahl+Scroll draufsetzen. save_q9_config() braucht dafuer KEINE
-   Anpassung -- cf_visible = g_item_count - BASE_ITEM_COUNT wird dort schon bei jedem Speichern neu
+   Anpassung -- cf_visible = g_item_count - g_base_item_count wird dort schon bei jedem Speichern neu
    berechnet (s. dortiger Kommentar "ein kuenftiges 'neuen CF-Image-Slot hinzufuegen'", der genau
    diese Runde vorwegnimmt). Voll (alle Q9_LISTVIEW_CFIMG_SLOTS aktiv): No-op, msg erklaert warum. */
 static void add_cfimg_slot(q9_listview_t *lv, char *msg, unsigned msg_size)
 {
-    int slot = g_item_count - BASE_ITEM_COUNT;
+    int slot = g_item_count - g_base_item_count;
     if (slot >= Q9_LISTVIEW_CFIMG_SLOTS) {
         snprintf(msg, msg_size, "CF-Image-Slots voll (max. %d)", Q9_LISTVIEW_CFIMG_SLOTS);
         return;
@@ -717,14 +713,14 @@ static void add_cfimg_slot(q9_listview_t *lv, char *msg, unsigned msg_size)
     cfimg_reset_slot(slot);
     g_item_count++;
     lv->item_count = g_item_count;
-    lv->selected = BASE_ITEM_COUNT + slot;
+    lv->selected = g_base_item_count + slot;
     lv->field_focus = -1;
     q9_listview_move_ex(lv, 0, g_list_items, g_expanded);
     snprintf(msg, msg_size, "CF-Image #%d angelegt", slot);
 }
 
 /* Taste 'D': den AUSGEWAEHLTEN CF-Image-Slot entfernen -- nur wirksam, wenn die Auswahl
-   ueberhaupt auf einem CF-Image-Eintrag liegt (Index >= BASE_ITEM_COUNT), sonst No-op (kein
+   ueberhaupt auf einem CF-Image-Eintrag liegt (Index >= g_base_item_count), sonst No-op (kein
    versehentliches Loeschen eines Hardware-Demo-Eintrags durch denselben Tastendruck). Slots
    bleiben IMMER lueckenlos am Anfang (Position i = CF-Image #i, s. Kopfkommentar bei
    g_cfimg_fields) -- nachfolgende Slot-INHALTE ruecken deshalb eine Position nach vorn (memcpy,
@@ -735,18 +731,18 @@ static void delete_cfimg_slot(q9_listview_t *lv, char *msg, unsigned msg_size)
 {
     int slot, i, visible;
 
-    if (lv->selected < BASE_ITEM_COUNT || lv->selected >= g_item_count) {
+    if (lv->selected < g_base_item_count || lv->selected >= g_item_count) {
         snprintf(msg, msg_size, "Loeschen: Auswahl ist kein CF-Image-Eintrag");
         return;
     }
-    slot = lv->selected - BASE_ITEM_COUNT;
-    visible = g_item_count - BASE_ITEM_COUNT;
+    slot = lv->selected - g_base_item_count;
+    visible = g_item_count - g_base_item_count;
     for (i = slot; i < visible - 1; i++) {
         memcpy(g_cfimg_fields[i], g_cfimg_fields[i + 1], sizeof(g_cfimg_fields[i]));
     }
     cfimg_reset_slot(visible - 1);
     g_item_count--;
-    for (i = BASE_ITEM_COUNT; i < MAX_ITEM_COUNT; i++) { g_expanded[i] = 0; }
+    for (i = g_base_item_count; i < MAX_ITEM_COUNT; i++) { g_expanded[i] = 0; }
     lv->item_count = g_item_count;
     lv->field_focus = -1;
     if (lv->selected >= g_item_count && g_item_count > 0) { lv->selected = g_item_count - 1; }
@@ -844,7 +840,7 @@ static int parse_cf_unit(const char *v, int fallback)
    g_loaded_cfg (falls vorhanden, s. Kommentar dort) statt bei leeren Defaults, damit unbekannte
    [cfN]-Felder (Basis/Slot/Descriptor -- der Editor zeigt/bearbeitet die noch nicht, s. "Noch
    offen" in Q9FLUX_EDITOR_de.md) NICHT stillschweigend verschwinden. Siebenundzwanzigste Runde:
-   Typ:/Bus:/Unit:/Datei: DER SICHTBAREN CF-Image-Eintraege (g_item_count-BASE_ITEM_COUNT Stueck)
+   Typ:/Bus:/Unit:/Datei: DER SICHTBAREN CF-Image-Eintraege (g_item_count-g_base_item_count Stueck)
    werden zusaetzlich zurueckgeschrieben (cfg.cf_count entsprechend gesetzt) -- ALLES darueber
    hinaus (weitere, nie geladene/sichtbare Slots) bleibt unberuehrt und wird NICHT mitgespeichert.
    Ruft (wie load_q9_config_fields()) den ECHTEN Board-Config-Parser des Emulators auf
@@ -878,7 +874,7 @@ static void save_q9_config(char *msg, unsigned msg_size)
        exakt in dieser Beziehung zu g_loaded_cfg.cf_count, s. dort) -- trotzdem explizit gesetzt,
        nicht stillschweigend vorausgesetzt (robust, falls sich das je aendert, z.B. ein kuenftiges
        "neuen CF-Image-Slot hinzufuegen"). */
-    cf_visible = g_item_count - BASE_ITEM_COUNT;
+    cf_visible = g_item_count - g_base_item_count;
     cfg.cf_count = cf_visible;
     for (i = 0; i < cf_visible; i++) {
         q9_cfg_cf_t *cf = &cfg.cf[i];
@@ -1110,7 +1106,13 @@ static void clamp_field_range(q9_listview_field_t *f, long lo, long hi)
 
 /* Ruft clamp_field_range() fuer das gerade fokussierte Feld auf, WENN es das "Slot:"-Beispiel ist
    (per Label erkannt -- reine Vorfuehrung, s. clamp_field_range()-Kommentar). Wird beim Verlassen
-   des Feldes aufgerufen (Pfeil links UND Esc, s. main()). */
+   des Feldes aufgerufen (Pfeil links UND Esc, s. main()).
+   Vierunddreissigste Runde: das urspruengliche "Slot:"-Beispielfeld (RC2014-CF-Demo-Eintrag) ist
+   mit den anderen 19 hartcodierten Hardware-Demo-Eintraegen entfallen (s. init_items()) -- diese
+   Funktion findet aktuell also nirgends mehr ein passendes Label und ist ein stiller No-op.
+   BEWUSST NICHT entfernt: Slot: ist eines der (noch nicht editierbaren) CF-Image-Felder, s.
+   Kommentar bei g_cfimg_fields -- wird es dort nachgeruestet, greift dieser Bereichs-Check sofort
+   wieder, ohne main()s Aufrufstellen anfassen zu muessen. */
 static void maybe_clamp_focused_field(q9_listview_t *lv)
 {
     q9_listview_field_t *f;
@@ -1141,6 +1143,11 @@ int main(void)
         cols = 80;
     }
     clamp_dims(&rows, &cols);
+
+    /* Vierunddreissigste Runde: g_list_items[]/g_base_item_count/g_item_count sind seit dieser
+       Runde Laufzeit-Werte (devdesc-Registry, s. dortiger Kommentar) -- MUSS vor dem ersten
+       Zugriff (gleich beim q9_listview_init() unten) gebaut sein. */
+    init_items();
 
     if (q9_input_init() != 0) {
         fprintf(stderr, "integration_demo: kein echtes Terminal (TTY) -- Abbruch.\n");
@@ -1351,5 +1358,5 @@ int main(void)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF integration_demo.c                                                                  Ver. 3.80
+// EOF integration_demo.c                                                                  Ver. 3.90
 //────────────────────────────────────────────────────────────────────────────────────────────────
