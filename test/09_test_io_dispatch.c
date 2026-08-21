@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   09_test_io_dispatch.c                                                           Ver. 1.10
+// File:   09_test_io_dispatch.c                                                           Ver. 1.20
 // Owner:  Claudia
 // Desc.:  5.18 (zweiter Teilschritt): gezielte Absicherung fuer die neue I/O-Dispatch-Tabelle in
 //         m68krt.c (Q9_IO_CLUSTER_BASE/g_io_table/devreg_hit) -- der allgemeine Boot-Diff-Test
@@ -26,10 +26,16 @@
 //             Slot). Prueft: neue Basisadressen antworten korrekt und unabhaengig voneinander,
 //             die ALTE x1-Adresse liefert jetzt "kein Geraet", Schreibzugriffe bleiben zwischen
 //             Kanaelen isoliert.
+//         (6) NEU 2026-08-21 (Hardware-Vereinheitlichung, Andreas' Idee): der REMAP-Trigger
+//             ($FFFF8000-$FFFF8FFF, vormals Sonderfall in q9board.c) ist jetzt selbst ein
+//             registriertes devreg-Geraet (src/devices/remap/remap.c). Prueft: Lese- UND
+//             Schreibzugriff (Basis wie oberes Fensterende) schalten board.remapped korrekt auf 1,
+//             der Trigger selbst liefert dabei immer 0.
 //
 //         Bewusst OHNE q9_m68krt_reset()/cpu.execute() -- reine Register-Dispatch-Pruefung ohne
-//         CPU-Ausfuehrung, board.remapped bleibt 0 (Reset-Zustand), rom_len=0, damit jeder
-//         Board-Fallback deterministisch 0 liefert (kein ROM-Inhalt im Spiel, keine Seiteneffekte).
+//         CPU-Ausfuehrung, board.remapped bleibt 0 (Reset-Zustand) bis Fall (6) ihn gezielt testet,
+//         rom_len=0, damit jeder Board-Fallback deterministisch 0 liefert (kein ROM-Inhalt im
+//         Spiel, keine sonstigen Seiteneffekte).
 //
 // Call:   build/<platform>/test_io_dispatch
 //════════════════════════════════════════════════════════════════════════════════════════════════
@@ -44,6 +50,8 @@
 #include "../src/devices/mc6845/mc6845.h"
 #include "../src/devices/clut/clut.h"
 #include "../src/devices/nettty/nettty.h"       /* 2026-08-21: Q9_BOARD_NET_X1..X8_BASE, aus       */
+                                                /* q9board.h ausgelagert                            */
+#include "../src/devices/remap/remap.h"         /* 2026-08-21: Q9_BOARD_REMAP_REG_BASE/TOP, aus     */
                                                 /* q9board.h ausgelagert                            */
 #include "m68k.h"
 
@@ -164,6 +172,38 @@ int main(void)
     m68k_write_memory_8(Q9_BOARD_NET_X1_BASE + 4u, 0x55u);
     check_u8("x2-Status nach x1-TX-Schreibzugriff unveraendert ($FFFF1100)",
              m68k_read_memory_8(Q9_BOARD_NET_X2_BASE), 0x02u);
+
+    printf("=== (6) REMAP-Trigger: eigenes devreg-Geraet (2026-08-21, Hardware-Vereinheitlichung) ===\n");
+    /* q9_board_init() setzt board.remapped auf 0 (Reset-Zustand, ROM ab Adresse 0 gespiegelt).
+       Ein Lesezugriff auf den Trigger-Bereich $FFFF8000-$FFFF8FFF muss -- unabhaengig vom Wert --
+       auf board.remapped=1 schalten (remap_dev_read8, s. src/devices/remap/remap.c). Der Trigger
+       selbst liefert immer 0 (kein echtes Register dahinter), das eigentliche Umschalten der
+       RAM/ROM-Sicht bleibt bewusst in q9board.c (Performance-Fast-Path, s. dortige Historie). */
+    if (board.remapped != 0) {
+        printf("    FAIL Reset-Zustand: board.remapped sollte 0 sein, ist aber %d\n", board.remapped);
+        g_fails++;
+    } else {
+        printf("    OK   Reset-Zustand: board.remapped == 0\n");
+    }
+    check_u8("REMAP-Trigger $FFFF8000 liest immer 0",
+             m68k_read_memory_8(Q9_BOARD_REMAP_REG_BASE), 0x00u);
+    if (board.remapped != 1) {
+        printf("    FAIL Lesezugriff auf $FFFF8000 haette board.remapped auf 1 schalten muessen, ist %d\n",
+               board.remapped);
+        g_fails++;
+    } else {
+        printf("    OK   Lesezugriff auf $FFFF8000 hat board.remapped auf 1 geschaltet\n");
+    }
+    /* Auch das obere Ende des Trigger-Fensters loest aus (Schreibzugriff diesmal). */
+    board.remapped = 0;
+    m68k_write_memory_8(Q9_BOARD_REMAP_REG_TOP, 0x99u);
+    if (board.remapped != 1) {
+        printf("    FAIL Schreibzugriff auf $FFFF8FFF haette board.remapped auf 1 schalten muessen, ist %d\n",
+               board.remapped);
+        g_fails++;
+    } else {
+        printf("    OK   Schreibzugriff auf $FFFF8FFF hat board.remapped auf 1 geschaltet\n");
+    }
 
     printf("\n=== Zusammenfassung ===\n");
     printf("  Gesamt: %d Checks fehlgeschlagen\n", g_fails);

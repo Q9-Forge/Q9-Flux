@@ -151,7 +151,8 @@ DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c src/kernel/devreg.c \
               src/devices/cf/cf.c src/devices/quicc/quicc.c src/devices/mc6845/mc6845.c \
               src/devices/framebuf/framebuf.c src/devices/clut/clut.c \
               src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
-              src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c
+              src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
+              src/devices/remap/remap.c
 
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
@@ -163,7 +164,8 @@ BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src
             src/devices/quicc/quicc.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
             src/devices/clut/clut.h src/devices/videobridge/videobridge.h \
             src/devices/duart68681/duart68681.h src/devices/rtc72421/rtc72421.h \
-            src/devices/timer_irq/timer_irq.h src/devices/nettty/nettty.h
+            src/devices/timer_irq/timer_irq.h src/devices/nettty/nettty.h \
+            src/devices/remap/remap.h
 
 # 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
 # 5.13: bridge-Ethernet-Backend (--net bridge:<ifname>), nur macOS: BPF (/dev/bpf*), kein Framework
@@ -302,6 +304,7 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	    src/devices/cf/cf.c \
 	    src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
 	    src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
+	    src/devices/remap/remap.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
 	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
