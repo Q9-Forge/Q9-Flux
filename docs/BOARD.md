@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   BOARD.md                                                                        Ver. 1.10
+# File:   BOARD.md                                                                        Ver. 1.20
 # Owner:  AF
 # Desc.:  Hardware-Referenz fuer das CB030-Board (68030-SBC) — Speicherkarte + Peripherie-Register.
 #         Grundlage fuer Schritt 5.2 (ARBEITSPLAN.md): Musashi-Board-Emulation zur Bootstrap-
@@ -18,6 +18,10 @@
 #         │      │ als historischen 5.2a-Ausgangspunkt markiert statt geloescht), Offene-     │
 #         │      │ Punkte-Liste abgehakt, Dateinamen-Tippfehler am Fussende (CB030.md statt  │
 #         │      │ BOARD.md) korrigiert                                                      │
+# 26-08-21│ 1.20 │ Nachgepflegt (3. Umbau seit 1.10): Hardware-Vereinheitlichung (2026-08-20/  │ Cld
+#         │      │ 21) -- jeder Geraetetyp eigenes Sourcefile + q9_devdesc_t (Vtable+Schema),  │
+#         │      │ REMAP-Trigger jetzt ebenfalls ein registriertes devreg-Geraet statt          │
+#         │      │ Board-Fallback-Sonderfall (RAM/ROM-Interpretation bleibt Fast-Path)          │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
 
 # CB030 — Hardware-Referenz
@@ -202,7 +206,7 @@ sonst:                          (nach dem einen REMAP-Zugriff)
     adr in [0xFE00_0000, 0xFE07_FFFF] → ROM, EINMAL (kein Spiegeln mehr)
 ```
 
-**Aktueller Stand (2026-08-14), zwei grundlegende Umbauten seither, dieses Dokument
+**Aktueller Stand (2026-08-21), drei grundlegende Umbauten seither, dieses Dokument
 absichtlich NICHT als zweite, konkurrierende Beschreibung fortgeschrieben — die eine
 massgebliche Quelle ist jetzt der Code selbst (`m68krt.c`) + ARBEITSPLAN 5.17/5.18:**
 
@@ -217,11 +221,28 @@ massgebliche Quelle ist jetzt der Code selbst (`m68krt.c`) + ARBEITSPLAN 5.17/5.
    — das wiederum fuer Adressen ab `$FFFF0000` eine direkt indizierte 256-Byte-Tabelle nutzt
    (`g_io_table`, `io_table_build()`) statt die Registry linear zu durchlaufen. Nur bei
    mehreren Geraeten im selben 256-Byte-Slot (heute: MC6845+CLUT) faellt das auf den
-   ursprünglichen linearen Scan zurueck.
+   ursprünglichen linearen Scan zurueck. Ein Geraet kann sich per `q9_device_t.use_table`
+   bewusst GEGEN die Tabelle entscheiden (erzwingt den linearen Scan-Fallback) — bisher nutzt
+   das kein heutiges Geraet, die Option existiert fuer kuenftige Faelle mit unregelmaessigen/
+   laufzeitveraenderlichen Adressfenstern.
+3. **Hardware-Vereinheitlichung (2026-08-20/21, Q9FLUX_EDITOR_de.md Abschnitt 4, "Dreissigste"
+   bis "Dreiunddreissigste Runde"):** jeder Geraetetyp bekam ein eigenes Sourcefile unter
+   `src/devices/<typ>/` MIT einem `q9_devdesc_t`-Eintrag (`devdesc.h/.c`) — vereint Vtable
+   (Laufzeit-Dispatch, wie 5.17) und Feldschema (welche Config-Felder dieser Typ braucht,
+   Vorstufe fuer den Q9-Flux-Editor) an einer Stelle. `q9board.c` schrumpfte dabei von 1077
+   auf ~230 Zeilen, weil alle Geraete ausser der reinen RAM/ROM-Logik selbst ausgezogen
+   wurden. **Auch der REMAP-Trigger** (s.u., vormals eigener if/else-Sonderfall im
+   Board-Fallback) **ist seit der "Dreiunddreissigsten Runde" (2026-08-21) selbst ein
+   registriertes devreg-Geraet** (`src/devices/remap/remap.c`) — NUR der Trigger selbst
+   (reiner Adress-Trigger, kein Datenwert, kein IRQ), die RAM/ROM-**Interpretation** danach
+   bleibt bewusst im Performance-Fast-Path (`q9board.c`/`ram_fast_hit()`, s.o.). Heute (10
+   Typen: cf/quicc/mc6845/framebuf/clut/duart68681/rtc72421/timer_irq/nettty/remap)
+   vollstaendig auf dieses Muster umgestellt.
 
 Der REMAP-Zustand ("schon umgeschaltet: ja/nein") ist weiterhin ein einzelner Merker in der
 Board-Zustandsstruktur (`q9_board_t.remapped`) — unabhängig von Musashis eigenem CPU-Zustand,
-das hat sich nicht geaendert.
+das hat sich nicht geaendert. Geaendert hat sich nur, WER den Uebergang boolean=1 ausloest
+(seit Punkt 3 oben: `remap_dev_read8/write8`, davor ein Sonderfall in `q9board.c`).
 
 **ROM-Inhalt**: Kommt aus einer Datei (das reale Boot-ROM-Image, proprietär —
 bleibt lokal, NICHT ins Repo, siehe Lizenzhinweis oben), beim Board-Start einmal komplett
@@ -357,9 +378,10 @@ bleiben im Windows-HAL, OS-9-Programme sehen normale Terminalsequenzen.
 
 - ~~REMAP-Verhalten~~ **geklärt** (s.o.): einmaliger Adresszugriff, kein Bit-Layout.
 - ~~TI_IRQ_ON/OFF~~ **geklärt** (s.o.): Adress-Trigger für einen Timer, IRQ3.
-- ~~Adress-Dispatch-Architektur~~ **geklärt, aber seither zweimal grundlegend umgebaut** (5.17
-  Geraete-Registry, 5.18 RAM-Fast-Path + I/O-Tabelle, s.o.) — die urspruengliche if/else-Kette
-  beschreibt nur noch den historischen Ausgangspunkt.
+- ~~Adress-Dispatch-Architektur~~ **geklärt, aber seither dreimal grundlegend umgebaut** (5.17
+  Geraete-Registry, 5.18 RAM-Fast-Path + I/O-Tabelle, 2026-08-20/21 Hardware-Vereinheitlichung
+  inkl. REMAP-Trigger als eigenes Geraet, s.o.) — die urspruengliche if/else-Kette beschreibt
+  nur noch den historischen Ausgangspunkt.
 - ~~RAM-Bestückung~~ **geklärt (2026-08-14): fest 16 MByte im Emulator** (`BOARD_RAM_BYTES`,
   `q9boardrun.c`), NICHT konfigurierbar -- die reale Hardware unterstuetzt 16/32/64/128 MB
   je nach SIM-Modul, der Emulator bildet bisher nur die kleinste Bestueckung nach.
@@ -368,11 +390,13 @@ bleiben im Windows-HAL, OS-9-Programme sehen normale Terminalsequenzen.
   tatsaechlich benutzten Befehlsumfang ab.
 - ~~IRQ3-Timer-Frequenz~~ **geklärt** (s.o. Abschnitt "Timer/Interrupt IRQ3"): 100 Hz, 10 ms
   Periode (`Q9_BOARD_TIMER_PERIOD_MS`, `q9board.h`).
-- **Neu (2026-08-14):** dieses Dokument selbst braucht laufende Pflege bei jedem neuen Geraet
-  im I/O-Cluster -- war seit der Initialversion (2026-07-04) nicht mehr aktualisiert worden,
-  obwohl seither fuenf weitere Geraete dazukamen (RTC, QUICC, MC6845, CLUT, CF2). Kein Prozess
-  dafuer etabliert; ARBEITSPLAN-Eintraege sind die verlaesslichere laufende Quelle.
+- **Neu (2026-08-14), nachgepflegt (2026-08-21):** dieses Dokument selbst braucht laufende Pflege
+  bei jedem neuen Geraet im I/O-Cluster -- war seit der Initialversion (2026-07-04) nicht mehr
+  aktualisiert worden, obwohl seither fuenf weitere Geraete dazukamen (RTC, QUICC, MC6845, CLUT,
+  CF2). Kein Prozess dafuer etabliert; ARBEITSPLAN-Eintraege UND `Q9FLUX_EDITOR_de.md` Abschnitt 4
+  (Hardware-Vereinheitlichung, "Dreissigste" bis "Dreiunddreissigste Runde") sind die
+  verlaesslichere laufende Quelle.
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
-# EOF BOARD.md                                                                            Ver. 1.10
+# EOF BOARD.md                                                                            Ver. 1.20
 #─────────────────────────────────────────────────────────────────────────────────────────────────
