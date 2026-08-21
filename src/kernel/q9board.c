@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9board.c                                                                         Ver. 3.00
+// File:   q9board.c                                                                         Ver. 3.10
 // Owner:  AF
 // Desc.:  Implementierung der Board-Emulation, siehe q9board.h.
 //
@@ -38,40 +38,30 @@
 //         │      │ src/devices/duart68681/, src/devices/rtc72421/, src/devices/timer_irq/         │
 //         │      │ verschoben (reine Verschiebung wie bei "cf") -- diese Datei ist jetzt auf die  │
 //         │      │ eigentliche RAM/ROM/REMAP-Speicherlogik (5.2a) reduziert                        │
+// 26-08-21│ 3.10 │ Hardware-Vereinheitlichung, Andreas' Idee: der REMAP-Trigger selbst (reiner      │ Cld
+//         │      │ Adress-Trigger $FFFF8000-$FFFF8FFF) ist jetzt ein eigenes devreg-Geraet           │
+//         │      │ (src/devices/remap/remap.c) -- board_read_byte/write_byte kennen nur noch         │
+//         │      │ RAM/ROM, der REMAP-Check entfaellt hier (devreg dispatcht ihn vorher). Bewusst    │
+//         │      │ NICHT verschoben: die RAM/ROM-Interpretation selbst (Performance-Fast-Path)        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9board.h"
 #include <stdlib.h>
 #include <string.h>
 
-//────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: board_is_remap_reg
-// Desc.:    Prueft, ob 'addr' im REMAP-Registerbereich liegt (reiner Adress-Trigger, s. q9board.h).
-// Call:     if (board_is_remap_reg(addr)) ...
-//────────────────────────────────────────────────────────────────────────────────────────────────
-static int board_is_remap_reg(uint32_t addr)
-{
-    return addr >= Q9_BOARD_REMAP_REG_BASE && addr <= Q9_BOARD_REMAP_REG_TOP;
-}
-
 /* 2026-08-20/21: DUART/RTC/CF-Registerlogik sind nach src/devices/duart68681/duart68681.c,
-   src/devices/rtc72421/rtc72421.c bzw. src/devices/cf/cf.c umgezogen (Hardware-Vereinheitlichung)
-   -- s. dort. */
+   src/devices/rtc72421/rtc72421.c bzw. src/devices/cf/cf.c umgezogen, der REMAP-Trigger selbst
+   (board_is_remap_reg) nach src/devices/remap/remap.c (Hardware-Vereinheitlichung) -- s. dort.
+   devreg dispatcht das REMAP-Fenster jetzt VOR diesem Board-Fallback, board_read_byte/write_byte
+   sehen deshalb NIE mehr eine Adresse im REMAP-Registerbereich -- der Check entfaellt hier. */
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: board_read_byte
-// Desc.:    Adress-Dispatch fuer einen einzelnen Lesezugriff (if/else-Kette aus docs/BOARD.md).
-//           I/O (REMAP/Timer/CF/UART) wird VOR der Zustandsweiche geprueft — die I/O-Region ist
-//           in beiden REMAP-Zustaenden erreichbar (das Boot-ROM initialisiert die DUART vor dem
-//           Remap). Ein Treffer im REMAP-Registerbereich schaltet immer um, unabhaengig vom
-//           bisherigen Zustand oder vom gelesenen Wert (0). TI_IRQ_ON/OFF sind reine Adress-
-//           Trigger (5.2d) — auch beim Lesen wirksam.
+// Desc.:    Adress-Dispatch fuer einen einzelnen Lesezugriff, NUR NOCH RAM/ROM (docs/BOARD.md) --
+//           REMAP/Timer/CF/UART/RTC/nettty/... laufen inzwischen alle ueber devreg VOR diesem
+//           Board-Fallback (s.o.).
 // Call:     v = board_read_byte(b, addr)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint8_t board_read_byte(q9_board_t *b, uint32_t addr)
 {
-    if (board_is_remap_reg(addr)) {
-        b->remapped = 1;
-        return 0;
-    }
     if (!b->remapped) {
         /* Reset-Zustand: noch kein RAM sichtbar, ROM gespiegelt bis zum oberen Byte des
            Adressraums (0xFEFF_FFFF einschl., docs/BOARD.md Speicherkarte) — das Boot-ROM
@@ -96,18 +86,12 @@ static uint8_t board_read_byte(q9_board_t *b, uint32_t addr)
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: board_write_byte
-// Desc.:    Adress-Dispatch fuer einen einzelnen Schreibzugriff. I/O wird — wie beim Lesen — VOR
-//           der Zustandsweiche geprueft (in beiden REMAP-Zustaenden erreichbar). ROM ist nie
-//           beschreibbar; ein Treffer im REMAP-Registerbereich schaltet um, der Wert selbst wird
-//           verworfen. Ebenso TI_IRQ_ON/OFF (5.2d, reine Adress-Trigger).
+// Desc.:    Adress-Dispatch fuer einen einzelnen Schreibzugriff, NUR NOCH RAM/ROM -- REMAP laeuft
+//           inzwischen ueber devreg VOR diesem Board-Fallback (s.o.). ROM ist nie beschreibbar.
 // Call:     board_write_byte(b, addr, val)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static void board_write_byte(q9_board_t *b, uint32_t addr, uint8_t val)
 {
-    if (board_is_remap_reg(addr)) {
-        b->remapped = 1;
-        return;
-    }
     if (!b->remapped) {
         return;                                       /* Reset-Zustand: nur ROM sichtbar, read-only */
     }

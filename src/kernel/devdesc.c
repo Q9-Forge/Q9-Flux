@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   devdesc.c                                                                       Ver. 1.30
+// File:   devdesc.c                                                                       Ver. 1.40
 // Owner:  Cld
 // Desc.:  Implementierung, siehe devdesc.h. Enthaelt NUR die Registry-Tabelle -- die einzelnen
 //         q9_devdesc_t-Instanzen (z.B. q9_devdesc_cf) sind in den jeweiligen Pro-Typ-Dateien
@@ -23,6 +23,9 @@
 //         │      │ zeiger-Hook statt direktem m68k_set_irq()), sonst haette DEVDESC_SRC jeden      │
 //         │      │ Aufrufer (Editor, leichte Testziele) gezwungen, die volle CPU-Kernobjekte       │
 //         │      │ mitzulinken -- s. nettty.c-Kopfkommentar                                        │
+// 26-08-21│ 1.40 │ remap dazu (der REMAP-Trigger, vormals Sonderfall in q9board.c) -- Andreas'    │ Cld
+//         │      │ Idee, auch die "Adressraum-Topologie" als Geraet zu modellieren. NUR der        │
+//         │      │ Trigger selbst, NICHT die RAM/ROM-Interpretation (bleibt Performance-Fast-Path)│
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devdesc.h"
 #include "../devices/cf/cf.h"
@@ -34,6 +37,7 @@
 #include "../devices/rtc72421/rtc72421.h"
 #include "../devices/timer_irq/timer_irq.h"
 #include "../devices/nettty/nettty.h"
+#include "../devices/remap/remap.h"
 #include <string.h>
 
 /* Descriptor/DescriptorName -- EINMAL definiert (s. devdesc.h-Kopfkommentar), Inhalt entspricht
@@ -65,6 +69,7 @@ static const q9_devdesc_t *const g_devdesc_registry[] = {
     &q9_devdesc_rtc72421,
     &q9_devdesc_timer_irq,
     &q9_devdesc_nettty,
+    &q9_devdesc_remap,
 };
 #define Q9_DEVDESC_COUNT (int)(sizeof(g_devdesc_registry) / sizeof(g_devdesc_registry[0]))
 
@@ -96,5 +101,5 @@ const q9_devdesc_t *q9_devdesc_get(int index)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF devdesc.c                                                                           Ver. 1.30
+// EOF devdesc.c                                                                           Ver. 1.40
 //────────────────────────────────────────────────────────────────────────────────────────────────
