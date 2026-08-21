@@ -144,22 +144,26 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 # g_devdesc_registry[] referenziert JEDEN Eintrag unbedingt, s. dortiger Kommentar) -- jeder
 # Aufrufer von devdesc.c braucht deshalb ALLE hier gelisteten Dateien im Link, nicht nur devdesc.c
 # selbst. Eigene Variable statt Wiederholung an jeder Aufrufstelle (Root-Binary + mehrere
-# Testziele + Editor-Makefile) -- ein neuer Typ traegt sich hier EINMAL ein.
-DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c \
+# Testziele + Editor-Makefile) -- ein neuer Typ traegt sich hier EINMAL ein. devreg.c gehoert seit
+# nettty dazu (q9_nettty_attach() ruft q9_devreg_add() selbst auf, s. nettty.c) -- deshalb NICHT
+# mehr zusaetzlich explizit in BOARD_SRC unten (sonst doppelt kompiliert/gelinkt).
+DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c src/kernel/devreg.c \
               src/devices/cf/cf.c src/devices/quicc/quicc.c src/devices/mc6845/mc6845.c \
               src/devices/framebuf/framebuf.c src/devices/clut/clut.c \
               src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
-              src/devices/timer_irq/timer_irq.c
+              src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c
 
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
-BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/devreg.c src/kernel/boardcfg.c \
+BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/boardcfg.c \
             $(DEVDESC_SRC) \
             src/devices/videobridge/videobridge.c
 BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src/kernel/boardcfg.h \
             src/devices/cf/cf.h \
             src/devices/quicc/quicc.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
-            src/devices/clut/clut.h src/devices/videobridge/videobridge.h
+            src/devices/clut/clut.h src/devices/videobridge/videobridge.h \
+            src/devices/duart68681/duart68681.h src/devices/rtc72421/rtc72421.h \
+            src/devices/timer_irq/timer_irq.h src/devices/nettty/nettty.h
 
 # 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
 # 5.13: bridge-Ethernet-Backend (--net bridge:<ifname>), nur macOS: BPF (/dev/bpf*), kein Framework
@@ -297,7 +301,7 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/devreg.c \
 	    src/devices/cf/cf.c \
 	    src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
-	    src/devices/timer_irq/timer_irq.c \
+	    src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
 	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch

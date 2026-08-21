@@ -43,6 +43,8 @@
 #include "../src/kernel/devreg.h"
 #include "../src/devices/mc6845/mc6845.h"
 #include "../src/devices/clut/clut.h"
+#include "../src/devices/nettty/nettty.h"       /* 2026-08-21: Q9_BOARD_NET_X1..X8_BASE, aus       */
+                                                /* q9board.h ausgelagert                            */
 #include "m68k.h"
 
 static int g_fails = 0;

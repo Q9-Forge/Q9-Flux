@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.20
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.30
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -140,6 +140,10 @@
 #         │      │ duart68681/rtc72421/timer_irq (komplette Verschiebung aus q9board.c, bit-identisch      │
 #         │      │ per Boot-Test bestaetigt). q9board.c auf reine RAM/ROM/REMAP-Logik geschrumpft.         │
 #         │      │ Nur noch nettty (Sonderfall, s. Abschnitt 4) fehlt fuer volle Abdeckung                 │
+# 26-08-21│ 5.30 │ Zweiunddreissigste Runde: nettty (letzter Typ) -- Andreas' Erinnerung "jedes Geraet     │ Cld
+#         │      │ einzeln, eigener Descriptor, eigene Adresse, im Array" -- acht separate devreg-           │
+#         │      │ Eintraege statt einem, Musashi-Entkopplung per Funktionszeiger-Hook. ALLE NEUN Typen      │
+#         │      │ jetzt vereinheitlicht                                                                     │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -1403,6 +1407,52 @@ Regressionscheck.
 s. Abschnitt 4), generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen, echter
 Typ-Auswahl-Dialog im Editor.
 
+**Zweiunddreissigste Runde (2026-08-21) -- nettty, der letzte Typ:** Andreas' Erinnerung an eine
+fruehere Absprache: "wir hatten schon mal besprochen dass wir jedes Geraet quasi einzeln behandeln
+wollen, mit eigenem Descriptor mit einer eigenen Adresse, vorzugsweise in dem Array" (deckt sich
+mit ARBEITSPLAN 5.18: die x1..x8-Basisadressen wurden schon am 2026-08-14 auf eigene 256-Byte-
+Slots umgestellt, GENAU zu diesem Zweck -- nur der devreg-Eintrag selbst blieb bis jetzt EIN
+gemeinsamer statt acht separater).
+
+**Kernaenderung:** `q9_nettty_attach()` (`src/devices/nettty/nettty.c`, NEU) registriert jetzt ACHT
+separate `q9_devreg_add()`-Aufrufe statt einem -- je einer pro Kanal mit `dev->state = &channels[i]`
+(der eigene "Descriptor") und der eigenen, bereits vorhandenen Basisadresse. Vorteile, die sich
+dabei von selbst ergaben:
+- `nettty_dev_read8/write8/irq_pending` werden trivial (kein Suchen mehr ueber alle acht Kanaele --
+  `dev->state` zeigt direkt auf den richtigen).
+- Kein `irq_vector_fn` mehr noetig: jeder Kanal traegt seinen (weiterhin festen) Vektor direkt in
+  `dev->irq_vector`. Der bereits bestehende generische IACK-Mechanismus
+  (`devreg_pending_level_held()`, `m68krt.c`) liefert dadurch GANZ VON SELBST das schon vorher
+  dokumentierte Verhalten "Vektor des ERSTEN Kanals mit gesetztem RX-Ready-Bit" -- ohne die
+  bisherige manuelle Nachbildung in `nettty_dev_irq_vector()`.
+
+**Gefundene Besonderheit -- Musashi-Entkopplung:** nettty ist der EINZIGE der neun Hardware-Typen,
+der bisher (schon vor dieser Runde) `m68k_set_irq()` DIREKT aufruft -- nicht nur ueber die
+generische devreg-Poll-Schleife, sondern zusaetzlich bei jedem einzelnen ankommenden Byte
+(minimale Latenz). Ein direktes `#include "m68k.h"` in `nettty.c` haette JEDEN Aufrufer von
+`devdesc.c` (den Editor, die leichten Testziele) gezwungen, die volle Musashi-CPU-Kernobjekte
+mitzulinken -- nur wegen eines Typs, den diese Aufrufer nie ausfuehren. Geloest mit einem simplen
+Funktionszeiger-Hook (`q9_nettty_set_irq_hook()`), den `m68krt.c` beim echten Attach mit
+`q9_m68krt_set_irq` (dessen bereits vorhandenem duennen Musashi-Wrapper -- "damit [der Aufrufer]
+nicht direkt gegen third_party/musashi linken muss", exakt dasselbe Muster, hier nur eine Ebene
+weitergereicht) verdrahtet. Ungewurzelt (Hook `NULL`, z.B. in Tests) ist eine IRQ-Anforderung ein
+stilles No-op.
+
+**Verifikation:** `nettty.c` kompiliert eigenstaendig ohne Musashi/Warning. `make test` (Root +
+Editor) komplett gruen. Echter Boot-Test bit-identisch (8 devices online, Login, funktionierende
+Shell). `test/09_test_io_dispatch.c`s bereits vorhandener nettty-Abschnitt (5 Pruefungen: eigene
+Adresse je Kanal, Isolation zwischen Kanaelen, alte Adresse liefert "kein Geraet") bleibt gruen --
+direkter Nachweis, dass die acht neuen devreg-Eintraege auf Register-Ebene korrekt funktionieren.
+**Interaktiver Telnet-Login-Test per Skript ergab eine Ueberraschung:** ein selbst geschriebener
+Multi-Kanal-Test (zwei gleichzeitige Telnet-Verbindungen) bekam keinen Login-Prompt -- per
+Gegenprobe (Stand VOR dieser Runde mit `git stash` gebaut) bestaetigt: **dasselbe Verhalten trat
+bereits am Vorher-Stand auf**, also keine Regression dieser Runde, sondern eine vorbestehende
+Eigenart der lokalen Testumgebung/des verwendeten Images (nicht weiter verfolgt, ausserhalb des
+Rahmens dieser Runde).
+
+Damit sind **alle neun heutigen Hardware-Typen** (cf/quicc/mc6845/framebuf/clut/duart68681/
+rtc72421/timer_irq/nettty) auf das einheitliche `q9_devdesc_t`-Muster umgestellt.
+
 ## 3. Nach der Auswahl: weitere Bereiche
 
 - Kurzbeschreibung der gewaehlten Config
@@ -1440,11 +1490,18 @@ nur einen `q9_devdesc_t`-Eintrag) sowie duart68681/rtc72421/timer_irq (komplette
 `q9board.c` nach `src/devices/duart68681/`, `src/devices/rtc72421/`, `src/devices/timer_irq/`,
 analog zu "cf" -- bit-identisch per Boot-Test bestaetigt: RTC-Uhrzeit, DUART-Konsole, Timer-Tick
 alle unveraendert). `q9board.c` ist damit auf die reine RAM/ROM/REMAP-Speicherlogik geschrumpft
-(1077 -> ~200 Zeilen seit Beginn der Vereinheitlichung). Einziger noch fehlender Typ: `nettty`
-(Netz-Terminals, `m68krt.c`) -- ein Sonderfall, da EIN Geraete-Eintrag alle acht Kanaele bedient
-und der Vtable-Zustand nicht in einer eigenen Struct, sondern im globalen `channels[]`-Array
-steckt; noch nicht migriert. **Noch offen bis zum echten "Hardware hinzufuegen"-Button:** `nettty`
-nachziehen, generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen (bisher nur "cf"
+(1077 -> ~200 Zeilen seit Beginn der Vereinheitlichung). **`nettty` (Netz-Terminals) ebenfalls
+FERTIG (2026-08-21, "Zweiunddreissigste Runde"):** Andreas' Erinnerung an eine fruehere Absprache
+("jedes Geraet einzeln behandeln, mit eigenem Descriptor, eigener Adresse, im Array") fuehrte zu
+einer echten Verbesserung -- statt EINEM gemeinsamen devreg-Eintrag fuer alle acht Kanaele (mit
+interner Suche bei jedem Zugriff) jetzt ACHT separate Eintraege, je einer mit eigener Adresse
+(bereits seit 2026-08-14 vorhanden) und eigenem Zustand (`&channels[i]` als "Descriptor"). Dabei
+gefunden: nettty ruft als EINZIGER der neun Typen `m68k_set_irq()` DIREKT auf (fuer minimale
+Latenz bei ankommenden Bytes) -- ein Funktionszeiger-Hook (`q9_nettty_set_irq_hook()`) entkoppelt
+das von Musashi, sonst haette jeder `devdesc.c`-Aufrufer (Editor, leichte Testziele) die volle
+CPU-Kernobjekte mitlinken muessen. Damit sind **ALLE NEUN heutigen Hardware-Typen** auf das
+einheitliche Muster umgestellt. **Noch offen bis zum echten "Hardware hinzufuegen"-Button:**
+generische `boardcfg.c`-Abschnittserkennung fuer beliebige Typnamen (bisher nur "cf"
 config-gesteuert instanziierbar), und der eigentliche Typ-Auswahl-Dialog im Editor.
 
 ### 4.1 CPU-Auswahl — technisch machbar, geringer Aufwand
