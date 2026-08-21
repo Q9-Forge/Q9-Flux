@@ -45,6 +45,7 @@
 
 #include <stdint.h>
 #include "../../kernel/devreg.h"                        /* q9_device_t/Vtable                     */
+#include "../../kernel/devdesc.h"                       /* 2026-08-21: q9_devdesc_clut, s.u.       */
 
 //─── Adressfenster ────────────────────────────────────────────────────────────────────────────────
 #define Q9_CLUT_BASE   0xFFFFA010u                      /* hinter MC6845 $FFFFA000-01, s. Kopf     */
@@ -71,6 +72,7 @@ void q9_clut_init(q9_clut_t *c);
 
 //─── Geraete-Vtable fuer die Registry (devreg.h) ────────────────────────────────────────────────
 extern const q9_device_vtable_t q9_devtype_clut;
+extern const q9_devdesc_t       q9_devdesc_clut;           /* 2026-08-21: Vtable+Schema vereint    */
 
 #endif /* Q9_CLUT_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────

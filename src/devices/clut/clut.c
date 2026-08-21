@@ -69,6 +69,20 @@ const q9_device_vtable_t q9_devtype_clut = {
     .reset         = NULL,
     .irq_vector_fn = NULL,
 };
+
+/* 2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): q9_devdesc_clut --
+   noch OHNE extra_fields (kein Config-Schema, immer hartkodiert instanziiert, s. m68krt.c
+   q9_m68krt_attach_clut -- eigener, spaeterer Schritt). Teilt sich heute noch einen Fast-Table-
+   Slot mit MC6845 (ambiguous, s. mc6845.c-Kommentar) -- Flag bleibt trotzdem ehrlich gesetzt. */
+const q9_devdesc_t q9_devdesc_clut = {
+    .type              = "clut",
+    .desc              = "Farbtabelle (CLUT) fuer indizierte Videomodi",
+    .vt                = &q9_devtype_clut,
+    .use_table_default = 1,
+    .extra_fields      = NULL,
+    .extra_field_count = 0,
+};
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // EOF clut.c                                                                              Ver. 1.00
 //────────────────────────────────────────────────────────────────────────────────────────────────

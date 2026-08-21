@@ -1,16 +1,20 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   07_hal_stub.c                                                                  Ver. 1.00
+// File:   07_hal_stub.c                                                                  Ver. 1.10
 // Owner:  AF
-// Desc.:  Minimal-HAL nur fuer 07_test_cf_sector512.c: q9board.c referenziert q9_hal_* (UART/RTC-
-//         Codepfade), die der reine CF-Sektortest nie erreicht -- diese Stubs loesen nur das
-//         Linken, ohne die volle native HAL (hal_posix.c, mit eigener main()/Terminal-Rohmodus)
-//         einzubinden.
+// Desc.:  Minimal-HAL fuer Testziele, die devreg.c (dessen Typ-Registry g_device_types[]
+//         unbedingt q9_devtype_duart68681 referenziert, s. dortiger Kommentar) oder direkt
+//         src/devices/duart68681/duart68681.c bzw. src/devices/rtc72421/rtc72421.c linken, ohne
+//         selbst UART/RTC-Codepfade zu erreichen -- diese Stubs loesen nur das Linken, ohne die
+//         volle native HAL (hal_posix.c, mit eigener main()/Terminal-Rohmodus) einzubinden.
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-21│ 1.00 │ Initiale Version, s. 07_test_cf_sector512.c                             │ CF
+// 26-08-21│ 1.10 │ Hardware-Vereinheitlichung: DUART/RTC nach eigene Dateien umgezogen,      │ Cld
+//         │      │ dieser Stub jetzt von mehreren Testzielen + dem Editor-Makefile genutzt   │
+//         │      │ (ueberall dort, wo devreg.c bzw. DEVDESC_SRC verlinkt wird)                │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "../src/hal/q9_hal.h"
 
