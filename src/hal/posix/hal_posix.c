@@ -1,10 +1,12 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_posix.c                                                                     Ver. 1.20
+// File:   hal_posix.c                                                                     Ver. 1.30
 // Owner:  AF
 // Desc.:  HAL-Implementierung für den POSIX-Host-Build (macOS/Linux, clang/gcc, termios).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
 //
-// Call:   build/macos|linux/q9.exe [--selftest]   (gebaut per "make host")
+// Call:   build/macos|linux/q9.exe                              (kein Argument -> Configurator)
+//         build/macos|linux/q9.exe <config[.q9]> | --rom <rom>   (direkter Boot)
+//         build/macos|linux/q9.exe [--selftest]                 (gebaut per "make host")
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -15,6 +17,10 @@
 //         │      │ statt pro Zeichen zu blockieren -- Gegenstueck zum RX-FIFO (q9board.c)     │
 // 26-07-10│ 1.11 │ 5.8: Ctrl-]-Host-Escape + DEL->BS-Mapping in q9_hal_con_get()            │ CF
 // 26-07-10│ 1.20 │ 5.9: q9_hal_sleep_ms (usleep) fuer die Idle-Drossel                │ CF
+// 26-08-22│ 1.30 │ Fuenfunddreissigste Runde (Andreas: "ich wollte eigentlich das man in den   │ Cld
+//         │      │ Configurator kommt wenn man den emulator ohne parameter aufruft"): main()    │
+//         │      │ ruft ohne Config-Datei/--rom jetzt q9_launcher_run() auf statt nur einer      │
+//         │      │ Usage-Meldung -- die ORIGINALE Vision aus Q9FLUX_EDITOR_de.md Abschnitt 1      │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 #include <stdio.h>
@@ -30,6 +36,13 @@
 #include "../q9_hal.h"
 #include "../../kernel/q9boardrun.h"
 #include "../../kernel/boardcfg.h"
+/* Fuenfunddreissigste Runde (2026-08-22, Andreas: "ich wollte eigentlich das man in den
+   Configurator kommt wenn man den emulator ohne parameter aufruft") -- die ORIGINALE Vision aus
+   Q9FLUX_EDITOR_de.md Abschnitt 1 ("Q9-Flux ohne Argumente gestartet -> interaktiver Launcher
+   statt direktem Boot"), bisher nie umgesetzt. Andreas' Architektur-Entscheidung: EIN Binary --
+   q9_launcher_run() (leichtgewichtig, kein Musashi/CPU-Kern-Bezug) wird zusaetzlich in dieses
+   q9.exe gelinkt (s. Root-Makefile LAUNCHER_SRC), kein separater Sub-Prozess/exec(). */
+#include "../../../tools/q9-flux-editor/src/q9_launcher.h"
 
 #define DISK_IMAGE "local_images/q9disk.img"
 
@@ -267,17 +280,17 @@ const char *q9_hal_target(void)
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: main
-// Desc.:    Host-Loop: initialisiert HAL + Kernel und ruft q9_kernel_step() zyklisch auf.
-//           Mit --selftest: 100 Ticks laufen lassen, "SELFTEST PASS" ausgeben, Exit 0.
-//           5.19: Der ERSTE Parameter OHNE fuehrendes "-" gibt eine Board-Config-Datei an
+// Desc.:    5.19: Der ERSTE Parameter OHNE fuehrendes "-" gibt eine Board-Config-Datei an
 //           (Extension ".q9" wird angenommen, falls keine da ist, s. boardcfg.h). Darin stehen
 //           ROM, Netz-Backend und MEHRERE CF-Images (rbf/pcf) — der Emulator startet dann direkt
 //           im Board-Modus. Die bestehenden Optionen bleiben und ueberschreiben die Config:
 //           --rom <rom> (statt/zusaetzlich zum ROM aus der Config), --cf <image> (Onboard-CF-
-//           Master), --net nat|vmnet|bridge:<ifname> (5.13, Default nat). Ohne Config UND ohne
-//           --rom laeuft wie bisher der reine Q9-Kernel (selftest oder Loop) — Ende per Ctrl-C.
-// Call:     q9.exe [<config[.q9]>] [--rom <rom>] [--cf <image>] [--net nat|vmnet|bridge:<if>]
-//           q9.exe --selftest
+//           Master), --net nat|vmnet|bridge:<ifname> (5.13, Default nat). Fuenfunddreissigste
+//           Runde: OHNE Config UND OHNE --rom startet jetzt der interaktive Configurator
+//           (q9_launcher_run()) statt einer Usage-Meldung -- waehlt der Nutzer dort "Booten"
+//           (Taste B), geht es im selben Prozess direkt weiter, genau wie beim Config-Datei-Weg.
+// Call:     q9.exe                                                    (Configurator)
+//           q9.exe [<config[.q9]>] [--rom <rom>] [--cf <image>] [--net nat|vmnet|bridge:<if>]
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
@@ -300,11 +313,23 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Fuenfunddreissigste Runde: OHNE jedes Argument (weder Config-Datei noch --rom) -- bisher
+       nur eine Usage-Meldung + Abbruch -- startet jetzt der interaktive Configurator (die
+       ORIGINALE Vision, s. Includes-Kommentar oben). q9_launcher_run() uebernimmt/gibt das
+       Terminal sauber zurueck (eigener Rohmodus via q9_input, unabhaengig von q9_hal_init()
+       unten); waehlt der Nutzer "Booten" (Taste B), geht es GENAU wie beim Positionsparameter-
+       Weg weiter (cfgp zeigt auf die vom Launcher gefuellte Config). Strg-C/EOF im Launcher
+       beendet q9.exe sauber (Exit-Code 0, kein Fehler -- der Nutzer hat sich bewusst gegen einen
+       Boot entschieden, das ist kein Fehlerfall). Weiterhin, unveraendert: mit einer Config-Datei
+       ODER --rom uebergeben, wird direkt gebootet (kein Launcher dazwischen, Skript-/Testgebrauch
+       s. Q9FLUX_EDITOR_de.md Abschnitt 6 "Autostart"). */
     if (cfg_arg == NULL && rom_path == NULL) {
-        fprintf(stderr,
-                "usage: %s <config[.q9]> | --rom <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]\n",
-                argv[0]);
-        return 1;
+        q9_board_cfg_t cfg;
+        if (!q9_launcher_run(&cfg)) {
+            return 0;
+        }
+        q9_hal_init();                                 /* termios raw — die UART braucht das     */
+        return q9_board_boot(NULL, NULL, NULL, &cfg);
     }
 
     {
@@ -328,5 +353,5 @@ int main(int argc, char **argv)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF hal_posix.c                                                                         Ver. 1.20
+// EOF hal_posix.c                                                                         Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────
