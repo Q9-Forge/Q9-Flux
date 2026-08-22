@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.32
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.40
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -154,6 +154,11 @@
 #         │      │ zur Laufzeit aus q9_devdesc_get() (neun Typen, "cf" hat schon CF-Image-#N). Generische     │
 #         │      │ boardcfg.c-Mehrfach-Instanziierung + Typ-Auswahl-Dialog bewusst zurueckgestellt (kein      │
 #         │      │ akuter Nutzen -- nur "cf" braucht das ueberhaupt)                                          │
+# 26-08-22│ 5.40 │ Fuenfunddreissigste Runde: die urspruengliche Vision endlich umgesetzt -- q9.exe ohne      │ Cld
+#         │      │ Argumente startet jetzt den interaktiven Configurator (q9_launcher_run(), aus              │
+#         │      │ integration_demo.c ausgelagert nach src/q9_launcher.c, EIN Binary statt Sub-Prozess).      │
+#         │      │ Neue Taste B (Booten) bootet direkt im selben Prozess weiter. Echter End-to-End-Test:      │
+#         │      │ Datei laden -> B -> "8 devices online"                                                     │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -186,6 +191,29 @@ wird). `tools/q9-launcher-prototype/` und das `tvision`-Submodule bleiben vorers
 Q9-Flux ohne Argumente gestartet → interaktiver Launcher statt direktem Boot (heutiges
 `--rom/--cf/--net`-CLI bzw. Config-Datei-als-Positionsparameter bleibt fuer Skripte/Tests
 unveraendert nutzbar, s. Abschnitt 6 Autostart).
+
+**FERTIG (2026-08-22, Fuenfunddreissigste Runde):** Andreas' Rueckfrage "wie starte ich den q9 mit
+dem Configurationseditor" + Klaerung "ich wollte eigentlich das man in den Configurator kommt wenn
+man den emulator ohne parameter aufruft" -- genau diese, seit Beginn geplante Vision, war bis dahin
+nie umgesetzt (`q9.exe` ohne Argumente druckte nur eine Usage-Meldung + Abbruch). Andreas'
+Architektur-Entscheidung (per `AskUserQuestion`): **EIN Binary** statt zweier sich gegenseitig
+exec()ender Programme -- die komplette Launcher-Implementierung (bisher nur im eigenstaendigen
+Demo-Tool `tools/q9-flux-editor/demo/integration_demo.c`) wanderte fast unveraendert nach
+`tools/q9-flux-editor/src/q9_launcher.c`/`.h` (neue Funktion `q9_launcher_run()`), die TUI-Module
+(q9_ansi/q9_screenbuf/q9_widgets/q9_listview/q9_input/q9_filelist/q9_filedialog -- alle
+leichtgewichtig, kein Musashi/CPU-Kern noetig) werden seither zusaetzlich in `q9.exe` selbst
+gelinkt (Root-Makefile `LAUNCHER_SRC`). `src/hal/posix/hal_posix.c`s `main()` ruft
+`q9_launcher_run()` auf, wenn weder eine Config-Datei noch `--rom` uebergeben wurde; waehlt der
+Nutzer dort die NEUE Taste **B** ("Booten"), baut `build_current_cfg()` (aus dem bisherigen
+`save_q9_config()` ausgelagert, jetzt von Speichern UND Booten gemeinsam genutzt) die aktuellen
+Feldwerte in eine `q9_board_cfg_t`, und `main()` bootet damit im SELBEN Prozess direkt weiter --
+kein Speichern-Zwang, eine Config laesst sich "probeweise" starten. Strg-C/EOF im Launcher beendet
+`q9.exe` sauber (Exit-Code 0, kein Fehler). Das eigenstaendige Demo-Tool bleibt als
+leichtgewichtiger Testbed erhalten (zeigt bei "B" nur eine Meldung statt wirklich zu booten, kein
+Musashi dort gelinkt). Verifiziert: `make test` (Root + Editor) komplett gruen, echter End-to-End-
+Pseudo-Terminal-Test -- `q9.exe` ohne Argumente gestartet, Datei-Dialog geoeffnet, echte `.q9`-Datei
+geladen (Felder korrekt befuellt inkl. automatisch erscheinendem CF-Image-#0-Eintrag), Taste B
+gedrueckt -- der Emulator bootet daraufhin tatsaechlich bis "8 devices online".
 
 **Titelkopf:** Name ("Q9 Flux"), kurze Vorstellung, Version — groesser/prominent dargestellt.
 
@@ -1686,6 +1714,12 @@ booten — per CLI-Options-Parameter oder per Checkbox/Key in der Config-Datei s
 festzulegen). Wichtig fuer Skript-/Testgebrauch (s. `make test-rvnuttx` & Co., die den Emulator
 heute direkt mit Argumenten aufrufen) — der bestehende CLI-Weg (`q9.exe <config>[.q9] [optionen]`)
 soll dadurch nicht verschwinden.
+
+**FERTIG (2026-08-22, Fuenfunddreissigste Runde):** genau so umgesetzt -- der Launcher greift NUR
+noch, wenn `q9.exe` OHNE jedes Argument aufgerufen wird (`src/hal/posix/hal_posix.c main()`); eine
+Config-Datei ODER `--rom` als Argument bootet weiterhin sofort direkt, exakt wie bisher (kein
+Verhaltensunterschied fuer bestehende Skripte/Tests). Kein separates CLI-Flag noetig -- die
+Abwesenheit jedes Arguments IST das Signal.
 
 ## 7. `~/.q9-flux`-Verzeichnis
 

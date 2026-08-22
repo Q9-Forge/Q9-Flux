@@ -167,6 +167,23 @@ BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src
             src/devices/timer_irq/timer_irq.h src/devices/nettty/nettty.h \
             src/devices/remap/remap.h
 
+# Fuenfunddreissigste Runde (2026-08-22, Andreas: "ich wollte eigentlich das man in den
+# Configurator kommt wenn man den emulator ohne parameter aufruft"): der interaktive Launcher/
+# Config-Editor (bisher nur tools/q9-flux-editor/demo/integration_demo.c, ein eigenstaendiges,
+# separates Tool) wird zusaetzlich in q9.exe SELBST gelinkt -- Andreas' Architektur-Entscheidung
+# (per AskUserQuestion): EIN Binary statt zwei sich gegenseitig exec()ende Programme. Alle Module
+# hier sind bewusst leichtgewichtig (reines C99, kein Musashi/CPU-Kern noetig) -- q9_launcher.c
+# selbst lebt weiterhin unter tools/q9-flux-editor/src/ (dort auch vom eigenstaendigen Demo-Tool
+# genutzt, s. dortiges Makefile) statt dupliziert zu werden.
+LAUNCHER_SRC = tools/q9-flux-editor/src/q9_launcher.c tools/q9-flux-editor/src/q9_ansi.c \
+               tools/q9-flux-editor/src/q9_screenbuf.c tools/q9-flux-editor/src/q9_widgets.c \
+               tools/q9-flux-editor/src/q9_listview.c tools/q9-flux-editor/src/q9_input.c \
+               tools/q9-flux-editor/src/q9_filelist.c tools/q9-flux-editor/src/q9_filedialog.c
+LAUNCHER_HDR = tools/q9-flux-editor/src/q9_launcher.h tools/q9-flux-editor/src/q9_ansi.h \
+               tools/q9-flux-editor/src/q9_screenbuf.h tools/q9-flux-editor/src/q9_widgets.h \
+               tools/q9-flux-editor/src/q9_listview.h tools/q9-flux-editor/src/q9_input.h \
+               tools/q9-flux-editor/src/q9_filelist.h tools/q9-flux-editor/src/q9_filedialog.h
+
 # 5.12: vmnet-Ethernet-Backend (--net vmnet), nur macOS: vmnet.framework + Dispatch/Blocks.
 # 5.13: bridge-Ethernet-Backend (--net bridge:<ifname>), nur macOS: BPF (/dev/bpf*), kein Framework
 # noetig (reines POSIX/ioctl). Auf anderen Plattformen bleiben beide Defines ungesetzt und die
@@ -227,11 +244,11 @@ host native: $(BUILD)/$(PLATFORM_DIR)/q9.exe
 
 $(BUILD)/$(PLATFORM_DIR)/q9.exe: $(M68KRT_SRC) $(M68KRT_HDR) \
                         $(BOARD_SRC) $(BOARD_HDR) $(BOARD_NET_SRC) $(BOARD_NET_HDR) \
-                        $(SLIRP_SRC) $(SLIRP_HDR) \
+                        $(SLIRP_SRC) $(SLIRP_HDR) $(LAUNCHER_SRC) $(LAUNCHER_HDR) \
                         $(HOST_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(BOARD_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
-	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(HOST_HAL_SRC) \
+	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(LAUNCHER_SRC) $(HOST_HAL_SRC) \
 	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(HOST_EXTRA_LIBS) -o $@
 ifneq ($(SLIRP_RUNTIME_DLLS),)
 	@cp $(SLIRP_RUNTIME_DLLS) $(BUILD)/$(PLATFORM_DIR)/
