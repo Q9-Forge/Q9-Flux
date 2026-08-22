@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Makefile                                                                        Ver. 2.30
+# File:   Makefile                                                                        Ver. 2.40
 # Owner:  Claudia
 # Desc.:  Q9-Flux-Launcher/Config-Editor -- Grundstein (docs/Q9FLUX_EDITOR_de.md). Bewusst C99 ohne
 #         TUI-Framework, s. src/q9_ansi.h Kopfkommentar (Vorgeschichte: gescheiterter Turbo-Vision-
@@ -46,6 +46,9 @@
 #         │      │ statt direktem m68k_set_irq(), s. nettty.c-Kopfkommentar)                     │
 # 26-08-21│ 2.30 │ remap dazu (der REMAP-Trigger, vormals Sonderfall in q9board.c, jetzt eigenes │ Cld
 #         │      │ devreg-Geraet, s. devdesc.c-Historie)                                          │
+# 26-08-22│ 2.40 │ Fuenfunddreissigste Runde: src/q9_launcher.c dazu (die komplette Launcher-      │ Cld
+#         │      │ Implementierung, aus integration_demo.c ausgelagert -- q9.exe selbst nutzt sie   │
+#         │      │ jetzt auch, s. Root-Makefile LAUNCHER_SRC)                                       │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 CC      ?= gcc
 CFLAGS  := -std=c99 -Wall -Wextra -O2
@@ -81,9 +84,9 @@ DEVDESC_SRC := ../../src/kernel/devdesc.c ../../src/kernel/devschema.c ../../src
 # Rohmodus-Konflikt mit q9_input.h, s. dortiger Kopfkommentar).
 HAL_STUB_SRC := ../../test/07_hal_stub.c
 
-$(BUILD)/integration_demo: demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/boardcfg.h $(DEVDESC_SRC)
+$(BUILD)/integration_demo: demo/integration_demo.c src/q9_launcher.c src/q9_launcher.h src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c ../../src/kernel/boardcfg.h $(DEVDESC_SRC)
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c $(DEVDESC_SRC) $(HAL_STUB_SRC) -o $@
+	$(CC) $(CFLAGS) demo/integration_demo.c src/q9_launcher.c src/q9_ansi.c src/q9_screenbuf.c src/q9_widgets.c src/q9_listview.c src/q9_input.c src/q9_filelist.c src/q9_filedialog.c ../../src/kernel/boardcfg.c $(DEVDESC_SRC) $(HAL_STUB_SRC) -o $@
 
 $(BUILD)/ansi_selftest: test/ansi_selftest.c src/q9_ansi.c src/q9_ansi.h
 	@mkdir -p $(BUILD)
