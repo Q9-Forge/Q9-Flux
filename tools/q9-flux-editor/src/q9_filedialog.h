@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.h                                                                 Ver. 1.70
+// File:   q9_filedialog.h                                                                 Ver. 1.80
 // Owner:  Claudia
 // Desc.:  Modaler Datei-Auswahl-Dialog -- komponiert q9_filelist (Verzeichnis-Scan), q9_listview
 //         (scrollbare Liste) und q9_screenbuf (Bildschirmpuffer) zu einem echten interaktiven
@@ -81,9 +81,11 @@
 //         (Name/Datum/Groesse mit fester Breite) -- genau das Muster, das integration_demo.c fuer
 //         seine Statuszeile schon verwendet (dortiges snprintf mit %-*.*s).
 //
-//         Der aktuelle Verzeichnis-Pfad wird bewusst NICHT angezeigt (Andreas, 2026-08-17: "der
-//         aktuelle Pfad fehlt noch... aber machen wir es erst mal ohne" -- als optionale, spaeter
-//         nachruestbare Erweiterung vorgemerkt, s. Q9FLUX_EDITOR_de.md).
+//         Der aktuelle Verzeichnis-Pfad steht seit 2026-08-30 rechtsbuendig auf der Kopfzeile, vor
+//         dem "X" (urspruenglich zurueckgestellt, Andreas 2026-08-17: "der aktuelle Pfad fehlt
+//         noch... aber machen wir es erst mal ohne" -- jetzt als die dort schon vorgemerkte
+//         optionale Erweiterung nachgeruestet, s. Q9FLUX_EDITOR_de.md). Der Titel hat Vorrang --
+//         bei zu wenig Platz bleibt der Pfad einfach weg, statt mit dem Titel zu ueberlappen.
 //
 // Call:   static const char *const filters[] = { "*.*", ".q9", ".img" };
 //         q9_filedialog_palette_t pal = { ... };
@@ -130,6 +132,8 @@
 //         │      │ header_fg/bg wiederzuverwenden (Andreas: "die Statuszeilen sind noch          │
 //         │      │ unterschiedlich" -- Aufrufer kann jetzt dieselbe Farbe wie das Hauptfenster    │
 //         │      │ uebergeben, ohne die Dialog-Kopfzeile mitzuaendern)                            │
+// 26-08-30│ 1.80 │ Aktueller Verzeichnis-Pfad auf der Kopfzeile -- die 2026-08-17 zurueckgestellte │ Cld
+//         │      │ optionale Erweiterung nachgeruestet (s. .c fuer Details)                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #ifndef Q9_FILEDIALOG_H
 #define Q9_FILEDIALOG_H
@@ -291,5 +295,5 @@ int q9_filedialog_selected_name(const q9_filedialog_t *dlg, char *out, unsigned 
 
 #endif /* Q9_FILEDIALOG_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.h                                                                     Ver. 1.70
+// EOF q9_filedialog.h                                                                     Ver. 1.80
 //────────────────────────────────────────────────────────────────────────────────────────────────
