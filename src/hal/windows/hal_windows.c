@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   hal_windows.c                                                                   Ver. 1.30
+// File:   hal_windows.c                                                                   Ver. 1.31
 // Owner:  AF
 // Desc.:  HAL-Implementierung für den Windows-Host-Build (w64devkit/gcc, conio).
 //         Enthält auch den Host: main() treibt den Kernel-Step-Loop.
@@ -32,6 +32,9 @@
 //         │      │ (anders als ']') auf jeder Tastatur ohne AltGr erreichbar sind                │
 // 26-08-09│ 1.24 │ Cursor als ^P/^N/^B/^F fuer WinEd/umacs als Windows-Standard; ANSI optional  │ AF
 // 26-08-09│ 1.29 │ Nicht funktionierende Windows-Editor-Makros entfernt; Cursor bleibt WinEd-kompatibel│ AF
+// 26-08-30│ 1.31 │ Fuenfunddreissigste Runde (hal_posix.c, 2026-08-22) nachgezogen: main() ruft ohne │ Cld
+//         │      │ Config/--rom jetzt q9_launcher_run() auf statt nur einer Usage-Meldung. Ungetestet │
+//         │      │ mangels Windows-Host, wie die uebrigen Windows-Zweige dieses Projekts               │
 
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
@@ -47,6 +50,14 @@
 #include "../q9_hal.h"
 #include "../../kernel/q9boardrun.h"
 #include "../../kernel/boardcfg.h"
+/* Fuenfunddreissigste Runde (2026-08-22, hal_posix.c) nachgezogen -- war beim urspruenglichen
+   Umbau versehentlich nur im POSIX-HAL gemacht worden (Andreas' Nachfrage "gibt es noch was zu
+   tun", 2026-08-30 gefunden). q9_launcher_run() selbst ist plattformneutral (reines C99, kein
+   Musashi/CPU-Kern-Bezug) -- die einzelnen TUI-Bausteine haben schon laenger eigene Windows-
+   Zweige (q9_input.c: _kbhit/_getch, q9_filelist.c: FindFirstFile/FindNextFile), s. dortige
+   Kopfkommentare. UNGETESTET mangels Windows-Host hier, wie die uebrigen Windows-Zweige dieses
+   Projekts. */
+#include "../../../tools/q9-flux-editor/src/q9_launcher.h"
 
 #define DISK_IMAGE "local_images/q9disk.img"
 
@@ -342,9 +353,11 @@ const char *q9_hal_target(void)
 //           ROM, Netz-Backend und MEHRERE CF-Images (rbf/pcf); der Emulator startet dann direkt
 //           im Board-Modus. Die bestehenden Optionen bleiben und ueberschreiben die Config:
 //           --rom <rom>, --cf <image> (Onboard-CF-Master), --net nat|vmnet (5.12, Default nat).
-//           Ohne Config UND ohne --rom laeuft wie bisher der reine Q9-Kernel — Ende per Ctrl-C.
-// Call:     q9.exe [<config[.q9]>] [--rom <rom>] [--cf <image>] [--net nat|vmnet]
-//           q9.exe --selftest
+//           Fuenfunddreissigste Runde: OHNE Config UND OHNE --rom startet jetzt der interaktive
+//           Configurator (q9_launcher_run()) statt einer Usage-Meldung -- waehlt der Nutzer dort
+//           "Booten" (Taste B), geht es im selben Prozess direkt weiter.
+// Call:     q9.exe                                              (Configurator)
+//           q9.exe [<config[.q9]>] [--rom <rom>] [--cf <image>] [--net nat|vmnet]
 //════════════════════════════════════════════════════════════════════════════════════════════════
 int main(int argc, char **argv)
 {
@@ -367,11 +380,15 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Fuenfunddreissigste Runde: OHNE jedes Argument -- s. hal_posix.c fuer die volle Begruendung
+       (dieselbe Logik, hier nachgezogen). */
     if (cfg_arg == NULL && rom_path == NULL) {
-        fprintf(stderr,
-                "usage: %s <config[.q9]> | --rom <rom> [--cf <image>] [--net nat|vmnet]\n",
-                argv[0]);
-        return 1;
+        q9_board_cfg_t cfg;
+        if (!q9_launcher_run(&cfg)) {
+            return 0;
+        }
+        q9_hal_init();
+        return q9_board_boot(NULL, NULL, NULL, &cfg);
     }
 
     {
