@@ -1,5 +1,5 @@
 #═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.40
+# File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.41
 # Owner:  Claudia
 # Desc.:  Planungsnotiz (Andreas + Claudia, 2026-08-13): Vision fuer einen interaktiven Q9-Flux-
 #         Launcher/Config-Editor. REIN PLANUNG -- noch kein Code auf diesen Editor selbst, nur die
@@ -159,6 +159,10 @@
 #         │      │ integration_demo.c ausgelagert nach src/q9_launcher.c, EIN Binary statt Sub-Prozess).      │
 #         │      │ Neue Taste B (Booten) bootet direkt im selben Prozess weiter. Echter End-to-End-Test:      │
 #         │      │ Datei laden -> B -> "8 devices online"                                                     │
+# 26-08-30│ 5.41 │ Sechsunddreissigste Runde: aktueller Verzeichnispfad im Datei-Dialog -- die 2026-08-17     │ Cld
+#         │      │ zurueckgestellte optionale Erweiterung nachgeruestet, rechtsbuendig auf der Kopfzeile      │
+#         │      │ vor "X", Titel hat Vorrang. Ausserdem: hal_windows.c fehlte im "q9.exe ohne Argumente"-    │
+#         │      │ Umbau der letzten Runde, jetzt symmetrisch nachgezogen (PR #72)                            │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
@@ -449,7 +453,9 @@ bestaetigt, dann von Andreas verfeinert):
   -> OK -> Abbrechen; Pfeiltasten navigieren INNERHALB der Liste, wenn sie den Fokus hat; Enter auf
   der Liste = OK; Escape = immer Abbrechen
 - **Bewusst vertagt (Andreas: "faellt mir gerade ein... aber machen wir es erst mal ohne"):**
-  Anzeige des aktuellen Verzeichnispfads im Dialog -- soll spaeter OPTIONAL moeglich sein
+  Anzeige des aktuellen Verzeichnispfads im Dialog -- soll spaeter OPTIONAL moeglich sein.
+  **FERTIG (2026-08-30, Sechsunddreissigste Runde):** rechtsbuendig auf der Kopfzeile, vor dem
+  "X" -- Titel hat Vorrang, bei zu wenig Platz bleibt der Pfad einfach weg statt zu ueberlappen.
 
 **Bisher fertig:**
 - `q9_input.h/.c`: `Q9_KEY_SHIFT_TAB` (CBT, `ESC[Z`) fuer die rueckwaertige Fokus-Navigation.
@@ -487,8 +493,9 @@ bestaetigt, dann von Andreas verfeinert):
   alle Pruefungen bestanden.
 - **Damit ist task #20/#22 abgeschlossen** -- der Datei-Auswahl-Dialog ist fertig und im Demo
   sichtbar/bedienbar. **Noch offen** bleiben die von Andreas noch nicht konkretisierten "paar
-  Optionen" fuer die Listenansicht (kein eigener Task bisher, s. Runde 5 oben) und die bewusst
-  vertagte Anzeige des aktuellen Verzeichnispfads im Dialog.
+  Optionen" fuer die Listenansicht (kein eigener Task bisher, s. Runde 5 oben) -- die vertagte
+  Anzeige des aktuellen Verzeichnispfads im Dialog ist seit der Sechsunddreissigsten Runde
+  (2026-08-30) FERTIG, s.o.
 
 **Sechste Runde (2026-08-17) -- zwei Bugs aus Andreas' erstem echten Test:**
 1. *"Auf volle Groesse hatte ich mir den jetzt nicht vorgestellt"* -- der Dialog WAR immer schon
