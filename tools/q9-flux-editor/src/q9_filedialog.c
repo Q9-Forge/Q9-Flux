@@ -1,5 +1,5 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   q9_filedialog.c                                                                 Ver. 1.80
+// File:   q9_filedialog.c                                                                 Ver. 1.90
 // Owner:  Claudia
 // Desc.:  Implementierung, siehe q9_filedialog.h. Layout in Zeilen relativ zu dlg->row (rows==Hoehe
 //         des Dialogs, s. layout_rows() -- EINZIGE Stelle, die diese Aufteilung kennt, init() und
@@ -57,6 +57,9 @@
 //         │      │ ohnehin nicht, s. q9_listview.c)                                             │
 // 26-08-17│ 1.80 │ Untere Statuszeile nutzt jetzt status_fg/bg statt header_fg/bg (Andreas:      │ Cld
 //         │      │ "die Statuszeilen sind noch unterschiedlich")                                 │
+// 26-08-30│ 1.90 │ Aktueller Verzeichnis-Pfad auf der Kopfzeile (rechtsbuendig vor "X") -- die     │ Cld
+//         │      │ 2026-08-17 zurueckgestellte optionale Erweiterung (s. Kopfkommentar), jetzt      │
+//         │      │ nachgeruestet. Titel hat Vorrang -- nur gezeichnet, wenn genug Platz frei ist    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9_filedialog.h"
 #include <string.h>
@@ -449,6 +452,27 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
         q9_screenbuf_puts(sb, dlg->row, dlg->col + dlg->cols - 2, "X",
                            p->header_fg_r, p->header_fg_g, p->header_fg_b);
     }
+    /* Aktueller Verzeichnis-Pfad -- urspruenglich zurueckgestellt (Andreas, 2026-08-17: "der
+       aktuelle Pfad fehlt noch... aber machen wir es erst mal ohne"), jetzt als die dort schon
+       vorgesehene optionale Erweiterung nachgeruestet. Rechtsbuendig VOR dem "X", auf der
+       Kopfzeile selbst (kein Platz fuer eine eigene Zeile, ohne layout_rows() UND damit jede
+       nachfolgende Zeilenposition zu verschieben). Der TITEL hat Vorrang -- ein mit dem Titel
+       ueberlappender Pfad waere schlimmer als gar keiner: nur zeichnen, wenn rechts vom Titel
+       (plus 1 Zeichen Luft auf beiden Seiten) tatsaechlich noch Platz ist. truncate_ellipsis()
+       liefert IMMER genau `avail` sichtbare Zeichen (rechtsbuendig aufgefuellt bei kurzem Pfad,
+       links mit "..." gekuerzt bei langem) -- die Startspalte laesst sich daraus ohne erneutes
+       strlen() berechnen. */
+    if (dlg->dir[0] && dlg->cols >= 4) {
+        int title_end = dlg->col + 2 + (int)strlen(dlg->title);
+        int x_col     = dlg->col + dlg->cols - 2;
+        int avail     = x_col - 1 - title_end - 1;
+        if (avail > (int)sizeof(line) - 1) { avail = (int)sizeof(line) - 1; }
+        if (avail >= 4) {
+            truncate_ellipsis(line, sizeof(line), dlg->dir, avail);
+            q9_screenbuf_puts(sb, dlg->row, x_col - 1 - avail, line,
+                               p->header_fg_r, p->header_fg_g, p->header_fg_b);
+        }
+    }
 
     /* Spaltentitel-Zeile -- die Hintergrundflaeche (sub_bg) spannt GENAU die Dialogbreite (beruehrt
        also beide Randlinien farblich), der TEXT selbst faengt bei content_left an (die Luftspalte
@@ -624,5 +648,5 @@ void q9_filedialog_render(const q9_filedialog_t *dlg, q9_screenbuf_t *sb)
 }
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF q9_filedialog.c                                                                     Ver. 1.80
+// EOF q9_filedialog.c                                                                     Ver. 1.90
 //────────────────────────────────────────────────────────────────────────────────────────────────
