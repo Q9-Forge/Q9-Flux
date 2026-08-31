@@ -80,6 +80,95 @@ volatile int q9_dbg_dump_requested = 0;                /* s. q9boardrun.h */
 //────────────────────────────────────────────────────────────────────────────────────────────────
 #define DBG_DUMP_FILE "local_images/q9dbg_dump.txt"
 
+/* Q9-eigener-Kernel-Zusatzdump (2026-08-31, Abschnitt "IOMan-Einbindung"/
+   F$SSvc-Debugging): der ORIGINALE Microware-Kernel legt bei physisch @0
+   einen ZEIGER auf den System-Global-Bereich ab (s. Kopfkommentar unten),
+   unser eigener q9kernel dagegen legt Q9K_GlobBase selbst auf Adresse 0 --
+   physisch @0 enthaelt dort direkt Nutzdaten, keinen Zeiger. Der
+   bestehende Dump-Pfad ist deshalb fuer unseren Kernel blind (v0 liest
+   dort typischerweise 0 oder ein Datenfeld, kein plausibler Zeiger --
+   bricht sofort ab). Dieser Zusatzabschnitt dumpt stattdessen direkt die
+   uns bekannten, festen Q9K-Adressen (Q9-OS/src/kernel/q9kernel_entry.a
+   bzw. q9kernel_moddir.c): Q9K_BootList (Regionsliste, $1000) und die
+   aktive Moduldirectory-Kette (Q9K_MODDIR_HEAD_ADDR, $1238) mit Name +
+   Headeradresse je Eintrag -- das war der konkrete Anlass: ein
+   F$Link("ioman")-Fund, der ueber diese Kette zustande kommt, aber
+   weder in Q9K_BootList noch im tatsaechlich gebooteten Image ein
+   echtes "ioman"-Modul hat (Verdacht: False-Positive-Treffer im
+   RAM-Scan, gleiche Bug-Klasse wie der bereits am 2026-08-21 gefixte
+   ROM-Remap-Fund, s. Kopfkommentar Q9K_ModDirPopulateFromBootList).
+   Laeuft IMMER zusaetzlich zum bestehenden Original-Kernel-Pfad
+   (unabhaengig von v0) -- bei einem tatsaechlich gebooteten
+   Original-Kernel enthalten diese Adressen einfach Datenmuell, klar
+   erkennbar an unplausiblen Werten. */
+#define Q9K_DBG_BOOTLIST_ADDR   0x1000UL
+#define Q9K_DBG_MODDIR_HEAD     0x1238UL
+#define Q9K_DBG_MODDIR_NEXT_OFF 0x00UL
+#define Q9K_DBG_MODDIR_HDR_OFF  0x04UL
+#define Q9K_DBG_MH_NAME_OFF     0x0CUL
+#define Q9K_DBG_MH_SIZE_OFF     0x04UL
+
+static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
+{
+    fprintf(f, "\n--- Q9-eigener-Kernel-Zusatzdump ---\n");
+
+    fprintf(f, "Q9K_BootList @0x%04lx (Regionen Basis/Laenge, bis Basis=0):\n",
+            (unsigned long)Q9K_DBG_BOOTLIST_ADDR);
+    for (int i = 0; i < 64; i++) {
+        uint32_t entryAddr = (uint32_t)Q9K_DBG_BOOTLIST_ADDR + (uint32_t)(i * 8);
+        uint32_t base = q9_board_read32(b, entryAddr);
+        if (base == 0)
+            break;
+        uint32_t len = q9_board_read32(b, entryAddr + 4);
+        fprintf(f, "  [%2d] Basis=%08x Laenge=%08x (Ende=%08x)\n", i, base, len, base + len);
+    }
+
+    fprintf(f, "Moduldirectory-Kette ab Q9K_MODDIR_HEAD_ADDR @0x%04lx:\n",
+            (unsigned long)Q9K_DBG_MODDIR_HEAD);
+    uint32_t slot = q9_board_read32(b, Q9K_DBG_MODDIR_HEAD);
+    int      guard = 0;
+    if (slot == 0)
+        fprintf(f, "  (leer)\n");
+    while (slot != 0 && slot < BOARD_RAM_BYTES && guard < 64) {
+        uint32_t hdrAddr = q9_board_read32(b, slot + Q9K_DBG_MODDIR_HDR_OFF);
+        char     name[33];
+        int      k;
+
+        for (k = 0; k < 32; k++) {
+            uint8_t c;
+            if (hdrAddr == 0 || hdrAddr >= BOARD_RAM_BYTES) { name[k] = 0; break; }
+            uint32_t nameOff = q9_board_read32(b, hdrAddr + Q9K_DBG_MH_NAME_OFF);
+            c = q9_board_read8(b, hdrAddr + nameOff + (uint32_t)k);
+            if (c == 0) { name[k] = 0; break; }
+            name[k] = (char)c;
+        }
+        name[32] = 0;
+
+        uint32_t modSize = (hdrAddr != 0 && hdrAddr < BOARD_RAM_BYTES)
+                                ? q9_board_read32(b, hdrAddr + Q9K_DBG_MH_SIZE_OFF)
+                                : 0;
+        /* TyLang direkt aus dem MODDIR-Slot (nicht aus dem Modulheader selbst --
+           genau der Wert, den Q9K_ModDirLinkByName fuer den Typ-Filter-Vergleich
+           heranzieht, s. q9kernel_moddir.c Q9K_MODDIR_TYLANG_OFF=0x08). */
+        uint16_t tyLang;
+        {
+            uint8_t hi = q9_board_read8(b, slot + 0x08UL);
+            uint8_t lo = q9_board_read8(b, slot + 0x09UL);
+            tyLang = (uint16_t)((hi << 8) | lo);
+        }
+
+        fprintf(f, "  Slot=%08x HdrPtr=%08x Groesse=%08x TyLang=%04x Name=\"%s\"\n",
+                slot, hdrAddr, modSize, tyLang, name);
+
+        slot = q9_board_read32(b, slot + Q9K_DBG_MODDIR_NEXT_OFF);
+        guard++;
+    }
+    if (guard >= 64)
+        fprintf(f, "  (Abbruch nach 64 Eintraegen -- moegliche Ringkette?)\n");
+
+    fprintf(f, "--- Ende Q9-eigener-Kernel-Zusatzdump ---\n\n");
+}
+
 static void dbg_dump_kernel_globals(q9_board_t *b)
 {
     /* In eine Datei statt nach stderr schreiben: bei groesseren Dumps (Syscall-Tabellen-Scan,
@@ -91,6 +180,8 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
         fprintf(stderr, "\n[q9dbg] konnte %s nicht zum Schreiben oeffnen.\n", DBG_DUMP_FILE);
         return;
     }
+
+    dbg_dump_q9kernel_extras(b, f);
 
     uint32_t v0 = q9_board_read32(b, 0);
 
