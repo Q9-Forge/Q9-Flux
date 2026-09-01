@@ -492,6 +492,43 @@ static uint32_t g_syscall_return_pc = 0;  /* gezielter Rueckgabetrace fuer I$Ope
 static uint16_t g_syscall_return_code = 0;
 static uint32_t g_syscall_return_a0 = 0;
 
+/* 2026-09-01 (Q9-OS-Kernel, IOMan-Einbindung): zwei zusaetzliche, per Env-Var
+   getrennt schaltbare Diagnosen. Anlass war ein Fehlerbild, das der bestehende
+   trap0-Trace grundsaetzlich nicht zeigen kann:
+
+   (a) Q9_ITRACE_LINK=<modulname> [+ Q9_ITRACE_N=<zeilen>, Default 20000]
+       Instruktions-Trace, scharfgeschaltet durch den F$Link/F$Load auf genau
+       diesen Modulnamen. Notwendig, weil reale Systm-Module (IOMan) Kernel-
+       Dienste NICHT nur per trap #0 rufen, sondern auch direkt ueber einen
+       PEA+RTS-Sprung durch die SYSDIS-Tabelle (s. Q9-OS/modules/ioman/docs/
+       REVERSE_ENGINEERING.md, FUN_000015ca). Solche Aufrufe sind fuer einen
+       Trap-Callback komplett unsichtbar -- im trap0-Log sieht es aus, als
+       ende der Syscall-Verkehr nach dem F$Link. Der Instruktions-Trace zeigt
+       stattdessen den tatsaechlichen Kontrollfluss inklusive dieser Spruenge.
+
+   (b) Q9_DIS_DUMP=1
+       Schreibt bei jedem getraceten trap #0 den Zustand der beiden Dispatch-
+       Tabellen (D_SysDis $3a4 / D_UsrDis $3a8) mit; zusaetzlich einmal direkt
+       nach der Rueckkehr aus F$SSvc (Callcode 0x32), weil genau dort ein
+       externes Modul seine eigenen Handler eintraegt. Damit laesst sich eine
+       ueberschriebene Tabelle einem Zeitpunkt zuordnen, statt sie nur am
+       Sprung ins Leere zu bemerken.
+
+   LESEFALLE bei (b): stehen in den Slots plausibel aussehende Zeiger mit
+   konstanter Schrittweite, kann das ein Ausrichtungsartefakt sein -- ein
+   Schreiber, der einen kleinen Zaehler auf UNGERADEN Adressen ablegt, wird
+   ausgerichtet gelesen als Wert*0x100 sichtbar. Erst gegenrechnen, dann
+   interpretieren.
+
+   Beide Diagnosen sind ohne die Env-Vars vollstaendige No-Ops und aendern die
+   bestehende Trace-Ausgabe nicht. */
+static char     g_itrace_link[16] = {0};
+static long     g_itrace_left     = 0;
+static long     g_itrace_budget   = 20000;
+static int      g_itrace_armed    = 0;
+static int      g_dis_dump        = 0;
+static uint32_t g_ssvc_return_pc  = 0;
+
 /* 2026-08-10 (Claude, Modul-Klassifizierung Kernel/IOMan/SysCache/SSM): live pruefen, welches
    Modul einen F$/I$-Aufruf tatsaechlich bearbeitet -- als Gegenprobe zu den dokumentierten
    Tabellen D-1..D-4 im Technical Reference Manual. Adressbereiche stammen aus einem echten
@@ -558,6 +595,42 @@ static void m68krt_read_os9_name(uint32_t addr, char *out, int outsz)
     out[i] = '\0';
 }
 
+/* Zustand der Dispatch-Tabellen zu einem benannten Zeitpunkt (s. Q9_DIS_DUMP).
+   Die Slot-Adresse ist Callcode*4; die zweite 0x400-Byte-Haelfte jeder Tabelle
+   haelt den per F$SSvc registrierten A3-Datenzeiger je Slot. */
+static void m68krt_dump_dispatch(const char *wann, uint32_t pc)
+{
+    uint32_t sysdis, usrdis;
+    int      k;
+
+    if (!g_dis_dump || !g_trap_trace_fp)
+        return;
+
+    sysdis = m68k_read_memory_32(0x3a4);
+    usrdis = m68k_read_memory_32(0x3a8);
+    fprintf(g_trap_trace_fp, "dis[%s] pc=%08x sysdis=%08x usrdis=%08x\n",
+            wann, pc, sysdis, usrdis);
+    if (!sysdis && !usrdis)
+        return;
+    /* 0x28 = F$SRqMem, 0x32 = F$SSvc, 0x80..0x8f = die I$-Aufrufe: die Slots,
+       um die es bei der IOMan-Einbindung geht. Bewusst eine feste, kleine
+       Auswahl statt 256 Zeilen pro Trap. */
+    static const int slots[] = {
+        0x28, 0x32,
+        0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+        0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f
+    };
+    for (k = 0; k < (int)(sizeof(slots) / sizeof(slots[0])); k++) {
+        int cc = slots[k];
+        fprintf(g_trap_trace_fp, "dis   [%02x] sys=%08x usr=%08x sysdat=%08x usrdat=%08x\n", cc,
+                sysdis ? m68k_read_memory_32(sysdis + (uint32_t)cc * 4) : 0,
+                usrdis ? m68k_read_memory_32(usrdis + (uint32_t)cc * 4) : 0,
+                sysdis ? m68k_read_memory_32(sysdis + 0x400 + (uint32_t)cc * 4) : 0,
+                usrdis ? m68k_read_memory_32(usrdis + 0x400 + (uint32_t)cc * 4) : 0);
+    }
+    fflush(g_trap_trace_fp);
+}
+
 static int m68krt_trap_trace_callback(int trap)
 {
     if (trap == 0 && g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
@@ -582,6 +655,14 @@ static int m68krt_trap_trace_callback(int trap)
                         pc, callcode, name, m68k_get_reg(NULL, M68K_REG_A0));
                 fflush(g_trap_trace_fp);
                 g_trap_trace_n++;
+            }
+            if (g_itrace_link[0] && !g_itrace_armed && strcmp(name, g_itrace_link) == 0) {
+                g_itrace_armed = 1;
+                g_itrace_left  = g_itrace_budget;
+                fprintf(g_trap_trace_fp,
+                        "itrace scharf ab pc=%08x fuer %ld Instruktionen (Modul %s)\n",
+                        pc, g_itrace_left, name);
+                fflush(g_trap_trace_fp);
             }
             if (name[0] == 'p' && name[1] == 'k') {
                 fprintf(g_trap_trace_fp, "linkname pc=%08x callcode=%04x name=%s\n", pc, callcode, name);
@@ -614,6 +695,9 @@ static int m68krt_trap_trace_callback(int trap)
                     g_syscall_return_a0 = m68k_get_reg(NULL, M68K_REG_A0);
                 }
             }
+            m68krt_dump_dispatch("trap", pc);
+            if (g_dis_dump && callcode == 0x32)
+                g_ssvc_return_pc = pc + 4;   /* trap + Inline-Wort = 4 Byte */
             fprintf(g_trap_trace_fp,
                     "trap0 pc=%08x callcode=%04x d0=%08x d1=%08x d2=%08x d3=%08x "
                     "a0=%08x a1=%08x\n",
@@ -667,6 +751,27 @@ static int m68krt_trap_trace_callback(int trap)
 
 static void m68krt_watch_pc_callback(unsigned int pc)
 {
+    if (g_ssvc_return_pc && pc == g_ssvc_return_pc) {
+        g_ssvc_return_pc = 0;
+        m68krt_dump_dispatch("nach-F$SSvc", pc);
+    }
+    if (g_itrace_left > 0 && g_trap_trace_fp) {
+        /* Bewusst KEIN Speicherlesen (Opcode) hier -- das liefe durch die PMMU
+           und koennte im Hook selbst einen Fault ausloesen. Nur Register. */
+        fprintf(g_trap_trace_fp,
+                "i %08x a0=%08x a1=%08x a2=%08x a3=%08x a4=%08x a5=%08x a6=%08x "
+                "sp=%08x d0=%08x d1=%08x d2=%08x\n",
+                pc,
+                m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1),
+                m68k_get_reg(NULL, M68K_REG_A2), m68k_get_reg(NULL, M68K_REG_A3),
+                m68k_get_reg(NULL, M68K_REG_A4), m68k_get_reg(NULL, M68K_REG_A5),
+                m68k_get_reg(NULL, M68K_REG_A6), m68k_get_reg(NULL, M68K_REG_SP),
+                m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                m68k_get_reg(NULL, M68K_REG_D2));
+        if (--g_itrace_left == 0)
+            fprintf(g_trap_trace_fp, "itrace Budget erschoepft\n");
+        fflush(g_trap_trace_fp);
+    }
     if (g_classify_active) {
         if (pc == g_classify_return_pc) {
             if (g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap) {
@@ -790,6 +895,15 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
                 setvbuf(g_trap_trace_fp, NULL, _IOFBF, 4 * 1024 * 1024);
                 m68k_set_trap_instr_callback(m68krt_trap_trace_callback);
             }
+        }
+        {
+            const char *il = getenv("Q9_ITRACE_LINK");
+            const char *in = getenv("Q9_ITRACE_N");
+            if (il)
+                strncpy(g_itrace_link, il, sizeof(g_itrace_link) - 1);
+            if (in)
+                g_itrace_budget = strtol(in, NULL, 10);
+            g_dis_dump = getenv("Q9_DIS_DUMP") != NULL;
         }
         const char *watch_pc_str  = getenv("Q9_WATCH_PC");
         const char *watch_pc2_str = getenv("Q9_WATCH_PC2");
