@@ -528,6 +528,14 @@ static long     g_itrace_budget   = 20000;
 static int      g_itrace_armed    = 0;
 static int      g_dis_dump        = 0;
 static uint32_t g_ssvc_return_pc  = 0;
+static uint32_t g_glob_base       = 0;    /* s. m68krt_dump_dispatch */
+/* Q9_DUMP_MEM=<hexaddr>:<laenge>[,<hexaddr>:<laenge>...]: einmaliger Hexauszug
+   beim ersten getraceten trap #0. Gedacht, um Code an einer zur Laufzeit
+   ermittelten Adresse anzusehen -- etwa den Handler, der in einem
+   Dispatch-Tabellenslot steht, wenn die Ladeadresse je Boot variiert.
+   Gelesen wird ueber m68k_read_memory_8, also durch die PMMU wie die CPU. */
+static const char *g_dump_mem_spec = NULL;
+static int         g_dump_mem_done = 0;
 static long     g_itrace_callcode = -1;   /* Q9_ITRACE_CALLCODE: statt am Modulnamen */
 
 /* 2026-08-10 (Claude, Modul-Klassifizierung Kernel/IOMan/SysCache/SSM): live pruefen, welches
@@ -599,6 +607,37 @@ static void m68krt_read_os9_name(uint32_t addr, char *out, int outsz)
 /* Zustand der Dispatch-Tabellen zu einem benannten Zeitpunkt (s. Q9_DIS_DUMP).
    Die Slot-Adresse ist Callcode*4; die zweite 0x400-Byte-Haelfte jeder Tabelle
    haelt den per F$SSvc registrierten A3-Datenzeiger je Slot. */
+static void m68krt_dump_mem_once(void)
+{
+    const char *q;
+    if (!g_dump_mem_spec || g_dump_mem_done || !g_trap_trace_fp)
+        return;
+    g_dump_mem_done = 1;
+    for (q = g_dump_mem_spec; *q; ) {
+        char    *end;
+        uint32_t addr = (uint32_t)strtoul(q, &end, 16);
+        uint32_t len  = 0;
+        uint32_t i;
+        if (*end == ':')
+            len = (uint32_t)strtoul(end + 1, &end, 16);
+        if (len == 0 || len > 0x400u)
+            len = 0x40u;
+        for (i = 0; i < len; i += 16) {
+            uint32_t k;
+            fprintf(g_trap_trace_fp, "mem %08x ", addr + i);
+            for (k = 0; k < 16 && i + k < len; k++)
+                fprintf(g_trap_trace_fp, "%02x ", m68k_read_memory_8(addr + i + k));
+            fprintf(g_trap_trace_fp, "\n");
+        }
+        while (*end == ',')
+            end++;
+        if (end == q)
+            break;
+        q = end;
+    }
+    fflush(g_trap_trace_fp);
+}
+
 static void m68krt_dump_dispatch(const char *wann, uint32_t pc)
 {
     uint32_t sysdis, usrdis;
@@ -607,14 +646,32 @@ static void m68krt_dump_dispatch(const char *wann, uint32_t pc)
     if (!g_dis_dump || !g_trap_trace_fp)
         return;
 
-    sysdis = m68k_read_memory_32(0x3a4);
-    usrdis = m68k_read_memory_32(0x3a8);
+    /* Globals-Basis: der Q9-eigene Kernel legt seine Kernel-Globals DIREKT auf
+       Adresse 0, der originale Microware-Kernel dagegen einen ZEIGER auf den
+       System-Global-Bereich bei physisch @0 (s. dbg_dump_q9kernel_extras in
+       q9boardrun.c). Damit derselbe Dump fuer beide Kernel taugt, wird die Basis
+       aus @0 uebernommen, wenn dort ein plausibler, ausgerichteter RAM-Zeiger
+       steht -- sonst 0. Q9_GLOB_BASE=<hex> ueberschreibt die Erkennung. */
+    {
+        const char *gb = getenv("Q9_GLOB_BASE");
+        uint32_t    v0 = m68k_read_memory_32(0);
+        if (gb) {
+            g_glob_base = (uint32_t)strtoul(gb, NULL, 16);
+        } else if (v0 >= 0x400u && v0 < g_ram_len && (v0 & 3u) == 0u) {
+            g_glob_base = v0;
+        } else {
+            g_glob_base = 0;
+        }
+        fprintf(g_trap_trace_fp, "dis   globbase=%08x (@0=%08x)\n", g_glob_base, v0);
+    }
+    sysdis = m68k_read_memory_32(g_glob_base + 0x3a4);
+    usrdis = m68k_read_memory_32(g_glob_base + 0x3a8);
     fprintf(g_trap_trace_fp, "dis[%s] pc=%08x sysdis=%08x usrdis=%08x\n",
             wann, pc, sysdis, usrdis);
     {
         /* D_PthDBT ($48) wird von IOMans Init gesetzt (move.l a2,$48(a6));
            bei +0 steht die Slotzahl-1, bei +2 die Deskriptorgroesse. */
-        uint32_t pthdbt = m68k_read_memory_32(0x48);
+        uint32_t pthdbt = m68k_read_memory_32(g_glob_base + 0x48);
         fprintf(g_trap_trace_fp, "dis   D_PthDBT=%08x", pthdbt);
         if (pthdbt && pthdbt < 0x1000000u)
             fprintf(g_trap_trace_fp, " anzahl-1=%04x groesse=%04x erster=%08x",
@@ -717,6 +774,7 @@ static int m68krt_trap_trace_callback(int trap)
                         pc, g_itrace_left, callcode);
                 fflush(g_trap_trace_fp);
             }
+            m68krt_dump_mem_once();
             m68krt_dump_dispatch("trap", pc);
             if (g_dis_dump && callcode == 0x32)
                 g_ssvc_return_pc = pc + 4;   /* trap + Inline-Wort = 4 Byte */
@@ -926,6 +984,7 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
             if (in)
                 g_itrace_budget = strtol(in, NULL, 10);
             g_dis_dump = getenv("Q9_DIS_DUMP") != NULL;
+            g_dump_mem_spec = getenv("Q9_DUMP_MEM");
             {
                 const char *ic = getenv("Q9_ITRACE_CALLCODE");
                 if (ic)
