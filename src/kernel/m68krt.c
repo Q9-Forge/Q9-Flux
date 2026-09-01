@@ -528,6 +528,7 @@ static long     g_itrace_budget   = 20000;
 static int      g_itrace_armed    = 0;
 static int      g_dis_dump        = 0;
 static uint32_t g_ssvc_return_pc  = 0;
+static long     g_itrace_callcode = -1;   /* Q9_ITRACE_CALLCODE: statt am Modulnamen */
 
 /* 2026-08-10 (Claude, Modul-Klassifizierung Kernel/IOMan/SysCache/SSM): live pruefen, welches
    Modul einen F$/I$-Aufruf tatsaechlich bearbeitet -- als Gegenprobe zu den dokumentierten
@@ -610,6 +611,18 @@ static void m68krt_dump_dispatch(const char *wann, uint32_t pc)
     usrdis = m68k_read_memory_32(0x3a8);
     fprintf(g_trap_trace_fp, "dis[%s] pc=%08x sysdis=%08x usrdis=%08x\n",
             wann, pc, sysdis, usrdis);
+    {
+        /* D_PthDBT ($48) wird von IOMans Init gesetzt (move.l a2,$48(a6));
+           bei +0 steht die Slotzahl-1, bei +2 die Deskriptorgroesse. */
+        uint32_t pthdbt = m68k_read_memory_32(0x48);
+        fprintf(g_trap_trace_fp, "dis   D_PthDBT=%08x", pthdbt);
+        if (pthdbt && pthdbt < 0x1000000u)
+            fprintf(g_trap_trace_fp, " anzahl-1=%04x groesse=%04x erster=%08x",
+                    m68k_read_memory_16(pthdbt),
+                    m68k_read_memory_16(pthdbt + 2),
+                    m68k_read_memory_32(pthdbt + 4));
+        fprintf(g_trap_trace_fp, "\n");
+    }
     if (!sysdis && !usrdis)
         return;
     /* 0x28 = F$SRqMem, 0x32 = F$SSvc, 0x80..0x8f = die I$-Aufrufe: die Slots,
@@ -694,6 +707,15 @@ static int m68krt_trap_trace_callback(int trap)
                     g_syscall_return_code = (uint16_t)callcode;
                     g_syscall_return_a0 = m68k_get_reg(NULL, M68K_REG_A0);
                 }
+            }
+            if (g_itrace_callcode >= 0 && !g_itrace_armed &&
+                callcode == (uint32_t)g_itrace_callcode) {
+                g_itrace_armed = 1;
+                g_itrace_left  = g_itrace_budget;
+                fprintf(g_trap_trace_fp,
+                        "itrace scharf ab pc=%08x fuer %ld Instruktionen (Callcode %04x)\n",
+                        pc, g_itrace_left, callcode);
+                fflush(g_trap_trace_fp);
             }
             m68krt_dump_dispatch("trap", pc);
             if (g_dis_dump && callcode == 0x32)
@@ -904,6 +926,11 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
             if (in)
                 g_itrace_budget = strtol(in, NULL, 10);
             g_dis_dump = getenv("Q9_DIS_DUMP") != NULL;
+            {
+                const char *ic = getenv("Q9_ITRACE_CALLCODE");
+                if (ic)
+                    g_itrace_callcode = strtol(ic, NULL, 16);
+            }
         }
         const char *watch_pc_str  = getenv("Q9_WATCH_PC");
         const char *watch_pc2_str = getenv("Q9_WATCH_PC2");
