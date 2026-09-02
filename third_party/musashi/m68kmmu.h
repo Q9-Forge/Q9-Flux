@@ -14,6 +14,8 @@ uint pmmu_translate_addr(uint addr_in)
 {
 	uint32 addr_out, tbl_entry = 0, tbl_entry2, tamode = 0, tbmode = 0, tcmode = 0;
 	uint root_aptr, root_limit, tofs, is, abits, bbits, cbits;
+	uint root_entry_addr = 0;
+	uint b_entry_addr = 0, b_offset = 0;
 	uint resolved, tptr, shift;
 
 	resolved = 0;
@@ -66,6 +68,7 @@ uint pmmu_translate_addr(uint addr_in)
 		case 2:	// valid 4 byte descriptors
 			tofs *= 4;
 //			fprintf(stderr,"PMMU: reading table A entry at %08x\n", tofs + (root_aptr & 0xfffffffc));
+			root_entry_addr = tofs + (root_aptr & 0xfffffffc);
 			tbl_entry = m68k_read_memory_32( tofs + (root_aptr & 0xfffffffc));
 			tamode = tbl_entry & 3;
 //			fprintf(stderr,"PMMU: addr %08x entry %08x mode %x tofs %x\n", addr_in, tbl_entry, tamode, tofs);
@@ -74,6 +77,7 @@ uint pmmu_translate_addr(uint addr_in)
 		case 3: // valid 8 byte descriptors
 			tofs *= 8;
 //			fprintf(stderr,"PMMU: reading table A entries at %08x\n", tofs + (root_aptr & 0xfffffffc));
+			root_entry_addr = tofs + (root_aptr & 0xfffffffc);
 			tbl_entry2 = m68k_read_memory_32( tofs + (root_aptr & 0xfffffffc));
 			tbl_entry = m68k_read_memory_32( tofs + (root_aptr & 0xfffffffc)+4);
 			tamode = tbl_entry2 & 3;
@@ -89,7 +93,18 @@ uint pmmu_translate_addr(uint addr_in)
 	}
 
 	// get table B offset and pointer
-	tofs = (addr_in<<(is+abits))>>(32-bbits);
+	/* Extract the B index explicitly instead of the shift-left/shift-right
+	 * pair this walker uses for the A/C/D indices.  Both forms select the
+	 * same bits for the configurations seen here -- recomputed for the case
+	 * an earlier note in this spot blamed (TC $82C08444 -> is=0, abits=8,
+	 * bbits=4; VA $008102DC yields B=8 with either form), so this is NOT
+	 * the fix for an observed miswalk; that claim did not hold up.  What it
+	 * does buy: the old form shifts by 32 when bbits==0 (likewise when
+	 * is+abits==32), which is undefined in C, and the field extraction is
+	 * readable against the 68030 table format.  The A/C/D index
+	 * computations still use the old pattern. */
+	tofs = (addr_in >> (32 - is - abits - bbits)) & ((1u << bbits) - 1u);
+	b_offset = tofs;
 	tptr = tbl_entry & 0xfffffff0;
 
 	// find out what format table B is, if any
@@ -102,6 +117,7 @@ uint pmmu_translate_addr(uint addr_in)
 		case 2: // 4-byte table B descriptor
 			tofs *= 4;
 //			fprintf(stderr,"PMMU: reading table B entry at %08x\n", tofs + tptr);
+			b_entry_addr = tofs + tptr;
 			tbl_entry = m68k_read_memory_32( tofs + tptr);
 			tbmode = tbl_entry & 3;
 //			fprintf(stderr,"PMMU: addr %08x entry %08x mode %x tofs %x\n", addr_in, tbl_entry, tbmode, tofs);
@@ -110,6 +126,7 @@ uint pmmu_translate_addr(uint addr_in)
 		case 3: // 8-byte table B descriptor
 			tofs *= 8;
 //			fprintf(stderr,"PMMU: reading table B entries at %08x\n", tofs + tptr);
+			b_entry_addr = tofs + tptr;
 			tbl_entry2 = m68k_read_memory_32( tofs + tptr);
 			tbl_entry = m68k_read_memory_32( tofs + tptr + 4);
 			tbmode = tbl_entry2 & 3;
@@ -150,9 +167,17 @@ uint pmmu_translate_addr(uint addr_in)
 				fprintf(stderr, "680x0 PMMU DEBUG: fault instruction PPC=%08x PC=%08x IR=%04x\n",
 					REG_PPC, REG_PC, REG_IR);
 				fprintf(stderr, "680x0 PMMU DEBUG: access VA=%08x FC=%x %s size=%u instr_mode=%u\n",
-					q9_mmu_access_address, q9_mmu_access_fc,
+					addr_in, q9_mmu_access_fc,
 					(q9_mmu_access_rw == MODE_READ) ? "read" : "write",
 					q9_mmu_access_size, CPU_INSTR_MODE);
+				fprintf(stderr, "680x0 PMMU DEBUG: rootA@%08x raw=%08x/%08x A_mode=%u addr_in=%08x idx(is/a/b=%u/%u/%u) B_index=%08x B_entry@%08x raw=%08x/%08x C_ofs=%08x B_ptr=%08x\n",
+					root_entry_addr,
+					(root_limit & 3) == 3 ? m68k_read_memory_32(root_entry_addr) : 0,
+					(root_limit & 3) == 3 ? m68k_read_memory_32(root_entry_addr + 4) : tbl_entry,
+					tamode, addr_in, is, abits, bbits, b_offset, b_entry_addr,
+					tamode == 3 ? tbl_entry2 : tbl_entry,
+					tamode == 3 ? tbl_entry : 0,
+					tofs, tptr);
 				{
 					int dbgi;
 					fprintf(stderr, "680x0 PMMU DEBUG: bytes at PC-8..PC+15:");
@@ -262,6 +287,12 @@ uint pmmu_translate_addr(uint addr_in)
 						break;
 
 					default:
+						fprintf(stderr, "680x0 PMMU DEBUG: Table D fault PPC=%08x PC=%08x IR=%04x VA=%08x\n",
+							REG_PPC, REG_PC, REG_IR, addr_in);
+						fprintf(stderr, "680x0 PMMU DEBUG: D0-D7 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+							REG_D[0], REG_D[1], REG_D[2], REG_D[3], REG_D[4], REG_D[5], REG_D[6], REG_D[7]);
+						fprintf(stderr, "680x0 PMMU DEBUG: A0-A7 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+							REG_A[0], REG_A[1], REG_A[2], REG_A[3], REG_A[4], REG_A[5], REG_A[6], REG_A[7]);
 						fatalerror("680x0 PMMU: Unhandled Table D mode %d (entry %08x addr_in %08x PC %x)\n", tdmode, tbl_entry, addr_in, REG_PC);
 						break;
 				}
