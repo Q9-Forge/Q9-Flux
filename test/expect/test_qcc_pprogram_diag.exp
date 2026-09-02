@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+# Temporary diagnostic: invoke the complete parser core without its later
+# semantic-replay path.  4245 is printed before p_program(), 4246 after it.
+set timeout 90
+set send_slow {1 .003}
+set image local_images/OS9SYS.qcc-xcc-test.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+expect "devices online"
+send "\r"
+expect "User name?:"
+send "super\r"
+expect -re {Password[^\r\n]*:}
+send "Al35uUbC\r"
+expect -re {[#$] ?$}
+send -s "/dd/CMDS/q9_qccps 'int main(){return 0;}'\r"
+expect {
+    -re {4246} { send_log "\n<<< PPROGRAM DEEP OK >>>\n" }
+    -re {4245} { send_log "\n<<< PPROGRAM ENTERED >>>\n"; exp_continue }
+    -re {PMMU|error|Error} { exit 1 }
+    timeout { exit 1 }
+}
+send "\x1d"
+expect eof

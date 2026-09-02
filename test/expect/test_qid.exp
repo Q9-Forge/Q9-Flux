@@ -1,0 +1,61 @@
+#!/usr/bin/expect -f
+# Smoke test for the new qid tool: boot, log in via console (no networking
+# needed), run a few qid invocations, capture output.
+
+set timeout 90
+set send_slow {1 .003}
+log_file -noappend test/expect/results/test_qid_result.txt
+
+set mwos /Volumes/SSD1TB/projects/MWOS
+set image local_images/OS9SYS.qid-test.hda
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+
+set timeout 60
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { sleep 1; send -s "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { sleep 1; send -s "Al35uUbC\r"; exp_continue }
+        -re {# ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<<LOGIN FAILED>>>\n"; exit 1 }
+
+set timeout 20
+send_log "\n<<<TEST 1: qid ident (default detail mode, single named module)>>>\n"
+send -s "qid ident\r"
+expect -re {# ?$}
+
+send_log "\n<<<TEST 2: qid -x mdir (module known to exist in CMDS, execution dir)>>>\n"
+send -s "qid -x mdir\r"
+expect -re {# ?$}
+
+send_log "\n<<<TEST 3: qid -t ident mdir qid (table mode, multiple names)>>>\n"
+send -s "qid -t ident mdir qid\r"
+expect -re {# ?$}
+
+send_log "\n<<<TEST 4: qid -q qid (concise mode)>>>\n"
+send -s "qid -q qid\r"
+expect -re {# ?$}
+
+send_log "\n<<<TEST 5: qid -m qid (memory scan -- exercises F\$CpyMem)>>>\n"
+send -s "qid -m qid\r"
+expect -re {# ?$}
+
+send_log "\n<<<TEST 6: qid -m * (memory scan, all resident modules, table)>>>\n"
+send -s "qid -m -t *\r"
+expect -re {# ?$}
+
+send_log "\n<<<TEST 7: qid *.a (wildcard, disk, no expected matches in CMDS)>>>\n"
+send -s "qid *.a\r"
+expect -re {# ?$}
+
+send_log "\n<<<TEST 8: qid -? (usage)>>>\n"
+send -s "qid -?\r"
+expect -re {# ?$}
+
+send_log "\n<<<HOST-ESCAPE>>>\n"
+send "\x1d"
+expect eof
