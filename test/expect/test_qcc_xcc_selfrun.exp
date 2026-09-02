@@ -21,11 +21,10 @@ expect {
     -re {FAIL|error|Error} { send_log "\n<<< QCC XCC SELF-RUN ERROR >>>\n"; exit 1 }
     timeout { send_log "\n<<< QCC XCC SELF-RUN TIMEOUT >>>\n"; exit 1 }
 }
-# Die 255-KB-Bootstrapquelle erzeugt auch bei Semantikfehlern sehr viel IR.
-# Der Lauf selbst darf deshalb keinen Ausgabepuffer beanspruchen. Erst wenn
-# die Semantik fehlerfrei ist, wird im naechsten Schritt die IR in eine Datei
-# geschrieben und an das QCC-Backend uebergeben.
-send -s "/dd/CMDS/q9_qcc_p_xcc_bootstrap @/dd/qcc_p.bootstrap.c >/nil\r"
+# Die Bootstrap-IR geht bewusst direkt in eine Datei. Der XCC-Build benutzt
+# QCC_BUFFERED_OUTPUT: ein eigener 8-KB-Writer vermeidet Microware-printf bei
+# den vielen kleinen IR-Zeilen.
+send -s "/dd/CMDS/q9_qcc_p_xcc_bootstrap @/dd/qcc_p.bootstrap.c >/dd/qcc_p.bootstrap.ir\r"
 expect {
     -re {[#$] ?$} { send_log "\n<<< QCC XCC BOOTSTRAP COMPLETE (SEMERR expected) >>>\n" }
     -re {FAIL|error|Error} { send_log "\n<<< QCC XCC BOOTSTRAP PARSE ERROR >>>\n"; exit 1 }
