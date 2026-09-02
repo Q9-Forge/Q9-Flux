@@ -1,0 +1,37 @@
+#!/usr/bin/expect -f
+# End-to-end test for the QCC bootstrap module built with q9_cstart.a.
+set timeout 240
+set send_slow {1 .003}
+set image local_images/OS9SYS.qcc-xcc-test.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re {[#$] ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+
+# The compiler writes its large IR result to the image, so the terminal is
+# not flooded with 768 KB of output. The following extended directory listing
+# verifies that the result file was created.
+send -s "/dd/CMDS/q9_qcc_p_bootstrap @/dd/qcc_p.bootstrap.c >/dd/q9_qcc_p_bootstrap.ir\r"
+expect {
+    -re {[#$] ?$} {}
+    -re {PMMU|FAIL|error|Error} { send_log "\n<<< QCC BOOTSTRAP Q9 ERROR >>>\n"; exit 1 }
+    timeout { send_log "\n<<< QCC BOOTSTRAP Q9 TIMEOUT >>>\n"; exit 1 }
+}
+send -s "dir -e /dd/q9_qcc_p_bootstrap.ir\r"
+expect {
+    -re {\r\nq9_qcc_p_bootstrap\.ir} { send_log "\n<<< QCC BOOTSTRAP Q9 OK >>>\n" }
+    -re {error|Error} { send_log "\n<<< QCC BOOTSTRAP Q9 OUTPUT ERROR >>>\n"; exit 1 }
+    timeout { send_log "\n<<< QCC BOOTSTRAP Q9 OUTPUT TIMEOUT >>>\n"; exit 1 }
+}
+send "\x1d"
+expect eof

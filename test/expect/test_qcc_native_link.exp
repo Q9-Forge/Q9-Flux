@@ -1,0 +1,34 @@
+#!/usr/bin/expect -f
+# Native Microware r68/l68 build of the current QCC action-log diagnostic.
+set timeout 600
+set send_slow {1 .003}
+set image local_images/OS9SYS.qcc-stage1-1m.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+expect "devices online"
+send "\r"
+expect {
+    "User name?:" { send "super\r" }
+    timeout { exit 2 }
+}
+expect -re {Password[^\r\n]*:}
+send "Al35uUbC\r"
+expect -re {/dd/HOME/ROOT# ?$}
+
+send -s "chd /dd/PROJECTS/QCC\r"
+expect -re {[#$] ?$}
+send -s "r68 q9push.s68 -o=q9push.r\r"
+expect {
+    -re {error|Error|bad mnemonic} { send_log "\n<<< NATIVE R68 ERROR >>>\n"; exit 1 }
+    -re {[#$] ?$} {}
+    timeout { send_log "\n<<< NATIVE R68 TIMEOUT >>>\n"; exit 1 }
+}
+send -s "l68 -a q9cstart.r q9push.r -l=/dd/LIB/clib.l -l=/dd/LIB/os_lib.l -l=/dd/LIB/sys.l -o=q9push.out\r"
+expect {
+    -re {error|Error|undefined|Undefined} { send_log "\n<<< NATIVE L68 ERROR >>>\n"; exit 1 }
+    -re {[#$] ?$} { send_log "\n<<< NATIVE LINK OK >>>\n" }
+    timeout { send_log "\n<<< NATIVE L68 TIMEOUT >>>\n"; exit 1 }
+}
+send "\x1d"
+expect eof

@@ -1,0 +1,30 @@
+#!/usr/bin/expect -f
+# Diagnostic bootstrap run: replay only the first 32,768 semantic actions.
+set timeout 600
+set send_slow {1 .003}
+set image local_images/OS9SYS.qcc-stage1-1m.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re {/dd/HOME/ROOT# ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\n<<< ACTION-PREFIX LOGIN FAILED >>>\n"; exit 2 }
+
+send -s "/dd/CMDS_NEW/q9_actdbg @/dd/qcc_p.bootstrap.c\r"
+expect {
+    -re {q9-action-prefix=49152} { send_log "\n<<< ACTION-PREFIX 49152 OK >>>\n" }
+    -re {PMMU|FAIL|error|Error} { send_log "\n<<< ACTION-PREFIX ERROR >>>\n"; exit 1 }
+    -re {/dd/HOME/ROOT# ?$} { send_log "\n<<< ACTION-PREFIX RETURNED >>>\n" }
+    timeout { send_log "\n<<< ACTION-PREFIX TIMEOUT >>>\n"; exit 1 }
+}
+send "\x1d"
+expect eof
