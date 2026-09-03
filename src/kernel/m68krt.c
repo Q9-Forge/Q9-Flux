@@ -248,6 +248,44 @@ static inline int ram_fast_hit(uint32_t address, uint32_t span)
            span < (g_board->ram_len - address);
 }
 
+/* s. m68krt.h -- Instruktions-Ringpuffer mit Freeze-on-Anomaly. */
+uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_head   = 0u;
+uint32_t q9_dbg_tr_fill   = 0u;
+int      q9_dbg_tr_frozen = 0;
+
+static void q9_dbg_instr_hook(unsigned int pc)
+{
+    if (q9_dbg_tr_frozen) {
+        return;
+    }
+    q9_dbg_tr_pc[q9_dbg_tr_head] = (uint32_t)pc;
+    q9_dbg_tr_d0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
+    q9_dbg_tr_a0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
+    q9_dbg_tr_head = (q9_dbg_tr_head + 1u) % Q9_DBG_TR_SIZE;
+    if (q9_dbg_tr_fill < Q9_DBG_TR_SIZE) {
+        q9_dbg_tr_fill++;
+    }
+}
+
+void q9_dbg_instr_trace_init(void)
+{
+    const char *env = getenv("Q9_TRACE_INSTR");
+
+    if (env && env[0] == '1') {
+        m68k_set_instr_hook_callback(q9_dbg_instr_hook);
+    }
+}
+
+void q9_dbg_instr_trace_note_tx(unsigned char val)
+{
+    if (val >= 0x80u) {                            /* nicht-ASCII = die gesuchte Anomalie */
+        q9_dbg_tr_frozen = 1;
+    }
+}
+
 unsigned int m68k_read_memory_8(unsigned int address)
 {
     q9_device_t *dev;
@@ -779,6 +817,7 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
     }
     m68k_set_cpu_type(musashi_type);
     m68k_init();
+    q9_dbg_instr_trace_init();                          /* Diagnose, s. m68krt.h */
     m68k_set_int_ack_callback(0);
 
     {

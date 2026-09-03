@@ -44,6 +44,7 @@
 #include "q9boardrun.h"
 #include "q9board.h"
 #include "m68krt.h"
+#include "../devices/duart68681/duart68681.h"      /* THRA-Mitschrift, s. dort                */
 #include "../devices/quicc/quicc.h"
 #include "../devices/mc6845/mc6845.h"                  /* 5.24: MC6845-CRT-Controller             */
 #include "../devices/framebuf/framebuf.h"              /* 5.26: VRAM-Geraet                       */
@@ -182,6 +183,55 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
     }
 
     dbg_dump_q9kernel_extras(b, f);
+
+    /* Diagnose (2026-09-03): was tatsaechlich auf THRA geschrieben wurde, plus
+       CPU-Zustand beim selben Zugriff -- s. duart68681.h. Weichen Buswert und
+       d0.b voneinander ab, entsteht eine Verstuemmelung erst beim Schreiben;
+       sind sie gleich, hat der Gast den Wert schon falsch im Register. */
+    {
+        uint32_t n = q9_dbg_thra_count;
+        uint32_t i;
+
+        if (n > Q9_DBG_THRA_LOG_SIZE) {
+            n = Q9_DBG_THRA_LOG_SIZE;
+        }
+        fprintf(f, "\n--- THRA-Mitschrift: %u Bytes geschrieben (aufgezeichnet: %u) ---\n",
+                (unsigned)q9_dbg_thra_count, (unsigned)n);
+        for (i = 0; i < n; i++) {
+            uint8_t c = q9_dbg_thra_log[i];
+            fputc((c >= 0x20u && c < 0x7fu) ? (int)c : '.', f);
+        }
+        fputs("\n  Abweichungen Buswert/d0 (erste 32):\n", f);
+        {
+            uint32_t shown = 0;
+            for (i = 0; i < n && shown < 32u; i++) {
+                if (q9_dbg_thra_log[i] != q9_dbg_thra_d0[i]) {
+                    fprintf(f, "    [%3u] bus=%02x d0=%02x pc=%08x\n", (unsigned)i,
+                            (unsigned)q9_dbg_thra_log[i], (unsigned)q9_dbg_thra_d0[i],
+                            (unsigned)q9_dbg_thra_pc[i]);
+                    shown++;
+                }
+            }
+            fprintf(f, "    Abweichungen gesamt unter %u: %u\n", (unsigned)n, (unsigned)shown);
+        }
+        fputs("--- Ende THRA-Mitschrift ---\n", f);
+    }
+
+    /* Diagnose: Instruktionsspur vor der Anomalie (nur mit Q9_TRACE_INSTR=1
+       gefuellt, s. m68krt.h). Aeltester Eintrag zuerst. */
+    if (q9_dbg_tr_fill != 0u) {
+        uint32_t k;
+
+        fprintf(f, "\n--- Instruktionsspur (frozen=%d, %u Eintraege, aeltester zuerst) ---\n",
+                q9_dbg_tr_frozen, (unsigned)q9_dbg_tr_fill);
+        for (k = 0; k < q9_dbg_tr_fill; k++) {
+            uint32_t idx = (q9_dbg_tr_head + Q9_DBG_TR_SIZE - q9_dbg_tr_fill + k) % Q9_DBG_TR_SIZE;
+            fprintf(f, "  pc=%08x d0=%08x a0=%08x\n",
+                    (unsigned)q9_dbg_tr_pc[idx], (unsigned)q9_dbg_tr_d0[idx],
+                    (unsigned)q9_dbg_tr_a0[idx]);
+        }
+        fputs("--- Ende Instruktionsspur ---\n", f);
+    }
 
     uint32_t v0 = q9_board_read32(b, 0);
 

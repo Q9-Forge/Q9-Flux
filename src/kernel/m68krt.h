@@ -242,6 +242,46 @@ int q9_m68krt_is_stopped(void);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_get_backend(q9_m68krt_t *rt, q9_cpu_backend_t *backend);
 
+
+/*───────────────────────────────────────────────────────────────────────────
+  Diagnose (2026-09-03): Instruktions-Ringpuffer mit Freeze-on-Anomaly.
+
+  Haelt fuer die letzten Q9_DBG_TR_SIZE ausgefuehrten Befehle (PC, d0, a0)
+  fest und friert ein, sobald ein nicht-ASCII-Byte auf THRA geschrieben wird.
+  Danach steht im Puffer genau die Befehlsfolge VOR der Anomalie -- inklusive
+  des Uebergangs zwischen fremdem Modulcode und eigenem Kernel.
+
+  Damit wurde 2026-09-03 eine verstuemmelte Konsolenausgabe aufgeklaert,
+  nachdem statische Analyse und punktuelle Messungen gescheitert waren: die
+  Spur zeigte lueckenlos, dass IOMans "move.b (a0)+,d0" noch den korrekten
+  Wert laedt und d0 erst im eigenen Kernel kippt (dort wurde ein
+  Funktionszeiger als Befehl ausgefuehrt, s. Q9-OS q9kernel_entry.a).
+
+  BEWUSST OHNE PC-Fensterfilter: Modulbasen verschieben sich mit der
+  Kernelgroesse, ein fest verdrahtetes Fenster war hier bereits Fehlerquelle.
+  Der Hook laeuft vor JEDER Instruktion, ein Eintrag zeigt also den Zustand
+  VOR deren Ausfuehrung.
+
+  NICHT im Normalbetrieb aktiv -- nur mit gesetztem Q9_TRACE_INSTR=1, sonst
+  wird gar kein Callback registriert (er kostet sonst bei jedem einzelnen
+  Befehl Zeit).
+
+  ACHTUNG, real erlebte Falle: Musashis PPC ist im SPEICHERZUGRIFFS-Hook
+  nicht zuverlaessig der lesenden Instruktion zuzuordnen (er zeigte dort auf
+  ein "bsr", das gar keinen Datenspeicher liest). Fuer "welcher Befehl war
+  das?" ist DIESE Spur das richtige Werkzeug, nicht der PC am Speicherzugriff.
+  ───────────────────────────────────────────────────────────────────────────*/
+#define Q9_DBG_TR_SIZE 192u
+extern uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_head;
+extern uint32_t q9_dbg_tr_fill;
+extern int      q9_dbg_tr_frozen;
+
+void q9_dbg_instr_trace_init(void);                 /* registriert den Hook, nur bei Q9_TRACE_INSTR=1 */
+void q9_dbg_instr_trace_note_tx(unsigned char val); /* vom DUART gerufen: friert bei val >= 0x80 ein  */
+
 #endif // Q9_M68KRT_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
