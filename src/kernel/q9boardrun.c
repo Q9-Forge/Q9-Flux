@@ -184,6 +184,63 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
 
     dbg_dump_q9kernel_extras(b, f);
 
+    /* Diagnose (2026-09-04): DUART-Interruptzustand und die Polling-Tabelle
+       des Q9-eigenen Kernels ($1500, 16 Eintraege a 20 Byte:
+       Vektor/Prio/ISR/statisch/Port). Zweck: einen Interrupt-Sturm
+       einordnen -- feuert die Quelle dauerhaft, und mit welchem Kontext
+       ruft der Dispatcher die ISR auf? */
+    {
+        uint32_t i;
+
+        fprintf(f, "\n--- DUART/IRQ-Zustand ---\n  IMR=%02x  IVR=%02x\n",
+                (unsigned)b->uart_imr, (unsigned)b->uart_ivr);
+        fputs("  Polling-Tabelle (belegte Eintraege):\n", f);
+        for (i = 0; i < 16u; i++) {
+            uint32_t e   = 0x1500u + i * 20u;
+            uint32_t vec = q9_board_read32(b, e);
+
+            if (vec != 0) {
+                fprintf(f, "    [%2u] Vektor=%-3u ISR=%08x statisch=%08x Port=%08x\n",
+                        (unsigned)i, (unsigned)vec,
+                        (unsigned)q9_board_read32(b, e + 8u),
+                        (unsigned)q9_board_read32(b, e + 12u),
+                        (unsigned)q9_board_read32(b, e + 16u));
+            }
+        }
+        fputs("--- Ende DUART/IRQ-Zustand ---\n", f);
+    }
+
+    /* Diagnose (2026-09-04): die Systemglobals, an denen der I/O-Weg haengt.
+       ACHTUNG bei den Offsets: die Reihenfolge in Q9-OS/src/q9sysglob.a naiv
+       durchzuzaehlen ergibt Werte, die um $1C ZU NIEDRIG sind (verifiziert an
+       drei Punkten: D_Proc=$4C, D_SysRom=$64, D_SysDis=$3A4). Genau dieser
+       Zaehlfehler hat schon einmal dazu gefuehrt, dass $64 fuer D_DevTbl
+       gehalten wurde -- es ist D_SysRom. */
+    {
+        uint32_t devtbl = q9_board_read32(b, 0x80u);   /* D_DevTbl  */
+        uint32_t sysrom = q9_board_read32(b, 0x64u);   /* D_SysRom  */
+        uint32_t excjmp = q9_board_read32(b, 0x68u);   /* D_ExcJmp  */
+        uint32_t i;
+
+        fputs("\n--- Systemglobals (I/O-relevant) ---\n", f);
+        fprintf(f, "  D_SysRom($64)=%08x  D_ExcJmp($68)=%08x  D_DevTbl($80)=%08x\n",
+                (unsigned)sysrom, (unsigned)excjmp, (unsigned)devtbl);
+        if (devtbl != 0 && devtbl < BOARD_RAM_BYTES) {
+            fputs("  Geraetetabelle (erste 4 Eintraege a 16 Byte):\n", f);
+            for (i = 0; i < 4u; i++) {
+                uint32_t e = devtbl + i * 16u;
+                fprintf(f, "    [%u] %08x %08x %08x %08x\n", (unsigned)i,
+                        (unsigned)q9_board_read32(b, e),
+                        (unsigned)q9_board_read32(b, e + 4u),
+                        (unsigned)q9_board_read32(b, e + 8u),
+                        (unsigned)q9_board_read32(b, e + 12u));
+            }
+        } else {
+            fputs("  D_DevTbl ist LEER oder unplausibel -- I$Attach hat sie nie gefuellt.\n", f);
+        }
+        fputs("--- Ende Systemglobals ---\n", f);
+    }
+
     /* Diagnose (2026-09-04): Exception-Mitschrift des Q9-eigenen Kernels.
        Q9K_ExcTrap (Q9-OS q9kernel_entry.a) legt bei jeder Exception einen
        festen Satz Felder ab $144020 ab. Sie hier auszugeben erspart es, den
