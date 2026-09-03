@@ -184,6 +184,30 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
 
     dbg_dump_q9kernel_extras(b, f);
 
+    /* Diagnose (2026-09-04): Exception-Mitschrift des Q9-eigenen Kernels.
+       Q9K_ExcTrap (Q9-OS q9kernel_entry.a) legt bei jeder Exception einen
+       festen Satz Felder ab $144020 ab. Sie hier auszugeben erspart es, den
+       Kernel selbst mit Diagnose-Ausgaben zu versehen -- was bei diesem Kernel
+       nachweislich das Symptom verschiebt (jede Aenderung der Modulgroesse
+       verschiebt Ladeadressen und Interrupt-Zeitpunkte). */
+    {
+        uint32_t sr   = q9_board_read16(b, 0x144020u);
+        uint32_t pc   = q9_board_read32(b, 0x144024u);
+        uint32_t fmt  = q9_board_read16(b, 0x144028u);
+        uint32_t a6   = q9_board_read32(b, 0x14402Cu);
+        uint32_t sp   = q9_board_read32(b, 0x144030u);
+        uint32_t ret0 = q9_board_read32(b, 0x144034u);
+        uint32_t ret1 = q9_board_read32(b, 0x144038u);
+
+        fputs("\n--- Q9K_ExcTrap-Mitschrift (0 = keine Exception aufgetreten) ---\n", f);
+        fprintf(f, "  Vektor=%u (Fmt/Vektor-Wort %04x)  SR=%04x\n",
+                (unsigned)((fmt & 0x0FFFu) / 4u), (unsigned)fmt, (unsigned)sr);
+        fprintf(f, "  PC=%08x  A6=%08x  SP=%08x\n",
+                (unsigned)pc, (unsigned)a6, (unsigned)sp);
+        fprintf(f, "  Stack darunter: %08x %08x\n", (unsigned)ret0, (unsigned)ret1);
+        fputs("--- Ende Exception-Mitschrift ---\n", f);
+    }
+
     /* Diagnose (2026-09-03): was tatsaechlich auf THRA geschrieben wurde, plus
        CPU-Zustand beim selben Zugriff -- s. duart68681.h. Weichen Buswert und
        d0.b voneinander ab, entsteht eine Verstuemmelung erst beim Schreiben;
