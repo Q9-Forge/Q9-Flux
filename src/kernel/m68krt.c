@@ -261,12 +261,21 @@ static void q9_dbg_instr_hook(unsigned int pc)
     if (q9_dbg_tr_frozen) {
         return;
     }
+    /* Zweiter Freeze-Ausloeser (2026-09-04): Sprung ins Leere. Unterhalb von
+       $1000 liegt in diesem System ausschliesslich der Systemglobal-Bereich,
+       dort steht niemals Code -- ein PC dort ist immer die Folge eines
+       Sprungziels aus einer leeren Tabelle o. ae. Der Eintrag wird noch
+       geschrieben, DANN eingefroren: so ist der Fehlsprung selbst die letzte
+       Zeile der Spur und alles davor bleibt erhalten. */
     q9_dbg_tr_pc[q9_dbg_tr_head] = (uint32_t)pc;
     q9_dbg_tr_d0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
     q9_dbg_tr_a0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
     q9_dbg_tr_head = (q9_dbg_tr_head + 1u) % Q9_DBG_TR_SIZE;
     if (q9_dbg_tr_fill < Q9_DBG_TR_SIZE) {
         q9_dbg_tr_fill++;
+    }
+    if (pc < 0x1000u) {
+        q9_dbg_tr_frozen = 1;
     }
 }
 
