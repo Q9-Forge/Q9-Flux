@@ -33,6 +33,30 @@
 extern const q9_device_vtable_t q9_devtype_duart68681;
 extern const q9_devdesc_t       q9_devdesc_duart68681;      /* 2026-08-21: Vtable+Schema vereint   */
 
+/*───────────────────────────────────────────────────────────────────────────
+  Diagnose (2026-09-03): THRA-Mitschrift.
+
+  Haelt fest, was TATSAECHLICH auf dem Sendedatenregister landet -- Buswert,
+  dazu d0 und PC der CPU beim selben Zugriff. Entscheidender Vorteil
+  gegenueber einer Instrumentierung im Gast: der Gastcode bleibt
+  unveraendert, ein timing-abhaengiges Symptom verschwindet also nicht unter
+  der Messung.
+
+  Damit wurde 2026-09-03 eine verstuemmelte Konsolenausgabe zerlegt: die
+  Mitschrift zeigte, dass die Bytes bereits verstuemmelt AM BUS ankamen --
+  womit der gesamte Emulator-Ausgabepfad als Ursache ausschied und die Suche
+  im Gast weiterging (es war dort ein als Code ausgefuehrter Funktionszeiger,
+  s. Q9-OS q9kernel_entry.a, Q9K_IOManOutVtable).
+
+  Kostet einen Store pro ausgegebenem Zeichen -- bewusst ohne fprintf, damit
+  das Timing unangetastet bleibt. Ausgabe im Ctrl-^-Dump (q9boardrun.c).
+  ───────────────────────────────────────────────────────────────────────────*/
+#define Q9_DBG_THRA_LOG_SIZE 512u
+extern uint8_t  q9_dbg_thra_log[Q9_DBG_THRA_LOG_SIZE];      /* Buswert                              */
+extern uint8_t  q9_dbg_thra_d0[Q9_DBG_THRA_LOG_SIZE];       /* d0.b der CPU beim selben Zugriff     */
+extern uint32_t q9_dbg_thra_pc[Q9_DBG_THRA_LOG_SIZE];       /* PC beim selben Zugriff               */
+extern uint32_t q9_dbg_thra_count;                          /* Gesamtzahl, auch ueber die Puffergroesse hinaus */
+
 #endif /* Q9_DUART68681_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // EOF duart68681.h                                                                        Ver. 1.00
