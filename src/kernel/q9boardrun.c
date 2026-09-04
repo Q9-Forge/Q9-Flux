@@ -356,6 +356,25 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
             }
             fputs("--- Ende Stack bei Eintritt ---\n", f);
         }
+
+            /* Dasselbe unmittelbar vor dem RTE. Weicht eine Zeile von der
+               gleichnamigen Eintritts-Zeile ab, wurde der Frame waehrend des
+               Durchlaufs ueberschrieben -- genau das erklaert einen RTE, der nicht
+               dorthin springt, wo sein Frame hinzeigt. */
+            if (q9_dbg_exi_n != 0u) {
+                uint32_t e, w;
+
+                fprintf(f, "\n--- Stack vor dem RTE (%u erfasst) ---\n",
+                        (unsigned)q9_dbg_exi_n);
+                for (e = 0; e < q9_dbg_exi_n; e++) {
+                    fprintf(f, "  [%2u] sp=%08x:", (unsigned)e, (unsigned)q9_dbg_exi_sp[e]);
+                    for (w = 0; w < Q9_DBG_ENT_WORDS; w++) {
+                        fprintf(f, " %04x", (unsigned)q9_dbg_exi_stk[e][w]);
+                    }
+                    fputc(0x0a, f);
+                }
+                fputs("--- Ende Stack vor dem RTE ---\n", f);
+            }
     }
 
     uint32_t v0 = q9_board_read32(b, 0);

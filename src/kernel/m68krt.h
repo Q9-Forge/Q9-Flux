@@ -282,6 +282,14 @@ extern uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];       /* a7 -- macht den Exception
 extern uint32_t q9_dbg_ent_sp[Q9_DBG_ENT_MAX];
 extern uint16_t q9_dbg_ent_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
 extern uint32_t q9_dbg_ent_n;
+
+/* Dasselbe beim VERLASSEN (unmittelbar vor dem RTE). Der Vergleich beider
+   Mitschriften beantwortet, ob der Exception-Frame waehrend des Durchlaufs
+   ueberschrieben wird -- der Dispatcher selbst legt nur UNTERHALB ab, eine
+   ISR mit unbalanciertem Stack koennte ihn aber treffen. */
+extern uint32_t q9_dbg_exi_sp[Q9_DBG_ENT_MAX];
+extern uint16_t q9_dbg_exi_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
+extern uint32_t q9_dbg_exi_n;
 extern uint32_t q9_dbg_tr_head;
 extern uint32_t q9_dbg_tr_fill;
 extern int      q9_dbg_tr_frozen;
