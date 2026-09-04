@@ -167,6 +167,65 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
     if (guard >= 64)
         fprintf(f, "  (Abbruch nach 64 Eintraegen -- moegliche Ringkette?)\n");
 
+    {   /* Warteschlangen des eigenen Kernels durchlaufen. Die Sentinels und
+           Feldoffsets stammen aus q9kernel_sched.c (Ready $1240, Wait $12A0,
+           Sleep $12F0; next=+$30, prev=+$34, Zustand=+$1d, ID=+$26-2).
+           Zweck: sehen, in WELCHER Schlange ein Prozess wirklich haengt --
+           der Zustandsbuchstabe allein sagt das nicht. */
+        static const uint32_t sent[3] = { 0x1240u, 0x12A0u, 0x12F0u };
+        static const char    *snam[3] = { "Ready", "Wait", "Sleep" };
+        uint32_t q;
+
+        for (q = 0u; q < 3u; q++) {
+            uint32_t node = q9_board_read32(b, sent[q] + 0x30u);
+            uint32_t guard = 0u;
+
+            fprintf(f, "%s-Queue @%04x:", snam[q], (unsigned)sent[q]);
+            while (node != sent[q] && guard++ < 16u) {
+                if (node == 0u || node >= 0x1000000u) {
+                    fprintf(f, " <unplausibel %08x>", (unsigned)node);
+                    break;
+                }
+                fprintf(f, " %08x('%c')", (unsigned)node,
+                        (int)q9_board_read8(b, node + 0x1du));
+                node = q9_board_read32(b, node + 0x30u);
+            }
+            if (guard == 0u) {
+                fprintf(f, " (leer)");
+            }
+            fprintf(f, "\n");
+        }
+    }
+
+    {   /* Diagnose-Scratchzellen des eigenen Kernels ($1600-$1620) -- die
+           Syscall-Bruecken legen dort Ein-/Ausgabewerte ab (s.
+           Q9K_SEND_SCRATCH_* in q9kernel_procsleep.c). */
+        uint32_t z;
+        fprintf(f, "Scratchzellen $1600-$1620:");
+        for (z = 0x1600u; z <= 0x1620u; z += 4u) {
+            fprintf(f, " %08x", (unsigned)q9_board_read32(b, z));
+        }
+        fprintf(f, "\n");
+    }
+
+    {   /* Schreib-Watch (s. m68krt.c). Steht bewusst hier oben: der spaetere
+           Zeigerlauf bricht ab, sobald ein Wert unplausibel ist -- alles
+           dahinter wurde nie ausgegeben und der Watch sah leer aus, obwohl
+           er Treffer hatte. */
+        uint32_t z, first, cnt;
+        fprintf(f, "\n--- Schreibzugriffe im Watch-Fenster (Q9_WATCH_ADDR/_LEN): %u, Zaehlerstand jetzt #%u ---\n",
+                (unsigned)q9_dbg_wv_n, (unsigned)q9_dbg_write_seq_now());
+        cnt   = (q9_dbg_wv_n < 64u) ? q9_dbg_wv_n : 64u;
+        first = q9_dbg_wv_n - cnt;   /* aeltester noch vorhandener Treffer */
+        for (z = first; z < q9_dbg_wv_n; z++) {
+            uint32_t i = z % 64u;
+            fprintf(f, "    #%-10u pc=%08x -> %08x schrieb %08x (%u Byte)\n",
+                    (unsigned)q9_dbg_wv_seq[i],
+                    (unsigned)q9_dbg_wv_pc[i], (unsigned)q9_dbg_wv_adr[i],
+                    (unsigned)q9_dbg_wv_val[i], (unsigned)q9_dbg_wv_size[i]);
+        }
+    }
+
     fprintf(f, "--- Ende Q9-eigener-Kernel-Zusatzdump ---\n\n");
 }
 
@@ -287,6 +346,30 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
         fprintf(f, "  PC=%08x  A6=%08x  SP=%08x\n",
                 (unsigned)pc, (unsigned)a6, (unsigned)sp);
         fprintf(f, "  Stack darunter: %08x %08x\n", (unsigned)ret0, (unsigned)ret1);
+        {   /* Register und Stackauszug -- Q9K_ExcTrap sichert sie laengst
+               ($144040 a0/a1, $144048 a2-a4, $144054 d0-d7, $144080 64 Byte
+               Stack); sie auch auszugeben erspart einen weiteren Lauf. */
+            uint32_t z;
+
+            fprintf(f, "  A0=%08x A1=%08x  A2=%08x A3=%08x A4=%08x\n",
+                    (unsigned)q9_board_read32(b, 0x144040u),
+                    (unsigned)q9_board_read32(b, 0x144044u),
+                    (unsigned)q9_board_read32(b, 0x144048u),
+                    (unsigned)q9_board_read32(b, 0x14404Cu),
+                    (unsigned)q9_board_read32(b, 0x144050u));
+            fputs("  D0-D7:", f);
+            for (z = 0u; z < 8u; z++) {
+                fprintf(f, " %08x", (unsigned)q9_board_read32(b, 0x144054u + z * 4u));
+            }
+            fputs("\n  Stack ab SP:", f);
+            for (z = 0u; z < 16u; z++) {
+                if (z == 8u) {
+                    fputs("\n              ", f);
+                }
+                fprintf(f, " %08x", (unsigned)q9_board_read32(b, 0x144080u + z * 4u));
+            }
+            fputc('\n', f);
+        }
         fputs("--- Ende Exception-Mitschrift ---\n", f);
     }
 
@@ -398,17 +481,6 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
     {
         uint32_t tb = q9_board_read32(b, 0x68u);
         uint32_t v;
-    {   /* Wer hat Vektor 27 geschrieben? s. Schreib-Watch in m68krt.c */
-        uint32_t z;
-        fprintf(f, "\n--- Schreibzugriffe auf Vektorslot 27 ($46C): %u ---\n",
-                (unsigned)q9_dbg_wv_n);
-        for (z = 0; z < q9_dbg_wv_n && z < 8u; z++) {
-            fprintf(f, "    pc=%08x schrieb %08x (%u Byte)\n",
-                    (unsigned)q9_dbg_wv_pc[z], (unsigned)q9_dbg_wv_val[z],
-                    (unsigned)q9_dbg_wv_size[z]);
-        }
-    }
-
         fprintf(f, "\n--- Vektorslots mit Ziel im IRQ-Dispatcher (Tabelle @%08x) ---\n",
                 (unsigned)tb);
         if (tb != 0u && tb < BOARD_RAM_BYTES) {

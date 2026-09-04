@@ -418,23 +418,47 @@ unsigned int m68k_read_memory_32(unsigned int address)
    alle anderen korrekt auf dessen Einstieg zeigen -- gesucht ist, WER den
    Wert dorthin schreibt. */
 uint32_t q9_dbg_wv_n = 0u;
-uint32_t q9_dbg_wv_pc[8];
-uint32_t q9_dbg_wv_val[8];
-uint32_t q9_dbg_wv_size[8];
+uint32_t q9_dbg_wv_pc[64];
+uint32_t q9_dbg_wv_val[64];
+uint32_t q9_dbg_wv_size[64];
+uint32_t q9_dbg_wv_adr[64];
+uint32_t q9_dbg_wv_seq[64];
+static uint32_t g_dbg_write_seq = 0u;   /* zaehlt ALLE Schreibzugriffe -- monotone Zeitachse */
 static uint32_t g_dbg_watch_addr = 0u;
+static uint32_t g_dbg_watch_len  = 0u;
+
+uint32_t q9_dbg_write_seq_now(void) { return g_dbg_write_seq; }
 
 static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int size)
 {
+    g_dbg_write_seq++;
+
     /* Beobachtete Adresse -- ueber die Umgebung setzbar, damit der Watch ohne
        Neuuebersetzung auf ein anderes Feld gelegt werden kann. */
     if (g_dbg_watch_addr == 0u) {
         const char *e = getenv("Q9_WATCH_ADDR");
+        const char *l = getenv("Q9_WATCH_LEN");
         g_dbg_watch_addr = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
+        g_dbg_watch_len  = l ? (uint32_t)strtoul(l, 0, 0) : 1u;
+        if (g_dbg_watch_len == 0u) {
+            g_dbg_watch_len = 1u;
+        }
     }
-    if (address <= g_dbg_watch_addr && address + size > g_dbg_watch_addr && q9_dbg_wv_n < 8u) {
-        q9_dbg_wv_pc[q9_dbg_wv_n]   = (uint32_t)m68k_get_reg(NULL, M68K_REG_PPC);
-        q9_dbg_wv_val[q9_dbg_wv_n]  = (uint32_t)value;
-        q9_dbg_wv_size[q9_dbg_wv_n] = size;
+    /* Ueberlappt der Zugriff [address,address+size) das Fenster
+       [addr,addr+len)? Ein Fenster statt einer einzelnen Adresse, weil die
+       Geraetestatik bei jeder Aenderung der Bootdateigroesse verrutscht --
+       eine feste Adresse ging deshalb zuletzt schlicht ins Leere. */
+    if (address < g_dbg_watch_addr + g_dbg_watch_len &&
+        address + size > g_dbg_watch_addr) {
+        /* Ringpuffer: die JUENGSTEN 64 Treffer bleiben stehen. Bei einem oft
+           beschriebenen Feld (z.B. D_Proc bei jedem Prozesswechsel) waren die
+           ersten 64 Treffer sonst laengst vor dem interessanten Moment voll. */
+        uint32_t i = q9_dbg_wv_n % 64u;
+        q9_dbg_wv_pc[i]   = (uint32_t)m68k_get_reg(NULL, M68K_REG_PPC);
+        q9_dbg_wv_val[i]  = (uint32_t)value;
+        q9_dbg_wv_size[i] = size;
+        q9_dbg_wv_adr[i]  = (uint32_t)address;
+        q9_dbg_wv_seq[i]  = g_dbg_write_seq;
         q9_dbg_wv_n++;
     }
 }
@@ -442,6 +466,8 @@ static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int 
 void m68k_write_memory_8(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
+
+    q9_dbg_watch(address, value, 1u);
 
     if (ram_fast_hit(address, 0)) {
         g_board->ram[address] = (uint8_t)value;
