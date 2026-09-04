@@ -308,9 +308,12 @@ extern uint32_t q9_dbg_wake_enter;
 extern uint32_t q9_dbg_wake_send;
 
 extern uint32_t q9_dbg_wv_n;
-extern uint32_t q9_dbg_wv_pc[8];
-extern uint32_t q9_dbg_wv_val[8];
-extern uint32_t q9_dbg_wv_size[8];
+extern uint32_t q9_dbg_wv_pc[64];
+extern uint32_t q9_dbg_wv_val[64];
+extern uint32_t q9_dbg_wv_size[64];
+extern uint32_t q9_dbg_wv_adr[64];
+extern uint32_t q9_dbg_wv_seq[64];
+extern uint32_t q9_dbg_write_seq_now(void);
 extern uint32_t q9_dbg_tr_head;
 extern uint32_t q9_dbg_tr_fill;
 extern int      q9_dbg_tr_frozen;
