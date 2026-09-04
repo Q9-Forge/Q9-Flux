@@ -194,6 +194,12 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
 
         fprintf(f, "\n--- DUART/IRQ-Zustand ---\n  IMR=%02x  IVR=%02x\n",
                 (unsigned)b->uart_imr, (unsigned)b->uart_ivr);
+        /* Steht wirklich etwas im Empfangs-FIFO? Bei IMR-Bit1 (RxRDY) meldet
+           die Emulation genau dann Interrupt -- ein voller FIFO, den niemand
+           leert, ergibt einen Dauerinterrupt. */
+        fprintf(f, "  RX-FIFO: count=%u head=%u tail=%u overflow=%u\n",
+                (unsigned)b->uart_rx_count, (unsigned)b->uart_rx_head,
+                (unsigned)b->uart_rx_tail, (unsigned)b->uart_rx_overflow);
         fputs("  Polling-Tabelle (belegte Eintraege):\n", f);
         for (i = 0; i < 16u; i++) {
             uint32_t e   = 0x1500u + i * 20u;
@@ -205,6 +211,25 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                         (unsigned)q9_board_read32(b, e + 8u),
                         (unsigned)q9_board_read32(b, e + 12u),
                         (unsigned)q9_board_read32(b, e + 16u));
+            }
+        }
+        {
+            extern uint32_t q9_dbg_ackvec[256], q9_dbg_acklevel[8];
+            uint32_t k;
+
+            fputs("  Interrupt-Acknowledge -- gelieferte Vektoren:\n", f);
+            for (k = 0; k < 256u; k++) {
+                if (q9_dbg_ackvec[k]) {
+                    fprintf(f, "    Vektor %3u : %u mal\n", (unsigned)k,
+                            (unsigned)q9_dbg_ackvec[k]);
+                }
+            }
+            fputs("  ... nach Pegel:\n", f);
+            for (k = 0; k < 8u; k++) {
+                if (q9_dbg_acklevel[k]) {
+                    fprintf(f, "    Level %u : %u mal\n", (unsigned)k,
+                            (unsigned)q9_dbg_acklevel[k]);
+                }
             }
         }
         fputs("--- Ende DUART/IRQ-Zustand ---\n", f);
