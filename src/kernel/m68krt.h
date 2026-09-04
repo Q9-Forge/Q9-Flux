@@ -298,6 +298,11 @@ extern uint32_t q9_dbg_exi_n;
 extern uint32_t q9_dbg_tmr_total;
 extern uint32_t q9_dbg_tmr_indisp;
 extern uint32_t q9_dbg_tmr_pcs[8];
+
+extern uint32_t q9_dbg_wv_n;
+extern uint32_t q9_dbg_wv_pc[8];
+extern uint32_t q9_dbg_wv_val[8];
+extern uint32_t q9_dbg_wv_size[8];
 extern uint32_t q9_dbg_tr_head;
 extern uint32_t q9_dbg_tr_fill;
 extern int      q9_dbg_tr_frozen;

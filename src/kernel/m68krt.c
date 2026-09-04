@@ -407,6 +407,25 @@ unsigned int m68k_read_memory_32(unsigned int address)
            ((unsigned int)g_ram[address + 2] <<  8) |  (unsigned int)g_ram[address + 3];
 }
 
+/* Diagnose (2026-09-04): Schreib-Watch auf einen einzelnen Vektorslot.
+   Vektor 27 zeigte 50 Byte zu tief in den IRQ-Dispatcher hinein, waehrend
+   alle anderen korrekt auf dessen Einstieg zeigen -- gesucht ist, WER den
+   Wert dorthin schreibt. */
+uint32_t q9_dbg_wv_n = 0u;
+uint32_t q9_dbg_wv_pc[8];
+uint32_t q9_dbg_wv_val[8];
+uint32_t q9_dbg_wv_size[8];
+
+static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int size)
+{
+    if (address <= 0x46Cu && address + size > 0x46Cu && q9_dbg_wv_n < 8u) {
+        q9_dbg_wv_pc[q9_dbg_wv_n]   = (uint32_t)m68k_get_reg(NULL, M68K_REG_PPC);
+        q9_dbg_wv_val[q9_dbg_wv_n]  = (uint32_t)value;
+        q9_dbg_wv_size[q9_dbg_wv_n] = size;
+        q9_dbg_wv_n++;
+    }
+}
+
 void m68k_write_memory_8(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
@@ -432,6 +451,8 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
 
+    q9_dbg_watch(address, value, 2u);
+
     if (ram_fast_hit(address, 1)) {
         g_board->ram[address]     = (uint8_t)(value >> 8);
         g_board->ram[address + 1] = (uint8_t)value;
@@ -455,6 +476,8 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
 void m68k_write_memory_32(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
+
+    q9_dbg_watch(address, value, 4u);
 
     if (ram_fast_hit(address, 3)) {
         g_board->ram[address]     = (uint8_t)(value >> 24);
