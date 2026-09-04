@@ -252,6 +252,14 @@ static inline int ram_fast_hit(uint32_t address, uint32_t span)
 uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];
+
+/* Stackbereich ZUM ZEITPUNKT jedes Dispatcher-Eintritts. Die Lage des
+   Exception-Frames wird damit ABGELESEN statt angenommen -- zwei Versuche,
+   sie zu erraten (sp+2 bzw. sp+62), lieferten beide Unsinn. */
+uint32_t q9_dbg_ent_sp[Q9_DBG_ENT_MAX];
+uint16_t q9_dbg_ent_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
+uint32_t q9_dbg_ent_n = 0u;
 uint32_t q9_dbg_tr_head   = 0u;
 uint32_t q9_dbg_tr_fill   = 0u;
 int      q9_dbg_tr_frozen = 0;
@@ -270,6 +278,24 @@ static void q9_dbg_instr_hook(unsigned int pc)
     q9_dbg_tr_pc[q9_dbg_tr_head] = (uint32_t)pc;
     q9_dbg_tr_d0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
     q9_dbg_tr_a0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
+    q9_dbg_tr_sp[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+    /* Beim Eintritt in Q9K_IRQDispatch den Exception-Frame gleich MITLESEN.
+       Ihn erst im Ctrl-^-Dump zu lesen ist wertlos: der Dump kommt Sekunden
+       spaeter, der Stackinhalt ist dann laengst ein anderer (real erlebt --
+       alle Eintraege sahen identisch aus, weil derselbe aktuelle Speicher
+       gelesen wurde). Der gemeldete SP ist der Stand NACH dem einleitenden
+       "movem.l d0-d7/a0-a6,-(sp)" (60 Byte), der Frame liegt also bei +60:
+       SR, dann PC, dann das Format-/Vektor-Wort. */
+    if (pc == 0x795cu && q9_dbg_ent_n < Q9_DBG_ENT_MAX) {
+        uint32_t fsp = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+        uint32_t w;
+
+        q9_dbg_ent_sp[q9_dbg_ent_n] = fsp;
+        for (w = 0; w < Q9_DBG_ENT_WORDS; w++) {
+            q9_dbg_ent_stk[q9_dbg_ent_n][w] = (uint16_t)m68k_read_memory_16(fsp + w * 2u);
+        }
+        q9_dbg_ent_n++;
+    }
     q9_dbg_tr_head = (q9_dbg_tr_head + 1u) % Q9_DBG_TR_SIZE;
     if (q9_dbg_tr_fill < Q9_DBG_TR_SIZE) {
         q9_dbg_tr_fill++;

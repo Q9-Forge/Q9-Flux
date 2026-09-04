@@ -275,6 +275,13 @@ void q9_m68krt_get_backend(q9_m68krt_t *rt, q9_cpu_backend_t *backend);
 extern uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];       /* a7 -- macht den Exception-Frame lesbar */
+
+#define Q9_DBG_ENT_MAX   24u
+#define Q9_DBG_ENT_WORDS 40u
+extern uint32_t q9_dbg_ent_sp[Q9_DBG_ENT_MAX];
+extern uint16_t q9_dbg_ent_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
+extern uint32_t q9_dbg_ent_n;
 extern uint32_t q9_dbg_tr_head;
 extern uint32_t q9_dbg_tr_fill;
 extern int      q9_dbg_tr_frozen;
