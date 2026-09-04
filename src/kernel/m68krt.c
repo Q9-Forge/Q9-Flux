@@ -437,6 +437,8 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 //           Autovektor Level 3).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint32_t g_ack_count;                          /* Diagnose: wie oft wurde IACK durchlaufen */
+uint32_t q9_dbg_ackvec[256];                          /* Diagnose: Vektoren beim IACK, s. u. */
+uint32_t q9_dbg_acklevel[8];                          /* Diagnose: Pegel beim IACK           */
 static uint32_t g_quicc_ack_count;                    /* 5.15-Diagnose: davon QUICC (Level 5)     */
 
 /* 5.15-Befund: echte Hardware haelt pro Geraet eine EIGENE IRQ-Leitung; quittiert die CPU
@@ -504,6 +506,13 @@ static int m68krt_board_int_ack(int int_level)
     /* deshalb nie hier landet, s. q9board.c timer_dev_*-Kommentar).                             */
 
     m68krt_reassert_pending_irq();                     /* 5.15: sofort statt erst naechste Runde  */
+    /* Diagnose (2026-09-04): welchen Vektor bekommt die CPU wirklich? Ein
+       Geraet ohne gesetztes IVR liefert hier 0 -- die CPU vektorisiert dann
+       ueber Slot 0 (Reset-SP), was nie gewollt ist. */
+    if (vector >= 0 && vector < 256) {
+        q9_dbg_ackvec[vector]++;
+    }
+    q9_dbg_acklevel[int_level & 7]++;
     return vector;
 }
 
