@@ -299,6 +299,14 @@ extern uint32_t q9_dbg_tmr_total;
 extern uint32_t q9_dbg_tmr_indisp;
 extern uint32_t q9_dbg_tmr_pcs[8];
 
+/* Zaehlt zwei Punkte im Weckpfad der sc68681-ISR: den Eintritt in den Block
+   (liest die Prozess-ID) und das F$Send-Trampolin dahinter. Werden beide
+   gleich oft erreicht, sendet der Treiber wirklich; wird nur der erste
+   erreicht, ist die ID 0 -- der Treiber weiss dann gar nicht, wen er wecken
+   soll. Adressen sind buildabhaengig, s. Kommentar am Setzort. */
+extern uint32_t q9_dbg_wake_enter;
+extern uint32_t q9_dbg_wake_send;
+
 extern uint32_t q9_dbg_wv_n;
 extern uint32_t q9_dbg_wv_pc[8];
 extern uint32_t q9_dbg_wv_val[8];
