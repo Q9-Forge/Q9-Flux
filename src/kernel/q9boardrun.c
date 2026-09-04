@@ -332,9 +332,9 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                 q9_dbg_tr_frozen, (unsigned)q9_dbg_tr_fill);
         for (k = 0; k < q9_dbg_tr_fill; k++) {
             uint32_t idx = (q9_dbg_tr_head + Q9_DBG_TR_SIZE - q9_dbg_tr_fill + k) % Q9_DBG_TR_SIZE;
-            fprintf(f, "  pc=%08x d0=%08x a0=%08x\n",
+            fprintf(f, "  pc=%08x d0=%08x a0=%08x sp=%08x\n",
                     (unsigned)q9_dbg_tr_pc[idx], (unsigned)q9_dbg_tr_d0[idx],
-                    (unsigned)q9_dbg_tr_a0[idx]);
+                    (unsigned)q9_dbg_tr_a0[idx], (unsigned)q9_dbg_tr_sp[idx]);
         }
         fputs("--- Ende Instruktionsspur ---\n", f);
 
@@ -375,6 +375,20 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                 }
                 fputs("--- Ende Stack vor dem RTE ---\n", f);
             }
+
+                /* Wo schlaegt der Board-Timer zu? Trifft er einen PC INNERHALB des
+                   IRQ-Dispatchers, wird dessen halb aufgebauter Stack im
+                   Prozessdeskriptor gesichert und spaeter wieder aufgesetzt -- genau
+                   das erklaert einen Dispatcher-Ausgang ohne zugehoerigen Eingang. */
+                {
+                    uint32_t t;
+
+                    fprintf(f, "\n--- Timer-Interrupts: %u gesamt, davon %u im IRQ-Dispatcher ---\n",
+                            (unsigned)q9_dbg_tmr_total, (unsigned)q9_dbg_tmr_indisp);
+                    for (t = 0; t < q9_dbg_tmr_indisp && t < 8u; t++) {
+                        fprintf(f, "    unterbrochener PC: %08x\n", (unsigned)q9_dbg_tmr_pcs[t]);
+                    }
+                }
     }
 
     uint32_t v0 = q9_board_read32(b, 0);

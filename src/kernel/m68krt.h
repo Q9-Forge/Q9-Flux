@@ -290,6 +290,14 @@ extern uint32_t q9_dbg_ent_n;
 extern uint32_t q9_dbg_exi_sp[Q9_DBG_ENT_MAX];
 extern uint16_t q9_dbg_exi_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
 extern uint32_t q9_dbg_exi_n;
+
+/* Zaehlt, wo der Board-Timer (Q9K_TimerIRQHandler) zuschlaegt: unterbricht er
+   je einen PC INNERHALB des IRQ-Dispatchers, wird dessen halb aufgebauter
+   Stack im Prozessdeskriptor gesichert und spaeter wieder aufgesetzt -- das
+   erklaert einen Dispatcher-Ausgang ohne zugehoerigen Eingang. */
+extern uint32_t q9_dbg_tmr_total;
+extern uint32_t q9_dbg_tmr_indisp;
+extern uint32_t q9_dbg_tmr_pcs[8];
 extern uint32_t q9_dbg_tr_head;
 extern uint32_t q9_dbg_tr_fill;
 extern int      q9_dbg_tr_frozen;

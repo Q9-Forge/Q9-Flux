@@ -263,6 +263,9 @@ uint32_t q9_dbg_ent_n = 0u;
 uint32_t q9_dbg_exi_sp[Q9_DBG_ENT_MAX];
 uint16_t q9_dbg_exi_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
 uint32_t q9_dbg_exi_n = 0u;
+uint32_t q9_dbg_tmr_total = 0u;
+uint32_t q9_dbg_tmr_indisp = 0u;
+uint32_t q9_dbg_tmr_pcs[8];
 uint32_t q9_dbg_tr_head   = 0u;
 uint32_t q9_dbg_tr_fill   = 0u;
 int      q9_dbg_tr_frozen = 0;
@@ -298,6 +301,18 @@ static void q9_dbg_instr_hook(unsigned int pc)
             q9_dbg_ent_stk[q9_dbg_ent_n][w] = (uint16_t)m68k_read_memory_16(fsp + w * 2u);
         }
         q9_dbg_ent_n++;
+    }
+    if (pc == 0x75a2u) {                                    /* Q9K_TimerIRQHandler */
+        uint32_t tsp  = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+        uint32_t tfpc = m68k_read_memory_32(tsp + 2u);
+
+        q9_dbg_tmr_total++;
+        if (tfpc >= 0x795cu && tfpc <= 0x79deu) {           /* mitten im IRQ-Dispatcher */
+            if (q9_dbg_tmr_indisp < 8u) {
+                q9_dbg_tmr_pcs[q9_dbg_tmr_indisp] = tfpc;
+            }
+            q9_dbg_tmr_indisp++;
+        }
     }
     if (pc == 0x79deu && q9_dbg_exi_n < Q9_DBG_ENT_MAX) {   /* unmittelbar vor dem RTE */
         uint32_t fsp = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
