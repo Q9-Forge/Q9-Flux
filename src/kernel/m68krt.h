@@ -271,7 +271,7 @@ void q9_m68krt_get_backend(q9_m68krt_t *rt, q9_cpu_backend_t *backend);
   ein "bsr", das gar keinen Datenspeicher liest). Fuer "welcher Befehl war
   das?" ist DIESE Spur das richtige Werkzeug, nicht der PC am Speicherzugriff.
   ───────────────────────────────────────────────────────────────────────────*/
-#define Q9_DBG_TR_SIZE 4096u
+#define Q9_DBG_TR_SIZE 24576u
 extern uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
