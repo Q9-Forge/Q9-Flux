@@ -337,6 +337,25 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                     (unsigned)q9_dbg_tr_a0[idx]);
         }
         fputs("--- Ende Instruktionsspur ---\n", f);
+
+        /* Stackbereich bei jedem Dispatcher-Eintritt, ZUM ZEITPUNKT des
+           Eintritts im Hook gesichert (s. m68krt.c). Daran laesst sich die
+           Lage des Exception-Frames ablesen: gesucht ist das Format-/Vektor-
+           Wort, davor stehen PC und SR des unterbrochenen Codes. */
+        if (q9_dbg_ent_n != 0u) {
+            uint32_t e, w;
+
+            fprintf(f, "\n--- Stack bei Dispatcher-Eintritt (%u erfasst) ---\n",
+                    (unsigned)q9_dbg_ent_n);
+            for (e = 0; e < q9_dbg_ent_n; e++) {
+                fprintf(f, "  [%2u] sp=%08x:", (unsigned)e, (unsigned)q9_dbg_ent_sp[e]);
+                for (w = 0; w < Q9_DBG_ENT_WORDS; w++) {
+                    fprintf(f, " %04x", (unsigned)q9_dbg_ent_stk[e][w]);
+                }
+                fputc(0x0a, f);
+            }
+            fputs("--- Ende Stack bei Eintritt ---\n", f);
+        }
     }
 
     uint32_t v0 = q9_board_read32(b, 0);
