@@ -388,6 +388,36 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                     for (t = 0; t < q9_dbg_tmr_indisp && t < 8u; t++) {
                         fprintf(f, "    unterbrochener PC: %08x\n", (unsigned)q9_dbg_tmr_pcs[t]);
                     }
+
+    /* Exception-Vektortabelle: welche Slots zeigen in den IRQ-Dispatcher?
+       Ein Slot, der NICHT auf dessen Einstieg ($795c) zeigt, sondern
+       mitten hinein, erklaert einen Durchlauf ohne einleitendes movem. */
+    {
+        uint32_t tb = q9_board_read32(b, 0x68u);
+        uint32_t v;
+    {   /* Wer hat Vektor 27 geschrieben? s. Schreib-Watch in m68krt.c */
+        uint32_t z;
+        fprintf(f, "\n--- Schreibzugriffe auf Vektorslot 27 ($46C): %u ---\n",
+                (unsigned)q9_dbg_wv_n);
+        for (z = 0; z < q9_dbg_wv_n && z < 8u; z++) {
+            fprintf(f, "    pc=%08x schrieb %08x (%u Byte)\n",
+                    (unsigned)q9_dbg_wv_pc[z], (unsigned)q9_dbg_wv_val[z],
+                    (unsigned)q9_dbg_wv_size[z]);
+        }
+    }
+
+        fprintf(f, "\n--- Vektorslots mit Ziel im IRQ-Dispatcher (Tabelle @%08x) ---\n",
+                (unsigned)tb);
+        if (tb != 0u && tb < BOARD_RAM_BYTES) {
+            for (v = 0; v < 256u; v++) {
+                uint32_t h = q9_board_read32(b, tb + v * 4u);
+                if (h >= 0x7950u && h <= 0x79e0u) {
+                    fprintf(f, "    Vektor %3u -> %08x%s\n", (unsigned)v, (unsigned)h,
+                            (h == 0x795cu) ? "  (Einstieg, ok)" : "  <== MITTEN HINEIN");
+                }
+            }
+        }
+    }
                 }
     }
 
