@@ -389,6 +389,9 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                         fprintf(f, "    unterbrochener PC: %08x\n", (unsigned)q9_dbg_tmr_pcs[t]);
                     }
 
+    fprintf(f, "--- Weckpfad der sc68681-ISR: Block betreten %u mal, F$Send %u mal ---\n",
+            (unsigned)q9_dbg_wake_enter, (unsigned)q9_dbg_wake_send);
+
     /* Exception-Vektortabelle: welche Slots zeigen in den IRQ-Dispatcher?
        Ein Slot, der NICHT auf dessen Einstieg ($795c) zeigt, sondern
        mitten hinein, erklaert einen Durchlauf ohne einleitendes movem. */

@@ -266,6 +266,8 @@ uint32_t q9_dbg_exi_n = 0u;
 uint32_t q9_dbg_tmr_total = 0u;
 uint32_t q9_dbg_tmr_indisp = 0u;
 uint32_t q9_dbg_tmr_pcs[8];
+uint32_t q9_dbg_wake_enter = 0u;
+uint32_t q9_dbg_wake_send  = 0u;
 uint32_t q9_dbg_tr_head   = 0u;
 uint32_t q9_dbg_tr_fill   = 0u;
 int      q9_dbg_tr_frozen = 0;
@@ -302,6 +304,10 @@ static void q9_dbg_instr_hook(unsigned int pc)
         }
         q9_dbg_ent_n++;
     }
+    /* Weckpfad der sc68681-ISR (Adressen fuer den aktuellen Build):
+       $ca30 = "move.w $8(a2),d0" (Prozess-ID holen), $ca3e = F$Send-Trampolin. */
+    if (pc == 0x0ca30u) { q9_dbg_wake_enter++; }
+    if (pc == 0x0ca3eu) { q9_dbg_wake_send++; }
     if (pc == 0x75a2u) {                                    /* Q9K_TimerIRQHandler */
         uint32_t tsp  = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
         uint32_t tfpc = m68k_read_memory_32(tsp + 2u);
