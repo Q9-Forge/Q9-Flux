@@ -421,10 +421,17 @@ uint32_t q9_dbg_wv_n = 0u;
 uint32_t q9_dbg_wv_pc[8];
 uint32_t q9_dbg_wv_val[8];
 uint32_t q9_dbg_wv_size[8];
+static uint32_t g_dbg_watch_addr = 0u;
 
 static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int size)
 {
-    if (address <= 0x46Cu && address + size > 0x46Cu && q9_dbg_wv_n < 8u) {
+    /* Beobachtete Adresse -- ueber die Umgebung setzbar, damit der Watch ohne
+       Neuuebersetzung auf ein anderes Feld gelegt werden kann. */
+    if (g_dbg_watch_addr == 0u) {
+        const char *e = getenv("Q9_WATCH_ADDR");
+        g_dbg_watch_addr = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
+    }
+    if (address <= g_dbg_watch_addr && address + size > g_dbg_watch_addr && q9_dbg_wv_n < 8u) {
         q9_dbg_wv_pc[q9_dbg_wv_n]   = (uint32_t)m68k_get_reg(NULL, M68K_REG_PPC);
         q9_dbg_wv_val[q9_dbg_wv_n]  = (uint32_t)value;
         q9_dbg_wv_size[q9_dbg_wv_n] = size;
