@@ -314,6 +314,11 @@ extern uint32_t q9_dbg_wv_size[64];
 extern uint32_t q9_dbg_wv_adr[64];
 extern uint32_t q9_dbg_wv_seq[64];
 extern uint32_t q9_dbg_write_seq_now(void);
+/* Frei waehlbare PC-Zaehler, s. Q9_COUNT_PC in m68krt.c. */
+#define Q9_DBG_CPC_MAX 16
+extern uint32_t q9_dbg_cpc_addr[Q9_DBG_CPC_MAX];
+extern uint32_t q9_dbg_cpc_hits[Q9_DBG_CPC_MAX];
+extern uint32_t q9_dbg_cpc_n;
 extern uint32_t q9_dbg_tr_head;
 extern uint32_t q9_dbg_tr_fill;
 extern int      q9_dbg_tr_frozen;

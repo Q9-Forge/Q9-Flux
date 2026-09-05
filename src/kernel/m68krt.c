@@ -272,6 +272,31 @@ uint32_t q9_dbg_tr_head   = 0u;
 uint32_t q9_dbg_tr_fill   = 0u;
 int      q9_dbg_tr_frozen = 0;
 
+/* Frei waehlbare PC-Zaehler (Q9_COUNT_PC, kommagetrennte Adressliste).
+   Beantwortet die Frage "welcher Zweig wird genommen?" in EINEM Lauf --
+   anders als der Ring, der nur zeigt, was VOR einem Einfrieren lief. */
+uint32_t q9_dbg_cpc_addr[Q9_DBG_CPC_MAX];
+uint32_t q9_dbg_cpc_hits[Q9_DBG_CPC_MAX];
+uint32_t q9_dbg_cpc_n = 0u;
+
+static void q9_dbg_cpc_init(void)
+{
+    const char *e = getenv("Q9_COUNT_PC");
+    static int done = 0;
+
+    if (done) { return; }
+    done = 1;
+    while (e && *e && q9_dbg_cpc_n < (uint32_t)Q9_DBG_CPC_MAX) {
+        char *end = 0;
+        unsigned long v = strtoul(e, &end, 0);
+        if (end == e) { break; }
+        q9_dbg_cpc_addr[q9_dbg_cpc_n] = (uint32_t)v;
+        q9_dbg_cpc_hits[q9_dbg_cpc_n] = 0u;
+        q9_dbg_cpc_n++;
+        e = (*end == ',') ? end + 1 : end;
+    }
+}
+
 static void q9_dbg_instr_hook(unsigned int pc)
 {
     if (q9_dbg_tr_frozen) {
@@ -330,6 +355,12 @@ static void q9_dbg_instr_hook(unsigned int pc)
         }
         q9_dbg_exi_n++;
     }
+    {   /* frei waehlbare Zaehler, s. oben */
+        uint32_t k;
+        for (k = 0u; k < q9_dbg_cpc_n; k++) {
+            if ((uint32_t)pc == q9_dbg_cpc_addr[k]) { q9_dbg_cpc_hits[k]++; }
+        }
+    }
     q9_dbg_tr_head = (q9_dbg_tr_head + 1u) % Q9_DBG_TR_SIZE;
     if (q9_dbg_tr_fill < Q9_DBG_TR_SIZE) {
         q9_dbg_tr_fill++;
@@ -344,6 +375,7 @@ void q9_dbg_instr_trace_init(void)
     const char *env = getenv("Q9_TRACE_INSTR");
 
     if (env && env[0] == '1') {
+        q9_dbg_cpc_init();
         m68k_set_instr_hook_callback(q9_dbg_instr_hook);
     }
 }

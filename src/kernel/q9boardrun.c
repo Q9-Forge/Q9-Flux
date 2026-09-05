@@ -197,6 +197,36 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         }
     }
 
+    {   /* Wohin zeigen die I$-Slots wirklich? Verlaesslicher als jede
+           Disassemblierung von Hand: die Dispatch-Tabellen stehen in
+           D_SysDis ($3a4) / D_UsrDis ($3a8), der Eintrag eines Dienstes bei
+           Basis + Callcode*4. */
+        uint32_t sysdis = q9_board_read32(b, 0x3a4u);
+        uint32_t usrdis = q9_board_read32(b, 0x3a8u);
+        static const unsigned codes[] = { 0x84u, 0x89u, 0x8au, 0x8bu, 0x8cu };
+        unsigned k;
+
+        fprintf(f, "I$-Dispatch-Slots (SysDis @%08x / UsrDis @%08x):\n",
+                (unsigned)sysdis, (unsigned)usrdis);
+        for (k = 0; k < sizeof codes / sizeof codes[0]; k++) {
+            fprintf(f, "    $%02x: sys=%08x  usr=%08x\n", codes[k],
+                    (unsigned)q9_board_read32(b, sysdis + codes[k] * 4u),
+                    (unsigned)q9_board_read32(b, usrdis + codes[k] * 4u));
+        }
+    }
+
+    {   /* Frei waehlbare PC-Zaehler (Q9_COUNT_PC), s. m68krt.c */
+        uint32_t k;
+        if (q9_dbg_cpc_n > 0u) {
+            fputs("PC-Zaehler (Q9_COUNT_PC):", f);
+            for (k = 0u; k < q9_dbg_cpc_n; k++) {
+                fprintf(f, " %08x=%u", (unsigned)q9_dbg_cpc_addr[k],
+                        (unsigned)q9_dbg_cpc_hits[k]);
+            }
+            fputc('\n', f);
+        }
+    }
+
     {   /* Diagnose-Scratchzellen des eigenen Kernels ($1600-$1620) -- die
            Syscall-Bruecken legen dort Ein-/Ausgabewerte ab (s.
            Q9K_SEND_SCRATCH_* in q9kernel_procsleep.c). */
