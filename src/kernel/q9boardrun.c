@@ -186,8 +186,10 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                     fprintf(f, " <unplausibel %08x>", (unsigned)node);
                     break;
                 }
-                fprintf(f, " %08x('%c')", (unsigned)node,
-                        (int)q9_board_read8(b, node + 0x1du));
+                fprintf(f, " %08x(P$State=%04x '%c' P$Signal=%04x)", (unsigned)node,
+                        (unsigned)q9_board_read16(b, node + 0x1cu),
+                        (int)q9_board_read8(b, node + 0x1du),
+                        (unsigned)q9_board_read16(b, node + 0x26u));
                 node = q9_board_read32(b, node + 0x30u);
             }
             if (guard == 0u) {
@@ -230,6 +232,37 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
             fprintf(f, "    $%02x: sys=%08x  usr=%08x\n", codes[k],
                     (unsigned)q9_board_read32(b, sysdis + codes[k] * 4u),
                     (unsigned)q9_board_read32(b, usrdis + codes[k] * 4u));
+        }
+    }
+
+    {   /* Laufender Prozess: P$State ist im echten Layout ein WORT bei +$1c
+           (MWOS/OS9/SRC/DEFS/process.a). sc68681 prueft nach dem Aufwachen
+           dessen Bit 1 im OBEREN Byte und bricht dann ab. */
+        uint32_t cur = q9_board_read32(b, 0x4cu);
+        fprintf(f, "D_Proc=%08x  P$State=%04x  P$Signal=%04x\n",
+                (unsigned)cur,
+                cur ? (unsigned)q9_board_read16(b, cur + 0x1cu) : 0u,
+                cur ? (unsigned)q9_board_read16(b, cur + 0x26u) : 0u);
+    }
+
+    {   /* Statischer Speicher des Konsolentreibers (V_STAT aus dem ersten
+           Geraetetabelleneintrag). sc68681 haelt dort u.a. seinen
+           Eingabe-Ringpuffer und die Flusskontroll-Flags -- ohne Blick
+           darauf ist jede Aussage ueber "Puffer leer" Spekulation. */
+        uint32_t devtbl = q9_board_read32(b, 0x80u);
+        uint32_t vstat  = devtbl ? q9_board_read32(b, devtbl + 4u) : 0u;
+        uint32_t r;
+
+        fprintf(f, "Treiber-Statik V_STAT=%08x:\n", (unsigned)vstat);
+        if (vstat) {
+            for (r = 0; r < 0x90u; r += 16u) {
+                unsigned c;
+                fprintf(f, "  +%02x:", (unsigned)r);
+                for (c = 0; c < 16u; c++) {
+                    fprintf(f, " %02x", (unsigned)q9_board_read8(b, vstat + r + c));
+                }
+                fputc('\n', f);
+            }
         }
     }
 
