@@ -465,6 +465,23 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
             }
             fputc('\n', f);
         }
+        {   /* Code rund um den Exception-PC direkt aus dem LAUFENDEN Speicher.
+               Die Moduldatei zu disassemblieren fuehrt in die Irre, sobald
+               ueber die Instruktionsgrenzen Unklarheit besteht -- hier steht,
+               was die CPU wirklich vorgefunden hat. */
+            uint32_t base = (pc >= 24u) ? (pc - 24u) : 0u;
+            uint32_t z;
+
+            fprintf(f, "  Code um den PC (ab %08x):\n", (unsigned)base);
+            for (z = 0; z < 48u; z += 16u) {
+                unsigned c;
+                fprintf(f, "    %08x:", (unsigned)(base + z));
+                for (c = 0; c < 16u; c += 2u) {
+                    fprintf(f, " %04x", (unsigned)q9_board_read16(b, base + z + c));
+                }
+                fputc('\n', f);
+            }
+        }
         fputs("--- Ende Exception-Mitschrift ---\n", f);
     }
 
