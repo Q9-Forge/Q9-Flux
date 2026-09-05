@@ -223,7 +223,7 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
            Basis + Callcode*4. */
         uint32_t sysdis = q9_board_read32(b, 0x3a4u);
         uint32_t usrdis = q9_board_read32(b, 0x3a8u);
-        static const unsigned codes[] = { 0x64u, 0x84u, 0x89u, 0x8au, 0x8bu, 0x8cu };
+        static const unsigned codes[] = { 0x00u, 0x03u, 0x0au, 0x28u, 0x64u, 0x84u };
         unsigned k;
 
         fprintf(f, "I$-Dispatch-Slots (SysDis @%08x / UsrDis @%08x):\n",
@@ -278,6 +278,16 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 fputc('\n', f);
             }
         }
+    }
+
+    {   /* Welcher Callcode landete zuletzt im Unimplemented-Stub, und wie oft
+           kam das vor? (Q9-OS legt beides ab $1730 ab, wenn die Diagnose
+           dort eingeschaltet ist.) Dazu der aktuelle Inhalt der
+           Callcode-Zelle $1370, die der Dispatcher beim Eintritt fuellt. */
+        fprintf(f, "Unimplemented: letzter Callcode=\$%02x  Anzahl=%u   ($1370 jetzt=$%02x)\n",
+                (unsigned)q9_board_read16(b, 0x1730u),
+                (unsigned)q9_board_read16(b, 0x1732u),
+                (unsigned)q9_board_read16(b, 0x1370u));
     }
 
     {   /* Frei waehlbare PC-Zaehler (Q9_COUNT_PC), s. m68krt.c */
