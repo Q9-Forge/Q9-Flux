@@ -368,6 +368,18 @@ static void q9_dbg_instr_hook(unsigned int pc)
     if (pc < 0x1000u) {
         q9_dbg_tr_frozen = 1;
     }
+    {   /* Freeze auf eine frei waehlbare Adresse (Q9_FREEZE_PC). Zeigt, WIE
+           der Code an eine bestimmte Stelle gelangt ist -- reine
+           Trefferzaehler koennen das nicht, sie kennen keine Reihenfolge. */
+        static uint32_t fpc = 0u;
+        if (fpc == 0u) {
+            const char *e = getenv("Q9_FREEZE_PC");
+            fpc = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
+        }
+        if ((uint32_t)pc == fpc) {
+            q9_dbg_tr_frozen = 1;
+        }
+    }
 }
 
 void q9_dbg_instr_trace_init(void)
