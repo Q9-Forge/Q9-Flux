@@ -235,6 +235,20 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         }
     }
 
+    {   /* Letzte Modulsuch-Anfrage (Q9-OS legt sie ab $1710 ab): Filter und
+           Name. Beantwortet "wonach sucht IOMan eigentlich?" */
+        uint32_t filt = q9_board_read32(b, 0x1710u);
+        char nm[13];
+        unsigned k;
+        for (k = 0; k < 12u; k++) {
+            unsigned ch = q9_board_read8(b, 0x1714u + k);
+            nm[k] = (ch >= 0x20u && ch < 0x7fu) ? (char)ch : (ch ? '?' : '\0');
+            if (!ch) { break; }
+        }
+        nm[12] = '\0';
+        fprintf(f, "Letzte Modulsuche: Filter=%04x Name=\"%s\"\n", (unsigned)filt, nm);
+    }
+
     {   /* Laufender Prozess: P$State ist im echten Layout ein WORT bei +$1c
            (MWOS/OS9/SRC/DEFS/process.a). sc68681 prueft nach dem Aufwachen
            dessen Bit 1 im OBEREN Byte und bricht dann ab. */
