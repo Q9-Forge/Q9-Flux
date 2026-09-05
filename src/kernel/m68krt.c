@@ -374,12 +374,20 @@ static void q9_dbg_instr_hook(unsigned int pc)
            der Code an eine bestimmte Stelle gelangt ist -- reine
            Trefferzaehler koennen das nicht, sie kennen keine Reihenfolge. */
         static uint32_t fpc = 0u;
+        static uint32_t fn  = 0u;   /* beim N-ten Treffer einfrieren (Q9_FREEZE_PC_N) */
+        static uint32_t seen = 0u;
         if (fpc == 0u) {
             const char *e = getenv("Q9_FREEZE_PC");
+            const char *n = getenv("Q9_FREEZE_PC_N");
             fpc = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
+            fn  = n ? (uint32_t)strtoul(n, 0, 0) : 1u;
+            if (fn == 0u) { fn = 1u; }
         }
         if ((uint32_t)pc == fpc) {
-            q9_dbg_tr_frozen = 1;
+            seen++;
+            if (seen >= fn) {
+                q9_dbg_tr_frozen = 1;
+            }
         }
     }
 }
