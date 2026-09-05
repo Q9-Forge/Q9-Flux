@@ -504,6 +504,19 @@ static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int 
         q9_dbg_wv_adr[i]  = (uint32_t)address;
         q9_dbg_wv_seq[i]  = g_dbg_write_seq;
         q9_dbg_wv_n++;
+        {   /* Optional den Instruktions-Ring beim Treffer einfrieren
+               (Q9_WATCH_FREEZE=1). Beantwortet "wer schreibt das und auf
+               welchem Weg?" -- der Watch allein nennt nur den PC, nicht den
+               Aufrufpfad dorthin. */
+            static int wf = -1;
+            if (wf < 0) {
+                const char *e = getenv("Q9_WATCH_FREEZE");
+                wf = e ? (int)strtol(e, 0, 0) : 0;   /* N = ab dem N-ten Treffer */
+            }
+            if (wf > 0 && (int)q9_dbg_wv_n >= wf) {
+                q9_dbg_tr_frozen = 1;
+            }
+        }
     }
 }
 
