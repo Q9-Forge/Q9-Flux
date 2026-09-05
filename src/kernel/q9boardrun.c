@@ -223,7 +223,7 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
            Basis + Callcode*4. */
         uint32_t sysdis = q9_board_read32(b, 0x3a4u);
         uint32_t usrdis = q9_board_read32(b, 0x3a8u);
-        static const unsigned codes[] = { 0x84u, 0x89u, 0x8au, 0x8bu, 0x8cu };
+        static const unsigned codes[] = { 0x64u, 0x84u, 0x89u, 0x8au, 0x8bu, 0x8cu };
         unsigned k;
 
         fprintf(f, "I$-Dispatch-Slots (SysDis @%08x / UsrDis @%08x):\n",
