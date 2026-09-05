@@ -290,6 +290,32 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 (unsigned)q9_board_read16(b, 0x1370u));
     }
 
+    {   /* Pfad-Deskriptor-Blocktabelle (D_PthDBT, $48) mit dem Lock-Feld
+           jedes Deskriptors. IOMans File-Manager-Wrapper (ioman+$14f8)
+           sperrt den Pfad ueber +$8 und gibt ihn nur frei, wenn der Wert
+           beim Rueckweg noch derselbe ist -- bleibt er stehen, scheitert
+           jeder weitere Open. */
+        uint32_t dbt = q9_board_read32(b, 0x48u);
+        unsigned k;
+
+        fprintf(f, "Pfad-Pool-Basis ($1214)=%08x  erster Deskriptor-Lock(+$8)=%04x\n",
+                (unsigned)q9_board_read32(b, 0x1214u),
+                (unsigned)q9_board_read16(b, q9_board_read32(b, 0x1214u) + 8u));
+        fprintf(f, "D_PthDBT=%08x  Hoechstindex=%u\n", (unsigned)dbt,
+                dbt ? (unsigned)q9_board_read16(b, dbt) : 0u);
+        if (dbt) {
+            for (k = 1; k <= 4u; k++) {
+                uint32_t pd = q9_board_read32(b, dbt + k * 4u);
+                if (!pd) { continue; }
+                fprintf(f, "  Pfad %u: PD=%08x  PD_PD=%04x PD_MOD=%02x  LOCK(+$8)=%04x\n",
+                        k, (unsigned)pd,
+                        (unsigned)q9_board_read16(b, pd),
+                        (unsigned)q9_board_read8(b, pd + 2u),
+                        (unsigned)q9_board_read16(b, pd + 8u));
+            }
+        }
+    }
+
     {   /* Frei waehlbare PC-Zaehler (Q9_COUNT_PC), s. m68krt.c */
         uint32_t k;
         if (q9_dbg_cpc_n > 0u) {
