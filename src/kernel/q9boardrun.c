@@ -197,6 +197,24 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         }
     }
 
+    {   /* Mitschrift der F$SSvc-Registrierungen (Q9-OS q9kernel_ssvc.c legt
+           sie ab $1700 ab: [0] Anzahl, dann je 12 Byte Code/Routine/
+           Tabelleneintrag). Zeigt, WER welchen Slot zuletzt beschreibt. */
+        uint32_t n = q9_board_read32(b, 0x1700u);
+        uint32_t k;
+
+        fprintf(f, "F$SSvc-Registrierungen: %u\n", (unsigned)n);
+        if (n > 40u) { n = 40u; }
+        for (k = 0; k < n; k++) {
+            uint32_t rec = 0x1704u + k * 12u;
+            unsigned code = (unsigned)q9_board_read32(b, rec);
+            fprintf(f, "    [%2u] Code $%04x -> %08x   (Eintrag @%08x)\n",
+                    (unsigned)k, code,
+                    (unsigned)q9_board_read32(b, rec + 4u),
+                    (unsigned)q9_board_read32(b, rec + 8u));
+        }
+    }
+
     {   /* Wohin zeigen die I$-Slots wirklich? Verlaesslicher als jede
            Disassemblierung von Hand: die Dispatch-Tabellen stehen in
            D_SysDis ($3a4) / D_UsrDis ($3a8), der Eintrag eines Dienstes bei
