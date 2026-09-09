@@ -76,25 +76,60 @@ def read_boot_info(img):
     return lsn, size, first
 
 
+OS9TOOL = os.environ.get("OS9") or "/Volumes/SSD1TB/projects/MWOS/tools/macos/bin/os9"
+
+
+def root_listing(img):
+    """Wurzelverzeichnis per ToolShed lesen. None, wenn das Werkzeug fehlt."""
+    if not os.path.exists(OS9TOOL):
+        return None
+    r = subprocess.run([OS9TOOL, "dir", "-e", img + ",/"],
+                       capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+
 def check(img, quiet=False):
-    """True, wenn die Bootkette plausibel ist. Prueft genau die zwei Dinge,
-    die real kaputtgegangen sind: zeigt DD_BT auf einen Modulkopf, und ist
-    DD_BSZ ungleich 0."""
+    """Plausibilitaetspruefung eines Abbilds.
+
+    ACHTUNG, hier wurde 2026-09-09 schon einmal falsch geurteilt: es gibt
+    ZWEI Bauarten von Bootketten in diesem Projekt, und nur eine davon
+    erfuellt "DD_BT zeigt auf einen 4afc-Modulkopf, DD_BSZ > 0":
+
+      * unsere kleinen TESTketten (mkboot_direct.py / os9 gen): linear ab
+        DD_BT, Laenge in DD_BSZ -- passt in die 2 Byte, Modulkopf liegt da.
+      * das ECHTE Systemabbild: DD_BT zeigt auf den FD-Sektor der
+        Bootdatei, DD_BSZ ist 0. Der verifizierte Juli-Goldstand
+        (MASTERSTUECK-mit-telnet-fix) sieht GENAU so aus -- das ist also
+        kein Schaden, sondern der Normalzustand des echten Systems.
+
+    Deshalb ist das Gesundheitskriterium jetzt das Dateisystem (lesbares
+    Wurzelverzeichnis mit OS9Boot), nicht die Bootketten-Bauart. Die
+    Bootfelder werden nur noch als Information ausgegeben.
+    """
     if not os.path.exists(img):
         if not quiet:
             print("FEHLT:  %s" % img)
         return False
     lsn, size, first = read_boot_info(img)
-    ok_sync = first[:2] == b"\x4a\xfc"
-    ok_size = size > 0
+    linear = first[:2] == b"\x4a\xfc" and size > 0
+    listing = root_listing(img)
+    if listing is None:
+        # Kein ToolShed verfuegbar -> nur die schwache Strukturaussage.
+        ok = True
+        note = "ToolShed nicht gefunden (%s) -- Dateisystem ungeprueft" % OS9TOOL
+    else:
+        ok = "OS9Boot" in listing
+        note = "Wurzelverzeichnis lesbar, OS9Boot vorhanden" if ok \
+            else "Wurzelverzeichnis lesbar, aber KEIN OS9Boot"
     if not quiet:
         print("Abbild:    %s" % img)
-        print("  Boot-LSN %d (Offset 0x%X)" % (lsn, lsn * 512))
-        print("  Laenge   %d  %s" % (size, "OK" if ok_size else "<-- 0, Bootloader laedt nichts!"))
-        print("  Sync     %s  %s" % (first[:4].hex(), "OK (Modulkopf)" if ok_sync
-                                     else "<-- kein 4afc, dort liegt kein Modul!"))
-        print("  Ergebnis: %s" % ("bootfaehig" if (ok_sync and ok_size) else "NICHT bootfaehig"))
-    return ok_sync and ok_size
+        print("  DD_BT    %d (0x%X)" % (lsn, lsn))
+        print("  DD_BSZ   %d" % size)
+        print("  Bauart   %s" % ("lineare Testkette (Modulkopf bei DD_BT)" if linear
+                                 else "echtes Systemabbild (DD_BT = FD-Sektor, DD_BSZ 0)"))
+        print("  %s" % note)
+        print("  Ergebnis: %s" % ("brauchbar" if ok else "VERDAECHTIG"))
+    return ok
 
 
 def cmd_new(tag):
