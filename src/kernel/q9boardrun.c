@@ -563,9 +563,10 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                 q9_dbg_tr_frozen, (unsigned)q9_dbg_tr_fill);
         for (k = 0; k < q9_dbg_tr_fill; k++) {
             uint32_t idx = (q9_dbg_tr_head + Q9_DBG_TR_SIZE - q9_dbg_tr_fill + k) % Q9_DBG_TR_SIZE;
-            fprintf(f, "  pc=%08x d0=%08x a0=%08x a4=%08x sp=%08x\n",
+            fprintf(f, "  pc=%08x d0=%08x a0=%08x a4=%08x sp=%08x d1=%08x d3=%08x d4=%08x\n",
                     (unsigned)q9_dbg_tr_pc[idx], (unsigned)q9_dbg_tr_d0[idx],
-                    (unsigned)q9_dbg_tr_a0[idx], (unsigned)q9_dbg_tr_a4[idx], (unsigned)q9_dbg_tr_sp[idx]);
+                    (unsigned)q9_dbg_tr_a0[idx], (unsigned)q9_dbg_tr_a4[idx], (unsigned)q9_dbg_tr_sp[idx],
+                    (unsigned)q9_dbg_tr_d1[idx], (unsigned)q9_dbg_tr_d3[idx], (unsigned)q9_dbg_tr_d4[idx]);
         }
         fputs("--- Ende Instruktionsspur ---\n", f);
 
