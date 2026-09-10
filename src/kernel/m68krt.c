@@ -254,6 +254,9 @@ uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_a4[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d1[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d3[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d4[Q9_DBG_TR_SIZE];
 
 /* Stackbereich ZUM ZEITPUNKT jedes Dispatcher-Eintritts. Die Lage des
    Exception-Frames wird damit ABGELESEN statt angenommen -- zwei Versuche,
@@ -314,6 +317,9 @@ static void q9_dbg_instr_hook(unsigned int pc)
     q9_dbg_tr_a0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
     q9_dbg_tr_sp[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
     q9_dbg_tr_a4[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4);
+    q9_dbg_tr_d1[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D1);
+    q9_dbg_tr_d3[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D3);
+    q9_dbg_tr_d4[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D4);
     /* Beim Eintritt in Q9K_IRQDispatch den Exception-Frame gleich MITLESEN.
        Ihn erst im Ctrl-^-Dump zu lesen ist wertlos: der Dump kommt Sekunden
        spaeter, der Stackinhalt ist dann laengst ein anderer (real erlebt --
