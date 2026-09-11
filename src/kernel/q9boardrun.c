@@ -357,6 +357,67 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         }
     }
 
+    {   /* Q9K_RaceRing (TEMPORAER, 2026-09-11, zehnte Arbeitssitzung, s.
+           q9kernel_entry.a Kopfkommentar bei Q9K_RaceRingBase): 8192 Slots
+           a 8 Byte (Marker.l/PC.l) ab $1440C0, laufender Schreibindex bei
+           $1540C0 (kein Modulo beim Schreiben -- hier beim Lesen maskiert).
+           Marker: Vektornummer (Timer=30, DUART meist 27) fuer einen
+           Interrupt-Eintritt, $58='X' fuer den Anfang von
+           Q9K_TrapCallExternal, $41='A' fuer den PC unmittelbar vor dem
+           abschliessenden RTE in Q9K_TrapAfterCall. Gesucht: ein Interrupt-
+           Eintrag zeitlich zwischen einem 'X' und dem zugehoerigen 'A'.
+           Ausgabe gefiltert: nur X/A-Marker plus je 3 Nachbareintraege --
+           bei 8192 Slots waeren alle Timer-Ticks sonst unlesbar viel Text. */
+        uint32_t idx = q9_board_read32(b, 0x1540C0u);
+        uint32_t cnt = (idx < 8192u) ? idx : 8192u;
+        uint32_t first = idx - cnt;
+        uint32_t z;
+        uint32_t shown_until = 0;  /* zuletzt gedruckter Index + 1, verhindert Dopplung */
+
+        fprintf(f, "\n--- Q9K_RaceRing (Index=%u, %u Eintraege im Puffer, gefiltert: X/A +/-3) ---\n",
+                (unsigned)idx, (unsigned)cnt);
+        for (z = first; z < idx; z++) {
+            uint32_t slot = z & 0x1FFFu;
+            uint32_t addr = 0x1440C0u + slot * 8u;
+            uint32_t marker = q9_board_read32(b, addr);
+
+            if (marker == 0x58u || marker == 0x41u ||
+                (marker >= 0x5400u && marker <= 0x54FFu)) {
+                uint32_t s = (z >= first + 3u) ? z - 3u : first;
+                uint32_t e = (z + 4u < idx) ? z + 4u : idx;
+                uint32_t w;
+
+                if (s < shown_until) s = shown_until;
+                for (w = s; w < e; w++) {
+                    uint32_t wslot = w & 0x1FFFu;
+                    uint32_t waddr = 0x1440C0u + wslot * 8u;
+                    uint32_t wmarker = q9_board_read32(b, waddr);
+                    uint32_t wpc     = q9_board_read32(b, waddr + 4u);
+                    char tagbuf[48];
+                    const char *tag = tagbuf;
+
+                    tagbuf[0] = 0;
+                    if (wmarker == 0x58u) tag = " (X=Anfang extern)";
+                    else if (wmarker == 0x41u) tag = " (A=vor RTE)";
+                    else if (wmarker == 30u) tag = " (Timer-IRQ)";
+                    else if (wmarker >= 0x5400u && wmarker <= 0x54FFu)
+                        snprintf(tagbuf, sizeof tagbuf, " (T=TrapDispatch-Start, Funktionscode=$%02x)",
+                                 (unsigned)(wmarker - 0x5400u));
+                    else if (wmarker < 30u) tag = " (IRQ-Vektor)";
+                    fprintf(f, "    #%-6u marker=%5u ($%04x) pc=%08x%s\n",
+                            (unsigned)w, (unsigned)wmarker, (unsigned)wmarker,
+                            (unsigned)wpc, tag);
+                }
+                fprintf(f, "    ----\n");
+                shown_until = e;
+            }
+        }
+        if (shown_until == 0) {
+            fprintf(f, "    (kein X/A-Marker im Puffer gefunden)\n");
+        }
+        fprintf(f, "--- Ende Q9K_RaceRing ---\n");
+    }
+
     fprintf(f, "--- Ende Q9-eigener-Kernel-Zusatzdump ---\n\n");
 }
 
