@@ -1,0 +1,209 @@
+#!/bin/sh
+# flux-x86 -- Q9-Flux-x86 i386 PC launcher.
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+QEMU=${Q9FLUX_X86_QEMU:-}
+IMAGE=${Q9FLUX_X86_IMAGE:-}
+FORMAT=${Q9FLUX_X86_IMAGE_FORMAT:-raw}
+MEMORY=${Q9FLUX_X86_MEMORY:-64}
+MACHINE=${Q9FLUX_X86_MACHINE:-pc}
+NIC_MODEL=${Q9FLUX_X86_NIC_MODEL:-ne2k_pci}
+NIC_IOBASE=${Q9FLUX_X86_NIC_IOBASE:-}
+NIC_IRQ=${Q9FLUX_X86_NIC_IRQ:-}
+NETWORK=${Q9FLUX_X86_NETWORK:-user}
+NETWORK_NET=${Q9FLUX_X86_NETWORK_NET:-192.168.0.0/16}
+NETWORK_HOST=${Q9FLUX_X86_NETWORK_HOST:-192.168.123.250}
+NETWORK_DHCP_START=${Q9FLUX_X86_NETWORK_DHCP_START:-192.168.77.15}
+DISPLAY=${Q9FLUX_X86_DISPLAY:-default}
+QMP=${Q9FLUX_X86_QMP:-}
+QEMU_TRACE=${Q9FLUX_X86_QEMU_TRACE:-}
+NET_DUMP=${Q9FLUX_X86_NET_DUMP:-}
+TRANSFER_DISK=${Q9FLUX_X86_TRANSFER_DISK:-}
+FLOPPY=${Q9FLUX_X86_FLOPPY:-}
+FLOPPY_B=${Q9FLUX_X86_FLOPPY_B:-}
+GDB_PORT=${Q9FLUX_X86_GDB_PORT:-}
+SERIAL_TCP_PORT=${Q9FLUX_X86_SERIAL_TCP_PORT:-}
+SNAPSHOT=yes
+CONFIG=
+
+usage() {
+    cat <<'EOF'
+Usage: flux-x86 [--config PROFILE] [options]
+
+Start a 32-bit PC profile suitable for OS-9000/x86 images.
+
+Options:
+  --config PATH       Load a machine profile (key=value text file)
+  --image PATH        IDE disk image
+  --format FORMAT     Disk format, default: raw
+  --memory MIB        Guest RAM in MiB, default: 64
+  --machine NAME      QEMU machine, default: pc
+  --nic MODEL         NIC model, default: ne2k_pci
+  --network MODE      user or none, default: user
+  --network-net CIDR  QEMU user-network CIDR, default: 192.168.0.0/16
+  --network-host IP   Guest-visible QEMU gateway, default: 192.168.123.250
+  --dhcp-start IP     First DHCP address, default: 192.168.77.15
+  --transfer-disk PATH
+                      Attach a host-created FAT transfer disk as secondary IDE
+  --floppy PATH        Attach a raw 1.44-MiB floppy image as /d0
+  --floppy-b PATH      Attach a raw floppy image as the second floppy drive
+  --headless          Disable the graphical VGA window
+  --writable          Write guest disk changes to the supplied image
+  --qmp PATH          QMP Unix-socket path; default: a per-process /tmp path
+  --gdb PORT          Start paused with a GDB server on TCP PORT
+  --serial-tcp PORT   Expose COM1 as a TCP server on PORT (for OS-9000 /t1)
+  --qemu PATH         QEMU executable; defaults to the local QEMU build,
+                      then qemu-system-i386 on PATH
+  --help              Show this help
+
+Command-line options override profile values.  The built-in reference profile:
+  profiles/os9000-4.9.conf
+EOF
+}
+
+load_config() {
+    config_path=$1
+    config_dir=$(CDPATH= cd -- "$(dirname -- "$config_path")" && pwd)
+    if [ ! -r "$config_path" ]; then
+        echo "flux-x86: configuration is not readable: $config_path" >&2
+        exit 2
+    fi
+    while IFS='=' read -r key value; do
+        case "$key" in
+            ''|'#'*) continue ;;
+            machine) MACHINE=$value ;;
+            memory) MEMORY=$value ;;
+            image)
+                case "$value" in
+                    /*) IMAGE=$value ;;
+                    *) IMAGE=$config_dir/$value ;;
+                esac
+                ;;
+            image_format) FORMAT=$value ;;
+            nic_model) NIC_MODEL=$value ;;
+            network) NETWORK=$value ;;
+            network_net) NETWORK_NET=$value ;;
+            network_host) NETWORK_HOST=$value ;;
+            dhcp_start) NETWORK_DHCP_START=$value ;;
+            display) DISPLAY=$value ;;
+            snapshot) SNAPSHOT=$value ;;
+            *) echo "flux-x86: unknown profile key '$key' in $config_path" >&2; exit 2 ;;
+        esac
+    done < "$config_path"
+}
+
+# Read --config first so all other command-line options can override it.
+# A for-loop preserves quoted paths for the second, normal option pass.
+need_config_path=no
+for arg in "$@"; do
+    if [ "$need_config_path" = yes ]; then
+        CONFIG=$arg
+        need_config_path=no
+        continue
+    fi
+    if [ "$arg" = --config ]; then
+        need_config_path=yes
+    fi
+done
+if [ "$need_config_path" = yes ]; then
+    echo "flux-x86: --config needs a path" >&2
+    exit 2
+fi
+if [ -n "$CONFIG" ]; then
+    load_config "$CONFIG"
+fi
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --config) shift 2 ;;
+        --image) IMAGE=$2; shift 2 ;;
+        --format) FORMAT=$2; shift 2 ;;
+        --memory) MEMORY=$2; shift 2 ;;
+        --machine) MACHINE=$2; shift 2 ;;
+        --nic) NIC_MODEL=$2; shift 2 ;;
+        --network) NETWORK=$2; shift 2 ;;
+        --network-net) NETWORK_NET=$2; shift 2 ;;
+        --network-host) NETWORK_HOST=$2; shift 2 ;;
+        --dhcp-start) NETWORK_DHCP_START=$2; shift 2 ;;
+        --transfer-disk) TRANSFER_DISK=$2; shift 2 ;;
+        --floppy) FLOPPY=$2; shift 2 ;;
+        --floppy-b) FLOPPY_B=$2; shift 2 ;;
+        --headless) DISPLAY=none; shift ;;
+        --writable) SNAPSHOT=no; shift ;;
+        --qmp) QMP=$2; shift 2 ;;
+        --gdb) GDB_PORT=$2; shift 2 ;;
+        --serial-tcp) SERIAL_TCP_PORT=$2; shift 2 ;;
+        --qemu) QEMU=$2; shift 2 ;;
+        --help|-h) usage; exit 0 ;;
+        *) echo "flux-x86: unknown option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if [ -z "$IMAGE" ]; then
+    echo "flux-x86: --image or a profile with image= is required" >&2; exit 2
+fi
+if [ ! -f "$IMAGE" ]; then
+    echo "flux-x86: image is not a readable file: $IMAGE" >&2; exit 2
+fi
+if [ -n "$TRANSFER_DISK" ] && [ ! -f "$TRANSFER_DISK" ]; then
+    echo "flux-x86: transfer disk is not a readable file: $TRANSFER_DISK" >&2; exit 2
+fi
+if [ -n "$FLOPPY" ] && [ ! -f "$FLOPPY" ]; then
+    echo "flux-x86: floppy image is not a readable file: $FLOPPY" >&2; exit 2
+fi
+if [ -n "$FLOPPY_B" ] && [ ! -f "$FLOPPY_B" ]; then
+    echo "flux-x86: second floppy image is not a readable file: $FLOPPY_B" >&2; exit 2
+fi
+case "$MEMORY" in *[!0-9]*|'') echo "flux-x86: memory must be an integer MiB value" >&2; exit 2 ;; esac
+case "$GDB_PORT" in ''|*[!0-9]*)
+    if [ -n "$GDB_PORT" ]; then echo "flux-x86: gdb port must be an integer" >&2; exit 2; fi ;;
+esac
+case "$SERIAL_TCP_PORT" in ''|*[!0-9]*)
+    if [ -n "$SERIAL_TCP_PORT" ]; then echo "flux-x86: serial TCP port must be an integer" >&2; exit 2; fi ;;
+esac
+case "$NETWORK" in user|none) ;; *) echo "flux-x86: network must be 'user' or 'none'" >&2; exit 2 ;; esac
+case "$SNAPSHOT" in yes|no) ;; *) echo "flux-x86: snapshot must be 'yes' or 'no'" >&2; exit 2 ;; esac
+
+if [ -z "$QEMU" ] && [ -x "$ROOT/third_party/qemu/build/qemu-system-i386" ]; then
+    QEMU=$ROOT/third_party/qemu/build/qemu-system-i386
+fi
+if [ -z "$QEMU" ]; then QEMU=qemu-system-i386; fi
+if ! command -v "$QEMU" >/dev/null 2>&1 && [ ! -x "$QEMU" ]; then
+    echo "flux-x86: QEMU executable not found: $QEMU" >&2; exit 127
+fi
+if [ -z "$QMP" ]; then QMP="/tmp/flux-x86-$$.qmp"; fi
+
+echo "flux-x86: machine=$MACHINE memory=${MEMORY}MiB nic=$NIC_MODEL network=$NETWORK" >&2
+echo "flux-x86: QMP socket: $QMP" >&2
+set -- "$QEMU" -machine "$MACHINE,accel=tcg" -m "$MEMORY" -boot c \
+    -drive "file=$IMAGE,format=$FORMAT,if=ide" -vga std -display "$DISPLAY" \
+    -qmp "unix:$QMP,server=on,wait=off" -no-reboot
+if [ -n "$TRANSFER_DISK" ]; then
+    set -- "$@" -drive "file=$TRANSFER_DISK,format=raw,if=ide,index=1"
+fi
+if [ -n "$FLOPPY" ]; then
+    set -- "$@" -drive "file=$FLOPPY,format=raw,if=floppy"
+fi
+if [ -n "$FLOPPY_B" ]; then
+    set -- "$@" -drive "file=$FLOPPY_B,format=raw,if=floppy,index=1"
+fi
+if [ "$NETWORK" = user ]; then
+    case "$NETWORK_NET:$NETWORK_HOST:$NETWORK_DHCP_START" in
+        *[!A-Za-z0-9./:-]*) echo "flux-x86: network-net must be a CIDR value" >&2; exit 2 ;;
+        '') echo "flux-x86: network network parameters must not be empty" >&2; exit 2 ;;
+    esac
+    if [ "$NIC_MODEL" = ne2k_isa ] && [ -n "$NIC_IOBASE" ] && [ -n "$NIC_IRQ" ]; then
+        set -- "$@" -netdev "user,id=q9net0,net=$NETWORK_NET,host=$NETWORK_HOST,dhcpstart=$NETWORK_DHCP_START" \
+            -device "ne2k_isa,netdev=q9net0,iobase=$NIC_IOBASE,irq=$NIC_IRQ"
+    else
+        set -- "$@" -netdev "user,id=q9net0,net=$NETWORK_NET,host=$NETWORK_HOST,dhcpstart=$NETWORK_DHCP_START" \
+            -device "$NIC_MODEL,netdev=q9net0"
+    fi
+fi
+if [ -n "$QEMU_TRACE" ]; then set -- "$@" -trace "$QEMU_TRACE"; fi
+if [ -n "$NET_DUMP" ]; then set -- "$@" -object "filter-dump,id=q9netdump,netdev=q9net0,file=$NET_DUMP"; fi
+if [ "$SNAPSHOT" = yes ]; then set -- "$@" -snapshot; fi
+if [ -n "$GDB_PORT" ]; then set -- "$@" -S -gdb "tcp::$GDB_PORT"; fi
+if [ -n "$SERIAL_TCP_PORT" ]; then set -- "$@" -serial "tcp:127.0.0.1:$SERIAL_TCP_PORT,server=on,wait=off"; fi
+exec "$@"

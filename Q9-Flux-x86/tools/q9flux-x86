@@ -1,0 +1,4 @@
+#!/bin/sh
+# Compatibility name retained for the initial prototype.
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "$ROOT/bin/flux-x86" "$@"

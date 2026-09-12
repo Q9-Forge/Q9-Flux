@@ -1,0 +1,62 @@
+# Build-Artefakte
+build/
+*.o
+*.obj
+*.exe
+*.out
+__pycache__/
+debug.log
+
+# Block-Device-Testimage (3.1, HAL-seitig lazy erzeugt von q9_hal_blk_read/write)
+q9disk.img
+
+# Compact-Flash-Testimage (5.2c, lazy erzeugt von q9_board_cf_attach)
+board_cf_test.img
+cb030_cf_test.img
+
+# Compact-Flash-Multi-Sektor-Testimage (5.5a)
+board_cf_multi_test.img
+board_cf_rbf256_test.img
+cb030_cf_multi_test.img
+cb030_cf_rbf256_test.img
+
+# Boot-Betrieb (5.3): CF-Image des Runners + lokale Boot-ROM-Images
+# (das Original-Boot-ROM ist proprietaer und darf NIE ins Repository,
+#  s. docs/BOARD.md). Die cb030*-Namen stammen aus der Zeit vor der
+#  Umbenennung auf "board" und bleiben stehen, damit aeltere, lokal noch
+#  vorhandene Dateien weiterhin ignoriert werden.
+board_cf.img
+boardrom*.bin
+cb030_cf.img
+cb030rom*.bin
+*.rom
+local_images/
+.archive/
+
+# .q9-flux/: lokale Test-/Boot-Artefakte (Disk-Images mehrere GB gross, ROM-Image proprietaer
+# wie lokal_images/ oben) -- via emu.q9 lazy erzeugt/gepflegt, gehoert nie ins Repository
+.q9-flux/
+
+# Emscripten-Output (wird nach build/ gebaut, zur Sicherheit auch global)
+*.wasm.map
+
+# Paste-Timing-Testskripte (5.8): Log-Ausgabe, Clone-Image wird ueber local_images/ schon ignoriert
+paste_burst_result.txt
+paste_paced_result.txt
+
+# Expect-/Diagnose-Testskript-Ausgaben (Ergebnis-Logs, keine Quellen)
+test_*_result.txt
+test/expect/results/*
+
+# 5.19a: Board-Config-Selbsttest-Artefakte (kernel.c schreibt+loescht sie im --selftest)
+q9boardcfg_test.q9
+q9boardcfg_bad.q9
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Claude Code lokale Settings
+.claude/settings.local.json
