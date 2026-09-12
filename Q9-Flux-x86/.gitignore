@@ -1,0 +1,12 @@
+# Proprietary and potentially large guest images remain local test inputs.
+images/*.img
+images/*.qcow2
+images/*.vmdk
+
+# QEMU build products belong to the nested upstream checkout.
+third_party/qemu/build/
+
+# Python cache files from local test and tooling runs.
+__pycache__/
+*/__pycache__/
+*.py[cod]
