@@ -248,6 +248,173 @@ static inline int ram_fast_hit(uint32_t address, uint32_t span)
            span < (g_board->ram_len - address);
 }
 
+/* s. m68krt.h -- Instruktions-Ringpuffer mit Freeze-on-Anomaly. */
+uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_a4[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d1[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d3[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_d4[Q9_DBG_TR_SIZE];
+
+/* Stackbereich ZUM ZEITPUNKT jedes Dispatcher-Eintritts. Die Lage des
+   Exception-Frames wird damit ABGELESEN statt angenommen -- zwei Versuche,
+   sie zu erraten (sp+2 bzw. sp+62), lieferten beide Unsinn. */
+uint32_t q9_dbg_ent_sp[Q9_DBG_ENT_MAX];
+uint16_t q9_dbg_ent_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
+uint32_t q9_dbg_ent_n = 0u;
+uint32_t q9_dbg_exi_sp[Q9_DBG_ENT_MAX];
+uint16_t q9_dbg_exi_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
+uint32_t q9_dbg_exi_n = 0u;
+uint32_t q9_dbg_tmr_total = 0u;
+uint32_t q9_dbg_tmr_indisp = 0u;
+uint32_t q9_dbg_tmr_pcs[8];
+uint32_t q9_dbg_wake_enter = 0u;
+uint32_t q9_dbg_wake_send  = 0u;
+uint32_t q9_dbg_tr_head   = 0u;
+uint32_t q9_dbg_tr_fill   = 0u;
+int      q9_dbg_tr_frozen = 0;
+
+/* Frei waehlbare PC-Zaehler (Q9_COUNT_PC, kommagetrennte Adressliste).
+   Beantwortet die Frage "welcher Zweig wird genommen?" in EINEM Lauf --
+   anders als der Ring, der nur zeigt, was VOR einem Einfrieren lief. */
+uint32_t q9_dbg_cpc_addr[Q9_DBG_CPC_MAX];
+uint32_t q9_dbg_cpc_hits[Q9_DBG_CPC_MAX];
+uint32_t q9_dbg_cpc_n = 0u;
+
+static void q9_dbg_cpc_init(void)
+{
+    const char *e = getenv("Q9_COUNT_PC");
+    static int done = 0;
+
+    if (done) { return; }
+    done = 1;
+    while (e && *e && q9_dbg_cpc_n < (uint32_t)Q9_DBG_CPC_MAX) {
+        char *end = 0;
+        unsigned long v = strtoul(e, &end, 0);
+        if (end == e) { break; }
+        q9_dbg_cpc_addr[q9_dbg_cpc_n] = (uint32_t)v;
+        q9_dbg_cpc_hits[q9_dbg_cpc_n] = 0u;
+        q9_dbg_cpc_n++;
+        e = (*end == ',') ? end + 1 : end;
+    }
+}
+
+static void q9_dbg_instr_hook(unsigned int pc)
+{
+    if (q9_dbg_tr_frozen) {
+        return;
+    }
+    /* Zweiter Freeze-Ausloeser (2026-09-04): Sprung ins Leere. Unterhalb von
+       $1000 liegt in diesem System ausschliesslich der Systemglobal-Bereich,
+       dort steht niemals Code -- ein PC dort ist immer die Folge eines
+       Sprungziels aus einer leeren Tabelle o. ae. Der Eintrag wird noch
+       geschrieben, DANN eingefroren: so ist der Fehlsprung selbst die letzte
+       Zeile der Spur und alles davor bleibt erhalten. */
+    q9_dbg_tr_pc[q9_dbg_tr_head] = (uint32_t)pc;
+    q9_dbg_tr_d0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
+    q9_dbg_tr_a0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
+    q9_dbg_tr_sp[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+    q9_dbg_tr_a4[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4);
+    q9_dbg_tr_d1[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D1);
+    q9_dbg_tr_d3[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D3);
+    q9_dbg_tr_d4[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D4);
+    /* Beim Eintritt in Q9K_IRQDispatch den Exception-Frame gleich MITLESEN.
+       Ihn erst im Ctrl-^-Dump zu lesen ist wertlos: der Dump kommt Sekunden
+       spaeter, der Stackinhalt ist dann laengst ein anderer (real erlebt --
+       alle Eintraege sahen identisch aus, weil derselbe aktuelle Speicher
+       gelesen wurde). Der gemeldete SP ist der Stand NACH dem einleitenden
+       "movem.l d0-d7/a0-a6,-(sp)" (60 Byte), der Frame liegt also bei +60:
+       SR, dann PC, dann das Format-/Vektor-Wort. */
+    if (pc == 0x795cu && q9_dbg_ent_n < Q9_DBG_ENT_MAX) {
+        uint32_t fsp = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+        uint32_t w;
+
+        q9_dbg_ent_sp[q9_dbg_ent_n] = fsp;
+        for (w = 0; w < Q9_DBG_ENT_WORDS; w++) {
+            q9_dbg_ent_stk[q9_dbg_ent_n][w] = (uint16_t)m68k_read_memory_16(fsp + w * 2u);
+        }
+        q9_dbg_ent_n++;
+    }
+    /* Weckpfad der sc68681-ISR (Adressen fuer den aktuellen Build):
+       $ca30 = "move.w $8(a2),d0" (Prozess-ID holen), $ca3e = F$Send-Trampolin. */
+    if (pc == 0x0ca30u) { q9_dbg_wake_enter++; }
+    if (pc == 0x0ca3eu) { q9_dbg_wake_send++; }
+    if (pc == 0x75a2u) {                                    /* Q9K_TimerIRQHandler */
+        uint32_t tsp  = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+        uint32_t tfpc = m68k_read_memory_32(tsp + 2u);
+
+        q9_dbg_tmr_total++;
+        if (tfpc >= 0x795cu && tfpc <= 0x79deu) {           /* mitten im IRQ-Dispatcher */
+            if (q9_dbg_tmr_indisp < 8u) {
+                q9_dbg_tmr_pcs[q9_dbg_tmr_indisp] = tfpc;
+            }
+            q9_dbg_tmr_indisp++;
+        }
+    }
+    if (pc == 0x79deu && q9_dbg_exi_n < Q9_DBG_ENT_MAX) {   /* unmittelbar vor dem RTE */
+        uint32_t fsp = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+        uint32_t w;
+
+        q9_dbg_exi_sp[q9_dbg_exi_n] = fsp;
+        for (w = 0; w < Q9_DBG_ENT_WORDS; w++) {
+            q9_dbg_exi_stk[q9_dbg_exi_n][w] = (uint16_t)m68k_read_memory_16(fsp + w * 2u);
+        }
+        q9_dbg_exi_n++;
+    }
+    {   /* frei waehlbare Zaehler, s. oben */
+        uint32_t k;
+        for (k = 0u; k < q9_dbg_cpc_n; k++) {
+            if ((uint32_t)pc == q9_dbg_cpc_addr[k]) { q9_dbg_cpc_hits[k]++; }
+        }
+    }
+    q9_dbg_tr_head = (q9_dbg_tr_head + 1u) % Q9_DBG_TR_SIZE;
+    if (q9_dbg_tr_fill < Q9_DBG_TR_SIZE) {
+        q9_dbg_tr_fill++;
+    }
+    if (pc < 0x1000u) {
+        q9_dbg_tr_frozen = 1;
+    }
+    {   /* Freeze auf eine frei waehlbare Adresse (Q9_FREEZE_PC). Zeigt, WIE
+           der Code an eine bestimmte Stelle gelangt ist -- reine
+           Trefferzaehler koennen das nicht, sie kennen keine Reihenfolge. */
+        static uint32_t fpc = 0u;
+        static uint32_t fn  = 0u;   /* beim N-ten Treffer einfrieren (Q9_FREEZE_PC_N) */
+        static uint32_t seen = 0u;
+        if (fpc == 0u) {
+            const char *e = getenv("Q9_FREEZE_PC");
+            const char *n = getenv("Q9_FREEZE_PC_N");
+            fpc = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
+            fn  = n ? (uint32_t)strtoul(n, 0, 0) : 1u;
+            if (fn == 0u) { fn = 1u; }
+        }
+        if ((uint32_t)pc == fpc) {
+            seen++;
+            if (seen >= fn) {
+                q9_dbg_tr_frozen = 1;
+            }
+        }
+    }
+}
+
+void q9_dbg_instr_trace_init(void)
+{
+    const char *env = getenv("Q9_TRACE_INSTR");
+
+    if (env && env[0] == '1') {
+        q9_dbg_cpc_init();
+        m68k_set_instr_hook_callback(q9_dbg_instr_hook);
+    }
+}
+
+void q9_dbg_instr_trace_note_tx(unsigned char val)
+{
+    if (val >= 0x80u) {                            /* nicht-ASCII = die gesuchte Anomalie */
+        q9_dbg_tr_frozen = 1;
+    }
+}
+
 unsigned int m68k_read_memory_8(unsigned int address)
 {
     q9_device_t *dev;
@@ -306,9 +473,74 @@ unsigned int m68k_read_memory_32(unsigned int address)
            ((unsigned int)g_ram[address + 2] <<  8) |  (unsigned int)g_ram[address + 3];
 }
 
+/* Diagnose (2026-09-04): Schreib-Watch auf einen einzelnen Vektorslot.
+   Vektor 27 zeigte 50 Byte zu tief in den IRQ-Dispatcher hinein, waehrend
+   alle anderen korrekt auf dessen Einstieg zeigen -- gesucht ist, WER den
+   Wert dorthin schreibt. */
+uint32_t q9_dbg_wv_n = 0u;
+uint32_t q9_dbg_wv_pc[64];
+uint32_t q9_dbg_wv_val[64];
+uint32_t q9_dbg_wv_size[64];
+uint32_t q9_dbg_wv_adr[64];
+uint32_t q9_dbg_wv_seq[64];
+static uint32_t g_dbg_write_seq = 0u;   /* zaehlt ALLE Schreibzugriffe -- monotone Zeitachse */
+static uint32_t g_dbg_watch_addr = 0u;
+static uint32_t g_dbg_watch_len  = 0u;
+
+uint32_t q9_dbg_write_seq_now(void) { return g_dbg_write_seq; }
+
+static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int size)
+{
+    g_dbg_write_seq++;
+
+    /* Beobachtete Adresse -- ueber die Umgebung setzbar, damit der Watch ohne
+       Neuuebersetzung auf ein anderes Feld gelegt werden kann. */
+    if (g_dbg_watch_addr == 0u) {
+        const char *e = getenv("Q9_WATCH_ADDR");
+        const char *l = getenv("Q9_WATCH_LEN");
+        g_dbg_watch_addr = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
+        g_dbg_watch_len  = l ? (uint32_t)strtoul(l, 0, 0) : 1u;
+        if (g_dbg_watch_len == 0u) {
+            g_dbg_watch_len = 1u;
+        }
+    }
+    /* Ueberlappt der Zugriff [address,address+size) das Fenster
+       [addr,addr+len)? Ein Fenster statt einer einzelnen Adresse, weil die
+       Geraetestatik bei jeder Aenderung der Bootdateigroesse verrutscht --
+       eine feste Adresse ging deshalb zuletzt schlicht ins Leere. */
+    if (address < g_dbg_watch_addr + g_dbg_watch_len &&
+        address + size > g_dbg_watch_addr) {
+        /* Ringpuffer: die JUENGSTEN 64 Treffer bleiben stehen. Bei einem oft
+           beschriebenen Feld (z.B. D_Proc bei jedem Prozesswechsel) waren die
+           ersten 64 Treffer sonst laengst vor dem interessanten Moment voll. */
+        uint32_t i = q9_dbg_wv_n % 64u;
+        q9_dbg_wv_pc[i]   = (uint32_t)m68k_get_reg(NULL, M68K_REG_PPC);
+        q9_dbg_wv_val[i]  = (uint32_t)value;
+        q9_dbg_wv_size[i] = size;
+        q9_dbg_wv_adr[i]  = (uint32_t)address;
+        q9_dbg_wv_seq[i]  = g_dbg_write_seq;
+        q9_dbg_wv_n++;
+        {   /* Optional den Instruktions-Ring beim Treffer einfrieren
+               (Q9_WATCH_FREEZE=1). Beantwortet "wer schreibt das und auf
+               welchem Weg?" -- der Watch allein nennt nur den PC, nicht den
+               Aufrufpfad dorthin. */
+            static int wf = -1;
+            if (wf < 0) {
+                const char *e = getenv("Q9_WATCH_FREEZE");
+                wf = e ? (int)strtol(e, 0, 0) : 0;   /* N = ab dem N-ten Treffer */
+            }
+            if (wf > 0 && (int)q9_dbg_wv_n >= wf) {
+                q9_dbg_tr_frozen = 1;
+            }
+        }
+    }
+}
+
 void m68k_write_memory_8(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
+
+    q9_dbg_watch(address, value, 1u);
 
     if (ram_fast_hit(address, 0)) {
         g_board->ram[address] = (uint8_t)value;
@@ -330,6 +562,8 @@ void m68k_write_memory_8(unsigned int address, unsigned int value)
 void m68k_write_memory_16(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
+
+    q9_dbg_watch(address, value, 2u);
 
     if (ram_fast_hit(address, 1)) {
         g_board->ram[address]     = (uint8_t)(value >> 8);
@@ -354,6 +588,8 @@ void m68k_write_memory_16(unsigned int address, unsigned int value)
 void m68k_write_memory_32(unsigned int address, unsigned int value)
 {
     q9_device_t *dev;
+
+    q9_dbg_watch(address, value, 4u);
 
     if (ram_fast_hit(address, 3)) {
         g_board->ram[address]     = (uint8_t)(value >> 24);
@@ -390,6 +626,8 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 //           Autovektor Level 3).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static uint32_t g_ack_count;                          /* Diagnose: wie oft wurde IACK durchlaufen */
+uint32_t q9_dbg_ackvec[256];                          /* Diagnose: Vektoren beim IACK, s. u. */
+uint32_t q9_dbg_acklevel[8];                          /* Diagnose: Pegel beim IACK           */
 static uint32_t g_quicc_ack_count;                    /* 5.15-Diagnose: davon QUICC (Level 5)     */
 
 /* 5.15-Befund: echte Hardware haelt pro Geraet eine EIGENE IRQ-Leitung; quittiert die CPU
@@ -457,6 +695,13 @@ static int m68krt_board_int_ack(int int_level)
     /* deshalb nie hier landet, s. q9board.c timer_dev_*-Kommentar).                             */
 
     m68krt_reassert_pending_irq();                     /* 5.15: sofort statt erst naechste Runde  */
+    /* Diagnose (2026-09-04): welchen Vektor bekommt die CPU wirklich? Ein
+       Geraet ohne gesetztes IVR liefert hier 0 -- die CPU vektorisiert dann
+       ueber Slot 0 (Reset-SP), was nie gewollt ist. */
+    if (vector >= 0 && vector < 256) {
+        q9_dbg_ackvec[vector]++;
+    }
+    q9_dbg_acklevel[int_level & 7]++;
     return vector;
 }
 
@@ -964,6 +1209,7 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
     }
     m68k_set_cpu_type(musashi_type);
     m68k_init();
+    q9_dbg_instr_trace_init();                          /* Diagnose, s. m68krt.h */
     m68k_set_int_ack_callback(0);
 
     {

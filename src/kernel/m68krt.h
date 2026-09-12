@@ -242,6 +242,94 @@ int q9_m68krt_is_stopped(void);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 void q9_m68krt_get_backend(q9_m68krt_t *rt, q9_cpu_backend_t *backend);
 
+
+/*───────────────────────────────────────────────────────────────────────────
+  Diagnose (2026-09-03): Instruktions-Ringpuffer mit Freeze-on-Anomaly.
+
+  Haelt fuer die letzten Q9_DBG_TR_SIZE ausgefuehrten Befehle (PC, d0, a0)
+  fest und friert ein, sobald ein nicht-ASCII-Byte auf THRA geschrieben wird.
+  Danach steht im Puffer genau die Befehlsfolge VOR der Anomalie -- inklusive
+  des Uebergangs zwischen fremdem Modulcode und eigenem Kernel.
+
+  Damit wurde 2026-09-03 eine verstuemmelte Konsolenausgabe aufgeklaert,
+  nachdem statische Analyse und punktuelle Messungen gescheitert waren: die
+  Spur zeigte lueckenlos, dass IOMans "move.b (a0)+,d0" noch den korrekten
+  Wert laedt und d0 erst im eigenen Kernel kippt (dort wurde ein
+  Funktionszeiger als Befehl ausgefuehrt, s. Q9-OS q9kernel_entry.a).
+
+  BEWUSST OHNE PC-Fensterfilter: Modulbasen verschieben sich mit der
+  Kernelgroesse, ein fest verdrahtetes Fenster war hier bereits Fehlerquelle.
+  Der Hook laeuft vor JEDER Instruktion, ein Eintrag zeigt also den Zustand
+  VOR deren Ausfuehrung.
+
+  NICHT im Normalbetrieb aktiv -- nur mit gesetztem Q9_TRACE_INSTR=1, sonst
+  wird gar kein Callback registriert (er kostet sonst bei jedem einzelnen
+  Befehl Zeit).
+
+  ACHTUNG, real erlebte Falle: Musashis PPC ist im SPEICHERZUGRIFFS-Hook
+  nicht zuverlaessig der lesenden Instruktion zuzuordnen (er zeigte dort auf
+  ein "bsr", das gar keinen Datenspeicher liest). Fuer "welcher Befehl war
+  das?" ist DIESE Spur das richtige Werkzeug, nicht der PC am Speicherzugriff.
+  ───────────────────────────────────────────────────────────────────────────*/
+#define Q9_DBG_TR_SIZE 24576u
+extern uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_a4[Q9_DBG_TR_SIZE];       /* a7 -- macht den Exception-Frame lesbar */
+extern uint32_t q9_dbg_tr_d1[Q9_DBG_TR_SIZE];       /* zusaetzliche Register in der Instruktionsspur, s. Q9_TRACE_INSTR */
+extern uint32_t q9_dbg_tr_d3[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_d4[Q9_DBG_TR_SIZE];
+
+#define Q9_DBG_ENT_MAX   24u
+#define Q9_DBG_ENT_WORDS 40u
+extern uint32_t q9_dbg_ent_sp[Q9_DBG_ENT_MAX];
+extern uint16_t q9_dbg_ent_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
+extern uint32_t q9_dbg_ent_n;
+
+/* Dasselbe beim VERLASSEN (unmittelbar vor dem RTE). Der Vergleich beider
+   Mitschriften beantwortet, ob der Exception-Frame waehrend des Durchlaufs
+   ueberschrieben wird -- der Dispatcher selbst legt nur UNTERHALB ab, eine
+   ISR mit unbalanciertem Stack koennte ihn aber treffen. */
+extern uint32_t q9_dbg_exi_sp[Q9_DBG_ENT_MAX];
+extern uint16_t q9_dbg_exi_stk[Q9_DBG_ENT_MAX][Q9_DBG_ENT_WORDS];
+extern uint32_t q9_dbg_exi_n;
+
+/* Zaehlt, wo der Board-Timer (Q9K_TimerIRQHandler) zuschlaegt: unterbricht er
+   je einen PC INNERHALB des IRQ-Dispatchers, wird dessen halb aufgebauter
+   Stack im Prozessdeskriptor gesichert und spaeter wieder aufgesetzt -- das
+   erklaert einen Dispatcher-Ausgang ohne zugehoerigen Eingang. */
+extern uint32_t q9_dbg_tmr_total;
+extern uint32_t q9_dbg_tmr_indisp;
+extern uint32_t q9_dbg_tmr_pcs[8];
+
+/* Zaehlt zwei Punkte im Weckpfad der sc68681-ISR: den Eintritt in den Block
+   (liest die Prozess-ID) und das F$Send-Trampolin dahinter. Werden beide
+   gleich oft erreicht, sendet der Treiber wirklich; wird nur der erste
+   erreicht, ist die ID 0 -- der Treiber weiss dann gar nicht, wen er wecken
+   soll. Adressen sind buildabhaengig, s. Kommentar am Setzort. */
+extern uint32_t q9_dbg_wake_enter;
+extern uint32_t q9_dbg_wake_send;
+
+extern uint32_t q9_dbg_wv_n;
+extern uint32_t q9_dbg_wv_pc[64];
+extern uint32_t q9_dbg_wv_val[64];
+extern uint32_t q9_dbg_wv_size[64];
+extern uint32_t q9_dbg_wv_adr[64];
+extern uint32_t q9_dbg_wv_seq[64];
+extern uint32_t q9_dbg_write_seq_now(void);
+/* Frei waehlbare PC-Zaehler, s. Q9_COUNT_PC in m68krt.c. */
+#define Q9_DBG_CPC_MAX 16
+extern uint32_t q9_dbg_cpc_addr[Q9_DBG_CPC_MAX];
+extern uint32_t q9_dbg_cpc_hits[Q9_DBG_CPC_MAX];
+extern uint32_t q9_dbg_cpc_n;
+extern uint32_t q9_dbg_tr_head;
+extern uint32_t q9_dbg_tr_fill;
+extern int      q9_dbg_tr_frozen;
+
+void q9_dbg_instr_trace_init(void);                 /* registriert den Hook, nur bei Q9_TRACE_INSTR=1 */
+void q9_dbg_instr_trace_note_tx(unsigned char val); /* vom DUART gerufen: friert bei val >= 0x80 ein  */
+
 #endif // Q9_M68KRT_H
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
