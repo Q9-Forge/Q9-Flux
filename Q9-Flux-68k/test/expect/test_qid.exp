@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # Smoke test for the new qid tool: boot, log in via console (no networking
 # needed), run a few qid invocations, capture output.
 

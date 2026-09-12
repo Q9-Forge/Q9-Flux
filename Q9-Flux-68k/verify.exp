@@ -1,31 +1,0 @@
-#!/usr/bin/expect -f
-log_file -a /tmp/verify.log
-set timeout 600
-set send_slow {1 .003}
-set prompt {[#$] ?$}
-spawn ./build/macos/q9.exe --rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf local_images/OS9SYS.qcc-xcc-test.hda
-expect "devices online"
-send ""
-set li 0
-for {set i 0} {$i < 10 && !$li} {incr i} {
-    expect {
-        "User name?:" { send "super"; exp_continue }
-        -re {Password[^
-]*:} { send "Al35uUbC"; exp_continue }
-        -re $prompt { set li 1 }
-        timeout { send "" }
-    }
-}
-send -s "del /dd/verify.ir"
-expect -re $prompt
-send -s "del /dd/qcc_diag.txt"
-expect -re $prompt
-set t0 [clock seconds]
-send -s "/dd/CMDS/q9_qcc_diagA @/dd/qcc_p.bootstrap.c >/dd/verify.ir"
-expect { -re $prompt { send_log "
-VER: fertig nach [expr {[clock seconds]-$t0}] s
-" } timeout { exit 1 } }
-send -s "dir -e /dd/verify.ir /dd/qcc_diag.txt"
-expect -re $prompt
-send ""
-expect eof

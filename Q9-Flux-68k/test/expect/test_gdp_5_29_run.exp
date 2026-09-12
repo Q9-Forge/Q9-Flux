@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # 5.29 GDP-Treiber-Test: Treiber laden + vorgebautes vramtest ausfuehren.
 #
 # VORAUSSETZUNG: mc6845/crtc0/vramtest muessen VORHER per

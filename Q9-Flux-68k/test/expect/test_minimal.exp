@@ -1,0 +1,47 @@
+#!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
+# Bisektion: welches KLEINSTE Programm bringt den selbstgebauten Compiler
+# schon zu "expects ?, got ?"? Der Host uebersetzt alle vier mit OK.
+log_file -a /tmp/minimal.log
+set timeout 600
+set send_slow {1 .003}
+set mwos /Volumes/SSD1TB/projects/MWOS
+set module /dd/CMDS/q9_qcc_diag3
+set prompt {[#$] ?$}
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf local_images/OS9SYS.qcc-xcc-test.hda
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\nMIN: LOGIN FAILED\n"; exit 1 }
+
+proc run {cmd label} {
+    global prompt
+    send_log "\nMIN: === $label ===\n"
+    send -s "$cmd\r"
+    expect {
+        -re $prompt { }
+        timeout     { send_log "\nMIN: $label TIMEOUT\n"; exit 1 }
+    }
+}
+
+# Die IR direkt aufs Terminal -- die Programme sind winzig. Die
+# Diagnosemeldungen gehen in die Datei, die danach ausgelesen wird.
+run "del /dd/qcc_diag.txt" "aufraeumen"
+foreach f {m1 m2 m3 m4} {
+    run "$module @/dd/$f.c" "PROGRAMM $f"
+}
+run "dir -e /dd/qcc_diag.txt" "Diagnosedatei"
+
+send "\x1d"
+expect eof

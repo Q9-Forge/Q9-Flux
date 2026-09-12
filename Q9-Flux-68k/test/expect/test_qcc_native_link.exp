@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # Native Microware r68/l68 build of the current QCC action-log diagnostic.
 set timeout 600
 set send_slow {1 .003}

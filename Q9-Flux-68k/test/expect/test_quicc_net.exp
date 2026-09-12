@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # 5.11 End-to-End-Test: QUICC-Ethernet-Emulation gegen den echten sp360-Treiber.
 # Ablauf: Boot bis Login (super), SPF-Modulpaket laden (/dd/netmods, von
 # ToolShed aufs Test-Image kopiert), ipstart, ifconfig, ping 192.168.200.1

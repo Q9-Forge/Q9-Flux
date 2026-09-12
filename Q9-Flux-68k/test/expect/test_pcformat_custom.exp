@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # 5.19b: pcformat mit eigener Format-Tabelle (Fixed-Disk-Eintrag mit voller
 # Geometrie) gegen die Wegwerf-Kopie q9-d0-pcf-format-fresh.img.
 # Tabellenzeile (Layout aus dem pcformat-Binary reverse-engineert):

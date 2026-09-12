@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # Regression: QCC -largedata function pointer stored in a file-scope global.
 set timeout 120
 set send_slow {1 .003}

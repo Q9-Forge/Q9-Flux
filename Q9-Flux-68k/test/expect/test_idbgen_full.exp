@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # 5.14 Kompletter End-to-End-Test auf frischem Klon:
 # 1. Boot, Login
 # 2. Q9-lokale Configs (resolv.conf/routes.conf/interfaces.conf) nach /dd/ETC pasten
