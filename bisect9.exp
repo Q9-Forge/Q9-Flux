@@ -1,0 +1,48 @@
+#!/usr/bin/expect -f
+# Eingabe-Bisektion: laesst den selbstgebauten Compiler wachsende Praefixe
+# seines eigenen Quelltexts uebersetzen. Nach jedem Lauf zeigt "dir -e" die
+# Groesse der Diagnosedatei -- 0 Byte heisst fehlerfrei. Gesucht ist das
+# kleinste Praefix, bei dem sie waechst.
+log_file -a /tmp/bisect.log
+set timeout 900
+set send_slow {1 .003}
+set prompt {[#$] ?$}
+set mwos /Volumes/SSD1TB/projects/MWOS
+set module /dd/CMDS/q9_qcc_diag9
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf local_images/OS9SYS.qcc-xcc-test.hda
+expect "devices online"
+send "\r"
+set li 0
+for {set i 0} {$i < 10 && !$li} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set li 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$li} { send_log "\nBIS: LOGIN FAILED\n"; exit 1 }
+
+proc run {cmd} {
+    global prompt
+    send -s "$cmd\r"
+    expect {
+        -re $prompt          { }
+        -re {Stack Overflow} { send_log "\nBIS: STACK OVERFLOW\n" }
+        -re {PMMU}           { send_log "\nBIS: PMMU\n"; exit 1 }
+        timeout              { send_log "\nBIS: TIMEOUT\n"; exit 1 }
+    }
+}
+
+foreach f {pre005 pre010 pre025 pre050 pre075 qcc_p.bootstrap} {
+    send_log "\nBIS: ===== $f =====\n"
+    run "del /dd/qcc_diag.txt"
+    set t0 [clock seconds]
+    run "$module @/dd/$f.c >/dd/bis_$f.ir"
+    send_log "\nBIS: $f Laufzeit [expr {[clock seconds]-$t0}] s\n"
+    run "dir -e /dd/qcc_diag.txt /dd/bis_$f.ir"
+}
+
+send "\x1d"
+expect eof

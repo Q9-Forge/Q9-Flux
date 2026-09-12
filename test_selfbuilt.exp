@@ -1,0 +1,57 @@
+#!/usr/bin/expect -f
+# Der eigentliche Bootstrap-Test: laeuft der von QCC SELBST gebaute Compiler,
+# und erzeugt er dasselbe IR wie das Original (Fixpunkt)?
+#
+# Pipeline bis hierher: qcc_p (Host) -> stage1.ir -> qcc_backend -os9
+# -largedata -> r68 -> l68 gegen q9_cstart.a + clib/os_lib/sys. Laut
+# docs/STATUS.md (2026-08-13) war genau dieser Lauf "the next test".
+#
+# Bewusst KEINE Regex auf Schlusswoerter: dieses OS-9 beendet Zeilen mit
+# blankem \n, ein Muster wie \r\nOK\r\n greift nie und der Lauf haengt bis
+# zum Timeout. Es wird nur auf den Shell-Prompt gewartet; jedes Ergebnis geht
+# in eine Datei und wird danach am Host geprueft. log_file MUSS gesetzt sein,
+# sonst verwirft send_log still.
+log_file -a /tmp/selfbuilt.log
+set timeout 2400
+set send_slow {1 .003}
+set image local_images/OS9SYS.qcc-xcc-test.hda
+set mwos /Volumes/SSD1TB/projects/MWOS
+set module /dd/CMDS/q9_qcc_selfbuilt
+set prompt {[#$] ?$}
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\nSELF: LOGIN FAILED\n"; exit 1 }
+
+# Ein Lauf, ein Prompt-Match. Abbruch nur bei den harten Fehlern, die den
+# Prozess gar nicht bis zum Prompt kommen lassen.
+proc run {cmd label} {
+    global prompt
+    set t0 [clock seconds]
+    send_log "\nSELF: $label -- start\n"
+    send -s "$cmd\r"
+    expect {
+        -re $prompt          { send_log "\nSELF: $label -- Prompt nach [expr {[clock seconds]-$t0}] s\n" }
+        -re {Stack Overflow} { send_log "\nSELF: $label -- STACK OVERFLOW\n"; exit 1 }
+        -re {PMMU}           { send_log "\nSELF: $label -- PMMU\n"; exit 1 }
+        timeout              { send_log "\nSELF: $label -- TIMEOUT\n"; exit 1 }
+    }
+}
+
+run "ident $module" "ident"
+run "$module @/dd/bootstrap_probe.c >/dd/sb_probe.ir" "Rauchprobe"
+run "$module @/dd/qcc_p.bootstrap.c >/dd/selfbuilt.ir" "Fixpunktlauf"
+run "dir -e /dd/sb_probe.ir /dd/selfbuilt.ir" "Kontrolle"
+
+send "\x1d"
+expect eof

@@ -15,6 +15,14 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "duart68681.h"
 #include "../../hal/q9_hal.h"
+#include "../../../third_party/musashi/m68k.h"               /* m68k_get_reg -- Diagnose, s. .h */
+#include "../../kernel/m68krt.h"                              /* q9_dbg_instr_trace_note_tx, s. dort */
+
+/* s. duart68681.h -- THRA-Mitschrift. */
+uint8_t  q9_dbg_thra_log[Q9_DBG_THRA_LOG_SIZE];
+uint8_t  q9_dbg_thra_d0[Q9_DBG_THRA_LOG_SIZE];
+uint32_t q9_dbg_thra_pc[Q9_DBG_THRA_LOG_SIZE];
+uint32_t q9_dbg_thra_count = 0u;
 
 /* Debug-Werkzeug (5.4): mit -DQ9_BOARD_UART_TRACE uebersetzt, protokolliert jeder UART-Zugriff
    Offset+Wert auf stderr — damit wurde der sc68681-Treiber-Init beim ersten OS-9-Boot
@@ -148,6 +156,13 @@ static void board_uart_write(q9_board_t *b, uint32_t addr, uint8_t val)
         }
         return;
     case 0x06:                                         /* THRA -> Konsole                        */
+        if (q9_dbg_thra_count < Q9_DBG_THRA_LOG_SIZE) {     /* Diagnose, s. duart68681.h            */
+            q9_dbg_thra_log[q9_dbg_thra_count] = val;
+            q9_dbg_thra_d0[q9_dbg_thra_count]  = (uint8_t)(m68k_get_reg(NULL, M68K_REG_D0) & 0xFFu);
+            q9_dbg_thra_pc[q9_dbg_thra_count]  = (uint32_t)m68k_get_reg(NULL, M68K_REG_PPC);
+        }
+        q9_dbg_thra_count++;
+        q9_dbg_instr_trace_note_tx(val);                    /* Freeze-on-Anomaly, s. m68krt.c       */
         q9_hal_con_put((char)val);
         return;
     case 0x10:                                         /* MRB */

@@ -44,6 +44,7 @@
 #include "q9boardrun.h"
 #include "q9board.h"
 #include "m68krt.h"
+#include "../devices/duart68681/duart68681.h"      /* THRA-Mitschrift, s. dort                */
 #include "../devices/quicc/quicc.h"
 #include "../devices/mc6845/mc6845.h"                  /* 5.24: MC6845-CRT-Controller             */
 #include "../devices/framebuf/framebuf.h"              /* 5.26: VRAM-Geraet                       */
@@ -166,6 +167,257 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
     if (guard >= 64)
         fprintf(f, "  (Abbruch nach 64 Eintraegen -- moegliche Ringkette?)\n");
 
+    {   /* Warteschlangen des eigenen Kernels durchlaufen. Die Sentinels und
+           Feldoffsets stammen aus q9kernel_sched.c (Ready $1240, Wait $12A0,
+           Sleep $12F0; next=+$30, prev=+$34, Zustand=+$1d, ID=+$26-2).
+           Zweck: sehen, in WELCHER Schlange ein Prozess wirklich haengt --
+           der Zustandsbuchstabe allein sagt das nicht. */
+        static const uint32_t sent[3] = { 0x1240u, 0x12A0u, 0x12F0u };
+        static const char    *snam[3] = { "Ready", "Wait", "Sleep" };
+        uint32_t q;
+
+        for (q = 0u; q < 3u; q++) {
+            uint32_t node = q9_board_read32(b, sent[q] + 0x30u);
+            uint32_t guard = 0u;
+
+            fprintf(f, "%s-Queue @%04x:", snam[q], (unsigned)sent[q]);
+            while (node != sent[q] && guard++ < 16u) {
+                if (node == 0u || node >= 0x1000000u) {
+                    fprintf(f, " <unplausibel %08x>", (unsigned)node);
+                    break;
+                }
+                fprintf(f, " %08x(P$State=%04x '%c' P$Signal=%04x)", (unsigned)node,
+                        (unsigned)q9_board_read16(b, node + 0x1cu),
+                        (int)q9_board_read8(b, node + 0x1du),
+                        (unsigned)q9_board_read16(b, node + 0x26u));
+                node = q9_board_read32(b, node + 0x30u);
+            }
+            if (guard == 0u) {
+                fprintf(f, " (leer)");
+            }
+            fprintf(f, "\n");
+        }
+    }
+
+    {   /* Mitschrift der F$SSvc-Registrierungen (Q9-OS q9kernel_ssvc.c legt
+           sie ab $1700 ab: [0] Anzahl, dann je 12 Byte Code/Routine/
+           Tabelleneintrag). Zeigt, WER welchen Slot zuletzt beschreibt. */
+        uint32_t n = q9_board_read32(b, 0x1700u);
+        uint32_t k;
+
+        fprintf(f, "F$SSvc-Registrierungen: %u\n", (unsigned)n);
+        if (n > 40u) { n = 40u; }
+        for (k = 0; k < n; k++) {
+            uint32_t rec = 0x1704u + k * 12u;
+            unsigned code = (unsigned)q9_board_read32(b, rec);
+            fprintf(f, "    [%2u] Code $%04x -> %08x   (Eintrag @%08x)\n",
+                    (unsigned)k, code,
+                    (unsigned)q9_board_read32(b, rec + 4u),
+                    (unsigned)q9_board_read32(b, rec + 8u));
+        }
+    }
+
+    {   /* Wohin zeigen die I$-Slots wirklich? Verlaesslicher als jede
+           Disassemblierung von Hand: die Dispatch-Tabellen stehen in
+           D_SysDis ($3a4) / D_UsrDis ($3a8), der Eintrag eines Dienstes bei
+           Basis + Callcode*4. */
+        uint32_t sysdis = q9_board_read32(b, 0x3a4u);
+        uint32_t usrdis = q9_board_read32(b, 0x3a8u);
+        static const unsigned codes[] = { 0x00u, 0x01u, 0x03u, 0x0au, 0x28u, 0x2eu, 0x31u, 0x38u, 0x5cu, 0x64u, 0x84u, 0x89u, 0x8fu };
+        unsigned k;
+
+        fprintf(f, "I$-Dispatch-Slots (SysDis @%08x / UsrDis @%08x):\n",
+                (unsigned)sysdis, (unsigned)usrdis);
+        for (k = 0; k < sizeof codes / sizeof codes[0]; k++) {
+            fprintf(f, "    $%02x: sys=%08x  usr=%08x\n", codes[k],
+                    (unsigned)q9_board_read32(b, sysdis + codes[k] * 4u),
+                    (unsigned)q9_board_read32(b, usrdis + codes[k] * 4u));
+        }
+    }
+
+    {   /* Letzte Modulsuch-Anfrage (Q9-OS legt sie ab $1710 ab): Filter und
+           Name. Beantwortet "wonach sucht IOMan eigentlich?" */
+        uint32_t filt = q9_board_read32(b, 0x1710u);
+        char nm[13];
+        unsigned k;
+        for (k = 0; k < 12u; k++) {
+            unsigned ch = q9_board_read8(b, 0x1714u + k);
+            nm[k] = (ch >= 0x20u && ch < 0x7fu) ? (char)ch : (ch ? '?' : '\0');
+            if (!ch) { break; }
+        }
+        nm[12] = '\0';
+        fprintf(f, "Letzte Modulsuche: Filter=%04x Name=\"%s\"\n", (unsigned)filt, nm);
+    }
+
+    {   /* Laufender Prozess: P$State ist im echten Layout ein WORT bei +$1c
+           (MWOS/OS9/SRC/DEFS/process.a). sc68681 prueft nach dem Aufwachen
+           dessen Bit 1 im OBEREN Byte und bricht dann ab. */
+        uint32_t cur = q9_board_read32(b, 0x4cu);
+        fprintf(f, "D_Proc=%08x  P$State=%04x  P$Signal=%04x\n",
+                (unsigned)cur,
+                cur ? (unsigned)q9_board_read16(b, cur + 0x1cu) : 0u,
+                cur ? (unsigned)q9_board_read16(b, cur + 0x26u) : 0u);
+    }
+
+    {   /* Statischer Speicher des Konsolentreibers (V_STAT aus dem ersten
+           Geraetetabelleneintrag). sc68681 haelt dort u.a. seinen
+           Eingabe-Ringpuffer und die Flusskontroll-Flags -- ohne Blick
+           darauf ist jede Aussage ueber "Puffer leer" Spekulation. */
+        uint32_t devtbl = q9_board_read32(b, 0x80u);
+        uint32_t vstat  = devtbl ? q9_board_read32(b, devtbl + 4u) : 0u;
+        uint32_t r;
+
+        fprintf(f, "Treiber-Statik V_STAT=%08x:\n", (unsigned)vstat);
+        if (vstat) {
+            for (r = 0; r < 0x90u; r += 16u) {
+                unsigned c;
+                fprintf(f, "  +%02x:", (unsigned)r);
+                for (c = 0; c < 16u; c++) {
+                    fprintf(f, " %02x", (unsigned)q9_board_read8(b, vstat + r + c));
+                }
+                fputc('\n', f);
+            }
+        }
+    }
+
+    {   /* Welcher Callcode landete zuletzt im Unimplemented-Stub, und wie oft
+           kam das vor? (Q9-OS legt beides ab $1730 ab, wenn die Diagnose
+           dort eingeschaltet ist.) Dazu der aktuelle Inhalt der
+           Callcode-Zelle $1370, die der Dispatcher beim Eintritt fuellt. */
+        fprintf(f, "Unimplemented: letzter Callcode=\$%02x  Anzahl=%u   ($1370 jetzt=$%02x)\n",
+                (unsigned)q9_board_read16(b, 0x1730u),
+                (unsigned)q9_board_read16(b, 0x1732u),
+                (unsigned)q9_board_read16(b, 0x1370u));
+    }
+
+    {   /* Pfad-Deskriptor-Blocktabelle (D_PthDBT, $48) mit dem Lock-Feld
+           jedes Deskriptors. IOMans File-Manager-Wrapper (ioman+$14f8)
+           sperrt den Pfad ueber +$8 und gibt ihn nur frei, wenn der Wert
+           beim Rueckweg noch derselbe ist -- bleibt er stehen, scheitert
+           jeder weitere Open. */
+        uint32_t dbt = q9_board_read32(b, 0x48u);
+        unsigned k;
+
+        fprintf(f, "Pfad-Pool-Basis ($1214)=%08x  erster Deskriptor-Lock(+$8)=%04x\n",
+                (unsigned)q9_board_read32(b, 0x1214u),
+                (unsigned)q9_board_read16(b, q9_board_read32(b, 0x1214u) + 8u));
+        fprintf(f, "D_PthDBT=%08x  Hoechstindex=%u\n", (unsigned)dbt,
+                dbt ? (unsigned)q9_board_read16(b, dbt) : 0u);
+        if (dbt) {
+            for (k = 1; k <= 4u; k++) {
+                uint32_t pd = q9_board_read32(b, dbt + k * 4u);
+                if (!pd) { continue; }
+                fprintf(f, "  Pfad %u: PD=%08x  PD_PD=%04x PD_MOD=%02x  LOCK(+$8)=%04x\n",
+                        k, (unsigned)pd,
+                        (unsigned)q9_board_read16(b, pd),
+                        (unsigned)q9_board_read8(b, pd + 2u),
+                        (unsigned)q9_board_read16(b, pd + 8u));
+            }
+        }
+    }
+
+    {   /* Frei waehlbare PC-Zaehler (Q9_COUNT_PC), s. m68krt.c */
+        uint32_t k;
+        if (q9_dbg_cpc_n > 0u) {
+            fputs("PC-Zaehler (Q9_COUNT_PC):", f);
+            for (k = 0u; k < q9_dbg_cpc_n; k++) {
+                fprintf(f, " %08x=%u", (unsigned)q9_dbg_cpc_addr[k],
+                        (unsigned)q9_dbg_cpc_hits[k]);
+            }
+            fputc('\n', f);
+        }
+    }
+
+    {   /* Diagnose-Scratchzellen des eigenen Kernels ($1600-$1620) -- die
+           Syscall-Bruecken legen dort Ein-/Ausgabewerte ab (s.
+           Q9K_SEND_SCRATCH_* in q9kernel_procsleep.c). */
+        uint32_t z;
+        fprintf(f, "Scratchzellen $1600-$1620:");
+        for (z = 0x1600u; z <= 0x1620u; z += 4u) {
+            fprintf(f, " %08x", (unsigned)q9_board_read32(b, z));
+        }
+        fprintf(f, "\n");
+    }
+
+    {   /* Schreib-Watch (s. m68krt.c). Steht bewusst hier oben: der spaetere
+           Zeigerlauf bricht ab, sobald ein Wert unplausibel ist -- alles
+           dahinter wurde nie ausgegeben und der Watch sah leer aus, obwohl
+           er Treffer hatte. */
+        uint32_t z, first, cnt;
+        fprintf(f, "\n--- Schreibzugriffe im Watch-Fenster (Q9_WATCH_ADDR/_LEN): %u, Zaehlerstand jetzt #%u ---\n",
+                (unsigned)q9_dbg_wv_n, (unsigned)q9_dbg_write_seq_now());
+        cnt   = (q9_dbg_wv_n < 64u) ? q9_dbg_wv_n : 64u;
+        first = q9_dbg_wv_n - cnt;   /* aeltester noch vorhandener Treffer */
+        for (z = first; z < q9_dbg_wv_n; z++) {
+            uint32_t i = z % 64u;
+            fprintf(f, "    #%-10u pc=%08x -> %08x schrieb %08x (%u Byte)\n",
+                    (unsigned)q9_dbg_wv_seq[i],
+                    (unsigned)q9_dbg_wv_pc[i], (unsigned)q9_dbg_wv_adr[i],
+                    (unsigned)q9_dbg_wv_val[i], (unsigned)q9_dbg_wv_size[i]);
+        }
+    }
+
+    {   /* Q9K_RaceRing (TEMPORAER, 2026-09-11, zehnte Arbeitssitzung, s.
+           q9kernel_entry.a Kopfkommentar bei Q9K_RaceRingBase): 8192 Slots
+           a 8 Byte (Marker.l/PC.l) ab $1440C0, laufender Schreibindex bei
+           $1540C0 (kein Modulo beim Schreiben -- hier beim Lesen maskiert).
+           Marker: Vektornummer (Timer=30, DUART meist 27) fuer einen
+           Interrupt-Eintritt, $58='X' fuer den Anfang von
+           Q9K_TrapCallExternal, $41='A' fuer den PC unmittelbar vor dem
+           abschliessenden RTE in Q9K_TrapAfterCall. Gesucht: ein Interrupt-
+           Eintrag zeitlich zwischen einem 'X' und dem zugehoerigen 'A'.
+           Ausgabe gefiltert: nur X/A-Marker plus je 3 Nachbareintraege --
+           bei 8192 Slots waeren alle Timer-Ticks sonst unlesbar viel Text. */
+        uint32_t idx = q9_board_read32(b, 0x1540C0u);
+        uint32_t cnt = (idx < 8192u) ? idx : 8192u;
+        uint32_t first = idx - cnt;
+        uint32_t z;
+        uint32_t shown_until = 0;  /* zuletzt gedruckter Index + 1, verhindert Dopplung */
+
+        fprintf(f, "\n--- Q9K_RaceRing (Index=%u, %u Eintraege im Puffer, gefiltert: X/A +/-3) ---\n",
+                (unsigned)idx, (unsigned)cnt);
+        for (z = first; z < idx; z++) {
+            uint32_t slot = z & 0x1FFFu;
+            uint32_t addr = 0x1440C0u + slot * 8u;
+            uint32_t marker = q9_board_read32(b, addr);
+
+            if (marker == 0x58u || marker == 0x41u ||
+                (marker >= 0x5400u && marker <= 0x54FFu)) {
+                uint32_t s = (z >= first + 3u) ? z - 3u : first;
+                uint32_t e = (z + 4u < idx) ? z + 4u : idx;
+                uint32_t w;
+
+                if (s < shown_until) s = shown_until;
+                for (w = s; w < e; w++) {
+                    uint32_t wslot = w & 0x1FFFu;
+                    uint32_t waddr = 0x1440C0u + wslot * 8u;
+                    uint32_t wmarker = q9_board_read32(b, waddr);
+                    uint32_t wpc     = q9_board_read32(b, waddr + 4u);
+                    char tagbuf[48];
+                    const char *tag = tagbuf;
+
+                    tagbuf[0] = 0;
+                    if (wmarker == 0x58u) tag = " (X=Anfang extern)";
+                    else if (wmarker == 0x41u) tag = " (A=vor RTE)";
+                    else if (wmarker == 30u) tag = " (Timer-IRQ)";
+                    else if (wmarker >= 0x5400u && wmarker <= 0x54FFu)
+                        snprintf(tagbuf, sizeof tagbuf, " (T=TrapDispatch-Start, Funktionscode=$%02x)",
+                                 (unsigned)(wmarker - 0x5400u));
+                    else if (wmarker < 30u) tag = " (IRQ-Vektor)";
+                    fprintf(f, "    #%-6u marker=%5u ($%04x) pc=%08x%s\n",
+                            (unsigned)w, (unsigned)wmarker, (unsigned)wmarker,
+                            (unsigned)wpc, tag);
+                }
+                fprintf(f, "    ----\n");
+                shown_until = e;
+            }
+        }
+        if (shown_until == 0) {
+            fprintf(f, "    (kein X/A-Marker im Puffer gefunden)\n");
+        }
+        fprintf(f, "--- Ende Q9K_RaceRing ---\n");
+    }
+
     fprintf(f, "--- Ende Q9-eigener-Kernel-Zusatzdump ---\n\n");
 }
 
@@ -182,6 +434,277 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
     }
 
     dbg_dump_q9kernel_extras(b, f);
+
+    /* Diagnose (2026-09-04): DUART-Interruptzustand und die Polling-Tabelle
+       des Q9-eigenen Kernels ($1500, 16 Eintraege a 20 Byte:
+       Vektor/Prio/ISR/statisch/Port). Zweck: einen Interrupt-Sturm
+       einordnen -- feuert die Quelle dauerhaft, und mit welchem Kontext
+       ruft der Dispatcher die ISR auf? */
+    {
+        uint32_t i;
+
+        fprintf(f, "\n--- DUART/IRQ-Zustand ---\n  IMR=%02x  IVR=%02x\n",
+                (unsigned)b->uart_imr, (unsigned)b->uart_ivr);
+        /* Steht wirklich etwas im Empfangs-FIFO? Bei IMR-Bit1 (RxRDY) meldet
+           die Emulation genau dann Interrupt -- ein voller FIFO, den niemand
+           leert, ergibt einen Dauerinterrupt. */
+        fprintf(f, "  RX-FIFO: count=%u head=%u tail=%u overflow=%u\n",
+                (unsigned)b->uart_rx_count, (unsigned)b->uart_rx_head,
+                (unsigned)b->uart_rx_tail, (unsigned)b->uart_rx_overflow);
+        fputs("  Polling-Tabelle (belegte Eintraege):\n", f);
+        for (i = 0; i < 16u; i++) {
+            uint32_t e   = 0x1500u + i * 20u;
+            uint32_t vec = q9_board_read32(b, e);
+
+            if (vec != 0) {
+                fprintf(f, "    [%2u] Vektor=%-3u ISR=%08x statisch=%08x Port=%08x\n",
+                        (unsigned)i, (unsigned)vec,
+                        (unsigned)q9_board_read32(b, e + 8u),
+                        (unsigned)q9_board_read32(b, e + 12u),
+                        (unsigned)q9_board_read32(b, e + 16u));
+            }
+        }
+        {
+            extern uint32_t q9_dbg_ackvec[256], q9_dbg_acklevel[8];
+            uint32_t k;
+
+            fputs("  Interrupt-Acknowledge -- gelieferte Vektoren:\n", f);
+            for (k = 0; k < 256u; k++) {
+                if (q9_dbg_ackvec[k]) {
+                    fprintf(f, "    Vektor %3u : %u mal\n", (unsigned)k,
+                            (unsigned)q9_dbg_ackvec[k]);
+                }
+            }
+            fputs("  ... nach Pegel:\n", f);
+            for (k = 0; k < 8u; k++) {
+                if (q9_dbg_acklevel[k]) {
+                    fprintf(f, "    Level %u : %u mal\n", (unsigned)k,
+                            (unsigned)q9_dbg_acklevel[k]);
+                }
+            }
+        }
+        fputs("--- Ende DUART/IRQ-Zustand ---\n", f);
+    }
+
+    /* Diagnose (2026-09-04): die Systemglobals, an denen der I/O-Weg haengt.
+       ACHTUNG bei den Offsets: die Reihenfolge in Q9-OS/src/q9sysglob.a naiv
+       durchzuzaehlen ergibt Werte, die um $1C ZU NIEDRIG sind (verifiziert an
+       drei Punkten: D_Proc=$4C, D_SysRom=$64, D_SysDis=$3A4). Genau dieser
+       Zaehlfehler hat schon einmal dazu gefuehrt, dass $64 fuer D_DevTbl
+       gehalten wurde -- es ist D_SysRom. */
+    {
+        uint32_t devtbl = q9_board_read32(b, 0x80u);   /* D_DevTbl  */
+        uint32_t sysrom = q9_board_read32(b, 0x64u);   /* D_SysRom  */
+        uint32_t excjmp = q9_board_read32(b, 0x68u);   /* D_ExcJmp  */
+        uint32_t i;
+
+        fputs("\n--- Systemglobals (I/O-relevant) ---\n", f);
+        fprintf(f, "  D_SysRom($64)=%08x  D_ExcJmp($68)=%08x  D_DevTbl($80)=%08x\n",
+                (unsigned)sysrom, (unsigned)excjmp, (unsigned)devtbl);
+        if (devtbl != 0 && devtbl < BOARD_RAM_BYTES) {
+            fputs("  Geraetetabelle (erste 4 Eintraege a 16 Byte):\n", f);
+            for (i = 0; i < 4u; i++) {
+                uint32_t e = devtbl + i * 16u;
+                fprintf(f, "    [%u] %08x %08x %08x %08x\n", (unsigned)i,
+                        (unsigned)q9_board_read32(b, e),
+                        (unsigned)q9_board_read32(b, e + 4u),
+                        (unsigned)q9_board_read32(b, e + 8u),
+                        (unsigned)q9_board_read32(b, e + 12u));
+            }
+        } else {
+            fputs("  D_DevTbl ist LEER oder unplausibel -- I$Attach hat sie nie gefuellt.\n", f);
+        }
+        fputs("--- Ende Systemglobals ---\n", f);
+    }
+
+    /* Diagnose (2026-09-04): Exception-Mitschrift des Q9-eigenen Kernels.
+       Q9K_ExcTrap (Q9-OS q9kernel_entry.a) legt bei jeder Exception einen
+       festen Satz Felder ab $144020 ab. Sie hier auszugeben erspart es, den
+       Kernel selbst mit Diagnose-Ausgaben zu versehen -- was bei diesem Kernel
+       nachweislich das Symptom verschiebt (jede Aenderung der Modulgroesse
+       verschiebt Ladeadressen und Interrupt-Zeitpunkte). */
+    {
+        uint32_t sr   = q9_board_read16(b, 0x144020u);
+        uint32_t pc   = q9_board_read32(b, 0x144024u);
+        uint32_t fmt  = q9_board_read16(b, 0x144028u);
+        uint32_t a6   = q9_board_read32(b, 0x14402Cu);
+        uint32_t sp   = q9_board_read32(b, 0x144030u);
+        uint32_t ret0 = q9_board_read32(b, 0x144034u);
+        uint32_t ret1 = q9_board_read32(b, 0x144038u);
+
+        fputs("\n--- Q9K_ExcTrap-Mitschrift (0 = keine Exception aufgetreten) ---\n", f);
+        fprintf(f, "  Vektor=%u (Fmt/Vektor-Wort %04x)  SR=%04x\n",
+                (unsigned)((fmt & 0x0FFFu) / 4u), (unsigned)fmt, (unsigned)sr);
+        fprintf(f, "  PC=%08x  A6=%08x  SP=%08x\n",
+                (unsigned)pc, (unsigned)a6, (unsigned)sp);
+        fprintf(f, "  Stack darunter: %08x %08x\n", (unsigned)ret0, (unsigned)ret1);
+        {   /* Register und Stackauszug -- Q9K_ExcTrap sichert sie laengst
+               ($144040 a0/a1, $144048 a2-a4, $144054 d0-d7, $144080 64 Byte
+               Stack); sie auch auszugeben erspart einen weiteren Lauf. */
+            uint32_t z;
+
+            fprintf(f, "  A0=%08x A1=%08x  A2=%08x A3=%08x A4=%08x\n",
+                    (unsigned)q9_board_read32(b, 0x144040u),
+                    (unsigned)q9_board_read32(b, 0x144044u),
+                    (unsigned)q9_board_read32(b, 0x144048u),
+                    (unsigned)q9_board_read32(b, 0x14404Cu),
+                    (unsigned)q9_board_read32(b, 0x144050u));
+            fputs("  D0-D7:", f);
+            for (z = 0u; z < 8u; z++) {
+                fprintf(f, " %08x", (unsigned)q9_board_read32(b, 0x144054u + z * 4u));
+            }
+            fputs("\n  Stack ab SP:", f);
+            for (z = 0u; z < 16u; z++) {
+                if (z == 8u) {
+                    fputs("\n              ", f);
+                }
+                fprintf(f, " %08x", (unsigned)q9_board_read32(b, 0x144080u + z * 4u));
+            }
+            fputc('\n', f);
+        }
+        {   /* Code rund um den Exception-PC direkt aus dem LAUFENDEN Speicher.
+               Die Moduldatei zu disassemblieren fuehrt in die Irre, sobald
+               ueber die Instruktionsgrenzen Unklarheit besteht -- hier steht,
+               was die CPU wirklich vorgefunden hat. */
+            uint32_t base = (pc >= 24u) ? (pc - 24u) : 0u;
+            uint32_t z;
+
+            fprintf(f, "  Code um den PC (ab %08x):\n", (unsigned)base);
+            for (z = 0; z < 48u; z += 16u) {
+                unsigned c;
+                fprintf(f, "    %08x:", (unsigned)(base + z));
+                for (c = 0; c < 16u; c += 2u) {
+                    fprintf(f, " %04x", (unsigned)q9_board_read16(b, base + z + c));
+                }
+                fputc('\n', f);
+            }
+        }
+        fputs("--- Ende Exception-Mitschrift ---\n", f);
+    }
+
+    /* Diagnose (2026-09-03): was tatsaechlich auf THRA geschrieben wurde, plus
+       CPU-Zustand beim selben Zugriff -- s. duart68681.h. Weichen Buswert und
+       d0.b voneinander ab, entsteht eine Verstuemmelung erst beim Schreiben;
+       sind sie gleich, hat der Gast den Wert schon falsch im Register. */
+    {
+        uint32_t n = q9_dbg_thra_count;
+        uint32_t i;
+
+        if (n > Q9_DBG_THRA_LOG_SIZE) {
+            n = Q9_DBG_THRA_LOG_SIZE;
+        }
+        fprintf(f, "\n--- THRA-Mitschrift: %u Bytes geschrieben (aufgezeichnet: %u) ---\n",
+                (unsigned)q9_dbg_thra_count, (unsigned)n);
+        for (i = 0; i < n; i++) {
+            uint8_t c = q9_dbg_thra_log[i];
+            fputc((c >= 0x20u && c < 0x7fu) ? (int)c : '.', f);
+        }
+        fputs("\n  Abweichungen Buswert/d0 (erste 32):\n", f);
+        {
+            uint32_t shown = 0;
+            for (i = 0; i < n && shown < 32u; i++) {
+                if (q9_dbg_thra_log[i] != q9_dbg_thra_d0[i]) {
+                    fprintf(f, "    [%3u] bus=%02x d0=%02x pc=%08x\n", (unsigned)i,
+                            (unsigned)q9_dbg_thra_log[i], (unsigned)q9_dbg_thra_d0[i],
+                            (unsigned)q9_dbg_thra_pc[i]);
+                    shown++;
+                }
+            }
+            fprintf(f, "    Abweichungen gesamt unter %u: %u\n", (unsigned)n, (unsigned)shown);
+        }
+        fputs("--- Ende THRA-Mitschrift ---\n", f);
+    }
+
+    /* Diagnose: Instruktionsspur vor der Anomalie (nur mit Q9_TRACE_INSTR=1
+       gefuellt, s. m68krt.h). Aeltester Eintrag zuerst. */
+    if (q9_dbg_tr_fill != 0u) {
+        uint32_t k;
+
+        fprintf(f, "\n--- Instruktionsspur (frozen=%d, %u Eintraege, aeltester zuerst) ---\n",
+                q9_dbg_tr_frozen, (unsigned)q9_dbg_tr_fill);
+        for (k = 0; k < q9_dbg_tr_fill; k++) {
+            uint32_t idx = (q9_dbg_tr_head + Q9_DBG_TR_SIZE - q9_dbg_tr_fill + k) % Q9_DBG_TR_SIZE;
+            fprintf(f, "  pc=%08x d0=%08x a0=%08x a4=%08x sp=%08x d1=%08x d3=%08x d4=%08x\n",
+                    (unsigned)q9_dbg_tr_pc[idx], (unsigned)q9_dbg_tr_d0[idx],
+                    (unsigned)q9_dbg_tr_a0[idx], (unsigned)q9_dbg_tr_a4[idx], (unsigned)q9_dbg_tr_sp[idx],
+                    (unsigned)q9_dbg_tr_d1[idx], (unsigned)q9_dbg_tr_d3[idx], (unsigned)q9_dbg_tr_d4[idx]);
+        }
+        fputs("--- Ende Instruktionsspur ---\n", f);
+
+        /* Stackbereich bei jedem Dispatcher-Eintritt, ZUM ZEITPUNKT des
+           Eintritts im Hook gesichert (s. m68krt.c). Daran laesst sich die
+           Lage des Exception-Frames ablesen: gesucht ist das Format-/Vektor-
+           Wort, davor stehen PC und SR des unterbrochenen Codes. */
+        if (q9_dbg_ent_n != 0u) {
+            uint32_t e, w;
+
+            fprintf(f, "\n--- Stack bei Dispatcher-Eintritt (%u erfasst) ---\n",
+                    (unsigned)q9_dbg_ent_n);
+            for (e = 0; e < q9_dbg_ent_n; e++) {
+                fprintf(f, "  [%2u] sp=%08x:", (unsigned)e, (unsigned)q9_dbg_ent_sp[e]);
+                for (w = 0; w < Q9_DBG_ENT_WORDS; w++) {
+                    fprintf(f, " %04x", (unsigned)q9_dbg_ent_stk[e][w]);
+                }
+                fputc(0x0a, f);
+            }
+            fputs("--- Ende Stack bei Eintritt ---\n", f);
+        }
+
+            /* Dasselbe unmittelbar vor dem RTE. Weicht eine Zeile von der
+               gleichnamigen Eintritts-Zeile ab, wurde der Frame waehrend des
+               Durchlaufs ueberschrieben -- genau das erklaert einen RTE, der nicht
+               dorthin springt, wo sein Frame hinzeigt. */
+            if (q9_dbg_exi_n != 0u) {
+                uint32_t e, w;
+
+                fprintf(f, "\n--- Stack vor dem RTE (%u erfasst) ---\n",
+                        (unsigned)q9_dbg_exi_n);
+                for (e = 0; e < q9_dbg_exi_n; e++) {
+                    fprintf(f, "  [%2u] sp=%08x:", (unsigned)e, (unsigned)q9_dbg_exi_sp[e]);
+                    for (w = 0; w < Q9_DBG_ENT_WORDS; w++) {
+                        fprintf(f, " %04x", (unsigned)q9_dbg_exi_stk[e][w]);
+                    }
+                    fputc(0x0a, f);
+                }
+                fputs("--- Ende Stack vor dem RTE ---\n", f);
+            }
+
+                /* Wo schlaegt der Board-Timer zu? Trifft er einen PC INNERHALB des
+                   IRQ-Dispatchers, wird dessen halb aufgebauter Stack im
+                   Prozessdeskriptor gesichert und spaeter wieder aufgesetzt -- genau
+                   das erklaert einen Dispatcher-Ausgang ohne zugehoerigen Eingang. */
+                {
+                    uint32_t t;
+
+                    fprintf(f, "\n--- Timer-Interrupts: %u gesamt, davon %u im IRQ-Dispatcher ---\n",
+                            (unsigned)q9_dbg_tmr_total, (unsigned)q9_dbg_tmr_indisp);
+                    for (t = 0; t < q9_dbg_tmr_indisp && t < 8u; t++) {
+                        fprintf(f, "    unterbrochener PC: %08x\n", (unsigned)q9_dbg_tmr_pcs[t]);
+                    }
+
+    fprintf(f, "--- Weckpfad der sc68681-ISR: Block betreten %u mal, F$Send %u mal ---\n",
+            (unsigned)q9_dbg_wake_enter, (unsigned)q9_dbg_wake_send);
+
+    /* Exception-Vektortabelle: welche Slots zeigen in den IRQ-Dispatcher?
+       Ein Slot, der NICHT auf dessen Einstieg ($795c) zeigt, sondern
+       mitten hinein, erklaert einen Durchlauf ohne einleitendes movem. */
+    {
+        uint32_t tb = q9_board_read32(b, 0x68u);
+        uint32_t v;
+        fprintf(f, "\n--- Vektorslots mit Ziel im IRQ-Dispatcher (Tabelle @%08x) ---\n",
+                (unsigned)tb);
+        if (tb != 0u && tb < BOARD_RAM_BYTES) {
+            for (v = 0; v < 256u; v++) {
+                uint32_t h = q9_board_read32(b, tb + v * 4u);
+                if (h >= 0x7950u && h <= 0x79e0u) {
+                    fprintf(f, "    Vektor %3u -> %08x%s\n", (unsigned)v, (unsigned)h,
+                            (h == 0x795cu) ? "  (Einstieg, ok)" : "  <== MITTEN HINEIN");
+                }
+            }
+        }
+    }
+                }
+    }
 
     uint32_t v0 = q9_board_read32(b, 0);
 

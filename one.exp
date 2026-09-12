@@ -1,0 +1,22 @@
+log_file -a /tmp/one.log
+set timeout 300
+set send_slow {1 .003}
+set prompt {[#$] ?$}
+spawn ./build/macos/q9.exe --rom /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf local_images/OS9SYS.qcc-xcc-test.hda
+expect "devices online"
+send "\r"
+set li 0
+for {set i 0} {$i < 10 && !$li} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set li 1 }
+        timeout { send "\r" }
+    }
+}
+send -s "del /dd/qcc_diag.txt\r"
+expect -re $prompt
+send -s "/dd/CMDS/q9_qcc_diag8 @/dd/pre005.c >/nil\r"
+expect { -re $prompt {} timeout { exit 1 } }
+send "\x1d"
+expect eof
