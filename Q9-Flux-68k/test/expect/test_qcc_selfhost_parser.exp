@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # End-to-end bootstrap anchor: q9_qccpselfhost_reloc5 was parsed by the XCC-built
 # parser, translated by QCC's own 68k backend, assembled by r68 and linked by
 # l68.  It must still parse a small C program on the real Q9 emulator.

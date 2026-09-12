@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
+# Laesst den selbstgebauten Compiler die vier Minimalprogramme uebersetzen.
+# Nach jedem Lauf zeigt "dir -e" die Groesse der Diagnosedatei (0 = fehlerfrei).
+log_file -a /tmp/minimal.log
+set timeout 300
+set send_slow {1 .003}
+set prompt {[#$] ?$}
+set mwos /Volumes/SSD1TB/projects/MWOS
+set module /dd/CMDS/q9_qcc_diag8
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf local_images/OS9SYS.qcc-xcc-test.hda
+expect "devices online"
+send "\r"
+set li 0
+for {set i 0} {$i < 10 && !$li} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set li 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$li} { send_log "\nMIN: LOGIN FAILED\n"; exit 1 }
+
+proc run {cmd} {
+    global prompt
+    send -s "$cmd\r"
+    expect {
+        -re $prompt { }
+        timeout     { send_log "\nMIN: TIMEOUT\n"; exit 1 }
+    }
+}
+
+foreach f {m1 m2 m3 m4} {
+    send_log "\nMIN: ===== $f =====\n"
+    run "del /dd/qcc_diag.txt"
+    run "$module @/dd/$f.c"
+    run "dir -e /dd/qcc_diag.txt"
+}
+
+send "\x1d"
+expect eof

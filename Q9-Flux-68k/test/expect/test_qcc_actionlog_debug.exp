@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 set timeout 120
 set send_slow {1 .003}
 set image local_images/OS9SYS.qcc-xcc-noprot-test-v2.hda

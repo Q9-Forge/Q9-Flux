@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # 5.14 PRODUKTIV-DEPLOYMENT auf local_images/OS9SYS.hda (Backup existiert:
 # OS9SYS.hda.backup-vor-5.14-*). Kompletter, bereits mehrfach auf Testklonen
 # verifizierter Workflow:

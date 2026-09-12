@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # 5.17: generischer Boot+Login-Test gegen das Geraete-Registry-Klon-Image, nach jedem einzeln
 # umgezogenen Geraet auszufuehren. Prueft: Boot bis "devices online", Login (super/Passwort),
 # Datum lesen (RTC), 'dir' (CF), 'echo' (DUART-Konsole ueber THRA/RHRA), sauberes logout.

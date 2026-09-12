@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 set timeout 240
 log_file -noappend test/expect/results/test_mbr_os9.log
 spawn ./build/native/q9.exe test/cf/emu_mbr_raw_test.q9

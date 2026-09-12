@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # Whole-disk-Descriptor d: partdgen muss den MBR bei LSN 0 sehen.
 set timeout 240
 log_file -noappend test/expect/results/test_partdgen_mbr_raw.log

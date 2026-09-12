@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # 5.19: Boot+Login-Test ueber die Board-CONFIG-DATEI (statt --rom/--cf). Prueft, dass der
 # config-gesteuerte Startweg ein echtes Systemimage bis zum Login bringt (Onboard-CF = bootendes
 # RBF-Image aus der Config) und ein zweites CF-Interface (RC2014) danebenlaeuft.

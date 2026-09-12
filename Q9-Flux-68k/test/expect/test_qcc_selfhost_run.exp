@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # QCC-Selfhosting-Test: den von QCC selbst uebersetzten EBNF-Generator
 # (PROJECTS/ebnf_gen_tc/ebnf_gen_tc) auf dem echten Q9 ausfuehren.
 #

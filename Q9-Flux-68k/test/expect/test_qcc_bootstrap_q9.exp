@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # End-to-end test for the QCC bootstrap module built with q9_cstart.a.
 set timeout 240
 set send_slow {1 .003}

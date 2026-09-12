@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Resolve paths relative to the Q9-Flux-68k project root.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
 # Kurzer Check: liefert "mdir -e" (oder andere Optionen) die Ladeadresse von pkdvr direkt?
 set timeout 90
 log_file -noappend test/expect/results/test_mdir_addr_result.txt
