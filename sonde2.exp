@@ -1,0 +1,40 @@
+#!/usr/bin/expect -f
+# Laesst den selbstgebauten Compiler MIT SONDE ein Minimalprogramm uebersetzen.
+# Die Sonde in tc_local schreibt auf stderr, landet also in /dd/qcc_diag.txt.
+log_file -a /tmp/probe.log
+set timeout 600
+set send_slow {1 .003}
+set prompt {[#$] ?$}
+set mwos /Volumes/SSD1TB/projects/MWOS
+
+spawn ./build/macos/q9.exe --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf local_images/OS9SYS.qcc-xcc-test.hda
+expect "devices online"
+send "\r"
+set li 0
+for {set i 0} {$i < 10 && !$li} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set li 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$li} { send_log "\nPROBE: LOGIN FAILED\n"; exit 1 }
+
+proc run {cmd label} {
+    global prompt
+    send_log "\nPROBE: === $label ===\n"
+    send -s "$cmd\r"
+    expect {
+        -re $prompt { }
+        timeout     { send_log "\nPROBE: $label TIMEOUT\n"; exit 1 }
+    }
+}
+
+run "del /dd/qcc_diag.txt" "alte Diagnose weg"
+run "dir -e /dd/qcc_diag.txt" "sicherstellen dass sie weg ist"
+foreach f {m1 m2 m3 m4} { run "/dd/CMDS/q9_sonde2 @/dd/$f.c" "PROG $f" }
+run "dir -e /dd/qcc_diag.txt" "neue Diagnosedatei"
+
+send "\x1d"
+expect eof
