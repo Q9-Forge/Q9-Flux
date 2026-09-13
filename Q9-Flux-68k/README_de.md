@@ -1,38 +1,33 @@
 # Q9-Flux 68k
 
-Q9-Flux is a 68030 hardware emulator for genuine OS-9/68K, part of
-[Q9-Forge](https://github.com/Q9-Forge). It embeds the
-[Musashi](third_party/musashi/) 68000-family CPU core and emulates board
-hardware (RAM/ROM/remap, 68681 DUART, CompactFlash/RBF/PCF storage, QUICC
-Ethernet, real-time clock, board-config-driven CF profiles) closely enough
-to boot and run real, unmodified OS-9/68K. The first fully
-supported board is the Q9 board; further boards (MC68000, Vinculum, ...) are
-planned, see [Q9-Forge's roadmap](https://github.com/Q9-Forge/.github/blob/main/ROADMAP.md).
+*Englische Version: [README.md](README.md)*
 
-## Usage
+Q9-Flux 68k ist ein 68030-Hardware-Emulator für echtes OS-9/68K und Teil der
+[Q9-Forge](https://github.com/Q9-Forge)-Projektfamilie.
+
+Der Emulator verwendet den 68000-Prozessorkern
+[Musashi](third_party/musashi/) und bildet die Q9-Board-Hardware nach,
+einschließlich RAM/ROM, Remapping, 68681 DUART, CompactFlash-/RBF-Speicher,
+QUICC-Ethernet und Echtzeituhr. Ziel ist es, unveränderte OS-9/68K-Software
+zu booten und auszuführen.
+
+## Bauen und starten
 
 ```sh
-make host   # -> build/<platform>/q9.exe (windows/macos/linux, chosen automatically)
+make host
 ./build/<platform>/q9.exe <config.q9>
-# or: ./build/<platform>/q9.exe --rom <rom> [--cf <image>] [--net nat|vmnet|bridge:<if>]
 ```
 
-See [`docs/HANDBOOK.md`](docs/HANDBOOK.md) (German: [`docs/HANDBUCH_de.md`](docs/HANDBUCH_de.md))
-for the full manual: tools, build instructions, source layout, architecture,
-and licensing notes for third-party reference material.
+Das vollständige Handbuch steht in
+[`docs/HANDBUCH_de.md`](docs/HANDBUCH_de.md). Lokale Emulator-Images,
+private Profile und Archive werden absichtlich von Git ignoriert.
 
-## History
+## Status
 
-Q9 started as a from-scratch mini operating system in the tradition of
-OS-9 (own kernel, module system, WASM-as-implementation-language
-for a browser target). That subsystem was untouched from 2026-07-04
-onward while all further work went into the OS-9/68k
-emulator; it has been archived to
-[`Q9RESUME-Kernel`](https://github.com/foellmy51/Q9RESUME-Kernel) (full
-history preserved) should the original mini-OS idea be revisited.
-`docs/PROJECT_VISION_ARCHIV.md` keeps the original vision document for
-reference.
+Der 68k-Emulator ist derzeit die ausgereifteste Q9-Flux-Komponente. Weitere
+Boards und Gerätemodelle sind geplant.
 
-## License
+## Lizenz
 
-[MIT](LICENSE)
+Siehe [LICENSE](LICENSE) und die Dokumentation zu den verwendeten
+Drittkomponenten.
