@@ -258,6 +258,19 @@ uint32_t q9_dbg_tr_d1[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_d3[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_d4[Q9_DBG_TR_SIZE];
 
+/* s. m68krt.h -- A6-Aenderungs-Ringpuffer (Fortsetzung 55/56). */
+uint32_t q9_dbg_a6_pc[Q9_DBG_A6_SIZE];
+uint32_t q9_dbg_a6_old[Q9_DBG_A6_SIZE];
+uint32_t q9_dbg_a6_new[Q9_DBG_A6_SIZE];
+uint32_t q9_dbg_a6_sp[Q9_DBG_A6_SIZE];
+uint32_t q9_dbg_a6_a0[Q9_DBG_A6_SIZE];
+uint32_t q9_dbg_pchit_a0[Q9_DBG_PCHIT_SIZE];
+uint32_t q9_dbg_pchit_a1[Q9_DBG_PCHIT_SIZE];
+uint32_t q9_dbg_pchit_mem4[Q9_DBG_PCHIT_SIZE];
+uint32_t q9_dbg_pchit_mem8[Q9_DBG_PCHIT_SIZE];
+uint32_t q9_dbg_pchit_n;
+uint32_t q9_dbg_a6_n = 0u;
+
 /* Stackbereich ZUM ZEITPUNKT jedes Dispatcher-Eintritts. Die Lage des
    Exception-Frames wird damit ABGELESEN statt angenommen -- zwei Versuche,
    sie zu erraten (sp+2 bzw. sp+62), lieferten beide Unsinn. */
@@ -303,6 +316,80 @@ static void q9_dbg_cpc_init(void)
 
 static void q9_dbg_instr_hook(unsigned int pc)
 {
+    /* A6-Aenderungs-Ringpuffer (2026-09-13, Fortsetzung 55/56) -- s.
+     * ausfuehrliche Begruendung in m68krt.h ("Q9_DBG_A6_SIZE"). Bewusst
+     * OHNE jedes I/O hier (die fruehere fprintf-Fassung brachte den
+     * Host-Prozess zum Absturz) -- reiner Ringpuffer-Schreibzugriff,
+     * Ausgabe erst beim Ctrl-^-Dump. Filter per Q9_A6TRACE_LO/_HI (beide
+     * 0 = Filter aus, ALLE Aenderungen protokolliert -- dann faellt der
+     * Ringpuffer schnell zurueck auf die juengsten paar Wechsel, was fuer
+     * "was geschah UNMITTELBAR vor dem naechsten manuellen Dump" reicht). */
+    {
+        static uint32_t last_a6 = 0xFFFFFFFFu;
+        static uint32_t lo = 0u, hi = 0u;
+        static uint32_t freeze_val = 0u;
+        static int freeze_active = 0;
+        static int filter_read = 0;
+        static int frozen_here = 0;
+        if (!filter_read) {
+            const char *e = getenv("Q9_A6TRACE_LO");
+            const char *h = getenv("Q9_A6TRACE_HI");
+            const char *fz = getenv("Q9_A6TRACE_FREEZE");
+            lo = e ? (uint32_t)strtoul(e, 0, 0) : 0u;
+            hi = h ? (uint32_t)strtoul(h, 0, 0) : 0u;
+            if (fz) {
+                freeze_val = (uint32_t)strtoul(fz, 0, 0);
+                freeze_active = 1;
+            }
+            filter_read = 1;
+        }
+        if (frozen_here) {
+            /* Ringpuffer NICHT mehr weiterschreiben, sobald Q9_A6TRACE_FREEZE
+             * einmal erreicht wurde -- haelt genau die Eintraege FEST, die zu
+             * diesem Zielwert HINFUEHRTEN, statt sie durch spaeteres normales
+             * Prozesswechsel-Rauschen wieder zu ueberschreiben. */
+        } else {
+        uint32_t a6 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A6);
+            if (a6 != last_a6) {
+                int interesting = (lo == 0u && hi == 0u) ||
+                                   (a6 >= lo && a6 < hi) ||
+                                   (last_a6 >= lo && last_a6 < hi);
+                if (interesting) {
+                    uint32_t i = q9_dbg_a6_n % Q9_DBG_A6_SIZE;
+                    q9_dbg_a6_pc[i]  = (uint32_t)pc;
+                    q9_dbg_a6_old[i] = last_a6;
+                    q9_dbg_a6_new[i] = a6;
+                    q9_dbg_a6_sp[i]  = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+                    q9_dbg_a6_a0[i]  = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
+                    q9_dbg_a6_n++;
+                    if (freeze_active && a6 == freeze_val) {
+                        frozen_here = 1;
+                    }
+                }
+                last_a6 = a6;
+            }
+        }
+    }
+    /* NACHTRAG Fortsetzung 56: gezielter PC-Treffer (Q9_PCHIT_ADDR) -- s. m68krt.h.
+     * Eigener, von der A6-Verfolgung unabhaengiger Block. */
+    {
+        static uint32_t target = 0u;
+        static int target_read = 0;
+        if (!target_read) {
+            const char *e = getenv("Q9_PCHIT_ADDR");
+            target = e ? (uint32_t)strtoul(e, 0, 0) : 0u;
+            target_read = 1;
+        }
+        if (target != 0u && pc == target) {
+            uint32_t i = q9_dbg_pchit_n % Q9_DBG_PCHIT_SIZE;
+            uint32_t a4 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4);
+            q9_dbg_pchit_a0[i]   = a4;
+            q9_dbg_pchit_a1[i]   = (uint32_t)m68k_get_reg(NULL, M68K_REG_D3);
+            q9_dbg_pchit_mem4[i] = m68k_read_memory_32(a4 + 4u);
+            q9_dbg_pchit_mem8[i] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D4);
+            q9_dbg_pchit_n++;
+        }
+    }
     if (q9_dbg_tr_frozen) {
         return;
     }

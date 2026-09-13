@@ -281,6 +281,44 @@ extern uint32_t q9_dbg_tr_d1[Q9_DBG_TR_SIZE];       /* zusaetzliche Register in 
 extern uint32_t q9_dbg_tr_d3[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_d4[Q9_DBG_TR_SIZE];
 
+/*───────────────────────────────────────────────────────────────────────────
+  Diagnose (2026-09-13, Q9-OS Fortsetzung 55/56): A6-Aenderungs-Ringpuffer.
+
+  Eine fruehere Fassung protokollierte A6-Aenderungen per sofortigem
+  fprintf(stderr,...) direkt im Instruktions-Hook -- das brachte den
+  EMULATOR-HOST-PROZESS (nicht nur die emulierte CPU) reproduzierbar zum
+  Absturz, vermutlich weil synchrones stdio mitten im heissen Ausfuehrungs-
+  pfad mit dem bereits eingefrorenen Trace-Ring kollidierte. Diese Fassung
+  schreibt STATTDESSEN nur in einen eigenen, kleinen Ringpuffer (kein I/O
+  im Hook selbst) -- ausgegeben wird er erst beim naechsten Ctrl-^-Dump,
+  wie die uebrigen Diagnose-Ringpuffer auch.
+
+  NICHT im Normalbetrieb aktiv -- nur mit gesetztem Q9_TRACE_INSTR=1 (nutzt
+  denselben Hook wie der Instruktions-Ringpuffer oben, kein zusaetzlicher
+  Env-Schalter noetig). Gefiltert auf Aenderungen INNERHALB eines per
+  Q9_A6TRACE_LO/_HI angegebenen Wertebereichs (Default: aus, beide 0) --
+  ohne Filter waere der Puffer durch normale Prozesswechsel (jeder Kontext-
+  wechsel aendert a6) binnen Millisekunden ueberlaufen. */
+#define Q9_DBG_A6_SIZE 256u
+extern uint32_t q9_dbg_a6_pc[Q9_DBG_A6_SIZE];
+extern uint32_t q9_dbg_a6_old[Q9_DBG_A6_SIZE];
+extern uint32_t q9_dbg_a6_new[Q9_DBG_A6_SIZE];
+extern uint32_t q9_dbg_a6_sp[Q9_DBG_A6_SIZE];
+extern uint32_t q9_dbg_a6_a0[Q9_DBG_A6_SIZE];  /* NACHTRAG Fortsetzung 56: a0 zum Zeitpunkt des a6-Wechsels
+                                                   (csl-Exit-Gate liest a1=*(a0+4), a0 ist der Knotenzeiger) */
+extern uint32_t q9_dbg_a6_n;   /* laufender Schreibindex, KEIN Modulo -- beim Lesen maskieren */
+
+/* NACHTRAG Fortsetzung 56: gezielter PC-Treffer-Ringpuffer (Q9_PCHIT_ADDR) --
+ * protokolliert bei jedem Erreichen einer festen Adresse a0/a1 und die
+ * Speicherworte an Offset +4/+8 relativ a0, um den csl-Aufrufkontext-Knoten
+ * am Einstiegspunkt der Exit-Gate-Routine zu beobachten (s. m68krt.c). */
+#define Q9_DBG_PCHIT_SIZE 64u
+extern uint32_t q9_dbg_pchit_a0[Q9_DBG_PCHIT_SIZE];
+extern uint32_t q9_dbg_pchit_a1[Q9_DBG_PCHIT_SIZE];
+extern uint32_t q9_dbg_pchit_mem4[Q9_DBG_PCHIT_SIZE];
+extern uint32_t q9_dbg_pchit_mem8[Q9_DBG_PCHIT_SIZE];
+extern uint32_t q9_dbg_pchit_n;
+
 #define Q9_DBG_ENT_MAX   24u
 #define Q9_DBG_ENT_WORDS 40u
 extern uint32_t q9_dbg_ent_sp[Q9_DBG_ENT_MAX];

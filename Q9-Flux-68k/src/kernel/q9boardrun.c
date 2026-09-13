@@ -630,7 +630,48 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                     (unsigned)q9_dbg_tr_d1[idx], (unsigned)q9_dbg_tr_d3[idx], (unsigned)q9_dbg_tr_d4[idx]);
         }
         fputs("--- Ende Instruktionsspur ---\n", f);
+    }
 
+    /* Diagnose: A6-Aenderungs-Ringpuffer (2026-09-13, Fortsetzung 55/56,
+       s. m68krt.h) -- nur mit Q9_TRACE_INSTR=1 gefuellt, unabhaengig vom
+       eingefrorenen Zustand der Instruktionsspur oben (deshalb eigenes
+       "if", nicht an q9_dbg_tr_fill gekoppelt). Aeltester Eintrag zuerst. */
+    if (q9_dbg_a6_n != 0u) {
+        uint32_t fill = (q9_dbg_a6_n < Q9_DBG_A6_SIZE) ? q9_dbg_a6_n : Q9_DBG_A6_SIZE;
+        uint32_t k;
+
+        fprintf(f, "\n--- A6-Aenderungen (Q9_A6TRACE_LO/_HI, %u Eintraege im Puffer, %u gesamt) ---\n",
+                (unsigned)fill, (unsigned)q9_dbg_a6_n);
+        for (k = 0; k < fill; k++) {
+            uint32_t idx = (q9_dbg_a6_n - fill + k) % Q9_DBG_A6_SIZE;
+            fprintf(f, "  #%-6u pc=%08x a6: %08x -> %08x sp=%08x a0=%08x\n",
+                    (unsigned)(q9_dbg_a6_n - fill + k + 1u),
+                    (unsigned)q9_dbg_a6_pc[idx], (unsigned)q9_dbg_a6_old[idx],
+                    (unsigned)q9_dbg_a6_new[idx], (unsigned)q9_dbg_a6_sp[idx],
+                    (unsigned)q9_dbg_a6_a0[idx]);
+        }
+        fputs("--- Ende A6-Aenderungen ---\n", f);
+    }
+
+    /* NACHTRAG Fortsetzung 56: gezielter PC-Treffer-Ringpuffer (Q9_PCHIT_ADDR),
+     * s. m68krt.h/m68krt.c. */
+    if (q9_dbg_pchit_n != 0u) {
+        uint32_t fill = (q9_dbg_pchit_n < Q9_DBG_PCHIT_SIZE) ? q9_dbg_pchit_n : Q9_DBG_PCHIT_SIZE;
+        uint32_t k;
+
+        fprintf(f, "\n--- PC-Treffer (Q9_PCHIT_ADDR), %u Eintraege im Puffer, %u gesamt ---\n",
+                (unsigned)fill, (unsigned)q9_dbg_pchit_n);
+        for (k = 0; k < fill; k++) {
+            uint32_t idx = (q9_dbg_pchit_n - fill + k) % Q9_DBG_PCHIT_SIZE;
+            fprintf(f, "  #%-6u a4=%08x d3=%08x *(a4+4)=%08x d4=%08x\n",
+                    (unsigned)(q9_dbg_pchit_n - fill + k + 1u),
+                    (unsigned)q9_dbg_pchit_a0[idx], (unsigned)q9_dbg_pchit_a1[idx],
+                    (unsigned)q9_dbg_pchit_mem4[idx], (unsigned)q9_dbg_pchit_mem8[idx]);
+        }
+        fputs("--- Ende PC-Treffer ---\n", f);
+    }
+
+    {
         /* Stackbereich bei jedem Dispatcher-Eintritt, ZUM ZEITPUNKT des
            Eintritts im Hook gesichert (s. m68krt.c). Daran laesst sich die
            Lage des Exception-Frames ablesen: gesucht ist das Format-/Vektor-
