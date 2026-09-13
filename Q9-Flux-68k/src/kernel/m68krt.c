@@ -382,12 +382,11 @@ static void q9_dbg_instr_hook(unsigned int pc)
         }
         if (target != 0u && pc == target) {
             uint32_t i = q9_dbg_pchit_n % Q9_DBG_PCHIT_SIZE;
-            uint32_t a0 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
-            uint32_t sp = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
-            q9_dbg_pchit_a0[i]   = a0;
-            q9_dbg_pchit_a1[i]   = m68k_read_memory_32(sp + 0xCu);
-            q9_dbg_pchit_mem4[i] = m68k_read_memory_32(sp + 0x10u);
-            q9_dbg_pchit_mem8[i] = m68k_read_memory_32(sp + 0x14u);
+            uint32_t a6 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A6);
+            q9_dbg_pchit_a0[i]   = a6;
+            q9_dbg_pchit_a1[i]   = m68k_read_memory_32(a6 - 0x8000u);
+            q9_dbg_pchit_mem4[i] = m68k_read_memory_32(a6 - 0x8000u + 4u);
+            q9_dbg_pchit_mem8[i] = m68k_read_memory_32(a6 - 0x8000u + 8u);
             q9_dbg_pchit_n++;
         }
     }
