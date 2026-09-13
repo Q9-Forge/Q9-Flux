@@ -2,6 +2,8 @@
 
 Q9-Flux is the emulator and hardware-virtualisation project family for Q9.
 
+German version: [README_de.md](README_de.md)
+
 ## Components
 
 - `Q9-Flux-68k/` — 68000/OS-9 emulator and board model
