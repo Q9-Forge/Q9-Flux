@@ -663,7 +663,7 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                 (unsigned)fill, (unsigned)q9_dbg_pchit_n);
         for (k = 0; k < fill; k++) {
             uint32_t idx = (q9_dbg_pchit_n - fill + k) % Q9_DBG_PCHIT_SIZE;
-            fprintf(f, "  #%-6u a6=%08x d3=%08x a4=%08x sp=%08x\n",
+            fprintf(f, "  #%-6u a0=%08x sp24=%08x sp28=%08x sp2c=%08x\n",
                     (unsigned)(q9_dbg_pchit_n - fill + k + 1u),
                     (unsigned)q9_dbg_pchit_a0[idx], (unsigned)q9_dbg_pchit_a1[idx],
                     (unsigned)q9_dbg_pchit_mem4[idx], (unsigned)q9_dbg_pchit_mem8[idx]);
