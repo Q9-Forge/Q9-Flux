@@ -13,3 +13,11 @@ German version: [README_de.md](README_de.md)
 Architecture-specific implementation remains inside the corresponding
 component directory. Local emulator images, private profiles and archives
 are ignored and must not be committed.
+
+## License
+
+Q9-Flux's own code is licensed under the [MIT License](LICENSE). Several
+bundled or referenced third-party components (CPU emulation cores,
+networking libraries, QEMU as an external process for Q9-Flux-x86, and
+others) keep their own, original licenses — see
+[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for the full list.

@@ -29,5 +29,8 @@ Boards und Gerätemodelle sind geplant.
 
 ## Lizenz
 
-Siehe [LICENSE](LICENSE) und die Dokumentation zu den verwendeten
-Drittkomponenten.
+Siehe [LICENSE](LICENSE) (MIT, für den eigenen Code dieser Komponente).
+Eingebundene Drittkomponenten unter `third_party/` (Musashi, SoftFloat,
+TinyEMU, die slirp-Netzwerk-DLLs, Turbo Vision) behalten ihre eigene,
+ursprüngliche Lizenz — die vollständige Übersicht steht in
+[../THIRD-PARTY-LICENSES_de.md](../THIRD-PARTY-LICENSES_de.md).
