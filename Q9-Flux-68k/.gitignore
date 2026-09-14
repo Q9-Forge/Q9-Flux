@@ -61,3 +61,6 @@ Thumbs.db
 # Claude Code: gesamtes Arbeitsverzeichnis lokal halten (Settings, lokale
 # Pfade, Arbeitsnotizen) -- echte Doku wandert stattdessen bewusst nach docs/
 .claude/
+
+# KI-Arbeitsanweisungen bleiben lokal, nicht oeffentlich im Git.
+AGENTS.md
