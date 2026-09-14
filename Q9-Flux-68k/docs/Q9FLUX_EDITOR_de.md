@@ -1,3 +1,4 @@
+```
 #═════════════════════════════════════════════════════════════════════════════════════════════════
 # File:   Q9FLUX_EDITOR_de.md                                                             Ver. 5.41
 # Owner:  Claudia
@@ -164,6 +165,7 @@
 #         │      │ vor "X", Titel hat Vorrang. Ausserdem: hal_windows.c fehlte im "q9.exe ohne Argumente"-    │
 #         │      │ Umbau der letzten Runde, jetzt symmetrisch nachgezogen (PR #72)                            │
 #═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
+```
 
 # Q9-Flux-Launcher/Config-Editor — Planungsstand
 
