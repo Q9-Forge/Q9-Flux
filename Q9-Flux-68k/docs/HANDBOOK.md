@@ -1,17 +1,17 @@
-#═════════════════════════════════════════════════════════════════════════════════════════════════
-# File:   HANDBOOK.md                                                                    Ver. 3.00
-# Owner:  AF
-# Desc.:  Central handbook: tools, source-code layout, build per target, software architecture,
-#         reference sources including licensing status. Meant as the entry point for anyone
-#         seeing the project for the first time — including in the event of a future public
-#         release. Points to the existing specialist documents instead of duplicating them.
-#
-# Edition History
-#─────────┬──────┬─────────────────────────────────────────────────────────────────────────┬──────
-# Date    │ Ver. │ Description                                                             │ By
-#─────────┼──────┼─────────────────────────────────────────────────────────────────────────┼──────
-# 26-07-04│ 1.00 │ Initial version, after completing Phase 3 (filesystem)                  │ CF
-# 26-07-04│ 1.10 │ 4.6: wasm3 runtime (decision E10) — third_party/wasm3, wasmrt.c/.h,      │ CF
+##═════════════════════════════════════════════════════════════════════════════════════════════════
+## File:   HANDBOOK.md                                                                    Ver. 3.00
+## Owner:  AF
+## Desc.:  Central handbook: tools, source-code layout, build per target, software architecture,
+##         reference sources including licensing status. Meant as the entry point for anyone
+##         seeing the project for the first time — including in the event of a future public
+##         release. Points to the existing specialist documents instead of duplicating them.
+##
+## Edition History
+##─────────┬──────┬─────────────────────────────────────────────────────────────────────────┬──────
+## Date    │ Ver. │ Description                                                             │ By
+##─────────┼──────┼─────────────────────────────────────────────────────────────────────────┼──────
+## 26-07-04│ 1.00 │ Initial version, after completing Phase 3 (filesystem)                  │ CF
+## 26-07-04│ 1.10 │ 4.6: wasm3 runtime (decision E10) — third_party/wasm3, wasmrt.c/.h,      │ CF
 #         │      │ new section 5.8, license/reference-source table added                   │
 # 26-07-04│ 1.20 │ 4.7: syscall bridge (native side) — wasmproc.c/.h, section 5.8 extended, │ CF
 #         │      │ Phase-4 status in section 6 updated                                      │
