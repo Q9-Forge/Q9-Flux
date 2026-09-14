@@ -250,7 +250,7 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
     }
 
     {   /* Laufender Prozess: P$State ist im echten Layout ein WORT bei +$1c
-           (MWOS/OS9/SRC/DEFS/process.a). sc68681 prueft nach dem Aufwachen
+           (REF/OS9/SRC/DEFS/process.a). sc68681 prueft nach dem Aufwachen
            dessen Bit 1 im OBEREN Byte und bricht dann ab. */
         uint32_t cur = q9_board_read32(b, 0x4cu);
         fprintf(f, "D_Proc=%08x  P$State=%04x  P$Signal=%04x\n",
@@ -337,6 +337,30 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
             fprintf(f, " %08x", (unsigned)q9_board_read32(b, z));
         }
         fprintf(f, "\n");
+    }
+
+    {   /* F$TLink/M$Init-Registerspur aus q9kernel_entry.a. Diese Felder
+           werden nur vom aktuellen TLink-Aufruf beschrieben und erlauben
+           den Vergleich von A3 (C-Runtime-Sentinel) vor/nach M$Init, ohne
+           den Gast in einem heissen Pfad mit Konsolenausgabe zu stoeren. */
+        fprintf(f,
+                "F$TLink-Trace: proc=%08x entry(A3=%08x A6=%08x) "
+                "mod=%08x init=%08x exec=%08x stat=%08x "
+                "err=%08x ok=%08x "
+                "pre-init(A3=%08x A6=%08x) post-init(A3=%08x A6=%08x)\n",
+                (unsigned)q9_board_read32(b, 0x154100u),
+                (unsigned)q9_board_read32(b, 0x154104u),
+                (unsigned)q9_board_read32(b, 0x154108u),
+                (unsigned)q9_board_read32(b, 0x15411cu),
+                (unsigned)q9_board_read32(b, 0x154120u),
+                (unsigned)q9_board_read32(b, 0x154124u),
+                (unsigned)q9_board_read32(b, 0x154128u),
+                (unsigned)q9_board_read32(b, 0x15412cu),
+                (unsigned)q9_board_read32(b, 0x154130u),
+                (unsigned)q9_board_read32(b, 0x15410cu),
+                (unsigned)q9_board_read32(b, 0x154110u),
+                (unsigned)q9_board_read32(b, 0x154114u),
+                (unsigned)q9_board_read32(b, 0x154118u));
     }
 
     {   /* Schreib-Watch (s. m68krt.c). Steht bewusst hier oben: der spaetere

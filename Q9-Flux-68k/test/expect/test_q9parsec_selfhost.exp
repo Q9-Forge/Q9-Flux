@@ -1,0 +1,60 @@
+#!/usr/bin/expect -f
+# Run the self-hosted Parsec module in an isolated OS-9 image.
+
+if {$argc != 1} {
+    puts stderr "usage: test_q9parsec_selfhost.exp <image.hda>"
+    exit 2
+}
+
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
+set image [lindex $argv 0]
+set mwos /Volumes/SSD1TB/projects/MWOS
+set emulator ./build/macos/q9.exe
+if {[info exists env(Q9_EMULATOR)]} { set emulator $env(Q9_EMULATOR) }
+set timeout 120
+set send_slow {1 .003}
+
+spawn $emulator --rom $mwos/OS9/68030/PORTS/Q9/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf $image
+expect "devices online"
+sleep 2
+send "\r"
+
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" {
+            sleep 2
+            send -s "super\r"
+            exp_continue
+        }
+        -re {Password[^\r\n]*:} {
+            sleep 2
+            send -s "Al35uUbC\r"
+            exp_continue
+        }
+        -re {[#$] ?$} { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} {
+    puts stderr "LOGIN_FAILED"
+    send "\x1d"
+    exit 1
+}
+
+send -s "chd /dd\r"
+expect -re {[#$] ?$}
+send_log "\n=== Running self-hosted Parsec ===\n"
+send -s "q9parsec\r"
+set timeout 180
+expect {
+    -re {EBNF Translator} { exp_continue }
+    -re {Error|error} { puts stderr "MODULE_ERROR"; send "\x1d"; exit 1 }
+    -re {[#$] ?$} { puts "MODULE_RETURNED"; send -s "dir qcc*\r"; expect -re {[#$] ?$}; send "\x1d"; expect eof; exit 0 }
+    timeout {
+        puts stderr "MODULE_TIMEOUT"
+        send "\x1d"
+        exit 1
+    }
+}
