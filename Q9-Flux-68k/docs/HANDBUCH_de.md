@@ -1,3 +1,4 @@
+```
 #═════════════════════════════════════════════════════════════════════════════════════════════════
 # File:   HANDBUCH_de.md                                                                  Ver. 3.00
 # Owner:  AF
@@ -55,6 +56,7 @@
 #         │      │ Pipeline, Telnet). Umbenennung HANDBUCH.md -> HANDBOOK.md (Englisch, neues    │
 #         │      │ Original) + HANDBUCH_de.md (diese Datei).                                     │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
+```
 
 # Q9 Flux — Handbuch
 

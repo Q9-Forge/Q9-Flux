@@ -1,3 +1,4 @@
+```
 #═════════════════════════════════════════════════════════════════════════════════════════════════
 # File:   BOARD.md                                                                        Ver. 1.20
 # Owner:  AF
@@ -23,6 +24,7 @@
 #         │      │ REMAP-Trigger jetzt ebenfalls ein registriertes devreg-Geraet statt          │
 #         │      │ Board-Fallback-Sonderfall (RAM/ROM-Interpretation bleibt Fast-Path)          │
 #═════════╧══════╧═════════════════════════════════════════════════════════════════════════╧══════
+```
 
 # CB030 — Hardware-Referenz
 
