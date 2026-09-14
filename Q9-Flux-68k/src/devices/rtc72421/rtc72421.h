@@ -5,7 +5,7 @@
 //         Host-Uhr (Register 0..C als BCD-Nibbles, D/E/F Control), SCHREIBEN wird komplett
 //         ignoriert (die Host-Uhr ist die Wahrheit). Ein Lesezugriff auf Register 0 frischt den
 //         internen Latch aus der Host-Uhr auf, alle weiteren Register lesen aus dem Latch — wer
-//         S1 zuerst liest (wie der rtclock-Treiber im MWOS-Q9-Port), bekommt einen in sich
+//         S1 zuerst liest (wie der rtclock-Treiber im REF-Q9-Port), bekommt einen in sich
 //         konsistenten Zeitstempel ohne Rollover-Risiko.
 //
 //         2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): aus

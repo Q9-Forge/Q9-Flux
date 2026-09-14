@@ -8,15 +8,15 @@ zuerst, später ggf. echte Hardware.
 
 ## Variante 1: LANCE / Am7990 — bester Kandidat für das Q9-Board
 
-Im MWOS-SDK ist ein echter OS-9/SPF-Treiber vorhanden; das ist aktuell der
+Im Referenz-Toolchain ist ein echter OS-9/SPF-Treiber vorhanden; das ist aktuell der
 beste Kandidat für Q9-Board-Ethernet.
 
-Gefundene Module/Quellen (alle lokal, MWOS ist proprietär):
+Gefundene Module/Quellen (alle lokal, REF ist proprietär):
 
-- Treiberquelle: `/Volumes/SSD1TB/projects/MWOS/SRC/DPIO/SPF/DRVR/SPLANCE`
+- Treiberquelle: `/Volumes/SSD1TB/projects/REF/SRC/DPIO/SPF/DRVR/SPLANCE`
 - Wichtige Header: `am7990.h`, `defs.h`
 - Fertige MVME147-Module: `sp147`, `sple0`, `sple1`
-  unter `/Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/MVME147/...`
+  unter `/Volumes/SSD1TB/projects/REF/OS9/68030/PORTS/MVME147/...`
 
 Descriptor-/Hardwaredaten aus `sple0`/`sple1`:
 
@@ -58,10 +58,10 @@ ist) — für Vinculum aber sehr wertvoll als vorhandener Ethernet-Testpfad.
 
 Gefundene Module/Quellen:
 
-- Treiberquelle: `/Volumes/SSD1TB/projects/MWOS/SRC/DPIO/SPF/DRVR/SPQUICC`
+- Treiberquelle: `/Volumes/SSD1TB/projects/REF/SRC/DPIO/SPF/DRVR/SPQUICC`
   (`main.c`, `init.c`, `isr.c`, `entry.c`, `term.c`, `pins.c`, `defs.h`,
   `qedvr.h`, `quicc.h`, `regs360.h`, `pram360.h`, `enet360.h`)
-- Port: `/Volumes/SSD1TB/projects/MWOS/OS9/CPU32/PORTS/QUADS/SPF/SPQUICC`
+- Port: `/Volumes/SSD1TB/projects/REF/OS9/CPU32/PORTS/QUADS/SPF/SPQUICC`
 - Fertige Module: `sp360`, `spqe0`
 
 Descriptordaten für `spqe0`:
@@ -86,7 +86,7 @@ CPM-Interruptregister), `ser360.d` (seriell), `timm360.d` (Timer),
   `sp167`, `sp172`, `sp177`, Descriptor `spie0`), 10 MBit — zu komplex für
   unser erstes Ethernet-Ziel.
 - **RTL8019AS / NE2000**: Hardware bei Andreas vorhanden, hardwareseitig
-  attraktiv — aber im lokalen SDK kein echter `spne2000`/`spne0`-Treiber
+  attraktiv — aber im lokalen Referenz-Toolchain kein echter `spne2000`/`spne0`-Treiber
   gefunden (nur Hinweis in `SRC/SYS/loadspf`).
 - **CS8900 / LAN911x / LAN91Cxxx**: lokal keine brauchbaren Treiberquellen
   oder fertigen Module gefunden; `loadspf` nennt nur generisch SMC 91C94.

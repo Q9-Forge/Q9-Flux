@@ -155,7 +155,7 @@ Build-Skript:
 Ziel:
 
 - maximales RBF-Image mit `DD.TOT = 16777215` logischen 256-Byte-Sektoren.
-- Inhalt aus MWOS-SDK, OS-9 Professional 3.0 Disketten und CB030-Modulen.
+- Inhalt aus Referenz-Toolchain, OS-9 Professional 3.0 Disketten und CB030-Modulen.
 - Edition-Check: pro Modul/Tool gewinnt die hoechste Edition.
 - Verzeichnisse bewusst klein halten, weil der ROM/RBF-Pfad grosse Directories nur teilweise sieht.
 
@@ -190,7 +190,7 @@ Ziel:
 ## Startzeile
 
 ```sh
-./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/MWOS/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf /Volumes/SSD1TB/projects/Q9/local_images/Q9-cb030-work-max.hda
+./build/native/q9.exe --cb030 /Volumes/SSD1TB/projects/REF/OS9/68030/PORTS/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev.running.BIN --cf /Volumes/SSD1TB/projects/Q9/local_images/Q9-cb030-work-max.hda
 ```
 
 ## Merksatz
@@ -199,12 +199,12 @@ Nicht gleichzeitig hostseitig mit Toolshed und im Emulator auf dasselbe Image sc
 
 ---
 
-## Nachtrag 2026-07-09: MWOS-SDK auf OS9SYS.hda + "Directory-Grenze" aufgeklaert (Claudia)
+## Nachtrag 2026-07-09: Referenz-Toolchain auf OS9SYS.hda + "Directory-Grenze" aufgeklaert (Claudia)
 
-### MWOS-SDK ist jetzt im Image
+### Referenz-Toolchain ist jetzt im Image
 
-Komplette SDK (ohne DOC, 710 MB PDFs) hostseitig per Toolshed nach
-`OS9SYS.hda,MWOS` kopiert: Top-Level-Dateien, DIST, DOS, MAKETMPL, APPS, SRC
+Komplette Referenz-Toolchain (ohne DOC, 710 MB PDFs) hostseitig per Toolshed nach
+`OS9SYS.hda,REF` kopiert: Top-Level-Dateien, DIST, DOS, MAKETMPL, APPS, SRC
 und OS9 mit ALLEN CPU-Verzeichnissen (68000/68020/68030/68040/68060/CPU32/SRC —
 68030 fehlte vorher komplett). Ausgelassen: 2956 "(2)"-Duplikate (2913 exakt
 identisch, 43 nur CRLF/LF-Unterschied — bleiben nur auf dem Mac), Windows-Junk
@@ -221,8 +221,8 @@ Die alte Beobachtung "der Emulator/ROM-RBF sieht in groesseren Directories nur
 den ersten Teil" wurde geprueft und ist fuer OS9SYS.hda (32-Sektor-Cluster)
 WIDERLEGT — Gast und Host byte-genau verglichen:
 
-- `/dd/MWOS/OS9/68000/CMDS`: 179 Eintraege im Gast = 179 im Host, identisch.
-- `/dd/MWOS/OS9/SRC/DEFS`: 81 = 81, identisch.
+- `/dd/REF/OS9/68000/CMDS`: 179 Eintraege im Gast = 179 im Host, identisch.
+- `/dd/REF/OS9/SRC/DEFS`: 81 = 81, identisch.
 
 Was tatsaechlich kaputt ist: **Toolshed `dsave` hat einen Bug** — es bricht
 beim Fuellen groesserer Verzeichnisse nach ~72 Eintraegen mit "pathname not

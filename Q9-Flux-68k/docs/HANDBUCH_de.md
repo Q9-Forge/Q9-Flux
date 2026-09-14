@@ -114,11 +114,11 @@ sie zu wiederholen.
 **Der Lizenzstatus von Q9 selbst ist noch offen** (README.md: „TBD"). Bevor das
 Projekt öffentlich wird, muss das geklärt werden — insbesondere im Zusammenspiel
 mit den in Abschnitt 7 gelisteten Referenzquellen, von denen manche frei
-weitergebbar sind (GPL) und manche ausdrücklich **nicht** (private MWOS-SDK-Kopie,
+weitergebbar sind (GPL) und manche ausdrücklich **nicht** (private Referenz-Toolchain-Kopie,
 urheberrechtlich geschütztes Buch).
 
 **Wichtigste Regel bis zur Klärung:** Kein Code aus proprietären/privaten Quellen
-(MWOS) und kein abgetippter Code aus urheberrechtlich geschütztem Material (Bücher)
+(REF) und kein abgetippter Code aus urheberrechtlich geschütztem Material (Bücher)
 landet im Q9-Quellbaum. Diese Quellen dienen ausschließlich als *Referenz zum
 Verstehen* — implementiert wird eigenständig. Bei GPL-Quellen (NitrOS-9, OS9exec)
 ist Übernehmen rechtlich zulässig, wird aber aktuell ebenfalls nicht praktiziert;
@@ -434,7 +434,7 @@ Musashi-Integration — mit dem originalen, proprietären OS-9-Boot-ROM
 statt nur mit handassemblierten Testprogrammen. Ändert nichts an der
 eigentlichen Q9-Zielhardware (MC68EN360/QUICC, s. Q9-Forge/ROADMAP.md
 "Vinculum"). Speicherkarte + Peripherie-Register: [`docs/BOARD.md`](BOARD.md).
-Das reale Boot-ROM bleibt wie die MWOS-SDK-Kopie proprietär und NICHT im
+Das reale Boot-ROM bleibt wie die Referenz-Toolchain-Kopie proprietär und NICHT im
 Repository — nur die Hardware-Dokumentation selbst und der Emulationscode
 sind es.
 
@@ -653,7 +653,7 @@ Quellen dienen als fachliche Referenz — mit unterschiedlicher Rechtslage:
 
 | Quelle | Art | Lizenz | Verwendung in Q9 | Weitergebbar? |
 |--------|-----|--------|-------------------|----------------|
-| **MWOS SDK** (Microware OS-9, private Kopie) | Original-Header/Definitionen (`funcs.h`, `errno.h`, ...) | proprietär, privat | Referenz für Syscall-Nummern, Fehlercodes, Registerkonventionen des emulierten Gast-OS-9, sowie Adressen/Descriptoren fürs Board (CB030-Q9-Port) | **Nein** — nur zum Abgleich verwendet, keine Datei daraus liegt im Repo |
+| **Referenz-Toolchain** (Microware OS-9, private Kopie) | Original-Header/Definitionen (`funcs.h`, `errno.h`, ...) | proprietär, privat | Referenz für Syscall-Nummern, Fehlercodes, Registerkonventionen des emulierten Gast-OS-9, sowie Adressen/Descriptoren fürs Board (CB030-Q9-Port) | **Nein** — nur zum Abgleich verwendet, keine Datei daraus liegt im Repo |
 | **OS-9 Insights** (Peter Dibble) | Fachbuch, ältere Auflage enthält abgedruckten FAT16-File-Manager | Buch-Copyright | Design-Referenz, historisch (Mini-Kernel-Ära) | **Nein** — nur gelesen/verstanden, kein Code übernommen |
 | **NitrOS-9** ([github.com/nitros9project/nitros9](https://github.com/nitros9project/nitros9)) | Community-OS-9/6809, RBF in 6809-Assembler | **GPL** | bislang nur als Idee vorgemerkt (Ideenspeicher, ARBEITSPLAN.md) | Ja (GPL, Copyleft beachten) |
 | **ToolShed** (Teil des NitrOS-9-Projekts) | PC-Tools zum Lesen/Schreiben von RBF-Images, in C | vermutlich GPL (im Kontext von NitrOS-9 zu prüfen) | aktiv genutzt zur Image-Bearbeitung (WSL/Toolshed, s. Abschnitt 5.4) | zu prüfen |
@@ -670,7 +670,7 @@ Verständnis der Konzepte. Tatsächlich übernommene Fremdquellen sind
 BSD-2-Clause, beide unverändert) — kompatibel mit jeder künftigen
 Q9-Lizenzwahl. Sollte künftig doch GPL-Code aus NitrOS-9/OS9exec übernommen
 werden, muss die Lizenz von Q9 (oder zumindest der betroffenen Module)
-GPL-kompatibel sein. Die MWOS- und Buch-Referenzen dürfen so oder so nie als
+GPL-kompatibel sein. Die REF- und Buch-Referenzen dürfen so oder so nie als
 Code auftauchen, nur als Verständnisgrundlage dienen.
 
 ---

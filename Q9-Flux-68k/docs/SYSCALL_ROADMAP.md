@@ -1,7 +1,7 @@
 # Q9 Syscall-Roadmap
 
 Vollständige Liste aller OS-9-Betriebssystemaufrufe (F$/I$) mit Status in Q9.
-**Quelle:** MWOS `PACKAGES/OS9_Professional_V3.0/DEFS/funcs.h` + `errno.h`
+**Quelle:** REF `PACKAGES/OS9_Professional_V3.0/DEFS/funcs.h` + `errno.h`
 (dieselbe Quelle wie Entscheidung E7). 97 Calls insgesamt: 80× F$, 17× I$.
 
 **Status-Legende:**
@@ -192,4 +192,4 @@ Der richtige Code für „Namen unterschiedlich" ist **`E_DIFFER` = `0xA5`**
 und `docs/SYSCALLS.md` angepasst.
 
 **Erstellt**: 2026-07-03
-**Quelle**: `M:\MWOS\PACKAGES\OS9_Professional_V3.0\DEFS\funcs.h` + `errno.h`
+**Quelle**: `M:\REF\PACKAGES\OS9_Professional_V3.0\DEFS\funcs.h` + `errno.h`

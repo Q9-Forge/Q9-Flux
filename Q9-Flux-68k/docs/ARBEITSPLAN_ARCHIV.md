@@ -34,7 +34,7 @@ github.com/foellmy51/Q9 (privat)
 
 #### Schritt 1.1: Syscall-Design entschieden (E7): OS-9-Nummern + Registerkonventionen, ABI-Spez in docs/SYSCALLS.md
 
-Nummern/Fehlercodes aus Andreas' MWOS-SDK (M:\MWOS) verifiziert
+Nummern/Fehlercodes aus Andreas' Referenz-Toolchain (M:\REF) verifiziert
 
 #### Schritt 1.2: Dispatcher + erste Calls: I$Read/Write/ReadLn/WritLn, F$Exit/ID/Time; Kernel-REPL nutzt eigene Syscalls; Selbsttest + Test 02
 
@@ -50,7 +50,7 @@ q9_path_dup, 2 neue Selbsttest-Checks, SYSCALLS.md
 
 #### Schritt 1.5: F$PrsNam + F$CmpNam (Pfadnamen-Parsing nach OS-9-Regeln)
 
-name.c/h; E$Diff-Nummer ($E2) vorläufig → MWOS-Abgleich heute Abend
+name.c/h; E$Diff-Nummer ($E2) vorläufig → REF-Abgleich heute Abend
 
 #### Schritt 1.6: I$Attach + I$Detach: Geräte per Name ("/term") an-/abmelden, nutzt F$PrsNam
 
@@ -62,7 +62,7 @@ dev_nil.c; q9_path_open jetzt namensbasiert ("/nil" mit Slash ok)
 
 #### Schritt 1.8: I$GetStt/I$SetStt Grundgerüst: SS-Codes für /term (z.B. SS.Ready = Eingabe wartet?)
 
-getstat/setstat-Ops im Treiber-IF; SS.Ready+SS.EOF; SS-Nummern beim MWOS-Abgleich prüfen
+getstat/setstat-Ops im Treiber-IF; SS.Ready+SS.EOF; SS-Nummern beim REF-Abgleich prüfen
 
 #### Schritt 1.9: HAL-Erweiterung Echtzeit (q9_hal_time): native = localtime, wasm = Date.now → F$Time liefert echte Uhrzeit + F$STime
 
@@ -82,7 +82,7 @@ src/kernel/module.h/.c neu: q9_modhdr_t (28 Byte, #pragma pack, Offsets exakt wi
 
 #### Schritt 2.3b: Validierung: Sync/Größe plausibilisieren, CRC32 nachrechnen
 
-q9_mod_validate in module.h/.c: HeaderSize/ModuleSize/NameOffset-Strukturchecks vor der vollen CRC32 (billig vor teuer); Zwei-Stufen-Check (Header-Parity vor CRC) wie bei OS-9 bewusst NICHT übernommen — Q9-Module sind klein genug. Neue Fehlercodes E$BMHP($EC)/E$BMCRC($E8), MWOS-verifiziert (lokale Kopie unter /Volumes/SSD1TB/projects/MWOS gefunden). 4 Selbsttest-Checks
+q9_mod_validate in module.h/.c: HeaderSize/ModuleSize/NameOffset-Strukturchecks vor der vollen CRC32 (billig vor teuer); Zwei-Stufen-Check (Header-Parity vor CRC) wie bei OS-9 bewusst NICHT übernommen — Q9-Module sind klein genug. Neue Fehlercodes E$BMHP($EC)/E$BMCRC($E8), REF-verifiziert (lokale Kopie unter /Volumes/SSD1TB/projects/REF gefunden). 4 Selbsttest-Checks
 
 #### Schritt 2.3c: Bekanntmachen: Directory-Eintrag anlegen, Namenskollisions-/Revision-Regel (höhere Revision gewinnt, bei Gleichstand bleibt das etablierte Modul)
 
@@ -94,11 +94,11 @@ q9_mod_link/q9_mod_unlink in module.c + Dispatcher-Cases F_LINK/F_UNLINK in sysc
 
 #### Schritt 3.1: Block-Device `/d0` als Q9-Gerät (nutzt q9_hal_blk_read/write), Roh-Blockzugriff über GetStt/SetStt-SS-Codes; Test-Image per Python in test/
 
-dev_d0.c neu: SS.BlkRd($14)/SS.BlkWr($15) aus MWOS sg_codes.h übernommen (RBF-Vorbild), reine Ops read/write/readln/writln bewusst E$UnkSvc (kein Byte-Strom ohne VFS, kommt in 3.2). q9disk.img bleibt HAL-seitig (lazy erzeugt), jetzt .gitignore't. Test 04 (04_test_blkdev.py) + 2 neue Selbsttest-Checks (Roundtrip LBA 1, E$Param/E$UnkSvc). docs/DEVICES.md + SYSCALLS.md aktualisiert. `make test` PASS, warnungsfrei
+dev_d0.c neu: SS.BlkRd($14)/SS.BlkWr($15) aus REF sg_codes.h übernommen (RBF-Vorbild), reine Ops read/write/readln/writln bewusst E$UnkSvc (kein Byte-Strom ohne VFS, kommt in 3.2). q9disk.img bleibt HAL-seitig (lazy erzeugt), jetzt .gitignore't. Test 04 (04_test_blkdev.py) + 2 neue Selbsttest-Checks (Roundtrip LBA 1, E$Param/E$UnkSvc). docs/DEVICES.md + SYSCALLS.md aktualisiert. `make test` PASS, warnungsfrei
 
 #### Schritt 3.2: VFS-Schicht: Pfad-Routing `/d0/pfad/datei` (F$PrsNam trennt Gerät/Rest), File-Manager als austauschbare Einheit hinter schmaler Schnittstelle, Datei-Kontext pro Pfad, globales Arbeitsverzeichnis für I$ChgDir (pro-Prozess erst Phase 4)
 
-`src/kernel/vfs.c/.h` neu: `q9_fm_t` (open/create/makdir/remove, restpath-String statt OS-9-Pfaddeskriptor-Internas — schmal genug für einen künftigen 68k-Manager-Adapter). `q9_dev_t.fm` (device.h, NULL = kein Dateisystem) + `q9_path_t.fmctx[16]` (Datei-Kontext pro Pfad, kein malloc). `q9_vfs_open` löst relative Pfade gegen ein globales `cwd` auf, trennt Gerät/Rest per F$PrsNam, routet an `dev->fm->open` oder (kein fm) ans alte `q9_path_open`-Verhalten (Rest muss leer sein, sonst `E$PNNF` neu — MWOS-verifiziert). `I$Open`/`I$ChgDir` im Dispatcher (syscall.c) verdrahtet; `I$Create`/`I$MakDir`/`I$Delete` bewusst nur Gerüst (`E$UnkSvc`, echte Semantik erst 3.4). Kein FAT16 hier (kommt separat in 3.3/3.4). 5 neue Selbsttest-Checks (Test-File-Manager im Selbsttest beweist Routing) + neues `test/05_test_vfs.py`. docs/SYSCALLS.md + SYSCALL_ROADMAP.md + DEVICES.md aktualisiert. `make test` PASS, warnungsfrei. wasm ungetestet (emsdk fehlt weiterhin lokal).
+`src/kernel/vfs.c/.h` neu: `q9_fm_t` (open/create/makdir/remove, restpath-String statt OS-9-Pfaddeskriptor-Internas — schmal genug für einen künftigen 68k-Manager-Adapter). `q9_dev_t.fm` (device.h, NULL = kein Dateisystem) + `q9_path_t.fmctx[16]` (Datei-Kontext pro Pfad, kein malloc). `q9_vfs_open` löst relative Pfade gegen ein globales `cwd` auf, trennt Gerät/Rest per F$PrsNam, routet an `dev->fm->open` oder (kein fm) ans alte `q9_path_open`-Verhalten (Rest muss leer sein, sonst `E$PNNF` neu — REF-verifiziert). `I$Open`/`I$ChgDir` im Dispatcher (syscall.c) verdrahtet; `I$Create`/`I$MakDir`/`I$Delete` bewusst nur Gerüst (`E$UnkSvc`, echte Semantik erst 3.4). Kein FAT16 hier (kommt separat in 3.3/3.4). 5 neue Selbsttest-Checks (Test-File-Manager im Selbsttest beweist Routing) + neues `test/05_test_vfs.py`. docs/SYSCALLS.md + SYSCALL_ROADMAP.md + DEVICES.md aktualisiert. `make test` PASS, warnungsfrei. wasm ungetestet (emsdk fehlt weiterhin lokal).
 
 #### Schritt 3.3: FAT16 lesend: Boot-Sektor/Root-Dir/Cluster-Ketten, I$Open + I$Read + I$Seek, Verzeichnis lesen; 8.3 **und** LFN-Namen lesen
 
@@ -481,11 +481,11 @@ Eigener Branch `codex-m68k-entrypoints`, `q9<name>_main(argc, argv)` neben unver
   trägt direkt hinter dem Header (Offset `execoff`) einen rohen `q9_proc_step_fn`-Funktionszeiger
   statt Byte-Code (gültig nur innerhalb desselben laufenden Host-Prozesses — NICHT Teil eines
   portablen Moduldateiformats, reine Übergangslösung). `q9_proc_native_entry()` (proc.c) liest
-  diesen Zeiger, `E$NEMod` ($EA, MWOS-verifiziert) bei jeder anderen Sprache.
+  diesen Zeiger, `E$NEMod` ($EA, REF-verifiziert) bei jeder anderen Sprache.
   **F$Fork** (proc.c: `q9_proc_fork`): sucht das Modul über `q9_mod_link` (wie F$Link, erhöht den
   Link-Count), validiert `Q9_MOD_NATIVE`, alloziert einen neuen Tabellenslot (Parent = aufrufende
   PID, Std-Pfade vom Parent geerbt, Zustand ACTIVE). `E$MNF` (Modul nicht gefunden), `E$NEMod`
-  (nicht nativ), `E$PrcFul` (Tabelle voll, $E5, MWOS-verifiziert).
+  (nicht nativ), `E$PrcFul` (Tabelle voll, $E5, REF-verifiziert).
   **F$Exit** (proc.c: `q9_proc_exit`) hat jetzt echte Semantik statt des 1.2-Stubs: Exit-Code
   merken, verlinktes Modul entlinken; hat der Prozess einen Parent, wird er **Zombie**
   (`Q9_PS_ZOMBIE`, neuer Enum-Wert — bewusst kein E8-Scheduler-Zustand, hält nur Exit-Code/PID
@@ -601,7 +601,7 @@ Eigener Branch `codex-m68k-entrypoints`, `q9<name>_main(argc, argv)` neben unver
   ein per F$Load geladenes Modul wird bei Link-Count 0 SOFORT aus der Directory entfernt und sein
   Puffer freigegeben (`q9_mod_unlink` erweitert) — sonst waere der kleine Puffer-Pool nach wenigen
   Load/Unlink-Zyklen erschoepft. Kein Ghost/Sticky-Attribut ausgewertet (Ideenspeicher). Neuer
-  Fehlercode `E$NoRAM` ($ED, MWOS-verifiziert) fuer vollen Puffer-Pool/zu grosse Datei. Dispatcher
+  Fehlercode `E$NoRAM` ($ED, REF-verifiziert) fuer vollen Puffer-Pool/zu grosse Datei. Dispatcher
   (syscall.c): neuer Case F_LOAD, liefert wie F$Link a1=Header/a2=Einsprung/d0.b=Revision.
   Selbsttest (kernel.c) schreibt sich ein Testmodul selbst per I$Create/I$Write auf `/d0/LOADMOD.BIN`
   (Nagelprobe Phase 2+3 zusammen), laedt es per F$Load, prueft F$Link auf denselben Header, baut
@@ -699,7 +699,7 @@ Eigener Branch `codex-m68k-entrypoints`, `q9<name>_main(argc, argv)` neben unver
   `q9_path_t` bekommt `fmctx[16]` (Datei-Kontext pro Pfad, File-Manager-eigenes Byte-Array,
   kein malloc — ab 3.3 z.B. FAT16-Cluster/Position). Geräte OHNE File-Manager (`/term`, `/nil`)
   verhalten sich unverändert: Rest-Pfad muss leer sein, sonst neuer Fehlercode `E$PNNF`
-  ($D8, "Path Name Not Found", MWOS-verifiziert) statt E$MNF/E$BPNam — sauberer als vorher,
+  ($D8, "Path Name Not Found", REF-verifiziert) statt E$MNF/E$BPNam — sauberer als vorher,
   weil es explizit "Pfad im Dateisystem nicht gefunden" von "Gerät unbekannt" unterscheidet.
   `device.c` bekommt `q9_path_open_dev` (Pfad auf bereits aufgelöstes Gerät öffnen, ohne
   erneuten Namens-Lookup) als gemeinsamen Unterbau für `q9_path_open` und `q9_vfs_open`.
@@ -713,7 +713,7 @@ Eigener Branch `codex-m68k-entrypoints`, `q9<name>_main(argc, argv)` neben unver
   fehlt lokal weiterhin, siehe Geparkt). **Kein FAT16 in diesem Schritt** — das ist 3.3/3.4,
   bewusst separat. **Nächster Schritt: 3.3** (FAT16 lesend).
 - **2026-07-03 — Phase 3.1 (Block-Device /d0)** ✅: `src/kernel/dev_d0.c` neu — reiner
-  Blockzugriff über I$GetStt/I$SetStt: SS.BlkRd($14)/SS.BlkWr($15) (Codes aus MWOS
+  Blockzugriff über I$GetStt/I$SetStt: SS.BlkRd($14)/SS.BlkWr($15) (Codes aus REF
   `sg_codes.h`, RBF-Vorbild), d2.l = LBA, a0 = Puffer (Q9_BLK_SIZE Byte), delegiert an
   `q9_hal_blk_read`/`q9_hal_blk_write` (HAL existierte schon aus Phase 0). Normales
   I$Read/I$Write/I$ReadLn/I$WritLn ergibt ohne Dateisystem keinen Sinn — bewusst
@@ -734,9 +734,9 @@ Eigener Branch `codex-m68k-entrypoints`, `q9<name>_main(argc, argv)` neben unver
   Modul). `q9_mod_link`/`q9_mod_unlink` + neue Dispatcher-Cases F$Link($00)/F$UnLink($02) in
   syscall.c (a0=Name, d1.b=Type, d2.b=Lang -> a1=Header, a2=Einsprung, d0.b=Revision) — Q9s
   eigene a1/a2-Belegung, bewusst nicht binärkompatibel zu OS-9 (Entscheidung E2). Neue,
-  MWOS-verifizierte Fehlercodes E$BMHP($EC), E$BMCRC($E8), E$DirFul($CE), E$ModBsy($D1, aktuell
-  unbenutzt) — Quelle: lokale MWOS-Kopie unter /Volumes/SSD1TB/projects/MWOS/SRC/DEFS/errno.h
-  (kein Zugriff auf den Desktop-AF-PC-Pfad M:\MWOS nötig). docs/SYSCALLS.md (neuer F$Link/
+  REF-verifizierte Fehlercodes E$BMHP($EC), E$BMCRC($E8), E$DirFul($CE), E$ModBsy($D1, aktuell
+  unbenutzt) — Quelle: lokale REF-Kopie unter /Volumes/SSD1TB/projects/REF/SRC/DEFS/errno.h
+  (kein Zugriff auf den Desktop-AF-PC-Pfad M:\REF nötig). docs/SYSCALLS.md (neuer F$Link/
   F$UnLink-Abschnitt) und docs/SYSCALL_ROADMAP.md aktualisiert. 9 neue Selbsttest-Checks
   (34 insgesamt), `make test` PASS, warnungsfrei. **Damit ist Phase 2.3 (Modul-Directory)
   komplett** — offen für Phase 2 sind nur noch 2.2 (`q9mod`-Tool) und 2.4 (dev_term als echtes
@@ -777,16 +777,16 @@ Eigener Branch `codex-m68k-entrypoints`, `q9<name>_main(argc, argv)` neben unver
   I$Attach/I$Detach (namensbasiert, E$MNF), /nil als zweiter Treiber, I$GetStt/I$SetStt
   (SS.Ready/SS.EOF), echte Uhrzeit (q9_hal_time, F$Time/F$STime, Kalender 2000–2136).
   22 Selbsttest-Checks, Tests 01–03 PASS. **Phase 1 damit abgeschlossen** (Kernel v1.80).
-  Offen für MWOS-Abgleich: E$Diff-Nummer ($E2), SS-Nummern, F$Time-Packung.
+  Offen für REF-Abgleich: E$Diff-Nummer ($E2), SS-Nummern, F$Time-Packung.
 - **2026-07-03 — Syscall-Roadmap + Bugfix** ✅: docs/SYSCALL_ROADMAP.md — alle 97
-  OS-9-Syscalls (MWOS Professional V3.0) mit Status/Phase erfasst. Dabei gefunden
+  OS-9-Syscalls (REF Professional V3.0) mit Status/Phase erfasst. Dabei gefunden
   und sofort behoben: E$Diff war $E2 (hätte mit E$NoChld/F$Wait in Phase 4
-  kollidiert), korrekt lt. MWOS ist E$Differ = $A5. Kernel v1.90, Tests PASS.
-- **2026-07-03 — Rest-MWOS-Abgleich abgeschlossen** ✅: SS-Codes (SS.Opt/Ready/
+  kollidiert), korrekt lt. REF ist E$Differ = $A5. Kernel v1.90, Tests PASS.
+- **2026-07-03 — Rest-REF-Abgleich abgeschlossen** ✅: SS-Codes (SS.Opt/Ready/
   Size/EOF) waren schon korrekt (`sg_codes.h` verifiziert). F$Time/F$STime
   hatten d0/d1 vertauscht (echtes OS-9: d0=Zeit, d1=Datum — bestätigt im
   OS-9 for 68K Technical Reference Manual) — behoben, Selbsttest angepasst.
-  Kernel v2.00, Tests PASS. **Damit ist der komplette Phase-1-MWOS-Abgleich
+  Kernel v2.00, Tests PASS. **Damit ist der komplette Phase-1-REF-Abgleich
   durch, keine offenen Punkte mehr aus Phase 1.**
 
 ---
@@ -1031,7 +1031,7 @@ Telnet-Verbindungen, auf allen arbeiten.
      recv(MSG_PEEK) — der CLOSE_WAIT-Fix vom 10.7. bleibt wirksam.
 - Smoke-Test: 8 Verbindungen gehalten, 9. bekommt "All lines busy".
 
-**MWOS-Q9-Port (unversioniert, Andreas committet selbst):**
+**REF-Q9-Port (unversioniert, Andreas committet selbst):**
 - `SCF/nettty.a` NEU: eigener SCF-Treiber (656 Byte, ed 1, good crc), Struktur nach
   ueblichem OSK-Muster (sc68681.a nur als ABI-Referenz gelesen, KEIN Code uebernommen):
   Init (SR-Maske bilden, F$IRQ auf Vektor/Level/Prio aus dem Descriptor), Read
@@ -1046,7 +1046,7 @@ Telnet-Verbindungen, auf allen arbeiten.
   Backup: systype.d.vor-5.10.
 - `SCF/scf_nettty.make` NEU (nach oxc16954-Muster, sys.l+scfstat.l),
   `scf_descriptors.make` + `SCF/makefile` erweitert.
-- Stolperstein: IPOverrun ist KEIN SDK-Def, sondern treiberlokal in sc68681.a —
+- Stolperstein: IPOverrun ist KEIN Referenz-Toolchain-Def, sondern treiberlokal in sc68681.a —
   in nettty.a selbst definiert ($10).
 - Merge: `CMDS/BOOTOBJS/xterms` (nettty+x1..x8, 1648 B, alle good crc; merge.exe
   direkt aufgerufen, weil der os9merge-Wrapper kaputt ist — s. Geparkt).
@@ -1079,7 +1079,7 @@ Schreiben wird ignoriert.
   von Register 0 (S1) latcht den kompletten Zeitstempel — der Treiber liest S1
   zuerst und bekommt so einen rollover-freien Satz.
 - **Ur-Bug 1 (Timer-Level):** Der 100Hz-Timer lag seit 5.2d auf IRQ-Level 3/
-  Autovektor 27 — der MWOS-Q9-Port registriert tkq9 aber auf Vektor 30 =
+  Autovektor 27 — der REF-Q9-Port registriert tkq9 aber auf Vektor 30 =
   Level 6 (_TckVect, "new CPLD"). Folge: Die OS-9-Uhr hat im Emulator NIE
   getickt (date stand, "Module Directory at 00:00:00", sleep -s 3 = 25 s über
   irgendeinen Umweg). Fix: Timer -> set_irq(6) (q9boardrun.c, als hoechster Level
@@ -1090,7 +1090,7 @@ Schreiben wird ignoriert.
   Deckel 30 s (kein Tick-Sturm nach Host-Schlaf); neues Feld timer_synced
   startet die Epoche bei TI_IRQ_ON (Selbsttest-5.2d-Semantik unveraendert).
 
-**MWOS-Q9-Port (unversioniert):**
+**REF-Q9-Port (unversioniert):**
 - `SYSMODS/rtc72421.a` NEU (eigene Implementierung, Interface wie rtc_example/
   rtccb030): Sbrtn-Modul, GetTime liest S1 ZUERST (Latch!), dann MI/H/D/MO/Y
   als BCD-Paare (RDPAIR-Makro), Plausibilitaetscheck ueber Control F ($04 =

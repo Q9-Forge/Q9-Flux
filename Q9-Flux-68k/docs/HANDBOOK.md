@@ -115,10 +115,10 @@ licensing status. For details it points to the specialist documents in
 to be resolved before the project goes public — especially in light of
 the reference sources listed in section 7, some of which are freely
 redistributable (GPL) and some of which explicitly **are not** (the
-private MWOS SDK copy, a copyrighted book).
+private Referenz-Toolchain copy, a copyrighted book).
 
 **Most important rule until this is resolved:** No code from
-proprietary/private sources (MWOS) and no code copied out of copyrighted
+proprietary/private sources (REF) and no code copied out of copyrighted
 material (books) goes into the Q9 source tree. These sources serve
 exclusively as a *reference for understanding* — everything is implemented
 independently. For GPL sources (NitrOS-9, OS9exec), taking code over would
@@ -440,7 +440,7 @@ the Musashi integration — using the original, proprietary OS-9 boot ROM
 instead of just hand-assembled test programs. Doesn't change anything
 about the actual Q9 target hardware (MC68EN360/QUICC, see
 Q9-Forge/ROADMAP.md "Vinculum"). Memory map + peripheral registers:
-[`docs/BOARD.md`](BOARD.md). The real boot ROM, like the MWOS SDK copy,
+[`docs/BOARD.md`](BOARD.md). The real boot ROM, like the Referenz-Toolchain copy,
 stays proprietary and is NOT in the repository — only the hardware
 documentation itself and the emulation code are.
 
@@ -666,7 +666,7 @@ legal status:
 
 | Source | Type | License | Use in Q9 | Redistributable? |
 |--------|-----|--------|-------------------|----------------|
-| **MWOS SDK** (Microware OS-9, private copy) | original headers/definitions (`funcs.h`, `errno.h`, ...) | proprietary, private | reference for syscall numbers, error codes, register conventions of the emulated guest OS-9, as well as addresses/descriptors for the board (CB030-Q9 port) | **No** — used only for cross-checking, no file from it is in the repo |
+| **Referenz-Toolchain** (Microware OS-9, private copy) | original headers/definitions (`funcs.h`, `errno.h`, ...) | proprietary, private | reference for syscall numbers, error codes, register conventions of the emulated guest OS-9, as well as addresses/descriptors for the board (CB030-Q9 port) | **No** — used only for cross-checking, no file from it is in the repo |
 | **OS-9 Insights** (Peter Dibble) | technical book, an older edition includes a printed FAT16 file manager | book copyright | design reference, historical (mini-kernel era) | **No** — only read/understood, no code taken over |
 | **NitrOS-9** ([github.com/nitros9project/nitros9](https://github.com/nitros9project/nitros9)) | community OS-9/6809, RBF in 6809 assembler | **GPL** | so far only noted as an idea (idea backlog, ARBEITSPLAN.md) | Yes (GPL, mind the copyleft) |
 | **ToolShed** (part of the NitrOS-9 project) | PC tools for reading/writing RBF images, in C | presumably GPL (needs checking in the NitrOS-9 context) | actively used for image editing (WSL/Toolshed, see section 5.4) | to be checked |
@@ -683,7 +683,7 @@ taken over are **Musashi** under `third_party/musashi/` and **libslirp**
 (MIT resp. BSD-2-Clause, both unmodified) — compatible with any future Q9
 license choice. Should GPL code from NitrOS-9/OS9exec be taken over after
 all at some point, Q9's license (or at least that of the affected modules)
-will have to be GPL-compatible. The MWOS and book references must never
+will have to be GPL-compatible. The REF and book references must never
 show up as code either way — they may only serve as background
 understanding.
 

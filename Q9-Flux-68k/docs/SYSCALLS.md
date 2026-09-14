@@ -1,8 +1,8 @@
 # Q9 Syscall-ABI
 
 **Entscheidung E7 (2026-07-03)**: Q9 übernimmt die **OS-9-Funktionsnummern und
-Registerkonventionen**. Quelle der Nummern: MWOS `DEFS/funcs.h` (OS-9 Professional V3.0),
-Fehlercodes aus MWOS `DEFS/errno.h`. Ziel: OS-9-Software (68k wie 6809) lässt sich
+Registerkonventionen**. Quelle der Nummern: REF `DEFS/funcs.h` (OS-9 Professional V3.0),
+Fehlercodes aus REF `DEFS/errno.h`. Ziel: OS-9-Software (68k wie 6809) lässt sich
 mechanisch auf Q9 abbilden — die 68k-/6809-Runtimes werden dünne Register-Mapper.
 
 ---
@@ -41,7 +41,7 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 
 ---
 
-## Funktionsnummern (Auszug; identisch zu MWOS funcs.h)
+## Funktionsnummern (Auszug; identisch zu REF funcs.h)
 
 | Nummer | Name     | Status Phase 1 |
 |--------|----------|----------------|
@@ -76,7 +76,7 @@ F$Fork: A/X/U/Y ↔ d0/a0/a1/d1). **Verbindlich ist immer die Tabelle pro Call.*
 
 Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 
-## Fehlercodes (Auszug; identisch zu MWOS errno.h)
+## Fehlercodes (Auszug; identisch zu REF errno.h)
 
 | Code | Name      | Bedeutung |
 |------|-----------|-----------|
@@ -86,7 +86,7 @@ Alle nicht implementierten Nummern liefern `E$UnkSvc` ($D0).
 | $CD  | E$BMID    | ungültiger Modul-Header (2.3b: HeaderSize/ModuleSize/NameOffset) |
 | $CE  | E$DirFul  | Modul-Directory voll (2.3c) |
 | $D0  | E$UnkSvc  | unbekannter Service-Request |
-| $D1  | E$ModBsy  | Modul noch gelinkt (reserviert, MWOS-verifiziert) |
+| $D1  | E$ModBsy  | Modul noch gelinkt (reserviert, REF-verifiziert) |
 | $D2  | E$BPAddr  | ungültige Parameter-Adresse |
 | $D3  | E$EOF     | Dateiende |
 | $E1  | E$Param   | ungültiger Parameter |
@@ -187,7 +187,7 @@ F$CmpNam vergleicht zwei Namen fester Länge, **case-insensitiv**:
 | a0       | Name 1                   |
 | a1       | Name 2                   |
 
-- Gleich → 0; verschieden → `E$Differ` ($A5, MWOS-verifiziert). Wildcards: noch keine.
+- Gleich → 0; verschieden → `E$Differ` ($A5, REF-verifiziert). Wildcards: noch keine.
 
 ### I$GetStt ($8D) / I$SetStt ($8E) — seit Phase 1.8
 
@@ -196,7 +196,7 @@ F$CmpNam vergleicht zwei Namen fester Länge, **case-insensitiv**:
 | d0.w     | Pfadnummer                  | —                       |
 | d1.w     | Status-Code (SS.*)          | SS.Ready: Zeichen im Eingabepuffer |
 
-Implementierte Codes (**SS-Nummern beim MWOS-Abgleich prüfen**):
+Implementierte Codes (**SS-Nummern beim REF-Abgleich prüfen**):
 
 | Code | Name     | Gerät | Verhalten |
 |------|----------|-------|-----------|
@@ -416,7 +416,7 @@ Bewusste Vereinfachung ggü. echtem OS-9: Q9 kennt genau EINEN Intercept-Handler
 Signalmaskenkonzept, `F$SigMask`/`F$SigReset` bleiben 💤, s. docs/SYSCALL_ROADMAP.md) und keine
 vordefinierten Signalnummern — die Bedeutung von `d1.l` liegt beim aufrufenden Code.
 
-### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 MWOS-korrigiert
+### F$Time ($15) / F$STime ($16) — seit Phase 1.9 echte Uhrzeit, Register 1.9.1 REF-korrigiert
 
 | Register | F$Time Output                          | F$STime Input     |
 |----------|----------------------------------------|-------------------|
@@ -425,7 +425,7 @@ vordefinierten Signalnummern — die Bedeutung von `d1.l` liegt beim aufrufenden
 | d2.w     | Wochentag (0 = Sonntag)                | —                 |
 | d3.l     | Millisekunden-Ticks seit Boot          | —                 |
 
-- Registerbelegung MWOS-verifiziert (OS-9 for 68K Technical Reference Manual,
+- Registerbelegung REF-verifiziert (OS-9 for 68K Technical Reference Manual,
   Tabelle „Gregorian vs. Julian Time"): **d0 = Zeit, d1 = Datum** — bewusst
   gegenläufig zur intuitiven Reihenfolge, aber exakt wie im echten OS-9/68K.
   Die Feld-Packung selbst (Jahr/Monat/Tag bzw. Std/Min/Sek) war von Anfang an

@@ -2,7 +2,7 @@
 // File:   quicc.h                                                                         Ver. 1.40
 // Owner:  AF
 // Desc.:  5.11: QUICC-Ethernet-Emulation (MC68360, SCC1 im Ethernet-Modus) fuer den Board-Runner —
-//         das Hardware-Gegenstueck zum originalen Microware-SPF-Treiber `sp360` (MWOS-SDK,
+//         das Hardware-Gegenstueck zum originalen Microware-SPF-Treiber `sp360` (Referenz-Toolchain,
 //         SRC/DPIO/SPF/DRVR/SPQUICC). Emuliert wird NUR das, was dieser Treiber tatsaechlich
 //         anfasst: 8K-Fenster ab Q9_QUICC_BASE mit Dual-Port-RAM (BD-Ringe), SCC1-Parameter-RAM
 //         und der Registerbank (CP-Kommandoregister, CPM-Interrupt-Controller, SCC1-Register).
@@ -69,7 +69,7 @@
 #define Q9_QUICC_TOP         0xFFFF3FFFu              /* Fensterende (8K)                         */
 #define Q9_QUICC_MEM_LEN     0x1800u                  /* belegt: DPRAM+PRAM+Register ($0-$17FF)   */
 
-//─── Interrupt (Werte aus dem spqe0-Descriptor im MWOS-Q9-Port) ──────────────────────────────────
+//─── Interrupt (Werte aus dem spqe0-Descriptor im REF-Q9-Port) ──────────────────────────────────
 #define Q9_QUICC_IRQ_LEVEL   5                        /* Port IRQ Level                           */
 #define Q9_QUICC_IRQ_VECTOR  254                      /* Port vector                              */
 

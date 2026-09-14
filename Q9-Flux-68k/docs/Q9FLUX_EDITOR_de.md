@@ -1698,7 +1698,7 @@ Speicher-Schema (`ram`/`rom`) fehlt dort noch.
 
 Urspruenglich gedacht als "kann ich hier auch gleich einen OS-9-Descriptor ERZEUGEN" — aber einen
 generierten Descriptor tatsaechlich INS IMAGE zu bekommen ist ein eigener, nicht-trivialer
-Workflow (MWOS-Build + ToolShed-Transfer, s. ARBEITSPLAN 5.20 "Descriptor-Generator", dort noch
+Workflow (REF-Build + ToolShed-Transfer, s. ARBEITSPLAN 5.20 "Descriptor-Generator", dort noch
 💤/nicht begonnen). **Entscheidung (Andreas, 2026-08-13): fuer den Editor KEINE Abhaengigkeit
 dorthin.** Das Feld bleibt eine reine Informations-Flagge ("wird fuer dieses Geraet ein
 Descriptor gebraucht, ja/nein") — der Anwender ist selbst dafuer verantwortlich, dass passende

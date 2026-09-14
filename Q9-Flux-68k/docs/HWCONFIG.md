@@ -25,7 +25,7 @@ Bezug: [ARBEITSPLAN.md](ARBEITSPLAN.md) Schritte 5.17–5.21.
 1. **Modulare Hardware:** Jedes emulierte Gerät einzeln erstellen und per
    Konfiguration ins Board aufnehmen können — ohne Zwang, alle zu verwenden.
 2. **Konfigurierbare Descriptoren:** Adresse, Name, Vektor, Level usw. an EINER
-   Stelle pflegen — für Emulator UND MWOS-Port (OS-9-Descriptoren).
+   Stelle pflegen — für Emulator UND REF-Port (OS-9-Descriptoren).
 3. **Maximale Geschwindigkeit:** möglichst wenige Adressabfragen pro Zugriff.
 4. **Alle drei großen OS:** macOS, Windows, Linux.
 
@@ -240,11 +240,11 @@ mac     = 00:73:39:33:36:30
   im RAM, unbekannter type, auf der Plattform nicht verfügbares backend —
   Fehlermeldung mit Zeilennummer und Instanznamen.
 
-## 4. Descriptor-Generator MWOS-Seite (5.20)
+## 4. Descriptor-Generator REF-Seite (5.20)
 
 Tool (Python, wie der idbgen-Weg aus 5.14) liest DIESELBE Board-Config und
 erzeugt die OS-9-Seite: `systype.d`-Fragmente + Descriptor-Quellen
-(`x1.a`-Muster) für den MWOS-Q9-Port; gebaut wie gehabt über die
+(`x1.a`-Muster) für den REF-Q9-Port; gebaut wie gehabt über die
 Wine-Toolchain (os9make). Adresse/Vektor/Level stehen damit nur noch an einer
 Stelle. Ausbaustufe (separat zu entscheiden): Descriptor-Module direkt binär
 erzeugen inkl. CRC (Modul-Format-Parser aus 5.15 existiert) — spart den
@@ -262,7 +262,7 @@ zu klären, BEVOR 5.20 auf 🟢 geht):**
    Bootfile/ROM, s. ROM-Rebuild-Drift unter "Geparkt").
 3. Wann läuft der Generator? Tendenz: Handaufruf (`tools/q9desc.py
    q9board.cfg`) + `make`-Warnung bei "Config neuer als Generat" — KEIN
-   Automatismus, der ungefragt ins MWOS-Verzeichnis schreibt.
+   Automatismus, der ungefragt ins REF-Verzeichnis schreibt.
 
 ## 5. Plattform-Strategie (5.21)
 

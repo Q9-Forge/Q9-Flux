@@ -25,7 +25,7 @@ Base, Start-LSN und Partitionslänge bleiben zum jeweiligen Daten-Descriptor ide
 Die PCF-Descriptoren `d0` und `e0` verwenden die Q9-Anpassung **Hard + feste Geometrie**
 und den separaten Testtreiber `cfidef` (Edition 43; der ROM-Treiber `cfide`
 bleibt unverändert).
-Das SDK-`pcd0` ist ursprünglich ein 1,44-MB-Disketten-Descriptor (`pcdos380`);
+Das Referenz-Toolchain-`pcd0` ist ursprünglich ein 1,44-MB-Disketten-Descriptor (`pcdos380`);
 unverändert führt er bei den 2-GB-FAT16-Images zu `E$BTyp`. Die Descriptoren verwenden
 jetzt 512 Byte, 63 Sektoren/Track und 255 Köpfe (d0: 261, e0: 131 Zylinder), passend
 zur FAT-Geometrie. `dump /d0@` bleibt ein Rohzugriff und

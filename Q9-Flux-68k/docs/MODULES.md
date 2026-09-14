@@ -6,9 +6,9 @@ dabei **konzepttreu, aber nicht binärkompatibel** (Entscheidung E2 in
 PROJECT.md) — hier steht, was OS-9 macht, nicht was Q9 übernehmen muss.
 
 **Quellen:**
-- `M:\MWOS\PACKAGES\OS9_Professional_V3.0\DEFS\module.h` (C-Structs)
-- `M:\MWOS\PACKAGES\OS9_Professional_V3.0\DEFS\oskdefs.d` (Assembler-Konstanten, vollständigere Language-Liste)
-- `M:\MWOS\DOC\MANUALS\MW 0000-0000 OS-9 for 68K Technical Reference Manual.pdf` (Kapitel „System Overview" + „System Calls", F$Link/F$UnLink/F$VModul/F$FModul/F$Load)
+- `M:\REF\PACKAGES\OS9_Professional_V3.0\DEFS\module.h` (C-Structs)
+- `M:\REF\PACKAGES\OS9_Professional_V3.0\DEFS\oskdefs.d` (Assembler-Konstanten, vollständigere Language-Liste)
+- `M:\REF\DOC\MANUALS\MW 0000-0000 OS-9 for 68K Technical Reference Manual.pdf` (Kapitel „System Overview" + „System Calls", F$Link/F$UnLink/F$VModul/F$FModul/F$Load)
 
 ---
 
@@ -73,7 +73,7 @@ Aus `oskdefs.d` (Assembler-Referenz, vollständiger als der C-Header):
 identisch übernommen (siehe `PROJECT.md`). Die *Werte* sind zwangsläufig
 eigene, da OS-9/68K für "mehrere Zielarchitekturen nebeneinander" (Q9s
 WASM+68k-Doppelziel) gar kein Konzept hatte — Multi-Architektur kam laut
-Recherche erst mit OS-9000 (nicht in `M:\MWOS` vorhanden, nicht verifizierbar).
+Recherche erst mit OS-9000 (nicht in `M:\REF` vorhanden, nicht verifizierbar).
 
 **Attribute** (`_mattrev` oberes Byte):
 

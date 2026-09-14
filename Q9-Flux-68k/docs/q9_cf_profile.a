@@ -1,6 +1,6 @@
 * Q9 CF-Descriptorprofil 5.19b
-* Diese Datei dokumentiert die Parameter der aus SDK-Templates erzeugten Module.
-* Sie ist bewusst eine Q9-Konfigurationsvorlage; die lizenzierten MWOS-Makros
+* Diese Datei dokumentiert die Parameter der aus Referenz-Toolchain-Templates erzeugten Module.
+* Sie ist bewusst eine Q9-Konfigurationsvorlage; die lizenzierten REF-Makros
 * (rbfdesc.a/pcfdesc.a) werden nicht ins Q9-Repository kopiert.
 
 CF_BASE_C0  equ $FFFFE000

@@ -40,7 +40,7 @@
 #define Q9_BOARD_CF_BASE           0xFFFFE000u
 #define Q9_BOARD_CF_TOP            0xFFFFE0FFu
 /* 5.19a: Zweites CF-Interface — SC145-CF-Kartenleser im RC2014-Erweiterungsslot, Adresse aus
-   dem MWOS-Q9-Port (systype.d: RC2014_CF_Base = Slot-Basis $FFFFC000 + Offset $10; Descriptoren
+   dem REF-Q9-Port (systype.d: RC2014_CF_Base = Slot-Basis $FFFFC000 + Offset $10; Descriptoren
    e0 = Master / f0 = Slave, beide DrvNum-gesteuert ueber das DEV-Bit in LBA3: $E0/$F0). Fenster
    sind die 8 ATA-Register $FFFFC010–$FFFFC017. Wird NUR registriert, wenn die Board-Config
    (boardcfg.h) dort Images anhaengt — ohne Config existiert das Fenster nicht (Board wie bisher). */
@@ -77,7 +77,7 @@ typedef struct {
 /* 5.19a: Ein CF-INTERFACE (ATA-Registersatz + Sektorpuffer), mehrfach instanziierbar (Onboard-CF
    $FFFFE000 + RC2014-SC145 $FFFFC010). Beide Einheiten teilen sich Registersatz und Puffer wie
    bei echtem ATA — welche Einheit ein Kommando bedient, entscheidet das DEV-Bit (Bit 4) in LBA3
-   ($E0 = Master, $F0 = Slave, exakt die Werte der e0/f0-Descriptoren im MWOS-Q9-Port). */
+   ($E0 = Master, $F0 = Slave, exakt die Werte der e0/f0-Descriptoren im REF-Q9-Port). */
 typedef struct {
     q9_cf_unit_t unit[2];                              /* [0] = Master, [1] = Slave              */
     uint32_t     lba;
