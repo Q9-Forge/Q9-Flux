@@ -83,7 +83,7 @@ licensing status. For details it points to the specialist documents in
 `docs/` instead of repeating them.
 
 **Related documents:**
-- [`../.claude/ARBEITSPLAN.md`](../.claude/ARBEITSPLAN.md) — current work status, step by step (internal working document, see below)
+- [`ARBEITSPLAN.md`](ARBEITSPLAN.md) — current work status, step by step (internal working document, see below)
 - [`SYSCALLS.md`](SYSCALLS.md) — OS-9 syscall ABI (registers, error codes) — a historical reference from the mini-kernel era, still useful for understanding the emulated guest OS-9
 - [`DEVICES.md`](DEVICES.md) — device/path table, driver interface (mini-kernel era)
 - [`MODULES.md`](MODULES.md) — OS-9 module system as a reference (mini-kernel era)
@@ -174,15 +174,15 @@ commit`/`git push` after every completed step.
 
 ```
 Q9-Flux/
-├── AGENTS.md              pointer to the working documents (stays at the root, see .claude/)
+├── AGENTS.md              pointer to the working documents (stays at the root, see docs/)
 ├── README.md              short English project description
 ├── LICENSE
 ├── Makefile                build system, see section 4
 ├── .gitignore / .gitmodules
 ├── emu*.q9                 board config profiles (several parallel work states/people)
-├── .claude/                working documents (see section 3.1): ARBEITSPLAN.md (+ _de/_ARCHIV),
-│                           context.txt, Q9_CURRENT_STATUS.md, BUGFIX_CF_WRITE.md,
-│                           TEST_CF_WRITE.md, COMMIT_MESSAGE.txt
+├── docs/                   also holds the working documents (see section 3.1): ARBEITSPLAN.md
+│                           (+ _de/_ARCHIV), context.txt, Q9_CURRENT_STATUS.md,
+│                           BUGFIX_CF_WRITE.md, TEST_CF_WRITE.md
 ├── src/
 │   ├── hal/                host abstraction — WHICH machine the emulator itself runs on
 │   │   ├── q9_hal.h           shared interface (console, timer, block device, time)
@@ -239,7 +239,7 @@ portability:
   bus, device emulation) is kernel/device business and runs identically
   everywhere.
 
-`.claude/ARBEITSPLAN.md`, `.claude/context.txt`, and `docs/AUTONOMIE.md`
+`docs/ARBEITSPLAN.md`, `docs/context.txt`, and `docs/AUTONOMIE.md`
 are **working-process documents** for the collaboration between Andreas
 and Claudia (Claude Code) — they document *how* the work happens (the
 approval workflow, automated runs), not *what* Q9 Flux is. They aren't
@@ -625,7 +625,7 @@ or `tools/make_fat_image.py` (FAT12/16 superfloppy). Example config:
 
 This handbook's content was last updated on 2026-07-16 (through step
 5.19a); a fair amount has been added to the emulator since then, which is
-only briefly named here — full details are in `.claude/ARBEITSPLAN.md`:
+only briefly named here — full details are in `ARBEITSPLAN.md`:
 
 | Subsystem | Brief description | ARBEITSPLAN area |
 |---|---|---|
@@ -633,7 +633,7 @@ only briefly named here — full details are in `.claude/ARBEITSPLAN.md`:
 | Telnet terminals | Eight virtual network terminals `/x1`–`/x8` over TCP (port 2000+), Telnet NVT normalization | Step 5.10 (extension to 8 channels) |
 | Video pipeline | MC6845 register model (`src/devices/mc6845/`) + framebuffer/VRAM (`src/devices/framebuf/`) + CLUT color palette (`src/devices/clut/`) + Q9-Frame network protocol for remote display (`src/devices/videobridge/`) | Steps 5.24–5.29 |
 | RTC72421 | Real-time clock (Epson chip), reads the host clock | Step 5.6 |
-| Debug hotkey | Ctrl-^ dumps physical RAM content (a Q9-OS reverse-engineering aid) | see `q9_dbg_dump_requested` in `q9boardrun.h` |
+| Debug hotkey | Ctrl-^ dumps physical RAM content (an analysis aid for Q9-OS) | see `q9_dbg_dump_requested` in `q9boardrun.h` |
 | Multi-architecture planning | RISC-V32/ARM64/x86 32-bit as further target architectures, board emulator vs. native runtime — still pure planning | Phase 6 |
 
 ---
@@ -641,7 +641,7 @@ only briefly named here — full details are in `.claude/ARBEITSPLAN.md`:
 ## 6. Current Status
 
 Complete, fine-grained status with rationale:
-[`../.claude/ARBEITSPLAN.md`](../.claude/ARBEITSPLAN.md)
+[`ARBEITSPLAN.md`](ARBEITSPLAN.md)
 (status model 💡/💤/🟢/🔄/✅/⛔). Summary:
 
 | Phase | Contents | Status |
@@ -652,7 +652,7 @@ Complete, fine-grained status with rationale:
 | U | Userland tools | 🔄 several Q9 userland tools exist (Codex's work area, `userland/`) |
 
 Testing happens natively on Windows/macOS/Linux at every step — see
-`test/` and the verification notes in `.claude/ARBEITSPLAN.md`.
+`test/` and the verification notes in `ARBEITSPLAN.md`.
 
 ---
 

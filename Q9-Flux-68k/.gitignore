@@ -58,5 +58,6 @@ q9boardcfg_bad.q9
 Thumbs.db
 .DS_Store
 
-# Claude Code lokale Settings
-.claude/settings.local.json
+# Claude Code: gesamtes Arbeitsverzeichnis lokal halten (Settings, lokale
+# Pfade, Arbeitsnotizen) -- echte Doku wandert stattdessen bewusst nach docs/
+.claude/

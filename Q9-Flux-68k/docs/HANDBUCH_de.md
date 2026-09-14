@@ -83,7 +83,7 @@ Lizenzlage. Für Details verweist es auf die Fachdokumente in `docs/` statt
 sie zu wiederholen.
 
 **Verwandte Dokumente:**
-- [`../.claude/ARBEITSPLAN.md`](../.claude/ARBEITSPLAN.md) — laufender Arbeitsstand, Schritt für Schritt (internes Arbeitsdokument, siehe unten)
+- [`ARBEITSPLAN.md`](ARBEITSPLAN.md) — laufender Arbeitsstand, Schritt für Schritt (internes Arbeitsdokument, siehe unten)
 - [`SYSCALLS.md`](SYSCALLS.md) — OS-9-Syscall-ABI (Register, Fehlercodes) — historische Referenz aus der Mini-Kernel-Zeit, für das Verständnis des emulierten Gast-OS-9 weiterhin nützlich
 - [`DEVICES.md`](DEVICES.md) — Geräte-/Pfadtabelle, Treiber-Schnittstelle (Mini-Kernel-Ära)
 - [`MODULES.md`](MODULES.md) — OS-9-Modulsystem als Referenz (Mini-Kernel-Ära)
@@ -172,15 +172,15 @@ abgeschlossenen Schritt aufsetzt.
 
 ```
 Q9-Flux/
-├── AGENTS.md              Verweis auf die Arbeitsdokumente (bleibt am Root, s. .claude/)
+├── AGENTS.md              Verweis auf die Arbeitsdokumente (bleibt am Root, s. docs/)
 ├── README.md              englische Kurzbeschreibung
 ├── LICENSE
 ├── Makefile                Build-System, siehe Abschnitt 4
 ├── .gitignore / .gitmodules
 ├── emu*.q9                 Board-Config-Profile (mehrere parallele Arbeitsstände/Personen)
-├── .claude/                Arbeitsdokumente (s. Abschnitt 3.1): ARBEITSPLAN.md (+ _de/_ARCHIV),
-│                           context.txt, Q9_CURRENT_STATUS.md, BUGFIX_CF_WRITE.md,
-│                           TEST_CF_WRITE.md, COMMIT_MESSAGE.txt
+├── docs/                   enthaelt auch die Arbeitsdokumente (s. Abschnitt 3.1): ARBEITSPLAN.md
+│                           (+ _de/_ARCHIV), context.txt, Q9_CURRENT_STATUS.md,
+│                           BUGFIX_CF_WRITE.md, TEST_CF_WRITE.md
 ├── src/
 │   ├── hal/                Host-Abstraktion — WELCHE Maschine der Emulator selbst läuft
 │   │   ├── q9_hal.h           gemeinsames Interface (Konsole, Timer, Block-Device, Zeit)
@@ -236,7 +236,7 @@ Diese Regeln sind keine Stilfrage, sondern tragen die Portabilität des Projekts
   Block-Device, Systemzeit, Target-Name. Alles andere (Board-Bus,
   Geräte-Emulation) ist Kernel-/Device-Sache und läuft überall gleich.
 
-`.claude/ARBEITSPLAN.md`, `.claude/context.txt` und `docs/AUTONOMIE.md` sind
+`docs/ARBEITSPLAN.md`, `docs/context.txt` und `docs/AUTONOMIE.md` sind
 **Arbeitsprozess-Dokumente** für die Zusammenarbeit zwischen Andreas und
 Claudia (Claude Code) — sie dokumentieren *wie* gearbeitet wird
 (Freigabe-Workflow, automatisierte Läufe), nicht *was* Q9 Flux ist. Für eine
@@ -613,7 +613,7 @@ Test-Images erzeugt man mit ToolShed (RBF: `os9 format -bs512 -c32 …`) bzw.
 
 Dieses Handbuch wurde zuletzt am 2026-07-16 inhaltlich fortgeschrieben (bis
 Schritt 5.19a); danach ist im Emulator einiges dazugekommen, das hier nur
-kurz benannt wird — vollständige Details stehen in `.claude/ARBEITSPLAN.md`:
+kurz benannt wird — vollständige Details stehen in `ARBEITSPLAN.md`:
 
 | Subsystem | Kurzbeschreibung | ARBEITSPLAN-Bereich |
 |---|---|---|
@@ -621,7 +621,7 @@ kurz benannt wird — vollständige Details stehen in `.claude/ARBEITSPLAN.md`:
 | Telnet-Terminals | Acht virtuelle Netzwerk-Terminals `/x1`–`/x8` über TCP (Port 2000+), Telnet-NVT-Normalisierung | Schritt 5.10 (Erweiterung 8 Kanäle) |
 | Video-Pipeline | MC6845-Registermodell (`src/devices/mc6845/`) + Framebuffer/VRAM (`src/devices/framebuf/`) + CLUT-Farbpalette (`src/devices/clut/`) + Q9-Frame-Netzwerkprotokoll für Remote-Anzeige (`src/devices/videobridge/`) | Schritte 5.24–5.29 |
 | RTC72421 | Echtzeituhr (Epson-Baustein), liest die Host-Uhr | Schritt 5.6 |
-| Debug-Sondertaste | Ctrl-^ dumpt physischen RAM-Inhalt (Q9-OS-Reverse-Engineering-Hilfe) | s. `q9_dbg_dump_requested` in `q9boardrun.h` |
+| Debug-Sondertaste | Ctrl-^ dumpt physischen RAM-Inhalt (Analysehilfe für Q9-OS) | s. `q9_dbg_dump_requested` in `q9boardrun.h` |
 | Mehrarchitektur-Planung | RISC-V32/ARM64/x86-32-Bit als weitere Zielarchitekturen, Board-Emulator vs. native Runtime — noch reine Planung | Phase 6 |
 
 ---
@@ -629,7 +629,7 @@ kurz benannt wird — vollständige Details stehen in `.claude/ARBEITSPLAN.md`:
 ## 6. Stand der Dinge
 
 Kompletter, feingranularer Stand mit Begründungen:
-[`../.claude/ARBEITSPLAN.md`](../.claude/ARBEITSPLAN.md)
+[`ARBEITSPLAN.md`](ARBEITSPLAN.md)
 (Statusmodell 💡/💤/🟢/🔄/✅/⛔). Kurzfassung:
 
 | Phase | Inhalt | Stand |
@@ -640,7 +640,7 @@ Kompletter, feingranularer Stand mit Begründungen:
 | U | Userland-Werkzeuge | 🔄 mehrere Q9-Userland-Tools existieren (Codex-Baustelle, `userland/`) |
 
 Getestet wird nativ auf Windows/macOS/Linux bei jedem Schritt — siehe
-`test/` und die Verifikations-Notizen in `.claude/ARBEITSPLAN.md`.
+`test/` und die Verifikations-Notizen in `ARBEITSPLAN.md`.
 
 ---
 

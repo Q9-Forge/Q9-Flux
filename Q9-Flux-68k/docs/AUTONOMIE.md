@@ -12,7 +12,8 @@ je eine Stunde warten.)
 
 ## Bausteine
 
-1. **`.claude/settings.json`** (in diesem Repo, wandert per git auf jeden Rechner):
+1. **`.claude/settings.json`** (rein lokal, `.claude/` ist nicht mehr Teil des
+   Repos -- auf jedem Rechner einmalig selbst anlegen):
    erlaubt git/make/gcc/clang/emcc/python sowie Lesen/Schreiben im Projekt ohne
    Berechtigungsdialog. `git push --force` bleibt verboten. Das ist der robuste
    Baustein: Muster wie `Bash(git *)` oder `Edit(./**)` decken *jeden* künftigen

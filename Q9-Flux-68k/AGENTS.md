@@ -2,22 +2,24 @@
 
 Diese Datei bleibt bewusst im Repo-Root -- sie ist die "erste Datei", die
 Codex/Claude beim Start automatisch findet. Die eigentlichen Arbeitsdokumente
-liegen unter `.claude/`, damit der Root aufgeraeumt bleibt.
+liegen unter `docs/` (frueher unter `.claude/` -- das Verzeichnis ist jetzt
+rein lokales Tool-Settings-Verzeichnis und wird nicht mehr versioniert, s.
+`.gitignore`).
 
 Beim Arbeiten in diesem Projekt zuerst lesen:
 
 1. `PROJECT.md` fuer Vision, Architektur und Entscheidungen (aktuell nicht
    vorhanden -- historischer Verweis, s. `docs/PROJECT_VISION_ARCHIV.md`).
-2. `.claude/ARBEITSPLAN.md` fuer aktuellen Status und naechste freigegebene
-   Schritte (deutsche Uebersetzung: `.claude/ARBEITSPLAN_de.md`; Volltext-Archiv
-   aller erledigten Schritte: `.claude/ARBEITSPLAN_ARCHIV.md`).
-3. `.claude/context.txt` fuer den kompakten letzten Arbeitsstand.
+2. `docs/ARBEITSPLAN.md` fuer aktuellen Status und naechste freigegebene
+   Schritte (deutsche Uebersetzung: `docs/ARBEITSPLAN_de.md`; Volltext-Archiv
+   aller erledigten Schritte: `docs/ARBEITSPLAN_ARCHIV.md`).
+3. `docs/context.txt` fuer den kompakten letzten Arbeitsstand.
 4. Bei Build-, Toolchain- oder Architekturfragen: `docs/HANDBOOK.md` (deutsche
    Uebersetzung: `docs/HANDBUCH_de.md`).
 
-Weitere Dokumente unter `.claude/`: `Q9_CURRENT_STATUS.md` (Windows-
+Weitere Dokumente unter `docs/`: `Q9_CURRENT_STATUS.md` (Windows-
 Arbeitsstand-Snapshot), `BUGFIX_CF_WRITE.md`/`TEST_CF_WRITE.md` (CF-Write-
-Bugfix-Dokumentation), `COMMIT_MESSAGE.txt` (Entwurf).
+Bugfix-Dokumentation).
 
 Arbeitsweise:
 
