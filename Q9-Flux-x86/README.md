@@ -86,6 +86,15 @@ relocations.  The experimental writer currently emits only a no-relocation
 candidate module; external symbols and relocation records are rejected until
 their OS-9000 mapping has been validated against real modules.
 
+## Third-party components
+
+QEMU (`third_party/qemu`, a git submodule pointing at the unmodified
+upstream project) is used as an external i386 system emulator process,
+launched and driven via QMP/the command line — its own code is not
+compiled into or linked with `bin/flux-x86`. QEMU itself is
+GPL-2.0-or-later; see [../THIRD-PARTY-LICENSES.md](../THIRD-PARTY-LICENSES.md)
+for the full third-party license overview.
+
 ## Scope boundary
 
 This repository must not contain proprietary OS-9000 images, extracted binary

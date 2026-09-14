@@ -27,4 +27,8 @@ boards and device models are planned.
 
 ## License
 
-See [LICENSE](LICENSE) and the documentation for third-party components.
+See [LICENSE](LICENSE) (MIT, for this component's own code). Bundled
+third-party components under `third_party/` (Musashi, SoftFloat, TinyEMU,
+the slirp networking DLLs, Turbo Vision) keep their own, original
+licenses — see [../THIRD-PARTY-LICENSES.md](../THIRD-PARTY-LICENSES.md)
+for the full overview.

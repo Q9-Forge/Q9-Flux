@@ -14,3 +14,11 @@ Q9.
 Die architekturabhängige Implementierung bleibt im jeweiligen
 Komponentenverzeichnis. Lokale Emulator-Images, private Profile und Archive
 werden ignoriert und nicht eingecheckt.
+
+## Lizenz
+
+Der eigene Code von Q9-Flux steht unter der [MIT-Lizenz](LICENSE). Mehrere
+eingebundene oder referenzierte Komponenten Dritter (CPU-Emulationskerne,
+Netzwerkbibliotheken, QEMU als externer Prozess für Q9-Flux-x86, und
+weitere) behalten ihre eigene, ursprüngliche Lizenz — die vollständige
+Liste steht in [THIRD-PARTY-LICENSES_de.md](THIRD-PARTY-LICENSES_de.md).
