@@ -2,7 +2,7 @@
 // File:   quicc.c                                                                         Ver. 1.30
 // Owner:  AF
 // Desc.:  Implementierung der QUICC-Ethernet-Emulation, siehe quicc.h. Verhaltens-Referenz ist
-//         ausschliesslich der sp360-Treiber (MWOS SRC/DPIO/SPF/DRVR/SPQUICC, init.c/isr.c):
+//         ausschliesslich der sp360-Treiber (REF SRC/DPIO/SPF/DRVR/SPQUICC, init.c/isr.c):
 //         emuliert wird genau das Teilverhalten des MC68360, das dieser Treiber benutzt.
 //
 //         Ablauf aus Treibersicht:
@@ -74,7 +74,7 @@
 #define QO_SCC1_SCCE     0x1610u                      /* u16: Ereignisregister (W1C)              */
 #define QO_SCC1_SCCM     0x1614u                      /* u16: Ereignismaske                       */
 
-//─── Konstanten aus dem 68360/Treiber (regs360.h/enet360.h/quicc.h des MWOS-SDK) ─────────────────
+//─── Konstanten aus dem 68360/Treiber (regs360.h/enet360.h/quicc.h des Referenz-Toolchain) ─────────────────
 #define QC_CMD_FLAG      0x0001u                      /* CR: Kommando ausfuehren (CP loescht es)  */
 #define QC_CMD_OPMASK    0x0F00u                      /* CR: Opcode-Bits                          */
 #define QC_INIT_RXTX     0x0000u                      /* CR: INIT RX & TX PARAMS                  */
@@ -95,7 +95,7 @@
 #define QC_FRAME_MAX     1518u                        /* max. Ethernet-Frame (inkl. Header)       */
 #define QC_TX_RING_MAX   64u                          /* Schutz gegen kaputte Ringe               */
 
-//─── Mini-NAT-Gegenstelle (muss zu interfaces.conf im MWOS-Q9-Port passen: Gast = 192.168.200.2) ─
+//─── Mini-NAT-Gegenstelle (muss zu interfaces.conf im REF-Q9-Port passen: Gast = 192.168.200.2) ─
 #define QH_IP0 192
 #define QH_IP1 168
 #define QH_IP2 200

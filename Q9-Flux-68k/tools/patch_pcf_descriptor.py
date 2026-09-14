@@ -66,7 +66,7 @@ def patch(path: Path, output_name: str, base: int, lsn: int, format_enabled: boo
     data[0x30:0x34] = base.to_bytes(4, "big")
     data[0x68:0x6C] = lsn.to_bytes(4, "big")
     if hard_autosize:
-        # The SDK pcd0 template is a 1.44-MB floppy (pcdos380).  Q9 uses
+        # The Referenz-Toolchain pcd0 template is a 1.44-MB floppy (pcdos380).  Q9 uses
         # PCF only for FAT12/16 CF media, so advertise a hard, autosized
         # medium; PCF then obtains the actual geometry from the BPB.
         data[0x4B] = 0x80       # PD_TYP: Hard

@@ -129,8 +129,8 @@ Emulator per expect gesteuert:
   setenv LIB /dd/LIB
   ```
 
-  (Ultra C wuerde stattdessen `CDEF`/`CLIB`/`MWOS`/`TMPDIR`/`CC` nutzen —
-  s. `ultrac_use.pdf` Kap. 3 im SDK.)
+  (Ultra C wuerde stattdessen `CDEF`/`CLIB`/`REF`/`TMPDIR`/`CC` nutzen —
+  s. `ultrac_use.pdf` Kap. 3 im Referenz-Toolchain.)
 - Kompletter Durchlauf getestet: `build hello.c` → `cc hello.c` (alle fuenf
   Phasen) → `hello` laeuft und druckt. Das Ausgabemodul landet im
   **Execution Directory** (`chx`, hier `/dd/CMDS`), nicht im

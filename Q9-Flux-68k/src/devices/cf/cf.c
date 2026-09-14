@@ -48,7 +48,7 @@ static int board_cf_trace_enabled(void)
 #define CF_TRACE(...) do { if (board_cf_trace_enabled()) fprintf(stderr, __VA_ARGS__); } while (0)
 
 /* 5.19a: Die aktuell adressierte Einheit des Interfaces — DEV-Bit (Bit 4) in LBA3 waehlt Master
-   ($E0) oder Slave ($F0), exakt wie die e0/f0-Descriptoren im MWOS-Q9-Port es programmieren.
+   ($E0) oder Slave ($F0), exakt wie die e0/f0-Descriptoren im REF-Q9-Port es programmieren.
    Die c0..c3-Descriptoren der Onboard-CF schreiben alle $E0 (DrvNum 0) — Verhalten wie vor 5.19a. */
 static q9_cf_unit_t *cf_cur_unit(q9_cf_t *c)
 {

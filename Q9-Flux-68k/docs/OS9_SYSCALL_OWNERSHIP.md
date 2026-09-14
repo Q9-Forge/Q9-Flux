@@ -22,7 +22,7 @@ Zugriffsrechte-Prüfung — siehe unten), aber (siehe Vorbehalt unten) noch nich
 abgesichert, um das als Fakt zu behaupten.
 
 **Quellen:**
-- `M:\MWOS\OS9\SRC\DEFS\funcs.h` — Callcode-Nummern (`F_LINK 0x00` usw.)
+- `M:\REF\OS9\SRC\DEFS\funcs.h` — Callcode-Nummern (`F_LINK 0x00` usw.)
 - `M:\KIDOCS\md\MW-0000-0000-OS-9-for-68K-Technical-Reference-Manual.md`, Anhang D
   (Tabelle D-1 Kernel, D-2 IOMan, D-3 SSM, D-4 SysCache)
 - Live-Messung: eigener Boot des Q9-Flux-Emulators, Patch in `src/kernel/m68krt.c`

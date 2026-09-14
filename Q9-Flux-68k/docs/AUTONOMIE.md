@@ -28,13 +28,13 @@ je eine Stunde warten.)
    pauschal alles Künftige. Der eigentliche Schutz vor Ort-1-Lücken ist die
    Allowlist in settings.json; "Run now" ist nur die Ergänzung für alles, was
    nicht über ein Muster in settings.json abgedeckt ist (z.B. Zugriff auf
-   Pfade außerhalb des Projektordners wie `M:\MWOS`, siehe unten).
+   Pfade außerhalb des Projektordners wie `M:\REF`, siehe unten).
 
 **Bekannte Lücke:** Alles außerhalb der gelisteten Muster bzw. außerhalb des
 Projektordners löst weiterhin eine Rückfrage aus — bei einem unbeaufsichtigten
-Lauf bleibt das dann vermutlich hängen. `M:\MWOS` (Referenz für den
-MWOS-Abgleich) ist deshalb explizit in `additionalDirectories` +
-`Read(M:/MWOS/**)` aufgenommen. Fällt künftig ein weiterer Pfad/Befehl auf,
+Lauf bleibt das dann vermutlich hängen. `M:\REF` (Referenz für den
+REF-Abgleich) ist deshalb explizit in `additionalDirectories` +
+`Read(M:/REF/**)` aufgenommen. Fällt künftig ein weiterer Pfad/Befehl auf,
 den ein Ready-Schritt braucht: hier ergänzen statt auf "Run now" verlassen.
 
 ## Einrichtung auf einem neuen Rechner (z.B. Mac Mini)

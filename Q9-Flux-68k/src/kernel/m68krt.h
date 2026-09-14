@@ -189,7 +189,7 @@ void q9_m68krt_attach_clut(q9_clut_t *clut);
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_attach_cf2
 // Desc.:    5.19a: Registriert ein ZWEITES Compact-Flash-Interface (RC2014-SC145-Kartenleser bei
-//           Q9_BOARD_CF2_BASE, Descriptoren e0/f0 im MWOS-Q9-Port) in der Geraete-Registry. Nutzt
+//           Q9_BOARD_CF2_BASE, Descriptoren e0/f0 im REF-Q9-Port) in der Geraete-Registry. Nutzt
 //           dieselbe q9_devtype_cf-Vtable wie die Onboard-CF, nur mit eigener q9_cf_t-Instanz und
 //           eigener Basisadresse. Kein IRQ (wie die Onboard-CF). Nur aufrufen, wenn die Board-
 //           Config dort Images anhaengt — ohne Aufruf existiert das Fenster nicht (Board wie 5.17).

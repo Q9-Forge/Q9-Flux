@@ -18,7 +18,7 @@
 #include <dispatch/dispatch.h>
 #include <vmnet/vmnet.h>
 
-//─── Subnetz-Zuweisung (muss zur OS-9-Konfiguration im MWOS-Q9-Port passen) ──────────────────────
+//─── Subnetz-Zuweisung (muss zur OS-9-Konfiguration im REF-Q9-Port passen) ──────────────────────
 #define QV_GATEWAY   "192.168.200.1"                  /* vmnet-Gateway = bestehende Gastkonfiguration */
 #define QV_DHCP_END  "192.168.200.254"                /* DHCP-Bereich (Gast 192.168.200.2 ist statisch) */
 #define QV_NETMASK   "255.255.255.0"                  /* /24: bestehende Gastkonfiguration */

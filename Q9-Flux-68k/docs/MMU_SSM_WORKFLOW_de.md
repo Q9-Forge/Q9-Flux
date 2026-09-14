@@ -31,7 +31,7 @@ Aktuelle Gerätefenster liegen unter anderem bei `$FFFF2000` (QUICC),
 2. **Boot-ROM / `sysinit`**
 
    Die Q9-Portdatei
-   `MWOS/OS9/68030/PORTS/Q9/ROM_CBOOT/sysinit.a` setzt den PMMU-TC zunächst
+   `REF/OS9/68030/PORTS/Q9/ROM_CBOOT/sysinit.a` setzt den PMMU-TC zunächst
    auf `$02C08444`. Das `E`-Bit ist dabei noch 0: MMU-Übersetzung ist zunächst
    abgeschaltet. Zusätzlich werden RAM-Remap, VBR und Cache-Grundzustand
    eingerichtet.

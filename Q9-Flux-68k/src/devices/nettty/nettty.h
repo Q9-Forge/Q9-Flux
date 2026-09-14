@@ -55,7 +55,7 @@
 
 /* I/O-Bloecke je Kanal (3 Register: +0 Status, +2 RX-Data, +4 TX-Data), freie Luecke zwischen
    ROM-Spiegelgrenze (bis 0xFFFF_0000 frei) und REMAP-Register (0xFFFF_8000) — kollidiert bewusst
-   NICHT mit dem RAM. OS-9-Geraetenamen sind /x1../x8 (t1.. existiert im MWOS-Port schon anderweitig).
+   NICHT mit dem RAM. OS-9-Geraetenamen sind /x1../x8 (t1.. existiert im REF-Port schon anderweitig).
 
    2026-08-14 (ARBEITSPLAN 5.18-Fortsetzung, Andreas' Entscheidung: eigener 256-Byte-Bereich statt
    Index/Daten-Registerpaar -- "denke das ist erst mal einfacher"): 256 Byte Abstand, damit jeder

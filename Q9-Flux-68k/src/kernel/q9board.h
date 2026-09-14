@@ -109,7 +109,7 @@
    wird komplett ignoriert (die Host-Uhr ist die Wahrheit). Atomaritaet: ein Lesezugriff
    auf Register 0 (S1) frischt den internen Latch aus der Host-Uhr auf, alle weiteren
    Register lesen aus dem Latch — wer S1 zuerst liest (wie der rtclock-Treiber im
-   MWOS-Q9-Port), bekommt einen in sich konsistenten Zeitstempel ohne Rollover-Risiko. */
+   REF-Q9-Port), bekommt einen in sich konsistenten Zeitstempel ohne Rollover-Risiko. */
 #define Q9_BOARD_RTC_BASE          0xFFFFD000u
 #define Q9_BOARD_RTC_TOP           0xFFFFD00Fu
 
