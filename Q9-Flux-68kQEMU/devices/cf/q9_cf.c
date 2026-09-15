@@ -4,13 +4,15 @@
  * Ported from the Musashi-based implementation in
  * Q9-Flux-68k/src/devices/cf/cf.c -- register map, ATA-PIO protocol and
  * the RBF/PCF sector-size heuristic are unchanged; only the QOM/
- * MemoryRegion plumbing is new. Scope matches the original's primary,
- * always-instantiated case: the onboard interface's master unit only
- * (Q9_BOARD_CF_BASE). The RC2014-SC145 second interface and the slave
- * unit exist in the original only when Q9-Flux-68k's own board config
- * attaches an image to them -- q9board.c here has no config-driven
- * instantiation yet (every device so far is hardcoded, see q9board.c's
- * own TODO), so they're left for a follow-up alongside that.
+ * MemoryRegion plumbing is new. This single device type serves both the
+ * onboard interface and the RC2014-SC145 second interface -- q9board.c
+ * simply instantiates it twice at their respective base addresses (s.
+ * the original's own q9_cf_attach(), which is likewise interface-
+ * agnostic). Each instance carries BOTH units (master/slave, selected
+ * by the DEV bit in LBA3, s. q9_cf_cur_unit()); unit 1 (slave) is
+ * unfitted -- and every ATA command against it answers ERR, like an
+ * empty slot -- unless a "slave-image" property is given, same as
+ * master/unit 0 with "image".
  *
  * Deliberately still plain stdio file I/O (fopen/fread/fwrite), like the
  * Musashi original -- NOT QEMU's block layer (BlockBackend/"-drive").
@@ -99,11 +101,37 @@ struct Q9CFState {
     bool     write_pending;
     uint32_t remaining;
 
-    /* qdev properties (master unit only, s. Dateikopf) */
+    /* qdev properties, one triplet per unit (s. Dateikopf) */
     char *image;
     char *format_str;
     uint32_t start_sector_prop;
+    char *slave_image;
+    char *slave_format_str;
+    uint32_t slave_start_sector_prop;
 };
+
+/* Shared by q9_cf_realize() for both units -- name is only used in the
+ * error message, so the same helper serves "format"/"slave-format". */
+static bool q9_cf_parse_format(const char *name, const char *str, int *out,
+                                Error **errp)
+{
+    if (!str) {
+        *out = CF_FMT_AUTO;
+        return true;
+    }
+    if (strcmp(str, "auto") == 0) {
+        *out = CF_FMT_AUTO;
+    } else if (strcmp(str, "rbf") == 0) {
+        *out = CF_FMT_RBF;
+    } else if (strcmp(str, "pcf") == 0 || strcmp(str, "fat") == 0) {
+        *out = CF_FMT_PCF;
+    } else {
+        error_setg(errp, "q9-cf: invalid '%s' value '%s' "
+                   "(expected auto/rbf/pcf)", name, str);
+        return false;
+    }
+    return true;
+}
 
 static Q9CFUnit *q9_cf_cur_unit(Q9CFState *s)
 {
@@ -418,30 +446,25 @@ static const MemoryRegionOps q9_cf_ops = {
 static void q9_cf_realize(DeviceState *dev, Error **errp)
 {
     Q9CFState *s = Q9_CF(dev);
-    int format = CF_FMT_AUTO;
+    int format, slave_format;
 
-    if (s->format_str) {
-        if (strcmp(s->format_str, "auto") == 0) {
-            format = CF_FMT_AUTO;
-        } else if (strcmp(s->format_str, "rbf") == 0) {
-            format = CF_FMT_RBF;
-        } else if (strcmp(s->format_str, "pcf") == 0 ||
-                   strcmp(s->format_str, "fat") == 0) {
-            format = CF_FMT_PCF;
-        } else {
-            error_setg(errp, "q9-cf: invalid 'format' value '%s' "
-                       "(expected auto/rbf/pcf)", s->format_str);
-            return;
-        }
+    if (!q9_cf_parse_format("format", s->format_str, &format, errp)) {
+        return;
+    }
+    if (!q9_cf_parse_format("slave-format", s->slave_format_str,
+                             &slave_format, errp)) {
+        return;
     }
 
-    /* Master unit only for now, s. Dateikopf. image==NULL leaves the unit
-     * unfitted -- every command against it answers ERR, like a real
-     * interface with no card inserted (matches q9_cf_reg_write's own
-     * CF_REG_CMD handling). */
+    /* image==NULL leaves a unit unfitted -- every command against it
+     * answers ERR, like a real interface with no card inserted (matches
+     * q9_cf_reg_write's own CF_REG_CMD handling). */
     s->unit[0].path = s->image;
     s->unit[0].format = format;
     s->unit[0].start_sector = s->start_sector_prop;
+    s->unit[1].path = s->slave_image;
+    s->unit[1].format = slave_format;
+    s->unit[1].start_sector = s->slave_start_sector_prop;
     s->status = CF_STAT_RDY;
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &q9_cf_ops, s,
@@ -453,6 +476,10 @@ static const Property q9_cf_properties[] = {
     DEFINE_PROP_STRING("image", Q9CFState, image),
     DEFINE_PROP_STRING("format", Q9CFState, format_str),
     DEFINE_PROP_UINT32("start-sector", Q9CFState, start_sector_prop, 0),
+    DEFINE_PROP_STRING("slave-image", Q9CFState, slave_image),
+    DEFINE_PROP_STRING("slave-format", Q9CFState, slave_format_str),
+    DEFINE_PROP_UINT32("slave-start-sector", Q9CFState,
+                        slave_start_sector_prop, 0),
 };
 
 static void q9_cf_class_init(ObjectClass *oc, const void *data)
@@ -472,9 +499,30 @@ static const TypeInfo q9_cf_info = {
     .class_init    = q9_cf_class_init,
 };
 
+/* RC2014-SC145 second interface: a QOM *subclass* of "q9-cf" (not a
+ * second top-level TypeInfo with a copy-pasted class_init) -- it needs
+ * no state/behaviour of its own, only a distinct type name so
+ * q9board.c's two instances can be configured independently via
+ * "-global q9-cf.*"/"-global q9-cf2.*" (s. q9board.c's own comment at
+ * the second instantiation -- "-global" keys off the type name, not
+ * the instance, so two same-typed instances could not otherwise take
+ * different property values from the command line). Subclassing means
+ * realize/properties are simply inherited unchanged; a second sibling
+ * TypeInfo of "sysbus-device" would instead need its own class_init,
+ * AND its instances would fail Q9_CF()'s QOM type check inside the
+ * (shared) realize function, since that check is tied to the literal
+ * type name given to OBJECT_DECLARE_SIMPLE_TYPE. */
+#define TYPE_Q9_CF2 "q9-cf2"
+
+static const TypeInfo q9_cf2_info = {
+    .name          = TYPE_Q9_CF2,
+    .parent        = TYPE_Q9_CF,
+};
+
 static void q9_cf_register_types(void)
 {
     type_register_static(&q9_cf_info);
+    type_register_static(&q9_cf2_info);
 }
 
 type_init(q9_cf_register_types)

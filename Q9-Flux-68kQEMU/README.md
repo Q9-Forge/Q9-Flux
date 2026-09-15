@@ -55,21 +55,29 @@ Milestones reached so far:
    pulsing needed, `m68k_set_irq_level()` is simply called again
    whenever the TxRDY/RxRDY-with-IMR-enabled condition changes.
    Structurally modelled on QEMU's own `hw/char/mcf_uart.c`.
-5. **Fourth peripheral ported: the Compact-Flash interface** (ATA-PIO,
-   onboard master unit only). Deliberately still plain stdio file I/O
-   like the original, not QEMU's block layer -- the RBF/PCF sector-size
-   heuristic needs to read raw header bytes from the real backing file
-   itself, which QEMU's block layer gives a device no hook for. Verified
-   against a real production image: a hand-assembled test program set up
+5. **Fourth peripheral ported: the Compact-Flash interface** (ATA-PIO).
+   Deliberately still plain stdio file I/O like the original, not
+   QEMU's block layer -- the RBF/PCF sector-size heuristic needs to
+   read raw header bytes from the real backing file itself, which
+   QEMU's block layer gives a device no hook for. Verified against a
+   real production image: a hand-assembled test program set up
    LBA/SECCNT, issued READ SECTOR(S), polled DRQ, and drained 512 bytes
    from the data register -- the result was **byte-for-byte identical**
    to the same 512 bytes read directly from the backing file in Python.
    Confirms existing Q9 disk images (`OS9SYS.hda` etc.) need no changes
    to work once attached (`-global q9-cf.image=/path/to/image.hda`,
    optionally `-global q9-cf.format=rbf|pcf|auto`). No IRQ, matching the
-   original; the RC2014-SC145 second interface and the slave unit are
-   left for later, alongside q9board.c's still-hardcoded (non-config-
-   driven) device instantiation in general.
+   original. Both the slave unit (`-global q9-cf.slave-image=...`) and
+   the RC2014-SC145 second interface (a second instance of the same
+   device, registered under its own QOM type name `q9-cf2` -- a true
+   QOM *subclass* of `q9-cf` rather than a copy-pasted sibling, since
+   "-global" keys off the type name and two same-typed instances
+   couldn't otherwise take independent property values, and since the
+   type check inside the shared `realize()` would reject an unrelated
+   type outright) were added in a follow-up and verified together: three
+   distinct marker images (onboard master/slave, second-interface
+   master) each came back correctly and independently through their own
+   unit/interface selection.
 6. **Fifth peripheral ported: the REMAP register.** Unlike every device
    so far, this one isn't a standalone register/IRQ source -- on the
    real board it gates the board's own address decode (ROM mirrored at
@@ -217,13 +225,15 @@ standard m68k machines `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 `virt` (none of which match our own CB030/Vinculum target board — hence
 the new `q9board` skeleton).
 
-**Next steps**: with every `src/devices/` component ported and verified,
+**Next steps**: with every `src/devices/` component ported and verified
+(CF now including its slave unit and RC2014-SC145 second interface),
 what's left is board-level rather than device-level work -- config-
 driven device instantiation (today everything in `q9board.c` is still
-hardcoded, mirroring the original's own pre-boardcfg.c state), the
-second CF interface/slave unit, and eventually the actual
-[host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md) this
-whole migration was started for in the first place (s. "Why QEMU"
+hardcoded/`-global`-configured, mirroring the original's own
+pre-boardcfg.c state, rather than driven by a declarative board config
+file the way `boardcfg.c` drives the Musashi branch), and eventually
+the actual [host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md)
+this whole migration was started for in the first place (s. "Why QEMU"
 above).
 
 ## Installing QEMU
