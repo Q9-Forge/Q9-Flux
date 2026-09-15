@@ -50,6 +50,17 @@ Bisherige Meilensteine:
    per einmaligem Timer deutlich innerhalb der 10-ms-Periode wieder
    gesenkt, statt auf eine Quittierung zu warten, die es strukturell nie
    geben kann.
+4. **Dritte Peripherie portiert: die 68681-DUART** (Konsole, nur Kanal
+   A, wie schon beim Musashi-Original). Beide Richtungen mit einem von
+   Hand assemblierten Testprogramm Ende-zu-Ende verifiziert: TX landete
+   byte-genau ("Hi\r\n") in einem `-chardev file`-Backend, und ein vom
+   Host über `-chardev pty` gesendetes Byte wurde korrekt empfangen, aus
+   D0 ausgelesen und im Speicher abgelegt. Anders als beim Timer bildet
+   der Interrupt dieses Geräts (Level 3, Vektor aus dem vom Treiber
+   programmierten IVR-Register) QEMUs gehaltenes Interrupt-Modell direkt
+   ab — kein Pulsen nötig, `m68k_set_irq_level()` wird einfach erneut
+   aufgerufen, sobald sich die Bedingung TxRDY/RxRDY-mit-aktiviertem-IMR
+   ändert. Strukturell an QEMUs eigenem `hw/char/mcf_uart.c` orientiert.
 
 **Repository-Aufbau**, aufgeteilt danach, was die Dateien tatsächlich
 sind, nicht danach, wo QEMU sie haben will:
@@ -57,7 +68,8 @@ sind, nicht danach, wo QEMU sie haben will:
 - `devices/<gerät>/` — unsere eigenen Geräte-Simulationen, unabhängig
   von QEMUs Verzeichniskonvention benannt/organisiert (spiegelt
   `Q9-Flux-68k/src/devices/<gerät>/` aus dem Musashi-Zweig). Aktuell:
-  `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`.
+  `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
+  `devices/duart68681/q9_duart68681.c`.
 - `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
   (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige
   Gegenstück zu `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -87,7 +99,7 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 daher das neue `q9board`-Grundgerüst).
 
 **Nächster Schritt** (groß, mehrere Sitzungen): die verbleibenden
-Geräte-Modelle — CF, QUICC, 68681-DUART, Remap-Trigger, Netz-Terminals,
+Geräte-Modelle — CF, QUICC, Remap-Trigger, Netz-Terminals,
 MC6845/Framebuf/CLUT/Videobridge — von `Q9-Flux-68k/src/devices/` nach
 QEMUs QOM-/`MemoryRegion`-Muster portieren, ein Gerät nach dem anderen.
 Hinweis speziell zu `remap`: anders als jedes bisher portierte Gerät ist

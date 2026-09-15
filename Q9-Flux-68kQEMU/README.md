@@ -44,6 +44,17 @@ Milestones reached so far:
    either), so the request is pulsed -- raised on each tick, lowered
    again by a short one-shot timer well inside the 10 ms period -- rather
    than held until an acknowledgement that, structurally, can never come.
+4. **Third peripheral ported: the 68681 DUART** (console, channel A
+   only, matching the Musashi original's scope). Both directions
+   verified end-to-end with a hand-assembled test program: TX landed
+   byte-exact ("Hi\r\n") in a `-chardev file` backend, and a byte sent
+   in from the host side over a `-chardev pty` was correctly received,
+   read out of D0 and stored to memory. Unlike the timer, this device's
+   interrupt (level 3, vector taken from the driver-programmed IVR
+   register) maps directly onto QEMU's held-interrupt model -- no
+   pulsing needed, `m68k_set_irq_level()` is simply called again
+   whenever the TxRDY/RxRDY-with-IMR-enabled condition changes.
+   Structurally modelled on QEMU's own `hw/char/mcf_uart.c`.
 
 **Repository layout**, split by what the files actually are, not by
 where QEMU wants them:
@@ -51,7 +62,8 @@ where QEMU wants them:
 - `devices/<name>/` — our own peripheral simulations, named/organized
   independently of QEMU's directory conventions (mirrors
   `Q9-Flux-68k/src/devices/<name>/` from the Musashi branch). Currently:
-  `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`.
+  `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
+  `devices/duart68681/q9_duart68681.c`.
 - `overlay/machine/q9board.c` — the board "wiring" itself (instantiates
   and maps the devices above), the QEMU-side counterpart to
   `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -80,7 +92,7 @@ standard m68k machines `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 the new `q9board` skeleton).
 
 **Next step** (large, multi-session): port the remaining device models —
-CF, QUICC, 68681 DUART, the remap trigger, nettty,
+CF, QUICC, the remap trigger, nettty,
 MC6845/framebuf/CLUT/videobridge — from `Q9-Flux-68k/src/devices/` to
 QEMU's QOM/`MemoryRegion` pattern, one device at a time. Note for `remap`
 in particular: unlike every device ported so far, it isn't a standalone
