@@ -29,15 +29,23 @@ a hand-crafted 68030 test program (a few `moveq`/`add` instructions plus
 monitor (`info registers`: `D0=0x2b` (43, the expected sum), `SR=0x2700`
 matching the `stop` operand, `PC` exactly past the last instruction).
 
-The source lives at `Q9-Flux-x86/third_party/qemu/hw/m68k/q9board.c`
-(registered in that directory's `Kconfig`/`meson.build`), built via
-`meson setup --target-list=m68k-softmmu` + `ninja` in a local
-`build-m68k/` directory. **Not yet committed anywhere persistent** — the
-QEMU checkout is a git submodule pointing at the real upstream QEMU
-repository, so these changes currently only exist as an uncommitted,
-local modification. Decision still open: fork the upstream QEMU repo (so
-the submodule can point at our fork) vs. keep a separate patch file
-versioned inside Q9-Flux itself.
+The source is properly versioned now, split across a dedicated QEMU
+submodule (`third_party/qemu/`, separate from Q9-Flux-x86's own copy —
+that one stays a pristine, unmodified upstream checkout) and our own
+additions on top, applied by `setup-qemu-dev-tree.sh`:
+
+- `overlay/new-files/hw/m68k/q9board.c` — the machine itself
+- `overlay/patches/0001-add-q9board-machine.patch` — the two-line
+  `Kconfig`/`meson.build` registration, as a proper diff so future QEMU
+  version bumps don't silently drop unrelated upstream additions to
+  those files
+
+Run `./setup-qemu-dev-tree.sh` after cloning (or after any
+`git submodule update`, which resets the submodule and would otherwise
+wipe the overlay), then build with
+`cd third_party/qemu && mkdir build-m68k && cd build-m68k && ../configure --target-list=m68k-softmmu && ninja`.
+Verified end-to-end twice (reset → script → rebuild → boot) with
+identical, correct results.
 
 QEMU itself is installed and tested on the development machine (macOS,
 Apple Silicon): `qemu-system-m68k`, version 11.1.1, including the
