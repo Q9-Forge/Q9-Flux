@@ -106,6 +106,28 @@ Bisherige Meilensteine:
    `if (!remapped) { return; }` des Originals) — echte Firmware muss
    RAM erst *nach* dem eigenen Remap-Trigger beladen, genau wie auf der
    echten Hardware.
+7. **Sechste bis achte Peripherie portiert: das Grafik-Trio** — MC6845-
+   CRT-Controller (Register-Geometrie-Grundlage), CLUT (Farbtabelle für
+   indizierte Modi) und der VRAM-Framebuffer, alle drei unkomplizierte
+   Register-Ports ohne IRQ. Der Framebuffer verlinkt sich mit dem
+   MC6845 einzig um dessen Stride-Register für die Dirty-Rechteck-
+   Zeilenzuordnung zu lesen (`q9_mc6845_get_stride()`, eine schlichte
+   dateiübergreifende C-Funktion wie schon `q9_remap_set_targets()` —
+   dieser devices/-Baum hat weiterhin keine gemeinsamen Header). Eine
+   echte Verdrahtungs-Feinheit: die Framebuffer-Adresse ($FD000000)
+   liegt *innerhalb* der ROM-Mirror-Spanne des REMAP-Geräts
+   (0..$FEFFFFFF), anders als jedes andere Geräte-Fenster — q9board.c
+   bindet ihn deshalb per `memory_region_add_subregion_overlap()` mit
+   einer Priorität oberhalb des Mirrors ein, sodass der Framebuffer
+   immer gewinnt, egal ob `-bios` übergeben wird oder nicht — passend
+   zur Geräte-Dispatch-vor-Board-Fallback-Reihenfolge des Originals
+   (ein einfaches `add_subregion()` hätte dort bei der Überlappung
+   assertiert). Mit einem einzigen kombinierten Testprogramm
+   verifiziert: MC6845-R1/R6/R18 (Stride/Höhe/Modus), der R/G/B-Eintrag
+   eines CLUT-Eintrags und ein 8-Byte-Framebuffer-Muster geschrieben,
+   dann alles über dieselbe Register-Schnittstelle zurück ins RAM
+   gelesen — der Speicherauszug des QEMU-Monitors stimmte byte-genau
+   mit jedem geschriebenen Wert überein.
 
 **Repository-Aufbau**, aufgeteilt danach, was die Dateien tatsächlich
 sind, nicht danach, wo QEMU sie haben will:
@@ -115,7 +137,8 @@ sind, nicht danach, wo QEMU sie haben will:
   `Q9-Flux-68k/src/devices/<gerät>/` aus dem Musashi-Zweig). Aktuell:
   `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
   `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`,
-  `devices/remap/q9_remap.c`.
+  `devices/remap/q9_remap.c`, `devices/mc6845/q9_mc6845.c`,
+  `devices/clut/q9_clut.c`, `devices/framebuf/q9_framebuf.c`.
 - `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
   (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige
   Gegenstück zu `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -145,9 +168,11 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 daher das neue `q9board`-Grundgerüst).
 
 **Nächster Schritt** (groß, mehrere Sitzungen): die verbleibenden
-Geräte-Modelle — QUICC, Netz-Terminals, MC6845/Framebuf/CLUT/Videobridge
-— von `Q9-Flux-68k/src/devices/` nach QEMUs QOM-/`MemoryRegion`-Muster
-portieren, ein Gerät nach dem anderen.
+Geräte-Modelle — QUICC (Ethernet, schon im Original ein eigenes
+Mehrsitzungs-Vorhaben mit mehreren Host-Netzwerk-Backends —
+NAT/vmnet/bridge/slirp), Netz-Terminals und Videobridge (streamt
+Framebuffer/CLUT zu Q9 Frame) — von `Q9-Flux-68k/src/devices/` nach
+QEMUs QOM-/`MemoryRegion`-Muster portieren, ein Gerät nach dem anderen.
 
 ## QEMU installieren
 
