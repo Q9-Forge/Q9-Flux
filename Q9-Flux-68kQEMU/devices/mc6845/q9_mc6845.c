@@ -56,6 +56,52 @@ uint32_t q9_mc6845_get_stride(DeviceState *dev)
     return s->reg[1];   /* Q9_MC6845_R_HDISP */
 }
 
+/* Q9_MC6845_MODE_* -> bits/pixel, s. Q9-Flux-68k/src/devices/mc6845/
+ * mc6845.c's own q9_mc6845_bpp() -- identical table, needed by
+ * devices/videobridge/q9_videobridge.c too so kept as a small standalone
+ * helper rather than duplicated inline there. */
+static int q9_mc6845_bpp_for_mode(int mode)
+{
+    switch (mode) {
+    case 0: return 1;    /* INDEXED1 */
+    case 1: return 2;    /* INDEXED2 */
+    case 2: return 4;    /* INDEXED4 */
+    case 3: return 8;    /* INDEXED8 */
+    case 4: return 16;   /* RGB565   */
+    case 5: return 16;   /* RGB555I  */
+    case 6: return 24;   /* RGB888   */
+    default: return 8;
+    }
+}
+
+/* Cross-device accessor for devices/videobridge/q9_videobridge.c --
+ * everything it needs from the CRTC in one call, same rationale as
+ * q9_mc6845_get_stride() above. */
+void q9_mc6845_get_info(DeviceState *dev, uint32_t *stride, uint32_t *height,
+                         int *mode, int *bpp, uint32_t *width_px,
+                         uint32_t *net_hz);
+
+void q9_mc6845_get_info(DeviceState *dev, uint32_t *stride, uint32_t *height,
+                         int *mode, int *bpp, uint32_t *width_px,
+                         uint32_t *net_hz)
+{
+    Q9MC6845State *s = Q9_MC6845(dev);
+    uint32_t st = s->reg[1];    /* R1 HDISP  */
+    uint32_t ht = s->reg[6];    /* R6 VDISP  */
+    int m = s->reg[18];         /* R18 mode  */
+    int bp = q9_mc6845_bpp_for_mode(m);
+    uint32_t hz = s->reg[19];   /* R19 net update Hz */
+
+    if (stride) { *stride = st; }
+    if (height) { *height = ht; }
+    if (mode) { *mode = m; }
+    if (bpp) { *bpp = bp; }
+    if (width_px) {
+        *width_px = bp < 8 ? st * (uint32_t)(8 / bp) : st / (uint32_t)(bp / 8);
+    }
+    if (net_hz) { *net_hz = hz ? hz : 30u; /* Q9_MC6845_NET_HZ_DEFAULT */ }
+}
+
 static uint64_t q9_mc6845_read(void *opaque, hwaddr addr, unsigned size)
 {
     Q9MC6845State *s = opaque;

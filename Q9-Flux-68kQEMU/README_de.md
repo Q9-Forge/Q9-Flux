@@ -128,6 +128,76 @@ Bisherige Meilensteine:
    dann alles über dieselbe Register-Schnittstelle zurück ins RAM
    gelesen — der Speicherauszug des QEMU-Monitors stimmte byte-genau
    mit jedem geschriebenen Wert überein.
+8. **Neunte Peripherie portiert: QUICC-Ethernet** (MC68360 SCC1). Das
+   Register-/PRAM-Fenster, das CP-Kommandoregister, die
+   Buffer-Descriptor-Ringe und der SDMA-artige Frame-Transfer von/zum
+   Gast-RAM sind 1:1 portiert (dieselben Offsets, dieselbe
+   Write-1-to-Clear-Semantik für SCCE/CISR). Bewusst *nicht* portiert
+   sind die vier handgeschriebenen Host-Netzwerk-Backends des Originals
+   (nat/vmnet/bridge/slirp, ~500 der 872 Zeilen von quicc.c) — dieses
+   Gerät ist stattdessen ein Standard-QEMU-NIC-Frontend
+   (`qemu_new_nic()`), sodass die übliche
+   `-netdev user/tap/socket/...`-Maschinerie ihm ein Netz verschafft,
+   und der gesamte ~100-Zeilen-pro-Backend-Dispatch `q_backend_tx` des
+   Originals zu einem einzigen `qemu_send_packet()`-Aufruf
+   zusammenschrumpft. Level-5-IRQ mit *festem* Vektor (254, anders als
+   der vom Treiber programmierte IVR der DUART) — gehalten, nicht
+   gepulst, dasselbe Modell wie bei der DUART. Mit einem von Hand
+   aufgebauten BD-Ring in beide Richtungen über einen echten
+   `-netdev socket`-UDP-Tunnel verifiziert: ein eingereihter TX-Deskriptor
+   erzeugte ein **byte-genau exaktes** 14-Byte-Frame, auf der Leitung
+   abgefangen, und ein eingespeistes eingehendes Frame landete im
+   RX-Deskriptor mit korrektem WRAP/FIRST/LAST-Status, korrekter
+   `Länge+4` (CRC-Berücksichtigung), korrektem SCCE.RXF-Ereignis und
+   **byte-genau exakten** Daten im Gast-RAM.
+9. **Zehnte Peripherie portiert: Netzwerk-Terminals** (8 Kanäle,
+   `/x1`..`/x8`). Ein 256-Byte-I/O-Block je Kanal (Status/RX/TX),
+   zusammenhängendes Fenster, per Kanalindex dispatcht — EIN
+   QOM-Gerät intern, nicht acht. Gemeinsamer Level-4-IRQ, vektorisiert
+   auf den ersten Kanal (Indexreihenfolge) mit unabgeholtem Byte, genau
+   das `network_irq_resync()` des Originals. Die
+   Telnet-Optionsverhandlung wird nicht mehr selbst gebaut: QEMUs
+   eigener Socket-Chardev erledigt bereits volle
+   RFC854-Verhandlung (`telnet=on`), Bytes, die dieses Gerät erreichen,
+   sind also schon saubere Daten. Der einzelne dynamische
+   Port-Dispatcher des Originals (ein Listen-Socket, der eingehende
+   Verbindungen an den jeweils freien Kanal übergibt) wird durch acht
+   unabhängige `chardevN`-qdev-Properties ersetzt — ein fester Port je
+   Leitung, auf die übliche Art angehängt (z.B. `-chardev
+   socket,id=x1,port=2001,server=on,wait=off,telnet=on -global
+   q9-nettty.chardev0=x1`). Die CR-dann-LF-Unterdrückung (echtes
+   OS-9-seitiges Protokollverhalten, keine Telnet-Mechanik) ist weiterhin
+   portiert. Über eine echte TCP-Verbindung verifiziert: TX landete
+   byte-genau (`"Hi"`), und ein eingespeistes Byte wurde empfangen,
+   korrekt zurückgelesen und löschte RX-Ready beim Lesen korrekt.
+10. **Elfte und letzte Komponente portiert: die Host-Video-Bridge** (Q9-
+    Frame-Protokoll). Anders als jede echte Peripherie oben war das
+    auch im Original nie Teil der gastsichtbaren Hardware (kein
+    devreg-Eintrag, keine Vtable) — ein Host-seitiger Dienst, der
+    Framebuffer/MC6845/CLUT über schlichte dateiübergreifende
+    Zugriffsfunktionen liest und HELLO/VIDEO_INFO/PALETTE/FRAME_FULL/
+    FRAME_UPDATE an einen externen Q9-Frame-Viewer streamt, hier als
+    einfaches QOM-Gerät ohne `MemoryRegion` portiert (reines
+    Lifecycle-/Property-Management), angetrieben von einem
+    Fest-Takt-`QEMUTimer` statt der Poll-einmal-pro-Hauptschleifenrunde-
+    Aufrufstelle des Originals (das eigentliche Frame-Sende-Drosseln
+    kommt weiterhin aus dem R19 des CRTC, wie im Original). Socket-
+    Einrichtungsfehler (meist: eine andere Q9-Flux-Instanz belegt den
+    Port schon) sind Warnungen, keine fatalen
+    Maschinenstart-Fehler — passend zur eigenen
+    Graceful-Degradation-Philosophie des Originals, anders als eine
+    frühere Version dieses Ports, die bei einem Portkonflikt die ganze
+    Maschine abstürzen ließ. Gegen einen echten Python-Client verifiziert,
+    der das tatsächliche Wire-Protokoll spricht: VIDEO_INFO meldete
+    genau die im MC6845 programmierte Geometrie (inklusive der
+    bpp<8-Stride-zu-Pixelbreite-Umrechnung), PALETTE meldete genau den
+    geschriebenen CLUT-Eintrag, und die Nutzlast von FRAME_FULL war
+    **byte-genau identisch** zum vom Gast-Testprogramm geschriebenen
+    Framebuffer-Inhalt.
+
+Alle elf ursprünglichen Musashi-`src/devices/`-Komponenten (zehn
+gastsichtbare Peripheriegeräte plus die Host-seitige Video-Bridge) haben
+jetzt ein verifiziertes QEMU-Gegenstück.
 
 **Repository-Aufbau**, aufgeteilt danach, was die Dateien tatsächlich
 sind, nicht danach, wo QEMU sie haben will:
@@ -138,7 +208,9 @@ sind, nicht danach, wo QEMU sie haben will:
   `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
   `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`,
   `devices/remap/q9_remap.c`, `devices/mc6845/q9_mc6845.c`,
-  `devices/clut/q9_clut.c`, `devices/framebuf/q9_framebuf.c`.
+  `devices/clut/q9_clut.c`, `devices/framebuf/q9_framebuf.c`,
+  `devices/quicc/q9_quicc.c`, `devices/nettty/q9_nettty.c`,
+  `devices/videobridge/q9_videobridge.c`.
 - `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
   (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige
   Gegenstück zu `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -167,12 +239,15 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 `virt` (keine davon entspricht dem eigenen CB030-/Vinculum-Zielboard —
 daher das neue `q9board`-Grundgerüst).
 
-**Nächster Schritt** (groß, mehrere Sitzungen): die verbleibenden
-Geräte-Modelle — QUICC (Ethernet, schon im Original ein eigenes
-Mehrsitzungs-Vorhaben mit mehreren Host-Netzwerk-Backends —
-NAT/vmnet/bridge/slirp), Netz-Terminals und Videobridge (streamt
-Framebuffer/CLUT zu Q9 Frame) — von `Q9-Flux-68k/src/devices/` nach
-QEMUs QOM-/`MemoryRegion`-Muster portieren, ein Gerät nach dem anderen.
+**Nächste Schritte**: mit jeder portierten und verifizierten
+`src/devices/`-Komponente ist, was bleibt, eher Board- als Geräte-Ebene
+— config-gesteuerte Geräte-Instanziierung (heute ist alles in
+`q9board.c` noch fest verdrahtet, passend zum eigenen
+Vor-boardcfg.c-Zustand des Originals), das zweite CF-Interface/die
+Slave-Einheit, und irgendwann der eigentliche
+[Host-Passthrough-Dateisystem-Manager](docs/HOSTFS_MANAGER_de.md), für
+den diese ganze Umstellung ursprünglich begonnen wurde (s. "Warum QEMU"
+oben).
 
 ## QEMU installieren
 

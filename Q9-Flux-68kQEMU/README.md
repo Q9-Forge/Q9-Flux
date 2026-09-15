@@ -114,6 +114,69 @@ Milestones reached so far:
    R/G/B, and an 8-byte framebuffer pattern, then read all of it back
    through the same register interface into RAM -- the QEMU monitor's
    memory dump matched every written value byte-for-byte.
+8. **Ninth peripheral ported: QUICC Ethernet** (MC68360 SCC1). The
+   register/PRAM window, CP command register, buffer-descriptor rings
+   and the SDMA-style frame transfer to/from guest RAM are ported 1:1
+   (same offsets, same write-1-to-clear SCCE/CISR semantics). What's
+   deliberately *not* ported is the original's four hand-rolled host
+   network backends (nat/vmnet/bridge/slirp, ~500 of quicc.c's 872
+   lines) -- this device is instead a standard QEMU NIC frontend
+   (`qemu_new_nic()`), so the usual `-netdev user/tap/socket/...`
+   machinery gives it a network, and the original's entire
+   ~100-line-per-backend `q_backend_tx` dispatch collapses to one
+   `qemu_send_packet()` call. Level-5 IRQ with a *fixed* vector (254,
+   unlike DUART's driver-programmed IVR) -- held, not pulsed, same
+   model as DUART. Verified with a hand-built BD ring in both
+   directions over a real `-netdev socket` UDP tunnel: a queued TX
+   descriptor produced a **byte-for-byte exact** 14-byte frame captured
+   on the wire, and an injected inbound frame landed in the RX
+   descriptor with the correct WRAP/FIRST/LAST status, the correct
+   `length+4` (CRC accounting), the correct SCCE.RXF event, and
+   **byte-for-byte exact** data in guest RAM.
+9. **Tenth peripheral ported: network terminals** (8 channels,
+   `/x1`..`/x8`). One 256-byte I/O block per channel (status/RX/TX),
+   contiguous window dispatched by channel index -- one QOM device
+   internally, not eight. Shared level-4 IRQ, vectored to the first
+   channel (index order) with an unread byte, exactly the original's
+   `network_irq_resync()`. Telnet option negotiation is no longer
+   hand-rolled: QEMU's own socket chardev already does full RFC854
+   negotiation (`telnet=on`), so bytes reaching this device are already
+   clean data. The original's single dynamic-port dispatcher (one
+   listen socket handing connections to whichever channel is free) is
+   replaced by 8 independent `chardevN` qdev properties -- a fixed port
+   per line, attached the usual way (e.g. `-chardev
+   socket,id=x1,port=2001,server=on,wait=off,telnet=on -global
+   q9-nettty.chardev0=x1`). CR-then-LF suppression (genuine OS-9-side
+   protocol behaviour, not telnet plumbing) is still ported. Verified
+   over a real TCP connection: TX landed byte-exact (`"Hi"`), and an
+   injected byte was received, correctly read back, and correctly
+   cleared RX-ready on read.
+10. **Eleventh and final component ported: the host video bridge** (Q9
+    Frame protocol). Unlike every actual peripheral above, this one was
+    never part of the guest-visible hardware in the original either (no
+    devreg entry, no vtable) -- a host-side service that reads the
+    already-ported framebuffer/MC6845/CLUT via small cross-file
+    accessors and streams HELLO/VIDEO_INFO/PALETTE/FRAME_FULL/
+    FRAME_UPDATE to an external Q9 Frame viewer, ported here as a plain
+    QOM device with no `MemoryRegion` (pure lifecycle/property
+    management) driven by a fixed-rate `QEMUTimer` instead of the
+    original's poll-once-per-main-loop-round call site (real frame-send
+    throttling still comes from the CRTC's R19, same as the original).
+    Socket setup failures (most commonly: another Q9-Flux instance
+    already holding the port) are warnings, not fatal machine-startup
+    errors -- matching the original's own graceful-degradation
+    philosophy, unlike an earlier version of this port that crashed the
+    whole machine on a port conflict. Verified against a real Python
+    client speaking the actual wire protocol: VIDEO_INFO reported the
+    exact geometry programmed into the MC6845 (including the bpp<8
+    stride-to-pixel-width conversion), PALETTE reported the exact CLUT
+    entry written, and FRAME_FULL's payload was **byte-for-byte
+    identical** to the framebuffer content written by a guest test
+    program.
+
+All eleven original Musashi `src/devices/` components (ten guest-visible
+peripherals plus the host-side video bridge) now have a verified QEMU
+counterpart.
 
 **Repository layout**, split by what the files actually are, not by
 where QEMU wants them:
@@ -124,7 +187,9 @@ where QEMU wants them:
   `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
   `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`,
   `devices/remap/q9_remap.c`, `devices/mc6845/q9_mc6845.c`,
-  `devices/clut/q9_clut.c`, `devices/framebuf/q9_framebuf.c`.
+  `devices/clut/q9_clut.c`, `devices/framebuf/q9_framebuf.c`,
+  `devices/quicc/q9_quicc.c`, `devices/nettty/q9_nettty.c`,
+  `devices/videobridge/q9_videobridge.c`.
 - `overlay/machine/q9board.c` — the board "wiring" itself (instantiates
   and maps the devices above), the QEMU-side counterpart to
   `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -152,12 +217,14 @@ standard m68k machines `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 `virt` (none of which match our own CB030/Vinculum target board — hence
 the new `q9board` skeleton).
 
-**Next step** (large, multi-session): port the remaining device models —
-QUICC (Ethernet, its own multi-session effort even in the original,
-with multiple host network backends -- NAT/vmnet/bridge/slirp), nettty,
-and videobridge (streams the framebuffer/CLUT to Q9 Frame) — from
-`Q9-Flux-68k/src/devices/` to QEMU's QOM/`MemoryRegion` pattern, one
-device at a time.
+**Next steps**: with every `src/devices/` component ported and verified,
+what's left is board-level rather than device-level work -- config-
+driven device instantiation (today everything in `q9board.c` is still
+hardcoded, mirroring the original's own pre-boardcfg.c state), the
+second CF interface/slave unit, and eventually the actual
+[host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md) this
+whole migration was started for in the first place (s. "Why QEMU"
+above).
 
 ## Installing QEMU
 
