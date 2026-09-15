@@ -58,6 +58,46 @@ struct Q9FramebufState {
     uint32_t size_prop;        /* qdev property, s. Dateikopf */
 };
 
+/* Cross-device accessors for devices/videobridge/q9_videobridge.c, same
+ * rationale as devices/mc6845/q9_mc6845.c's own accessors. */
+uint8_t *q9_framebuf_get_vram(DeviceState *dev, uint32_t *size);
+int q9_framebuf_get_dirty_count(DeviceState *dev);
+void q9_framebuf_get_dirty_rect(DeviceState *dev, int index, int *x0, int *y0,
+                                 int *x1, int *y1);
+void q9_framebuf_clear_dirty(DeviceState *dev);
+
+uint8_t *q9_framebuf_get_vram(DeviceState *dev, uint32_t *size)
+{
+    Q9FramebufState *s = Q9_FRAMEBUF(dev);
+
+    if (size) {
+        *size = s->size;
+    }
+    return s->vram;
+}
+
+int q9_framebuf_get_dirty_count(DeviceState *dev)
+{
+    return Q9_FRAMEBUF(dev)->dirty_count;
+}
+
+void q9_framebuf_get_dirty_rect(DeviceState *dev, int index, int *x0, int *y0,
+                                 int *x1, int *y1)
+{
+    Q9FramebufState *s = Q9_FRAMEBUF(dev);
+    Q9FbDirtyRect r = { 0, 0, 0, 0 };
+
+    if (index >= 0 && index < s->dirty_count) {
+        r = s->dirty[index];
+    }
+    *x0 = r.x0; *y0 = r.y0; *x1 = r.x1; *y1 = r.y1;
+}
+
+void q9_framebuf_clear_dirty(DeviceState *dev)
+{
+    Q9_FRAMEBUF(dev)->dirty_count = 0;
+}
+
 static bool rects_overlap(const Q9FbDirtyRect *a, const Q9FbDirtyRect *b)
 {
     return a->x0 < b->x1 && a->x1 > b->x0 && a->y0 < b->y1 && a->y1 > b->y0;

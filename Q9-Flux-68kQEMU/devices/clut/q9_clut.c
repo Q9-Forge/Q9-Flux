@@ -19,6 +19,7 @@
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "qom/object.h"
+#include <string.h>
 
 #define TYPE_Q9_CLUT "q9-clut"
 OBJECT_DECLARE_SIMPLE_TYPE(Q9ClutState, Q9_CLUT)
@@ -38,6 +39,30 @@ struct Q9ClutState {
     uint8_t  index;
     uint32_t generation;
 };
+
+/* Cross-device accessor for devices/videobridge/q9_videobridge.c, same
+ * rationale as devices/mc6845/q9_mc6845.c's own accessors. entry_r/g/b
+ * must each point to a Q9_CLUT_ENTRIES-sized buffer. dev may be NULL
+ * (matches the original's own optional-CLUT fallback, s. the original
+ * videobridge.h/.c's build_grayscale_clut path) -- returns 0 and leaves
+ * the buffers untouched. */
+uint32_t q9_clut_get_table(DeviceState *dev, uint8_t *entry_r, uint8_t *entry_g,
+                            uint8_t *entry_b);
+
+uint32_t q9_clut_get_table(DeviceState *dev, uint8_t *entry_r, uint8_t *entry_g,
+                            uint8_t *entry_b)
+{
+    Q9ClutState *s;
+
+    if (!dev) {
+        return 0;
+    }
+    s = Q9_CLUT(dev);
+    memcpy(entry_r, s->r, Q9_CLUT_ENTRIES);
+    memcpy(entry_g, s->g, Q9_CLUT_ENTRIES);
+    memcpy(entry_b, s->b, Q9_CLUT_ENTRIES);
+    return s->generation;
+}
 
 static uint64_t q9_clut_read(void *opaque, hwaddr addr, unsigned size)
 {

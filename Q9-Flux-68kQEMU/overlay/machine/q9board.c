@@ -143,6 +143,16 @@ static const MemoryRegionOps q9board_rom_window_ops = {
 /* Matches Q9_FRAMEBUF_BASE in Q9-Flux-68k/src/devices/framebuf/framebuf.h. */
 #define Q9BOARD_FRAMEBUF_BASE 0xFD000000
 
+/* Matches Q9_QUICC_BASE in Q9-Flux-68k/src/devices/quicc/quicc.h. */
+#define Q9BOARD_QUICC_BASE 0xFFFF2000
+
+/* devices/quicc/q9_quicc.c, s. there for why this is a plain function
+ * rather than a qdev property. */
+void q9_quicc_set_ram(DeviceState *dev, uint8_t *ram, uint32_t ram_len);
+
+/* Matches Q9_BOARD_NET_BASE in Q9-Flux-68k/src/devices/nettty/nettty.h. */
+#define Q9BOARD_NETTTY_BASE 0xFFFF1000
+
 static void q9board_init(MachineState *machine)
 {
     ram_addr_t ram_size = machine->ram_size;
@@ -284,8 +294,8 @@ static void q9board_init(MachineState *machine)
     /* CLUT (colour lookup table for indexed video modes), seventh
      * ported peripheral -- see Q9-Flux-68kQEMU/devices/clut/q9_clut.c.
      * No CPU/chardev/IRQ wiring needed. */
+    DeviceState *clut = qdev_new("q9-clut");
     {
-        DeviceState *clut = qdev_new("q9-clut");
         sysbus_realize_and_unref(SYS_BUS_DEVICE(clut), &error_fatal);
         memory_region_add_subregion(
             address_space_mem, Q9BOARD_CLUT_BASE,
@@ -299,8 +309,8 @@ static void q9board_init(MachineState *machine)
      * defaults to the original's own 1 MiB default
      * (Q9_FRAMEBUF_DEFAULT_SIZE); override with e.g.
      * "-global q9-framebuf.size=4194304" (max 16 MiB, s. q9_framebuf.c). */
+    DeviceState *fb = qdev_new("q9-framebuf");
     {
-        DeviceState *fb = qdev_new("q9-framebuf");
         object_property_set_link(OBJECT(fb), "mc6845", OBJECT(mc6845),
                                   &error_abort);
         sysbus_realize_and_unref(SYS_BUS_DEVICE(fb), &error_fatal);
@@ -318,8 +328,68 @@ static void q9board_init(MachineState *machine)
             sysbus_mmio_get_region(SYS_BUS_DEVICE(fb), 0), 10);
     }
 
-    /* TODO (future sessions): QUICC, nettty, videobridge -- ported from
-     * Q9-Flux-68k/src/devices/, one at a time. */
+    /* QUICC Ethernet (MC68360 SCC1), ninth ported peripheral -- see
+     * Q9-Flux-68kQEMU/devices/quicc/q9_quicc.c. Needs the CPU object
+     * (same "m68k-cpu" link pattern as timer_irq/duart) for its level-5
+     * IRQ, and a host pointer into guest RAM for the buffer-descriptor
+     * rings' SDMA-style frame transfer (q9_quicc_set_ram(), same
+     * rationale as q9_mc6845_get_stride()). This is a standard QEMU NIC
+     * frontend -- give it a network with the usual "-netdev"/"-nic"
+     * machinery, e.g.
+     * "-netdev user,id=net0 -global q9-quicc.netdev=net0" (see
+     * q9_quicc.c's own header comment for why this replaces the
+     * original's four hand-rolled host network backends outright). */
+    {
+        DeviceState *quicc = qdev_new("q9-quicc");
+        object_property_set_link(OBJECT(quicc), "m68k-cpu", OBJECT(cpu),
+                                  &error_abort);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(quicc), &error_fatal);
+        q9_quicc_set_ram(quicc, memory_region_get_ram_ptr(machine->ram),
+                          (uint32_t)memory_region_size(machine->ram));
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_QUICC_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(quicc), 0));
+    }
+
+    /* Network terminals (8 channels /x1../x8), tenth ported peripheral --
+     * see Q9-Flux-68kQEMU/devices/nettty/q9_nettty.c. Needs the CPU
+     * object (same "m68k-cpu" link pattern as timer_irq/duart/quicc) for
+     * its shared level-4 IRQ. Each channel is its own "chardevN" (N=0-7)
+     * property, attached the usual QEMU way, e.g.
+     * "-chardev socket,id=x1,port=2001,server=on,wait=off,telnet=on
+     *  -global q9-nettty.chardev0=x1" (repeat per channel/port; see
+     * q9_nettty.c's own header comment for why this replaces the
+     * original's single dynamic-port dispatcher). Channels with no
+     * chardev attached simply never connect (client_fd stays unset). */
+    {
+        DeviceState *nettty = qdev_new("q9-nettty");
+        object_property_set_link(OBJECT(nettty), "m68k-cpu", OBJECT(cpu),
+                                  &error_abort);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(nettty), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_NETTTY_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(nettty), 0));
+    }
+
+    /* Host video bridge (Q9 Frame protocol), eleventh and final ported
+     * peripheral -- see Q9-Flux-68kQEMU/devices/videobridge/
+     * q9_videobridge.c. Not a guest-visible device at all (no
+     * MemoryRegion, s. its own header comment) -- a host-side background
+     * service linked to the framebuffer/CRTC/CLUT above, streaming their
+     * state to an external Q9 Frame viewer over TCP+UDP (ports
+     * overridable via "-global q9-videobridge.tcp-port=..."/"...udp-
+     * port=..."). "clut" is intentionally optional (falls back to a
+     * grayscale ramp, matching the original). */
+    {
+        DeviceState *vb = qdev_new("q9-videobridge");
+        object_property_set_link(OBJECT(vb), "framebuf", OBJECT(fb),
+                                  &error_abort);
+        object_property_set_link(OBJECT(vb), "mc6845", OBJECT(mc6845),
+                                  &error_abort);
+        object_property_set_link(OBJECT(vb), "clut", OBJECT(clut),
+                                  &error_abort);
+        qdev_realize_and_unref(vb, NULL, &error_fatal);
+    }
 
     if (!kernel_filename) {
         if (qtest_enabled()) {

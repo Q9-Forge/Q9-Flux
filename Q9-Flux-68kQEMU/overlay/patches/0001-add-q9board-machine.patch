@@ -22,18 +22,21 @@ index d646323..c4d6dcf 100644
  
  system_ss.add(when: 'CONFIG_VIRTIO_BLK', if_true: files('virtio-blk.c'))
 diff --git a/hw/char/Kconfig b/hw/char/Kconfig
-index 020c0a8..49e5abf 100644
+index 020c0a8..0c82f70 100644
 --- a/hw/char/Kconfig
 +++ b/hw/char/Kconfig
-@@ -95,3 +95,6 @@ config IP_OCTAL_232
+@@ -95,3 +95,9 @@ config IP_OCTAL_232
      bool
      default y
      depends on IPACK
 +
 +config Q9_DUART68681
 +    bool
++
++config Q9_NETTTY
++    bool
 diff --git a/hw/char/meson.build b/hw/char/meson.build
-index fc3d7ee..8eafef7 100644
+index fc3d7ee..4c6afe7 100644
 --- a/hw/char/meson.build
 +++ b/hw/char/meson.build
 @@ -25,6 +25,7 @@ system_ss.add(when: 'CONFIG_DIVA_GSP', if_true: files('diva-gsp.c'))
@@ -44,6 +47,11 @@ index fc3d7ee..8eafef7 100644
  system_ss.add(when: 'CONFIG_DIGIC', if_true: files('digic-uart.c'))
  system_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4210_uart.c'))
  system_ss.add(when: 'CONFIG_MAX78000_UART', if_true: files('max78000_uart.c'))
+@@ -41,3 +42,4 @@ system_ss.add(when: 'CONFIG_GOLDFISH_TTY', if_true: files('goldfish_tty.c'))
+ 
+ specific_ss.add(when: 'CONFIG_TERMINAL3270', if_true: files('terminal3270.c'))
+ specific_ss.add(when: 'CONFIG_PSERIES', if_true: files('spapr_vty.c'))
++system_ss.add(when: 'CONFIG_Q9_NETTTY', if_true: files('q9_nettty.c'))
 diff --git a/hw/display/Kconfig b/hw/display/Kconfig
 index 060274b..272eceb 100644
 --- a/hw/display/Kconfig
@@ -75,10 +83,10 @@ index d8b4e12..7e77c41 100644
  
  modules += { 'hw-display': hw_display_modules }
 diff --git a/hw/m68k/Kconfig b/hw/m68k/Kconfig
-index aff769b..bf583f0 100644
+index aff769b..d678b32 100644
 --- a/hw/m68k/Kconfig
 +++ b/hw/m68k/Kconfig
-@@ -46,3 +46,22 @@ config M68K_VIRT
+@@ -46,3 +46,25 @@ config M68K_VIRT
      select GOLDFISH_TTY
      select GOLDFISH_RTC
      select VIRTIO_MMIO
@@ -101,6 +109,9 @@ index aff769b..bf583f0 100644
 +    select Q9_MC6845
 +    select Q9_CLUT
 +    select Q9_FRAMEBUF
++    select Q9_QUICC
++    select Q9_NETTTY
++    select Q9_VIDEOBRIDGE
 diff --git a/hw/m68k/meson.build b/hw/m68k/meson.build
 index 84bc68f..65b7eaf 100644
 --- a/hw/m68k/meson.build
@@ -114,6 +125,46 @@ index 84bc68f..65b7eaf 100644
 +m68k_ss.add(when: 'CONFIG_Q9_REMAP', if_true: files('q9_remap.c'))
  
  hw_arch += {'m68k': m68k_ss}
+diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
+index 46e3c03..f7293f7 100644
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -264,3 +264,6 @@ config K230_DECOMP_GZIP
+     bool
+ 
+ source macio/Kconfig
++
++config Q9_VIDEOBRIDGE
++    bool
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index 9790afa..fea10b1 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -177,3 +177,4 @@ system_ss.add(when: 'CONFIG_SBSA_REF', if_true: files('sbsa_ec.c'))
+ system_ss.add(when: 'CONFIG_LASI', if_true: files('lasi.c'))
+ 
+ system_ss.add(when: 'CONFIG_AXIADO_CLK', if_true: files('axiado_clk.c'))
++system_ss.add(when: 'CONFIG_Q9_VIDEOBRIDGE', if_true: files('q9_videobridge.c'))
+diff --git a/hw/net/Kconfig b/hw/net/Kconfig
+index b56a173..7c94177 100644
+--- a/hw/net/Kconfig
++++ b/hw/net/Kconfig
+@@ -162,3 +162,6 @@ config CAN_FLEXCAN
+     bool
+     depends on IMX
+     select CAN_BUS
++
++config Q9_QUICC
++    bool
+diff --git a/hw/net/meson.build b/hw/net/meson.build
+index 63b0e96..d921c72 100644
+--- a/hw/net/meson.build
++++ b/hw/net/meson.build
+@@ -71,3 +71,4 @@ if have_hmp
+ endif
+ 
+ subdir('can')
++system_ss.add(when: 'CONFIG_Q9_QUICC', if_true: files('q9_quicc.c'))
 diff --git a/hw/rtc/Kconfig b/hw/rtc/Kconfig
 index 315b0e4..289438f 100644
 --- a/hw/rtc/Kconfig
