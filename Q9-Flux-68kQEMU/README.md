@@ -32,6 +32,18 @@ Milestones reached so far:
    matching QEMU's default `-rtc` behaviour), byte-for-byte matching the
    Musashi implementation's register semantics (latch-on-register-0,
    Control F's 24h bit, writes ignored).
+3. **Second peripheral ported: Timer/IRQ3.** The address-trigger windows
+   ($FFFF9000/$FFFF9800) and the 100 Hz level-6 autovector interrupt now
+   work end-to-end: a hand-assembled test program installed its own
+   handler at vector 30, enabled interrupts, triggered the ON window, and
+   the interrupt was delivered correctly (confirmed via the QEMU monitor
+   -- the handler ran and returned cleanly via `rte`). Unlike the RTC,
+   this device needed real IRQ delivery, not just a read callback: QEMU's
+   autovectored interrupts have no IACK-time hook a device could use to
+   lower its own request (real autovectored hardware has no such cycle
+   either), so the request is pulsed -- raised on each tick, lowered
+   again by a short one-shot timer well inside the 10 ms period -- rather
+   than held until an acknowledgement that, structurally, can never come.
 
 **Repository layout**, split by what the files actually are, not by
 where QEMU wants them:
@@ -39,7 +51,7 @@ where QEMU wants them:
 - `devices/<name>/` — our own peripheral simulations, named/organized
   independently of QEMU's directory conventions (mirrors
   `Q9-Flux-68k/src/devices/<name>/` from the Musashi branch). Currently:
-  `devices/rtc72421/q9_rtc72421.c`.
+  `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`.
 - `overlay/machine/q9board.c` — the board "wiring" itself (instantiates
   and maps the devices above), the QEMU-side counterpart to
   `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -67,10 +79,16 @@ standard m68k machines `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 `virt` (none of which match our own CB030/Vinculum target board — hence
 the new `q9board` skeleton).
 
-**Next step** (large, multi-session): port the real device models —
-CF, QUICC, RTC72421, 68681 DUART, timer IRQ3, the remap trigger, nettty,
+**Next step** (large, multi-session): port the remaining device models —
+CF, QUICC, 68681 DUART, the remap trigger, nettty,
 MC6845/framebuf/CLUT/videobridge — from `Q9-Flux-68k/src/devices/` to
-QEMU's QOM/`MemoryRegion` pattern, one device at a time.
+QEMU's QOM/`MemoryRegion` pattern, one device at a time. Note for `remap`
+in particular: unlike every device ported so far, it isn't a standalone
+register/IRQ source -- on the Musashi board it gates the board's own
+ROM/RAM address decode (ROM-mirrored-at-0 in the reset state vs.
+RAM-at-0/ROM-moved-elsewhere once remapped), so its QEMU port will need
+to reconfigure `MemoryRegion` mappings in `q9board.c` itself, not just add
+a new device file.
 
 ## Installing QEMU
 
