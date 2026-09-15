@@ -168,6 +168,10 @@ static void q9board_init(MachineState *machine)
     hwaddr entry;
     MemoryRegion *address_space_mem = get_system_memory();
 
+    Q9RomCtx *rom_ctx = NULL;   /* set below iff "-bios" was given, used
+                                 * at the bottom for a real reset-vector
+                                 * boot when no "-kernel" is given either */
+
     cpu = M68K_CPU(cpu_create(machine->cpu_type));
     env = &cpu->env;
     env->vbr = 0;
@@ -201,6 +205,7 @@ static void q9board_init(MachineState *machine)
             ctx = g_new0(Q9RomCtx, 1);
             ctx->rom = (const uint8_t *)rom_data;   /* g_file_get_contents: never freed, s.o. */
             ctx->rom_len = (uint32_t)rom_len;
+            rom_ctx = ctx;   /* s. the real-reset-vector boot path at the bottom */
 
             rom_mirror = g_new0(MemoryRegion, 1);
             memory_region_init_io(rom_mirror, OBJECT(remap),
@@ -418,6 +423,30 @@ static void q9board_init(MachineState *machine)
     }
 
     if (!kernel_filename) {
+        if (rom_ctx) {
+            /* Real 68k reset sequence: initial SSP from ROM address 0,
+             * initial PC from ROM address 4 (both big-endian longs),
+             * read through the not-yet-triggered ROM mirror -- exactly
+             * what a real 68k does on power-up, and what every earlier
+             * -kernel-based device test deliberately bypassed (s. this
+             * file's own #define-block comment on Q9BOARD_ROM_MIRROR_*).
+             * The boot ROM itself is responsible for setting up RAM and
+             * triggering REMAP before it ever touches address 0 as
+             * data. */
+            if (rom_ctx->rom_len < 8) {
+                error_report("ROM image '%s' is too small for a reset "
+                             "vector (need >= 8 bytes, got %u)",
+                             machine->firmware, rom_ctx->rom_len);
+                exit(1);
+            }
+            env->aregs[7] =
+                ((uint32_t)rom_ctx->rom[0] << 24) | (rom_ctx->rom[1] << 16) |
+                ((uint32_t)rom_ctx->rom[2] << 8) | rom_ctx->rom[3];
+            env->pc =
+                ((uint32_t)rom_ctx->rom[4] << 24) | (rom_ctx->rom[5] << 16) |
+                ((uint32_t)rom_ctx->rom[6] << 8) | rom_ctx->rom[7];
+            return;
+        }
         if (qtest_enabled()) {
             return;
         }

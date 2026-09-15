@@ -247,14 +247,45 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 `virt` (keine davon entspricht dem eigenen CB030-/Vinculum-Zielboard —
 daher das neue `q9board`-Grundgerüst).
 
-**Nächste Schritte**: mit jeder portierten und verifizierten
-`src/devices/`-Komponente (CF jetzt inklusive Slave-Einheit und
-RC2014-SC145-Zweitinterface) ist, was bleibt, eher Board- als
-Geräte-Ebene — config-gesteuerte Geräte-Instanziierung (heute ist alles
+**Echter Reset-Vektor-Boot-Pfad ergänzt**, damit eine echte Boot-ROM
+ohne `-kernel`-Krücke laufen kann: wird `-bios` übergeben und `-kernel`
+nicht, liest `q9board.c` jetzt die initiale SSP/PC aus den
+ROM-Adressen 0/4 (beide Big-Endian-Longs, über den noch nicht
+ausgelösten ROM-Mirror) — genau wie echte 68k-Hardware beim
+Einschalten — statt wie bei jedem bisherigen Gerätetest `env->pc` aus
+einem `-kernel`-Ladevorgang zu erzwingen.
+
+**Erster echter Firmware-Boot-Versuch** (2026-09-15, am selben Tag wie
+die obige Geräte-Portierungsarbeit): die tatsächliche
+Produktiv-Boot-ROM (`local_images/roms/romimage.dev.running.BIN`,
+dieselbe, die der Musashi-Zweig heute bootet) mit einer echten
+`OS9SYS.hda` als Onboard-CF-Master-Einheit angehängt (`-global
+q9-cf.image=...`, auf einer Wegwerf-APFS-Klon-Kopie, nie dem
+Master-Image). Teilerfolg: die ROM lief weit genug, um REMAP zu
+erreichen und korrekt auszulösen — per Monitor bestätigt, Adresse 0
+schaltete von den eigenen ersten ROM-Bytes auf genulltes RAM um,
+während $FE000000 begann, den fest verdrahteten
+Remap-Positions-Inhalt der ROM zu zeigen — genau der Mechanismus, der
+zuvor isoliert verifiziert wurde. Danach schließt der Boot aber noch
+nicht sauber ab: die CPU zeigt Anzeichen wiederholter Exceptions (PC
+besucht wiederholt kleine, vektortabellennahe Adressen; ein
+nicht-nulles, sich wiederholendes Muster, wo eine frische Vektortabelle
+stehen sollte). Ursache noch nicht ermittelt — verdient eine eigene,
+fokussierte Sitzung statt weiterem Raten hier. Das ist das erste Mal,
+dass der komplette Geräte-Satz gemeinsam von echter Firmware statt von
+handassemblierten Einzelgeräte-Testprogrammen durchlaufen wird — dass
+dabei eine Lücke auftaucht, die isolierte Tests nicht fangen konnten,
+ist zu erwarten; das REMAP-Ergebnis allein ist schon ein bedeutsamer,
+mit echter Firmware verifizierter Meilenstein für sich.
+
+**Nächste Schritte**: dem Boot-Absturz nach REMAP oben nachgehen (der
+naheliegende nächste Schritt, und vermutlich der schnellste Weg, um
+verbleibende Geräte-Lücken zu finden); danach die grundsätzlichere
+Board-Ebene — config-gesteuerte Geräte-Instanziierung (heute ist alles
 in `q9board.c` noch fest verdrahtet/per `-global` konfiguriert, passend
 zum eigenen Vor-boardcfg.c-Zustand des Originals, statt über eine
 deklarative Board-Config-Datei gesteuert zu werden, wie `boardcfg.c`
-das im Musashi-Zweig tut), und irgendwann der eigentliche
+das im Musashi-Zweig tut) — und irgendwann der eigentliche
 [Host-Passthrough-Dateisystem-Manager](docs/HOSTFS_MANAGER_de.md), für
 den diese ganze Umstellung ursprünglich begonnen wurde (s. "Warum QEMU"
 oben).

@@ -225,13 +225,41 @@ standard m68k machines `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 `virt` (none of which match our own CB030/Vinculum target board — hence
 the new `q9board` skeleton).
 
-**Next steps**: with every `src/devices/` component ported and verified
-(CF now including its slave unit and RC2014-SC145 second interface),
-what's left is board-level rather than device-level work -- config-
+**Real reset-vector boot path added**, so a real boot ROM can run
+without a `-kernel` crutch: when `-bios` is given and `-kernel` isn't,
+`q9board.c` now reads the initial SSP/PC from ROM addresses 0/4 (both
+big-endian longs, through the not-yet-triggered ROM mirror) exactly
+like real 68k hardware on power-up, instead of forcing `env->pc` from a
+`-kernel` load the way every device test so far did.
+
+**First real-firmware boot attempt** (2026-09-15, same day as the
+device-porting work above): the actual production boot ROM
+(`local_images/roms/romimage.dev.running.BIN`, the one the Musashi
+branch boots today) with a real `OS9SYS.hda` attached as the onboard
+CF's master unit (`-global q9-cf.image=...`, on a throwaway APFS-clone
+copy, never the master image). Partial success: the ROM ran far enough
+to reach and correctly trigger REMAP -- confirmed via the monitor,
+address 0 switched from the ROM's own first bytes to zeroed RAM while
+$FE000000 started showing the ROM's fixed remapped-position content,
+exactly the mechanism verified in isolation earlier. Past that point,
+though, the boot does not yet complete cleanly: the CPU shows signs of
+repeated exceptions (PC revisiting small, vector-table-adjacent
+addresses; a non-zero, repeating pattern where a fresh vector table
+should be). Root cause not yet identified -- worth its own focused
+session rather than guessing further here. This is the first time the
+full device set has been exercised together by real firmware rather
+than hand-assembled single-device test programs, so some gap surfacing
+here that isolated tests couldn't catch is expected; the REMAP result
+alone is a meaningful, real-firmware-verified milestone in its own
+right.
+
+**Next steps**: chase down the post-REMAP boot crash above (the
+natural next step, and likely the fastest way to find any remaining
+device-level gaps); then the more structural board-level work -- config-
 driven device instantiation (today everything in `q9board.c` is still
 hardcoded/`-global`-configured, mirroring the original's own
 pre-boardcfg.c state, rather than driven by a declarative board config
-file the way `boardcfg.c` drives the Musashi branch), and eventually
+file the way `boardcfg.c` drives the Musashi branch) -- and eventually
 the actual [host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md)
 this whole migration was started for in the first place (s. "Why QEMU"
 above).
