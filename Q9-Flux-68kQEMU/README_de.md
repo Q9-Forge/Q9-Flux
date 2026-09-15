@@ -61,6 +61,22 @@ Bisherige Meilensteine:
    ab — kein Pulsen nötig, `m68k_set_irq_level()` wird einfach erneut
    aufgerufen, sobald sich die Bedingung TxRDY/RxRDY-mit-aktiviertem-IMR
    ändert. Strukturell an QEMUs eigenem `hw/char/mcf_uart.c` orientiert.
+5. **Vierte Peripherie portiert: das Compact-Flash-Interface** (ATA-PIO,
+   nur die Onboard-Master-Einheit). Bewusst weiterhin klassisches
+   stdio-Datei-I/O wie im Original, nicht QEMUs Block-Layer — die
+   RBF/PCF-Sektorgrößen-Heuristik muss rohe Header-Bytes direkt aus der
+   Backing-Datei lesen, wofür QEMUs Block-Layer einem Gerät keinen Haken
+   bietet. Gegen ein echtes Produktiv-Image verifiziert: ein von Hand
+   assembliertes Testprogramm setzte LBA/SECCNT, sendete READ SECTOR(S),
+   pollte DRQ und las 512 Byte aus dem Datenregister aus — das Ergebnis
+   war **byte-genau identisch** zu denselben 512 Byte, direkt aus der
+   Backing-Datei in Python gelesen. Bestätigt: bestehende Q9-Disk-Images
+   (`OS9SYS.hda` usw.) brauchen keine Änderungen, um angehängt zu
+   funktionieren (`-global q9-cf.image=/pfad/zum/image.hda`, optional
+   `-global q9-cf.format=rbf|pcf|auto`). Kein IRQ, wie im Original; das
+   zweite RC2014-SC145-Interface und die Slave-Einheit bleiben für
+   später, zusammen mit der insgesamt noch fest verdrahteten (nicht
+   config-gesteuerten) Geräte-Instanziierung in q9board.c.
 
 **Repository-Aufbau**, aufgeteilt danach, was die Dateien tatsächlich
 sind, nicht danach, wo QEMU sie haben will:
@@ -69,7 +85,7 @@ sind, nicht danach, wo QEMU sie haben will:
   von QEMUs Verzeichniskonvention benannt/organisiert (spiegelt
   `Q9-Flux-68k/src/devices/<gerät>/` aus dem Musashi-Zweig). Aktuell:
   `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
-  `devices/duart68681/q9_duart68681.c`.
+  `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`.
 - `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
   (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige
   Gegenstück zu `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -99,7 +115,7 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 daher das neue `q9board`-Grundgerüst).
 
 **Nächster Schritt** (groß, mehrere Sitzungen): die verbleibenden
-Geräte-Modelle — CF, QUICC, Remap-Trigger, Netz-Terminals,
+Geräte-Modelle — QUICC, Remap-Trigger, Netz-Terminals,
 MC6845/Framebuf/CLUT/Videobridge — von `Q9-Flux-68k/src/devices/` nach
 QEMUs QOM-/`MemoryRegion`-Muster portieren, ein Gerät nach dem anderen.
 Hinweis speziell zu `remap`: anders als jedes bisher portierte Gerät ist
