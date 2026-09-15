@@ -61,22 +61,30 @@ Bisherige Meilensteine:
    ab — kein Pulsen nötig, `m68k_set_irq_level()` wird einfach erneut
    aufgerufen, sobald sich die Bedingung TxRDY/RxRDY-mit-aktiviertem-IMR
    ändert. Strukturell an QEMUs eigenem `hw/char/mcf_uart.c` orientiert.
-5. **Vierte Peripherie portiert: das Compact-Flash-Interface** (ATA-PIO,
-   nur die Onboard-Master-Einheit). Bewusst weiterhin klassisches
-   stdio-Datei-I/O wie im Original, nicht QEMUs Block-Layer — die
-   RBF/PCF-Sektorgrößen-Heuristik muss rohe Header-Bytes direkt aus der
-   Backing-Datei lesen, wofür QEMUs Block-Layer einem Gerät keinen Haken
-   bietet. Gegen ein echtes Produktiv-Image verifiziert: ein von Hand
-   assembliertes Testprogramm setzte LBA/SECCNT, sendete READ SECTOR(S),
-   pollte DRQ und las 512 Byte aus dem Datenregister aus — das Ergebnis
-   war **byte-genau identisch** zu denselben 512 Byte, direkt aus der
-   Backing-Datei in Python gelesen. Bestätigt: bestehende Q9-Disk-Images
-   (`OS9SYS.hda` usw.) brauchen keine Änderungen, um angehängt zu
-   funktionieren (`-global q9-cf.image=/pfad/zum/image.hda`, optional
-   `-global q9-cf.format=rbf|pcf|auto`). Kein IRQ, wie im Original; das
-   zweite RC2014-SC145-Interface und die Slave-Einheit bleiben für
-   später, zusammen mit der insgesamt noch fest verdrahteten (nicht
-   config-gesteuerten) Geräte-Instanziierung in q9board.c.
+5. **Vierte Peripherie portiert: das Compact-Flash-Interface** (ATA-PIO).
+   Bewusst weiterhin klassisches stdio-Datei-I/O wie im Original, nicht
+   QEMUs Block-Layer — die RBF/PCF-Sektorgrößen-Heuristik muss rohe
+   Header-Bytes direkt aus der Backing-Datei lesen, wofür QEMUs
+   Block-Layer einem Gerät keinen Haken bietet. Gegen ein echtes
+   Produktiv-Image verifiziert: ein von Hand assembliertes Testprogramm
+   setzte LBA/SECCNT, sendete READ SECTOR(S), pollte DRQ und las 512
+   Byte aus dem Datenregister aus — das Ergebnis war **byte-genau
+   identisch** zu denselben 512 Byte, direkt aus der Backing-Datei in
+   Python gelesen. Bestätigt: bestehende Q9-Disk-Images (`OS9SYS.hda`
+   usw.) brauchen keine Änderungen, um angehängt zu funktionieren
+   (`-global q9-cf.image=/pfad/zum/image.hda`, optional `-global
+   q9-cf.format=rbf|pcf|auto`). Kein IRQ, wie im Original. Sowohl die
+   Slave-Einheit (`-global q9-cf.slave-image=...`) als auch das zweite
+   RC2014-SC145-Interface (eine zweite Instanz desselben Geräts,
+   registriert unter eigenem QOM-Typnamen `q9-cf2` — eine echte
+   QOM-*Subklasse* von `q9-cf`, nicht ein kopiertes Geschwister-Typinfo,
+   da `-global` am Typnamen ansetzt und zwei gleichtypige Instanzen sich
+   sonst nicht unabhängig konfigurieren ließen, und da die Typprüfung
+   in der gemeinsamen `realize()` einen unverwandten Typ sonst schlicht
+   zurückgewiesen hätte) kamen in einem Nachtrag dazu und wurden
+   gemeinsam verifiziert: drei unterschiedliche Marker-Images
+   (Onboard-Master/-Slave, Zweitinterface-Master) kamen jeweils korrekt
+   und unabhängig über ihre eigene Einheiten-/Interface-Auswahl zurück.
 6. **Fünfte Peripherie portiert: das REMAP-Register.** Anders als jedes
    bisherige Gerät ist das keine eigenständige Register-/IRQ-Quelle —
    auf dem echten Board schaltet es die Adressdekodierung des Boards
@@ -240,11 +248,13 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 daher das neue `q9board`-Grundgerüst).
 
 **Nächste Schritte**: mit jeder portierten und verifizierten
-`src/devices/`-Komponente ist, was bleibt, eher Board- als Geräte-Ebene
-— config-gesteuerte Geräte-Instanziierung (heute ist alles in
-`q9board.c` noch fest verdrahtet, passend zum eigenen
-Vor-boardcfg.c-Zustand des Originals), das zweite CF-Interface/die
-Slave-Einheit, und irgendwann der eigentliche
+`src/devices/`-Komponente (CF jetzt inklusive Slave-Einheit und
+RC2014-SC145-Zweitinterface) ist, was bleibt, eher Board- als
+Geräte-Ebene — config-gesteuerte Geräte-Instanziierung (heute ist alles
+in `q9board.c` noch fest verdrahtet/per `-global` konfiguriert, passend
+zum eigenen Vor-boardcfg.c-Zustand des Originals, statt über eine
+deklarative Board-Config-Datei gesteuert zu werden, wie `boardcfg.c`
+das im Musashi-Zweig tut), und irgendwann der eigentliche
 [Host-Passthrough-Dateisystem-Manager](docs/HOSTFS_MANAGER_de.md), für
 den diese ganze Umstellung ursprünglich begonnen wurde (s. "Warum QEMU"
 oben).

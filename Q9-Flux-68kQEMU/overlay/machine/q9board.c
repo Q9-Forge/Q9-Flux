@@ -134,6 +134,10 @@ static const MemoryRegionOps q9board_rom_window_ops = {
 /* Matches Q9_BOARD_CF_BASE in Q9-Flux-68k/src/devices/cf/cf.h. */
 #define Q9BOARD_CF_BASE 0xFFFFE000
 
+/* Matches Q9_BOARD_CF2_BASE in Q9-Flux-68k/src/devices/cf/cf.h
+ * (RC2014-SC145 second interface). */
+#define Q9BOARD_CF2_BASE 0xFFFFC010
+
 /* Matches Q9_MC6845_BASE in Q9-Flux-68k/src/devices/mc6845/mc6845.h. */
 #define Q9BOARD_MC6845_BASE 0xFFFFA000
 
@@ -265,19 +269,41 @@ static void q9board_init(MachineState *machine)
             sysbus_mmio_get_region(SYS_BUS_DEVICE(duart), 0));
     }
 
-    /* Compact-Flash interface (master unit only, s. q9_cf.c Dateikopf),
-     * fourth ported peripheral -- see Q9-Flux-68kQEMU/devices/cf/q9_cf.c.
-     * No CPU/chardev wiring needed (no IRQ). Attach a backing image via
-     * e.g. "-global q9-cf.image=/path/to/image.hda" (optionally also
-     * "-global q9-cf.format=rbf|pcf|auto" and
-     * "-global q9-cf.start-sector=N"). Without an image the unit behaves
-     * like an empty slot -- every ATA command answers ERR. */
+    /* Compact-Flash interface, onboard, fourth ported peripheral -- see
+     * Q9-Flux-68kQEMU/devices/cf/q9_cf.c. No CPU/chardev wiring needed
+     * (no IRQ). Attach a backing image via e.g.
+     * "-global q9-cf.image=/path/to/image.hda" (optionally also
+     * "-global q9-cf.format=rbf|pcf|auto", "-global
+     * q9-cf.start-sector=N", and the "slave-image"/"slave-format"/
+     * "slave-start-sector" equivalents for the second, slave unit on
+     * this same interface). Without an image a unit behaves like an
+     * empty slot -- every ATA command answers ERR. */
     {
         DeviceState *cf = qdev_new("q9-cf");
         sysbus_realize_and_unref(SYS_BUS_DEVICE(cf), &error_fatal);
         memory_region_add_subregion(
             address_space_mem, Q9BOARD_CF_BASE,
             sysbus_mmio_get_region(SYS_BUS_DEVICE(cf), 0));
+    }
+
+    /* Compact-Flash interface, RC2014-SC145 second interface -- same
+     * implementation as above (registered a second time under the
+     * distinct QOM type name "q9-cf2", s. q9_cf.c's own end-of-file
+     * comment), just a second instance at its own base address (matches
+     * the original's own q9_cf_attach(), which is likewise interface-
+     * agnostic). A distinct type name, rather than a second instance of
+     * plain "q9-cf", is what lets "-global" address the two interfaces
+     * independently ("-global" keys off the QOM type, not the instance
+     * -- two same-typed instances could not otherwise be configured
+     * differently from the command line). Configure via
+     * "-global q9-cf2.image=..." etc. (same property names as "q9-cf",
+     * s. above). */
+    {
+        DeviceState *cf2 = qdev_new("q9-cf2");
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(cf2), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_CF2_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(cf2), 0));
     }
 
     /* MC6845 CRT controller (GDP framebuffer geometry base), sixth
