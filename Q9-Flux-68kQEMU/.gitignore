@@ -1,0 +1,7 @@
+# Lokale QEMU-Test-/Boot-Artefakte, keine Quellen.
+*.img
+*.qcow2
+*.iso
+build/
+local_images/
+.DS_Store
