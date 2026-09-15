@@ -1,8 +1,9 @@
 #!/bin/bash
 # setup-qemu-dev-tree.sh -- richtet den lokalen QEMU-Checkout unter
 # third_party/qemu fuer die Q9-board-Entwicklung ein: initialisiert das
-# Submodul, kopiert unsere neuen Dateien rein (overlay/new-files/) und
-# wendet unsere Patches auf bestehende QEMU-Dateien an (overlay/patches/).
+# Submodul, kopiert unsere eigenen Geraete-/Maschinen-Dateien gemaess
+# qemu-mapping.conf hinein und wendet unsere Patches auf bestehende
+# QEMU-Dateien an (overlay/patches/).
 #
 # Idempotent -- kann nach jedem "git submodule update" (das den Checkout
 # auf den sauberen Pin zuruecksetzt und unsere Aenderungen entfernt)
@@ -11,20 +12,22 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QEMU_DIR="$HERE/third_party/qemu"
-OVERLAY="$HERE/overlay"
+MAPPING="$HERE/qemu-mapping.conf"
 
 echo "==> Submodul initialisieren/aktualisieren"
 git -C "$HERE/.." submodule update --init "Q9-Flux-68kQEMU/third_party/qemu"
 
-echo "==> Eigene neue Dateien kopieren"
-( cd "$OVERLAY/new-files" && find . -type f ) | while read -r rel; do
-    mkdir -p "$QEMU_DIR/$(dirname "$rel")"
-    cp "$OVERLAY/new-files/$rel" "$QEMU_DIR/$rel"
-    echo "    $rel"
-done
+echo "==> Eigene Geraete-/Maschinen-Dateien gemaess qemu-mapping.conf kopieren"
+while read -r src dst; do
+    [ -z "$src" ] && continue
+    case "$src" in \#*) continue ;; esac
+    mkdir -p "$QEMU_DIR/$(dirname "$dst")"
+    cp "$HERE/$src" "$QEMU_DIR/$dst"
+    echo "    $src -> $dst"
+done < "$MAPPING"
 
 echo "==> Patches auf bestehende QEMU-Dateien anwenden"
-for patch in "$OVERLAY"/patches/*.patch; do
+for patch in "$HERE"/overlay/patches/*.patch; do
     [ -e "$patch" ] || continue
     echo "    $(basename "$patch")"
     ( cd "$QEMU_DIR" && git apply --check "$patch" 2>/dev/null ) \
