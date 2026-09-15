@@ -1,8 +1,8 @@
 diff --git a/hw/m68k/Kconfig b/hw/m68k/Kconfig
-index aff769b..5a79d56 100644
+index aff769b..9f6c24a 100644
 --- a/hw/m68k/Kconfig
 +++ b/hw/m68k/Kconfig
-@@ -46,3 +46,8 @@ config M68K_VIRT
+@@ -46,3 +46,9 @@ config M68K_VIRT
      select GOLDFISH_TTY
      select GOLDFISH_RTC
      select VIRTIO_MMIO
@@ -11,6 +11,7 @@ index aff769b..5a79d56 100644
 +    bool
 +    default y
 +    depends on M68K
++    select Q9_RTC72421
 diff --git a/hw/m68k/meson.build b/hw/m68k/meson.build
 index 84bc68f..849dbef 100644
 --- a/hw/m68k/meson.build
@@ -22,3 +23,23 @@ index 84bc68f..849dbef 100644
 +m68k_ss.add(when: 'CONFIG_Q9BOARD', if_true: files('q9board.c'))
  
  hw_arch += {'m68k': m68k_ss}
+diff --git a/hw/rtc/Kconfig b/hw/rtc/Kconfig
+index 315b0e4..289438f 100644
+--- a/hw/rtc/Kconfig
++++ b/hw/rtc/Kconfig
+@@ -31,3 +31,6 @@ config RS5C372_RTC
+     bool
+     depends on I2C
+     default y if I2C_DEVICES
++
++config Q9_RTC72421
++    bool
+diff --git a/hw/rtc/meson.build b/hw/rtc/meson.build
+index 6c87864..6860194 100644
+--- a/hw/rtc/meson.build
++++ b/hw/rtc/meson.build
+@@ -14,3 +14,4 @@ system_ss.add(when: 'CONFIG_LS7A_RTC', if_true: files('ls7a_rtc.c'))
+ system_ss.add(when: 'CONFIG_ALLWINNER_H3', if_true: files('allwinner-rtc.c'))
+ system_ss.add(when: 'CONFIG_MC146818RTC', if_true: files('mc146818rtc.c'))
+ system_ss.add(when: 'CONFIG_RS5C372_RTC', if_true: files('rs5c372.c'))
++system_ss.add(when: 'CONFIG_Q9_RTC72421', if_true: files('q9_rtc72421.c'))

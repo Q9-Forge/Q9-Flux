@@ -23,32 +23,46 @@ und zu bereits vorhandenen, thematisch verwandten QEMU-Bausteinen
 
 ## Stand (2026-09-15)
 
-Erster echter Meilenstein erreicht: eine eigene `q9board`-QEMU-Maschine
-(CPU+RAM-Grundgerüst, noch ohne Peripherie) wurde aus dem Quellcode
-gebaut und verifiziert — ein von Hand geschriebenes 68030-Testprogramm
-(ein paar `moveq`/`add`-Instruktionen plus `stop`) lief nach dem Laden
-per `-kernel` korrekt durch, bestätigt über den QEMU-Monitor
-(`info registers`: `D0=0x2b` (43, das erwartete Rechenergebnis),
-`SR=0x2700` passend zum `stop`-Operanden, `PC` exakt hinter der letzten
-Instruktion).
+Bisherige Meilensteine:
 
-Der Quellcode ist jetzt sauber versioniert, aufgeteilt in ein eigenes,
-dediziertes QEMU-Submodul (`third_party/qemu/`, getrennt von Q9-Flux-x86s
-eigener Kopie — die bleibt ein unangetasteter, reiner Upstream-Checkout)
-und unsere eigenen Ergänzungen obendrauf, angewendet über
-`setup-qemu-dev-tree.sh`:
+1. Eine eigene `q9board`-QEMU-Maschine (CPU+RAM-Grundgerüst) wurde aus
+   dem Quellcode gebaut und verifiziert — ein von Hand geschriebenes
+   68030-Testprogramm lief korrekt durch, bestätigt über den
+   QEMU-Monitor.
+2. **Erste echte Peripherie portiert: RTC72421.** Das Auslesen ihrer
+   Register auf einer laufenden `q9board`-Instanz lieferte die korrekte,
+   BCD-kodierte Host-Uhrzeit (UTC, passend zu QEMUs Standard-`-rtc`-
+   Verhalten) — byte-genau übereinstimmend mit der Register-Semantik der
+   Musashi-Implementierung (Latch-Auffrischung bei Register 0, das
+   24h-Bit in Control F, Schreiben wird ignoriert).
 
-- `overlay/new-files/hw/m68k/q9board.c` — die Maschine selbst
-- `overlay/patches/0001-add-q9board-machine.patch` — die zweizeilige
-  `Kconfig`/`meson.build`-Registrierung, als echter Diff, damit künftige
-  QEMU-Versions-Updates nicht stillschweigend andere, neue
-  Upstream-Ergänzungen an denselben Dateien verschlucken
+**Repository-Aufbau**, aufgeteilt danach, was die Dateien tatsächlich
+sind, nicht danach, wo QEMU sie haben will:
+
+- `devices/<gerät>/` — unsere eigenen Geräte-Simulationen, unabhängig
+  von QEMUs Verzeichniskonvention benannt/organisiert (spiegelt
+  `Q9-Flux-68k/src/devices/<gerät>/` aus dem Musashi-Zweig). Aktuell:
+  `devices/rtc72421/q9_rtc72421.c`.
+- `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
+  (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige
+  Gegenstück zu `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
+- `overlay/patches/` — Diffs gegen bestehende QEMU-Dateien, die wir
+  anfassen mussten (`Kconfig`/`meson.build`-Registrierungen), als Patches
+  statt Ganzdatei-Kopien, damit künftige QEMU-Versions-Updates nicht
+  stillschweigend andere, neue Upstream-Ergänzungen an denselben Dateien
+  verschlucken.
+- `qemu-mapping.conf` — die kleine, explizite Konfiguration, die alles
+  zusammenbindet: welche Datei unter `devices/`/`overlay/machine/`
+  landet wo innerhalb von `third_party/qemu/`.
+- `third_party/qemu/` — ein eigenes, dediziertes QEMU-Submodul (getrennt
+  von Q9-Flux-x86s eigener Kopie, die ein unangetasteter, reiner
+  Upstream-Checkout bleibt).
 
 Nach dem Klonen (oder nach jedem `git submodule update`, das den
-Submodul-Checkout zurücksetzt und das Overlay sonst löschen würde)
-`./setup-qemu-dev-tree.sh` ausführen, dann bauen mit
+Submodul-Checkout zurücksetzt und unsere Ergänzungen sonst löschen
+würde) `./setup-qemu-dev-tree.sh` ausführen, dann bauen mit
 `cd third_party/qemu && mkdir build-m68k && cd build-m68k && ../configure --target-list=m68k-softmmu && ninja`.
-Zweimal komplett durchgetestet (zurücksetzen → Skript → Neu-Build →
+Wiederholt komplett durchgetestet (zurücksetzen → Skript → Neu-Build →
 Boot) mit identischem, korrektem Ergebnis.
 
 QEMU selbst ist auf dem Entwicklungsrechner (macOS, Apple-Silicon)

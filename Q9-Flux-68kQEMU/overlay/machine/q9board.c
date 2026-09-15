@@ -1,9 +1,12 @@
 /*
- * Q9 board emulation (skeleton).
+ * Q9 board emulation.
  *
- * Minimal starting point for the planned migration of the Q9-Flux 68K
- * board model from Musashi to QEMU. Currently: CPU + RAM only, no
- * peripherals yet. See Q9-Flux-68kQEMU/docs/HOSTFS_MANAGER.md and
+ * Board assembly for the planned migration of the Q9-Flux 68K board
+ * model from Musashi to QEMU. Peripheral devices live separately under
+ * Q9-Flux-68kQEMU/devices/ (see qemu-mapping.conf for how they land in
+ * this QEMU tree) -- this file only wires them together, the same role
+ * Q9-Flux-68k/src/kernel/q9board.c/boardcfg.c play in the Musashi
+ * branch. See Q9-Flux-68kQEMU/docs/HOSTFS_MANAGER.md and
  * QEMU_DEVICE_MODEL.md for the full design background.
  *
  * This file is not (yet) part of Q9-Flux's own MIT-licensed code base --
@@ -16,11 +19,15 @@
 #include "cpu.h"
 #include "hw/core/boards.h"
 #include "hw/core/loader.h"
+#include "hw/core/sysbus.h"
 #include "elf.h"
 #include "qemu/error-report.h"
 #include "system/qtest.h"
 
 #define Q9BOARD_KERNEL_LOAD_ADDR 0x10000
+
+/* Matches Q9_BOARD_RTC_BASE in Q9-Flux-68k/src/kernel/q9board.h. */
+#define Q9BOARD_RTC_BASE 0xFFFFD000
 
 static void q9board_init(MachineState *machine)
 {
@@ -41,9 +48,19 @@ static void q9board_init(MachineState *machine)
      * (initial SSP/PC read from address 0/4). */
     memory_region_add_subregion(address_space_mem, 0, machine->ram);
 
-    /* TODO (future sessions): CF, QUICC, RTC72421, 68681 DUART, timer
-     * IRQ3, remap trigger, nettty, MC6845/framebuf/CLUT/videobridge --
-     * ported from Q9-Flux-68k/src/devices/, one at a time. */
+    /* RTC72421 real-time clock, first ported peripheral -- see
+     * Q9-Flux-68kQEMU/devices/rtc72421/q9_rtc72421.c. */
+    {
+        DeviceState *rtc = qdev_new("q9-rtc72421");
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_RTC_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(rtc), 0));
+    }
+
+    /* TODO (future sessions): CF, QUICC, 68681 DUART, timer IRQ3, remap
+     * trigger, nettty, MC6845/framebuf/CLUT/videobridge -- ported from
+     * Q9-Flux-68k/src/devices/, one at a time. */
 
     if (!kernel_filename) {
         if (qtest_enabled()) {
