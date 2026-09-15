@@ -23,12 +23,37 @@ und zu bereits vorhandenen, thematisch verwandten QEMU-Bausteinen
 
 ## Stand (2026-09-15)
 
-Noch nicht begonnen. QEMU ist auf dem Entwicklungsrechner (macOS,
-Apple-Silicon) installiert und getestet (`qemu-system-m68k`, Version
-11.1.1, inkl. der Standard-m68k-Maschinen `an5206`, `mcf5208evb`,
-`next-cube`, `q800`, `virt`). Keine davon entspricht dem eigenen
-CB030-/Vinculum-Zielboard — ein eigener QEMU-Maschinentyp wird nötig
-sein, analog zu `q9board.c`/`boardcfg.c` im Musashi-Zweig.
+Erster echter Meilenstein erreicht: eine eigene `q9board`-QEMU-Maschine
+(CPU+RAM-Grundgerüst, noch ohne Peripherie) wurde aus dem Quellcode
+gebaut und verifiziert — ein von Hand geschriebenes 68030-Testprogramm
+(ein paar `moveq`/`add`-Instruktionen plus `stop`) lief nach dem Laden
+per `-kernel` korrekt durch, bestätigt über den QEMU-Monitor
+(`info registers`: `D0=0x2b` (43, das erwartete Rechenergebnis),
+`SR=0x2700` passend zum `stop`-Operanden, `PC` exakt hinter der letzten
+Instruktion).
+
+Der Quellcode liegt unter
+`Q9-Flux-x86/third_party/qemu/hw/m68k/q9board.c` (registriert in der
+dortigen `Kconfig`/`meson.build`), gebaut über
+`meson setup --target-list=m68k-softmmu` + `ninja` in einem lokalen
+`build-m68k/`-Verzeichnis. **Noch nirgends dauerhaft versioniert** — der
+QEMU-Checkout ist ein Git-Submodul, das auf das echte, öffentliche
+QEMU-Repo zeigt, die Änderungen existieren also bisher nur als lokale,
+uncommittete Modifikation. Noch offene Entscheidung: einen eigenen Fork
+des QEMU-Repos anlegen (damit das Submodul darauf zeigen kann) oder eine
+separate Patch-Datei, die im Q9-Flux-Repo selbst versioniert wird.
+
+QEMU selbst ist auf dem Entwicklungsrechner (macOS, Apple-Silicon)
+installiert und getestet: `qemu-system-m68k`, Version 11.1.1, inkl. der
+Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
+`virt` (keine davon entspricht dem eigenen CB030-/Vinculum-Zielboard —
+daher das neue `q9board`-Grundgerüst).
+
+**Nächster Schritt** (groß, mehrere Sitzungen): die echten
+Geräte-Modelle — CF, QUICC, RTC72421, 68681-DUART, Timer IRQ3,
+Remap-Trigger, Netz-Terminals, MC6845/Framebuf/CLUT/Videobridge — von
+`Q9-Flux-68k/src/devices/` nach QEMUs QOM-/`MemoryRegion`-Muster
+portieren, ein Gerät nach dem anderen.
 
 ## QEMU installieren
 

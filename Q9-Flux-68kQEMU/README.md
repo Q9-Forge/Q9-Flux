@@ -22,12 +22,33 @@ related QEMU building blocks (`vvfat`, `virtio-9p`) are in
 
 ## Status (2026-09-15)
 
-Not started yet. QEMU is installed and tested on the development machine
-(macOS, Apple Silicon): `qemu-system-m68k`, version 11.1.1, including the
+First real milestone reached: a custom `q9board` QEMU machine (CPU + RAM
+skeleton, no peripherals yet) has been built from source and verified —
+a hand-crafted 68030 test program (a few `moveq`/`add` instructions plus
+`stop`) loaded via `-kernel` executed correctly, confirmed via the QEMU
+monitor (`info registers`: `D0=0x2b` (43, the expected sum), `SR=0x2700`
+matching the `stop` operand, `PC` exactly past the last instruction).
+
+The source lives at `Q9-Flux-x86/third_party/qemu/hw/m68k/q9board.c`
+(registered in that directory's `Kconfig`/`meson.build`), built via
+`meson setup --target-list=m68k-softmmu` + `ninja` in a local
+`build-m68k/` directory. **Not yet committed anywhere persistent** — the
+QEMU checkout is a git submodule pointing at the real upstream QEMU
+repository, so these changes currently only exist as an uncommitted,
+local modification. Decision still open: fork the upstream QEMU repo (so
+the submodule can point at our fork) vs. keep a separate patch file
+versioned inside Q9-Flux itself.
+
+QEMU itself is installed and tested on the development machine (macOS,
+Apple Silicon): `qemu-system-m68k`, version 11.1.1, including the
 standard m68k machines `an5206`, `mcf5208evb`, `next-cube`, `q800`,
-`virt`. None of these match our own CB030/Vinculum target board — a
-custom QEMU machine type will be needed, analogous to `q9board.c`/
-`boardcfg.c` in the Musashi branch.
+`virt` (none of which match our own CB030/Vinculum target board — hence
+the new `q9board` skeleton).
+
+**Next step** (large, multi-session): port the real device models —
+CF, QUICC, RTC72421, 68681 DUART, timer IRQ3, the remap trigger, nettty,
+MC6845/framebuf/CLUT/videobridge — from `Q9-Flux-68k/src/devices/` to
+QEMU's QOM/`MemoryRegion` pattern, one device at a time.
 
 ## Installing QEMU
 
