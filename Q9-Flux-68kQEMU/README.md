@@ -269,36 +269,62 @@ fixed**: after rebuilding, the boot progressed markedly further and
 the DUART console started printing real ROM diagnostic text instead of
 silently derailing.
 
-**Root cause #2, found, not yet fixed**: the console text itself
-pinpoints it -- `Exception Error, vector offset $0010 addr
-$FE001E84`, repeating ("Fatal System Error; rebooting system"). That
-address is an `frestore` instruction restoring a NULL FPU state frame
-(format byte `$00`, the always-must-succeed trivial case in the
-68881/68882 architecture). QEMU's `DISAS_INSN(frestore)`/`fsave`
-implementations, though, are gated on `M68K_FEATURE_M68040` and fall
-straight through to `disas_undef()` for every other CPU type,
-`m68030` included -- QEMU's m68k core has FSAVE/FRESTORE support only
-for the 68040's internal-FPU state-frame format, not the classic
-68020/68030 + external-68881/68882-coprocessor protocol this ROM
-(and, going by its success there, Musashi's emulation) relies on. Not
-yet patched -- unlike root cause #1's small table addition, a correct
-fix here means actually implementing (at least) the NULL-frame case
-for non-68040 CPUs in `target/m68k/translate.c`, a more involved
-change to a shared QEMU core file that's worth the user's sign-off
-before proceeding, given it's the second such patch in a row.
+**Root cause #2, found and fixed**: the console text itself pinpointed
+it -- `Exception Error, vector offset $0010 addr $FE001E84`, repeating
+("Fatal System Error; rebooting system"). That address is an
+`frestore` instruction restoring a NULL FPU state frame (format byte
+`$00`, the always-must-succeed trivial case in the 68881/68882
+architecture). QEMU's `DISAS_INSN(frestore)`/`fsave` implementations,
+though, were gated on `M68K_FEATURE_M68040` and fell straight through
+to `disas_undef()` for every other CPU type, `m68030` included --
+QEMU's m68k core had FSAVE/FRESTORE support only for the 68040's
+internal-FPU state-frame format, not the classic 68020/68030 +
+external-68881/68882-coprocessor protocol this ROM (and, going by its
+success there, Musashi's emulation) relies on. Extended
+`overlay/patches/0002-m68k-fpu-pre68040.patch` (same file as root
+cause #1's fix, same underlying theme: pre-68040 FPU coprocessor
+support gaps) with an `M68K_FEATURE_FPU` branch for both instructions
+-- `FRESTORE` reads-and-discards one long word exactly like the
+existing 68040 case already does (that case doesn't validate frame
+contents either, s. its own "FIXME: check the state frame"), and
+`FSAVE` writes a NULL frame (format byte 0, the 68881/68882 family's
+equivalent of the 68040 case's own "always write IDLE") -- correct and
+sufficient given this board's FPU is QEMU's own synchronous software
+float implementation with no real coprocessor pipeline state to ever
+report.
 
-**Next steps**: fix root cause #2 (pending confirmation, s. above);
-then see how much further the same ROM/CF combination gets -- more
-gaps may well surface, given this is still the first time the full
-device set has run under real firmware rather than isolated
-hand-assembled test programs; then the more structural board-level
-work -- config-driven device instantiation (today everything in
-`q9board.c` is still hardcoded/`-global`-configured, mirroring the
-original's own pre-boardcfg.c state, rather than driven by a
-declarative board config file the way `boardcfg.c` drives the Musashi
-branch) -- and eventually the actual
-[host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md) this
-whole migration was started for in the first place (s. "Why QEMU"
+**Confirmed fixed, with dramatic further progress**: rebuilt and
+re-attempted the same real ROM + real `OS9SYS.hda` boot. The DUART
+console now shows the actual OS-9 bootstrap banner, successfully
+finding and validating a boot file on the CF image, and the **OS-9
+kernel itself starts loading and running** -- a level beyond the ROM
+entirely:
+
+```
+OS-9/68K System Bootstrap
+Now trying to boot from CompactFlash.
+A valid OS-9 bootfile was found.
+ioman: can't open console device: Error $00CB
+Error: system state exception; vector $00DC at addr $0000FB1A
+--> System Reset <--
+```
+
+This confirms the CF port reads real OS-9 filesystem structures
+correctly under real firmware, not just in isolated register-level
+tests. The new failure (`ioman` -- OS-9's I/O manager -- can't open
+the console device) is a distinct, later-stage issue worth its own
+investigation in a follow-up.
+
+**Next steps**: chase the new `ioman`/console-open failure above (the
+natural next step, likely in or around the DUART port given what's
+failing); then see how much further the same ROM/CF combination gets
+from there; then the more structural board-level work -- config-driven
+device instantiation (today everything in `q9board.c` is still
+hardcoded/`-global`-configured, mirroring the original's own
+pre-boardcfg.c state, rather than driven by a declarative board config
+file the way `boardcfg.c` drives the Musashi branch) -- and eventually
+the actual [host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md)
+this whole migration was started for in the first place (s. "Why QEMU"
 above).
 
 ## Installing QEMU

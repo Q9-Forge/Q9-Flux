@@ -1,0 +1,81 @@
+diff --git a/target/m68k/translate.c b/target/m68k/translate.c
+index 138c89d..167c695 100644
+--- a/target/m68k/translate.c
++++ b/target/m68k/translate.c
+@@ -5367,6 +5367,28 @@ DISAS_INSN(frestore)
+     if (m68k_feature(s->env, M68K_FEATURE_M68040)) {
+         SRC_EA(env, addr, OS_LONG, 0, NULL);
+         /* FIXME: check the state frame */
++    } else if (m68k_feature(s->env, M68K_FEATURE_FPU)) {
++        /*
++         * Q9 board: pre-68040 CPUs with an FPU (68020/68030 +
++         * external 68881/68882 coprocessor) support FRESTORE too --
++         * this fell straight through to disas_undef() before, since
++         * the check above only ever allowed the 68040's own internal-
++         * FPU frame format. Same simplification as the 68040 case just
++         * above: read (and discard, exactly like that case's own
++         * "FIXME: check the state frame") one long word, handling
++         * addressing-mode side effects (e.g. postincrement) via
++         * SRC_EA the same way. Real 68881/68882 hardware has three
++         * frame formats -- NULL (4 bytes), IDLE (0x1C bytes) and BUSY
++         * (state-dependent, up to 0xB4 bytes) -- with only the first
++         * long word common to all; since nothing here has genuine
++         * coprocessor pipeline state to validate against (this board's
++         * FPU is QEMU's own synchronous software float implementation,
++         * s. devices/quicc & co.'s own "no real coprocessor" framing),
++         * accepting any frame exactly like the 68040 path does is the
++         * correct amount of implementation, not a shortcut around one
++         * that exists.
++         */
++        SRC_EA(env, addr, OS_LONG, 0, NULL);
+     } else {
+         disas_undef(env, s, insn);
+     }
+@@ -5383,6 +5405,20 @@ DISAS_INSN(fsave)
+         /* always write IDLE */
+         TCGv idle = tcg_constant_i32(0x41000000);
+         DEST_EA(env, insn, OS_LONG, idle, NULL);
++    } else if (m68k_feature(s->env, M68K_FEATURE_FPU)) {
++        /*
++         * Q9 board: pre-68040 FSAVE counterpart to FRESTORE's own fix
++         * just above -- same rationale, s. there. The 68040 case above
++         * always writes its own IDLE format (0x41); the 68881/68882
++         * NULL frame (format byte 0, the rest don't-care/reserved) is
++         * this format family's equivalent trivial-and-always-valid
++         * answer, and the correct one for a coprocessor that never
++         * actually has in-flight state to report (s. FRESTORE's own
++         * comment) -- no need to construct an IDLE frame's additional
++         * 0x18 bytes of (otherwise-unused) trailing state.
++         */
++        TCGv null_frame = tcg_constant_i32(0x00000000);
++        DEST_EA(env, insn, OS_LONG, null_frame, NULL);
+     } else {
+         disas_undef(env, s, insn);
+     }
+@@ -5990,6 +6026,26 @@ void register_m68k_insns (CPUM68KState *env)
+     INSN(fpu,       f200, ffc0, CF_FPU);
+     INSN(fbcc,      f280, ffc0, CF_FPU);
+     INSN(fpu,       f200, ffc0, FPU);
++    /*
++     * Q9 board: the coprocessor-general (cpGEN) FPU opcode format
++     * ($F2xx) is only recognized here for coprocessor ID 1 -- the
++     * conventional MC68881/68882 wiring. Real hardware lets CpId be
++     * wired to any of 0-7; this specific board's boot ROM issues its
++     * FPU probe/setup instructions with CpId 0 ($F0xx, otherwise
++     * unclaimed here -- QEMU's own PMMU support for this CPU family
++     * uses CpId 2 ($F500/$F548, s. the pflush/ptest INSN entries
++     * below), not CpId 0), which the original Musashi-based emulator's
++     * always-compiled-in FPU core (m68kfpu.c, no CpId gating at all)
++     * accepts unconditionally. Aliasing CpId 0 to the same handler as
++     * CpId 1 matches that behaviour without touching CpId 1's own
++     * entry or anything else in this table. Q9-Flux-68kQEMU's own
++     * devices/ tree can't express a fix at this layer -- it's the
++     * shared m68k CPU core, not board-specific -- so it lives here as
++     * an overlay/patches/ diff instead (s. that directory's own
++     * README section for why patches are used for files we don't
++     * fully own).
++     */
++    INSN(fpu,       f000, ffc0, FPU);
+     INSN(fscc,      f240, ffc0, FPU);
+     INSN(ftrapcc,   f27a, fffe, FPU);       /* opmode 010, 011 */
+     INSN(ftrapcc,   f27c, ffff, FPU);       /* opmode 100 */

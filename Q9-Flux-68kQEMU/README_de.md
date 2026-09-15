@@ -296,33 +296,60 @@ CpId 0 für diese CPU-Familie). **Behebung bestätigt**: nach dem
 Neu-Bauen kam der Boot deutlich weiter, und die DUART-Konsole begann
 echten ROM-Diagnosetext auszugeben, statt still zu entgleisen.
 
-**Ursache 2, gefunden, noch nicht behoben**: der Konsolentext selbst
-zeigt genau drauf — `Exception Error, vector offset $0010 addr
-$FE001E84`, wiederholt ("Fatal System Error; rebooting system"). Diese
-Adresse ist eine `frestore`-Instruktion, die einen NULL-FPU-Zustands-
-Rahmen wiederherstellt (Format-Byte `$00`, der laut
-68881/68882-Architektur immer trivial erfolgreiche Fall). QEMUs
-`DISAS_INSN(frestore)`/`fsave`-Implementierungen sind aber an
-`M68K_FEATURE_M68040` gebunden und fallen für jeden anderen CPU-Typ,
+**Ursache 2, gefunden und behoben**: der Konsolentext selbst zeigte
+genau drauf — `Exception Error, vector offset $0010 addr $FE001E84`,
+wiederholt ("Fatal System Error; rebooting system"). Diese Adresse ist
+eine `frestore`-Instruktion, die einen NULL-FPU-Zustands-Rahmen
+wiederherstellt (Format-Byte `$00`, der laut 68881/68882-Architektur
+immer trivial erfolgreiche Fall). QEMUs
+`DISAS_INSN(frestore)`/`fsave`-Implementierungen waren aber an
+`M68K_FEATURE_M68040` gebunden und fielen für jeden anderen CPU-Typ,
 `m68030` eingeschlossen, direkt auf `disas_undef()` durch — QEMUs
-m68k-Kern hat FSAVE/FRESTORE-Unterstützung nur für das interne
+m68k-Kern hatte FSAVE/FRESTORE-Unterstützung nur für das interne
 FPU-Zustandsformat des 68040, nicht für das klassische
 68020/68030-plus-externem-68881/68882-Koprozessor-Protokoll, auf das
 sich diese ROM (und, ihrem Erfolg dort nach zu urteilen, Musashis
-Emulation) verlässt. Noch nicht gepatcht — anders als bei Ursache 1s
-kleiner Tabellen-Ergänzung würde eine korrekte Behebung hier
-bedeuten, mindestens den NULL-Rahmen-Fall für Nicht-68040-CPUs in
-`target/m68k/translate.c` tatsächlich zu implementieren — eine
-umfangreichere Änderung an einer gemeinsam genutzten QEMU-Kerndatei,
-die die Zustimmung des Nutzers verdient, bevor es weitergeht, da es
-der zweite solche Patch in Folge wäre.
+Emulation) verlässt. `overlay/patches/0002-m68k-fpu-pre68040.patch`
+(dieselbe Datei wie bei Ursache 1s Fix, dasselbe zugrundeliegende
+Thema: FPU-Koprozessor-Lücken für Nicht-68040-CPUs) um einen
+`M68K_FEATURE_FPU`-Zweig für beide Instruktionen erweitert — `FRESTORE`
+liest ein Long-Wort und verwirft es, genau wie der bestehende
+68040-Fall es bereits tut (der validiert den Rahmeninhalt ebenfalls
+nicht, s. dessen eigenes "FIXME: check the state frame"), und `FSAVE`
+schreibt einen NULL-Rahmen (Format-Byte 0, das Gegenstück der
+68881/68882-Familie zum "immer IDLE schreiben" des 68040-Falls) —
+korrekt und ausreichend, da die FPU dieses Boards QEMUs eigene
+synchrone Software-Gleitkomma-Implementierung ist, ohne echten
+Koprozessor-Pipeline-Zustand, der je zu melden wäre.
 
-**Nächste Schritte**: Ursache 2 beheben (Rückmeldung ausstehend, s.
-oben); dann schauen, wie weit dieselbe ROM/CF-Kombination als Nächstes
-kommt — weitere Lücken tauchen durchaus noch auf, da dies weiterhin
-das erste Mal ist, dass der komplette Geräte-Satz unter echter
-Firmware statt unter isolierten handassemblierten Testprogrammen
-läuft; danach die grundsätzlichere Board-Ebene — config-gesteuerte
+**Behebung bestätigt, mit dramatischem weiteren Fortschritt**:
+Neu gebaut und denselben Boot mit echter ROM + echter `OS9SYS.hda`
+erneut versucht. Die DUART-Konsole zeigt jetzt das echte
+OS-9-Bootstrap-Banner, findet und validiert erfolgreich eine
+Boot-Datei auf dem CF-Image, und **der OS-9-Kernel selbst beginnt zu
+laden und zu laufen** — eine Ebene jenseits der ROM:
+
+```
+OS-9/68K System Bootstrap
+Now trying to boot from CompactFlash.
+A valid OS-9 bootfile was found.
+ioman: can't open console device: Error $00CB
+Error: system state exception; vector $00DC at addr $0000FB1A
+--> System Reset <--
+```
+
+Das bestätigt: der CF-Port liest echte OS-9-Dateisystemstrukturen
+korrekt unter echter Firmware, nicht nur in isolierten
+Register-Ebenen-Tests. Der neue Fehler (`ioman` — OS-9s
+Ein-/Ausgabe-Manager — kann das Konsolengerät nicht öffnen) ist ein
+eigenständiges, späteres Problem, das eine eigene Untersuchung in
+einem Nachtrag verdient.
+
+**Nächste Schritte**: dem neuen `ioman`/Konsolen-Öffnen-Fehler oben
+nachgehen (der naheliegende nächste Schritt, vermutlich im oder rund
+um den DUART-Port, je nachdem was genau fehlschlägt); dann schauen,
+wie weit dieselbe ROM/CF-Kombination von dort aus kommt; danach die
+grundsätzlichere Board-Ebene — config-gesteuerte
 Geräte-Instanziierung (heute ist alles in `q9board.c` noch fest
 verdrahtet/per `-global` konfiguriert, passend zum eigenen
 Vor-boardcfg.c-Zustand des Originals, statt über eine deklarative
