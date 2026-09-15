@@ -55,6 +55,21 @@ Milestones reached so far:
    pulsing needed, `m68k_set_irq_level()` is simply called again
    whenever the TxRDY/RxRDY-with-IMR-enabled condition changes.
    Structurally modelled on QEMU's own `hw/char/mcf_uart.c`.
+5. **Fourth peripheral ported: the Compact-Flash interface** (ATA-PIO,
+   onboard master unit only). Deliberately still plain stdio file I/O
+   like the original, not QEMU's block layer -- the RBF/PCF sector-size
+   heuristic needs to read raw header bytes from the real backing file
+   itself, which QEMU's block layer gives a device no hook for. Verified
+   against a real production image: a hand-assembled test program set up
+   LBA/SECCNT, issued READ SECTOR(S), polled DRQ, and drained 512 bytes
+   from the data register -- the result was **byte-for-byte identical**
+   to the same 512 bytes read directly from the backing file in Python.
+   Confirms existing Q9 disk images (`OS9SYS.hda` etc.) need no changes
+   to work once attached (`-global q9-cf.image=/path/to/image.hda`,
+   optionally `-global q9-cf.format=rbf|pcf|auto`). No IRQ, matching the
+   original; the RC2014-SC145 second interface and the slave unit are
+   left for later, alongside q9board.c's still-hardcoded (non-config-
+   driven) device instantiation in general.
 
 **Repository layout**, split by what the files actually are, not by
 where QEMU wants them:
@@ -63,7 +78,7 @@ where QEMU wants them:
   independently of QEMU's directory conventions (mirrors
   `Q9-Flux-68k/src/devices/<name>/` from the Musashi branch). Currently:
   `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
-  `devices/duart68681/q9_duart68681.c`.
+  `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`.
 - `overlay/machine/q9board.c` — the board "wiring" itself (instantiates
   and maps the devices above), the QEMU-side counterpart to
   `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -92,7 +107,7 @@ standard m68k machines `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 the new `q9board` skeleton).
 
 **Next step** (large, multi-session): port the remaining device models —
-CF, QUICC, the remap trigger, nettty,
+QUICC, the remap trigger, nettty,
 MC6845/framebuf/CLUT/videobridge — from `Q9-Flux-68k/src/devices/` to
 QEMU's QOM/`MemoryRegion` pattern, one device at a time. Note for `remap`
 in particular: unlike every device ported so far, it isn't a standalone

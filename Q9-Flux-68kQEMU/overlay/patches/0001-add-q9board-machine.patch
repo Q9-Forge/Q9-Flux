@@ -1,3 +1,26 @@
+diff --git a/hw/block/Kconfig b/hw/block/Kconfig
+index 737dbcd..3904e19 100644
+--- a/hw/block/Kconfig
++++ b/hw/block/Kconfig
+@@ -32,3 +32,6 @@ config VHOST_USER_BLK
+ 
+ config SWIM
+     bool
++
++config Q9_CF
++    bool
+diff --git a/hw/block/meson.build b/hw/block/meson.build
+index d646323..c4d6dcf 100644
+--- a/hw/block/meson.build
++++ b/hw/block/meson.build
+@@ -11,6 +11,7 @@ system_ss.add(when: 'CONFIG_PFLASH_CFI02', if_true: files('pflash_cfi02.c'))
+ system_ss.add(when: 'CONFIG_SSI_M25P80', if_true: files('m25p80.c'))
+ system_ss.add(when: 'CONFIG_SSI_M25P80', if_true: files('m25p80_sfdp.c'))
+ system_ss.add(when: 'CONFIG_SWIM', if_true: files('swim.c'))
++system_ss.add(when: 'CONFIG_Q9_CF', if_true: files('q9_cf.c'))
+ system_ss.add(when: 'CONFIG_XEN_BUS', if_true: files('xen-block.c'))
+ 
+ system_ss.add(when: 'CONFIG_VIRTIO_BLK', if_true: files('virtio-blk.c'))
 diff --git a/hw/char/Kconfig b/hw/char/Kconfig
 index 020c0a8..49e5abf 100644
 --- a/hw/char/Kconfig
@@ -22,10 +45,10 @@ index fc3d7ee..8eafef7 100644
  system_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4210_uart.c'))
  system_ss.add(when: 'CONFIG_MAX78000_UART', if_true: files('max78000_uart.c'))
 diff --git a/hw/m68k/Kconfig b/hw/m68k/Kconfig
-index aff769b..3f7cba6 100644
+index aff769b..a9cc0cd 100644
 --- a/hw/m68k/Kconfig
 +++ b/hw/m68k/Kconfig
-@@ -46,3 +46,14 @@ config M68K_VIRT
+@@ -46,3 +46,15 @@ config M68K_VIRT
      select GOLDFISH_TTY
      select GOLDFISH_RTC
      select VIRTIO_MMIO
@@ -40,6 +63,7 @@ index aff769b..3f7cba6 100644
 +    select Q9_RTC72421
 +    select Q9_TIMER_IRQ
 +    select Q9_DUART68681
++    select Q9_CF
 diff --git a/hw/m68k/meson.build b/hw/m68k/meson.build
 index 84bc68f..64239a8 100644
 --- a/hw/m68k/meson.build

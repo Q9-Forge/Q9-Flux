@@ -39,6 +39,9 @@
 /* Matches Q9_BOARD_UART_BASE in Q9-Flux-68k/src/kernel/q9board.h. */
 #define Q9BOARD_UART_BASE 0xFFFFF000
 
+/* Matches Q9_BOARD_CF_BASE in Q9-Flux-68k/src/devices/cf/cf.h. */
+#define Q9BOARD_CF_BASE 0xFFFFE000
+
 static void q9board_init(MachineState *machine)
 {
     ram_addr_t ram_size = machine->ram_size;
@@ -101,7 +104,22 @@ static void q9board_init(MachineState *machine)
             sysbus_mmio_get_region(SYS_BUS_DEVICE(duart), 0));
     }
 
-    /* TODO (future sessions): CF, QUICC, remap trigger, nettty,
+    /* Compact-Flash interface (master unit only, s. q9_cf.c Dateikopf),
+     * fourth ported peripheral -- see Q9-Flux-68kQEMU/devices/cf/q9_cf.c.
+     * No CPU/chardev wiring needed (no IRQ). Attach a backing image via
+     * e.g. "-global q9-cf.image=/path/to/image.hda" (optionally also
+     * "-global q9-cf.format=rbf|pcf|auto" and
+     * "-global q9-cf.start-sector=N"). Without an image the unit behaves
+     * like an empty slot -- every ATA command answers ERR. */
+    {
+        DeviceState *cf = qdev_new("q9-cf");
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(cf), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_CF_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(cf), 0));
+    }
+
+    /* TODO (future sessions): QUICC, remap trigger, nettty,
      * MC6845/framebuf/CLUT/videobridge -- ported from
      * Q9-Flux-68k/src/devices/, one at a time. */
 
