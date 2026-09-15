@@ -35,6 +35,21 @@ Bisherige Meilensteine:
    Verhalten) — byte-genau übereinstimmend mit der Register-Semantik der
    Musashi-Implementierung (Latch-Auffrischung bei Register 0, das
    24h-Bit in Control F, Schreiben wird ignoriert).
+3. **Zweite Peripherie portiert: Timer/IRQ3.** Die Adress-Trigger-Fenster
+   ($FFFF9000/$FFFF9800) und der 100-Hz-Level-6-Autovektor-Interrupt
+   funktionieren Ende-zu-Ende: ein von Hand assembliertes Testprogramm
+   installierte einen eigenen Handler auf Vektor 30, aktivierte
+   Interrupts, löste das ON-Fenster aus, und der Interrupt wurde korrekt
+   zugestellt (per QEMU-Monitor bestätigt — der Handler lief und kehrte
+   sauber per `rte` zurück). Anders als bei der RTC brauchte dieses
+   Gerät echte IRQ-Zustellung, nicht nur einen Lese-Callback: QEMUs
+   autovektorisierte Interrupts haben keinen IACK-Zeitpunkt-Haken, über
+   den ein Gerät seine eigene Anforderung wieder senken könnte (echte
+   autovektorisierte Hardware kennt ohnehin keinen solchen Buszyklus) —
+   die Anforderung wird deshalb gepulst: pro Tick gesetzt, kurz danach
+   per einmaligem Timer deutlich innerhalb der 10-ms-Periode wieder
+   gesenkt, statt auf eine Quittierung zu warten, die es strukturell nie
+   geben kann.
 
 **Repository-Aufbau**, aufgeteilt danach, was die Dateien tatsächlich
 sind, nicht danach, wo QEMU sie haben will:
@@ -42,7 +57,7 @@ sind, nicht danach, wo QEMU sie haben will:
 - `devices/<gerät>/` — unsere eigenen Geräte-Simulationen, unabhängig
   von QEMUs Verzeichniskonvention benannt/organisiert (spiegelt
   `Q9-Flux-68k/src/devices/<gerät>/` aus dem Musashi-Zweig). Aktuell:
-  `devices/rtc72421/q9_rtc72421.c`.
+  `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`.
 - `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
   (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige
   Gegenstück zu `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -71,11 +86,17 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 `virt` (keine davon entspricht dem eigenen CB030-/Vinculum-Zielboard —
 daher das neue `q9board`-Grundgerüst).
 
-**Nächster Schritt** (groß, mehrere Sitzungen): die echten
-Geräte-Modelle — CF, QUICC, RTC72421, 68681-DUART, Timer IRQ3,
-Remap-Trigger, Netz-Terminals, MC6845/Framebuf/CLUT/Videobridge — von
-`Q9-Flux-68k/src/devices/` nach QEMUs QOM-/`MemoryRegion`-Muster
-portieren, ein Gerät nach dem anderen.
+**Nächster Schritt** (groß, mehrere Sitzungen): die verbleibenden
+Geräte-Modelle — CF, QUICC, 68681-DUART, Remap-Trigger, Netz-Terminals,
+MC6845/Framebuf/CLUT/Videobridge — von `Q9-Flux-68k/src/devices/` nach
+QEMUs QOM-/`MemoryRegion`-Muster portieren, ein Gerät nach dem anderen.
+Hinweis speziell zu `remap`: anders als jedes bisher portierte Gerät ist
+es keine eigenständige Register-/IRQ-Quelle — auf dem Musashi-Board
+schaltet es die Adressdekodierung des Boards selbst um (ROM bei 0
+gespiegelt im Reset-Zustand vs. RAM bei 0/ROM an anderer Stelle nach dem
+Remap), der QEMU-Port muss also `MemoryRegion`-Zuordnungen in
+`q9board.c` selbst umkonfigurieren, nicht nur eine neue Gerätedatei
+hinzufügen.
 
 ## QEMU installieren
 

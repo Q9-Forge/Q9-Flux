@@ -29,6 +29,11 @@
 /* Matches Q9_BOARD_RTC_BASE in Q9-Flux-68k/src/kernel/q9board.h. */
 #define Q9BOARD_RTC_BASE 0xFFFFD000
 
+/* Matches Q9_BOARD_TIRQ_OFF_BASE in Q9-Flux-68k/src/kernel/q9board.h (the
+ * ON window is the upper half of the same 0x1000-byte device region, see
+ * Q9-Flux-68kQEMU/devices/timer_irq/q9_timer_irq.c). */
+#define Q9BOARD_TIMER_IRQ_BASE 0xFFFF9000
+
 static void q9board_init(MachineState *machine)
 {
     ram_addr_t ram_size = machine->ram_size;
@@ -58,8 +63,23 @@ static void q9board_init(MachineState *machine)
             sysbus_mmio_get_region(SYS_BUS_DEVICE(rtc), 0));
     }
 
-    /* TODO (future sessions): CF, QUICC, 68681 DUART, timer IRQ3, remap
-     * trigger, nettty, MC6845/framebuf/CLUT/videobridge -- ported from
+    /* Timer/IRQ3 address-trigger, second ported peripheral -- see
+     * Q9-Flux-68kQEMU/devices/timer_irq/q9_timer_irq.c. Needs the CPU
+     * object to raise/lower the level-6 autovector interrupt itself,
+     * passed via the standard "m68k-cpu" link property (same pattern as
+     * upstream's an5206.c -> mcf5206_init()). */
+    {
+        DeviceState *tirq = qdev_new("q9-timer-irq");
+        object_property_set_link(OBJECT(tirq), "m68k-cpu", OBJECT(cpu),
+                                  &error_abort);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(tirq), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_TIMER_IRQ_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(tirq), 0));
+    }
+
+    /* TODO (future sessions): CF, QUICC, 68681 DUART, remap trigger,
+     * nettty, MC6845/framebuf/CLUT/videobridge -- ported from
      * Q9-Flux-68k/src/devices/, one at a time. */
 
     if (!kernel_filename) {
