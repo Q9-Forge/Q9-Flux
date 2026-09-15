@@ -2,6 +2,9 @@
 *.img
 *.qcow2
 *.iso
-build/
 local_images/
 .DS_Store
+
+# Lokaler Build-Baum des Submoduls (per setup-qemu-dev-tree.sh
+# reproduzierbar, gehoert nicht ins Repo).
+third_party/qemu/build-m68k/

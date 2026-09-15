@@ -1,0 +1,3 @@
+[submodule "Q9-Flux-68kQEMU/third_party/qemu"]
+	path = Q9-Flux-68kQEMU/third_party/qemu
+	url = https://gitlab.com/qemu-project/qemu.git
