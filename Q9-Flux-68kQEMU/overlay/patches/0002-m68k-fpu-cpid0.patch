@@ -1,0 +1,31 @@
+diff --git a/target/m68k/translate.c b/target/m68k/translate.c
+index 138c89d..2a06b22 100644
+--- a/target/m68k/translate.c
++++ b/target/m68k/translate.c
+@@ -5990,6 +5990,26 @@ void register_m68k_insns (CPUM68KState *env)
+     INSN(fpu,       f200, ffc0, CF_FPU);
+     INSN(fbcc,      f280, ffc0, CF_FPU);
+     INSN(fpu,       f200, ffc0, FPU);
++    /*
++     * Q9 board: the coprocessor-general (cpGEN) FPU opcode format
++     * ($F2xx) is only recognized here for coprocessor ID 1 -- the
++     * conventional MC68881/68882 wiring. Real hardware lets CpId be
++     * wired to any of 0-7; this specific board's boot ROM issues its
++     * FPU probe/setup instructions with CpId 0 ($F0xx, otherwise
++     * unclaimed here -- QEMU's own PMMU support for this CPU family
++     * uses CpId 2 ($F500/$F548, s. the pflush/ptest INSN entries
++     * below), not CpId 0), which the original Musashi-based emulator's
++     * always-compiled-in FPU core (m68kfpu.c, no CpId gating at all)
++     * accepts unconditionally. Aliasing CpId 0 to the same handler as
++     * CpId 1 matches that behaviour without touching CpId 1's own
++     * entry or anything else in this table. Q9-Flux-68kQEMU's own
++     * devices/ tree can't express a fix at this layer -- it's the
++     * shared m68k CPU core, not board-specific -- so it lives here as
++     * an overlay/patches/ diff instead (s. that directory's own
++     * README section for why patches are used for files we don't
++     * fully own).
++     */
++    INSN(fpu,       f000, ffc0, FPU);
+     INSN(fscc,      f240, ffc0, FPU);
+     INSN(ftrapcc,   f27a, fffe, FPU);       /* opmode 010, 011 */
+     INSN(ftrapcc,   f27c, ffff, FPU);       /* opmode 100 */

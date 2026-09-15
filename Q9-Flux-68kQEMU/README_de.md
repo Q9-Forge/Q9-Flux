@@ -266,26 +266,68 @@ erreichen und korrekt auszulösen — per Monitor bestätigt, Adresse 0
 schaltete von den eigenen ersten ROM-Bytes auf genulltes RAM um,
 während $FE000000 begann, den fest verdrahteten
 Remap-Positions-Inhalt der ROM zu zeigen — genau der Mechanismus, der
-zuvor isoliert verifiziert wurde. Danach schließt der Boot aber noch
-nicht sauber ab: die CPU zeigt Anzeichen wiederholter Exceptions (PC
-besucht wiederholt kleine, vektortabellennahe Adressen; ein
-nicht-nulles, sich wiederholendes Muster, wo eine frische Vektortabelle
-stehen sollte). Ursache noch nicht ermittelt — verdient eine eigene,
-fokussierte Sitzung statt weiterem Raten hier. Das ist das erste Mal,
-dass der komplette Geräte-Satz gemeinsam von echter Firmware statt von
-handassemblierten Einzelgeräte-Testprogrammen durchlaufen wird — dass
-dabei eine Lücke auftaucht, die isolierte Tests nicht fangen konnten,
-ist zu erwarten; das REMAP-Ergebnis allein ist schon ein bedeutsamer,
-mit echter Firmware verifizierter Meilenstein für sich.
+zuvor isoliert verifiziert wurde. Danach schloss der Boot aber noch
+nicht sauber ab, unten diagnostiziert.
 
-**Nächste Schritte**: dem Boot-Absturz nach REMAP oben nachgehen (der
-naheliegende nächste Schritt, und vermutlich der schnellste Weg, um
-verbleibende Geräte-Lücken zu finden); danach die grundsätzlichere
-Board-Ebene — config-gesteuerte Geräte-Instanziierung (heute ist alles
-in `q9board.c` noch fest verdrahtet/per `-global` konfiguriert, passend
-zum eigenen Vor-boardcfg.c-Zustand des Originals, statt über eine
-deklarative Board-Config-Datei gesteuert zu werden, wie `boardcfg.c`
-das im Musashi-Zweig tut) — und irgendwann der eigentliche
+**Ursache 1, gefunden und behoben**: ein `-d int`-Trace plus eine
+statische Disassemblierung der ROM (capstone) verortete den ersten
+Absturz auf eine sehr frühe, beabsichtigte FPU-Erkennungssonde
+(`fmove.l (a0),fp0`), deren F-Line-Trap eigentlich vom eigenen
+ROM-Handler abgefangen und als "keine FPU vorhanden" behandelt werden
+sollte — nur landete der Trap, während der F-Line-Vektor des Gasts
+noch unbelegt war (Adresse 0, direkt nach REMAP, bevor die ROM mehr
+als die Reset-SSP/PC ins RAM geschrieben hatte), und schickte die CPU
+in genulltes RAM und schließlich in eine echte Address-Error-Lawine.
+Die eigentliche Ursache lag eine Ebene tiefer: die FPU-Opcodes dieses
+Boards verwenden Koprozessor-ID 0 (`$F0xx`), aber QEMUs m68k-Kern
+erkennt nur Koprozessor-ID 1 (`$F2xx`, die übliche
+MC68881/68882-Verdrahtung) als FPU — alles andere im
+`$F0xx`-`$FFxx`-Bereich fällt durch auf "undefiniert", auch
+CpId 0 (bestätigt anderweitig unbenutzt in QEMUs eigener
+Decodier-Tabelle: die 68030-PMMU-Unterstützung nutzt CpId 2). Der
+FPU-Kern des originalen Musashi-basierten Emulators kennt gar keine
+solche CpId-Prüfung, weshalb diese ROM dort schon immer funktioniert
+hat. Behoben mit einer minimalen, gezielten Ergänzung an QEMUs eigener
+Opcode-Decodier-Tabelle — `overlay/patches/0002-m68k-fpu-cpid0.patch`
+gegen `target/m68k/translate.c`, die CpId 0 auf denselben Handler wie
+CpId 1 aliast, ohne CpId 1s eigenen Eintrag oder sonst etwas
+anzufassen (bestätigt: kein anderer Decodier-Eintrag beansprucht
+CpId 0 für diese CPU-Familie). **Behebung bestätigt**: nach dem
+Neu-Bauen kam der Boot deutlich weiter, und die DUART-Konsole begann
+echten ROM-Diagnosetext auszugeben, statt still zu entgleisen.
+
+**Ursache 2, gefunden, noch nicht behoben**: der Konsolentext selbst
+zeigt genau drauf — `Exception Error, vector offset $0010 addr
+$FE001E84`, wiederholt ("Fatal System Error; rebooting system"). Diese
+Adresse ist eine `frestore`-Instruktion, die einen NULL-FPU-Zustands-
+Rahmen wiederherstellt (Format-Byte `$00`, der laut
+68881/68882-Architektur immer trivial erfolgreiche Fall). QEMUs
+`DISAS_INSN(frestore)`/`fsave`-Implementierungen sind aber an
+`M68K_FEATURE_M68040` gebunden und fallen für jeden anderen CPU-Typ,
+`m68030` eingeschlossen, direkt auf `disas_undef()` durch — QEMUs
+m68k-Kern hat FSAVE/FRESTORE-Unterstützung nur für das interne
+FPU-Zustandsformat des 68040, nicht für das klassische
+68020/68030-plus-externem-68881/68882-Koprozessor-Protokoll, auf das
+sich diese ROM (und, ihrem Erfolg dort nach zu urteilen, Musashis
+Emulation) verlässt. Noch nicht gepatcht — anders als bei Ursache 1s
+kleiner Tabellen-Ergänzung würde eine korrekte Behebung hier
+bedeuten, mindestens den NULL-Rahmen-Fall für Nicht-68040-CPUs in
+`target/m68k/translate.c` tatsächlich zu implementieren — eine
+umfangreichere Änderung an einer gemeinsam genutzten QEMU-Kerndatei,
+die die Zustimmung des Nutzers verdient, bevor es weitergeht, da es
+der zweite solche Patch in Folge wäre.
+
+**Nächste Schritte**: Ursache 2 beheben (Rückmeldung ausstehend, s.
+oben); dann schauen, wie weit dieselbe ROM/CF-Kombination als Nächstes
+kommt — weitere Lücken tauchen durchaus noch auf, da dies weiterhin
+das erste Mal ist, dass der komplette Geräte-Satz unter echter
+Firmware statt unter isolierten handassemblierten Testprogrammen
+läuft; danach die grundsätzlichere Board-Ebene — config-gesteuerte
+Geräte-Instanziierung (heute ist alles in `q9board.c` noch fest
+verdrahtet/per `-global` konfiguriert, passend zum eigenen
+Vor-boardcfg.c-Zustand des Originals, statt über eine deklarative
+Board-Config-Datei gesteuert zu werden, wie `boardcfg.c` das im
+Musashi-Zweig tut) — und irgendwann der eigentliche
 [Host-Passthrough-Dateisystem-Manager](docs/HOSTFS_MANAGER_de.md), für
 den diese ganze Umstellung ursprünglich begonnen wurde (s. "Warum QEMU"
 oben).
