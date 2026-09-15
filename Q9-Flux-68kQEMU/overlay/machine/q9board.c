@@ -134,6 +134,15 @@ static const MemoryRegionOps q9board_rom_window_ops = {
 /* Matches Q9_BOARD_CF_BASE in Q9-Flux-68k/src/devices/cf/cf.h. */
 #define Q9BOARD_CF_BASE 0xFFFFE000
 
+/* Matches Q9_MC6845_BASE in Q9-Flux-68k/src/devices/mc6845/mc6845.h. */
+#define Q9BOARD_MC6845_BASE 0xFFFFA000
+
+/* Matches Q9_CLUT_BASE in Q9-Flux-68k/src/devices/clut/clut.h. */
+#define Q9BOARD_CLUT_BASE 0xFFFFA010
+
+/* Matches Q9_FRAMEBUF_BASE in Q9-Flux-68k/src/devices/framebuf/framebuf.h. */
+#define Q9BOARD_FRAMEBUF_BASE 0xFD000000
+
 static void q9board_init(MachineState *machine)
 {
     ram_addr_t ram_size = machine->ram_size;
@@ -261,8 +270,55 @@ static void q9board_init(MachineState *machine)
             sysbus_mmio_get_region(SYS_BUS_DEVICE(cf), 0));
     }
 
-    /* TODO (future sessions): QUICC, nettty,
-     * MC6845/framebuf/CLUT/videobridge -- ported from
+    /* MC6845 CRT controller (GDP framebuffer geometry base), sixth
+     * ported peripheral -- see Q9-Flux-68kQEMU/devices/mc6845/q9_mc6845.c.
+     * No CPU/chardev/IRQ wiring needed. */
+    DeviceState *mc6845 = qdev_new("q9-mc6845");
+    {
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(mc6845), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_MC6845_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(mc6845), 0));
+    }
+
+    /* CLUT (colour lookup table for indexed video modes), seventh
+     * ported peripheral -- see Q9-Flux-68kQEMU/devices/clut/q9_clut.c.
+     * No CPU/chardev/IRQ wiring needed. */
+    {
+        DeviceState *clut = qdev_new("q9-clut");
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(clut), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_CLUT_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(clut), 0));
+    }
+
+    /* VRAM framebuffer, eighth ported peripheral -- see
+     * Q9-Flux-68kQEMU/devices/framebuf/q9_framebuf.c. Linked to the
+     * MC6845 above (its "mc6845" property) purely to read its stride
+     * register (R1) for dirty-rectangle row mapping -- no IRQ. Size
+     * defaults to the original's own 1 MiB default
+     * (Q9_FRAMEBUF_DEFAULT_SIZE); override with e.g.
+     * "-global q9-framebuf.size=4194304" (max 16 MiB, s. q9_framebuf.c). */
+    {
+        DeviceState *fb = qdev_new("q9-framebuf");
+        object_property_set_link(OBJECT(fb), "mc6845", OBJECT(mc6845),
+                                  &error_abort);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(fb), &error_fatal);
+        /* $FD000000 falls inside the ROM mirror's 0..$FEFFFFFF span (s.
+         * the #define block above) -- unlike every earlier device's
+         * window, which all sit above it. A plain add_subregion() would
+         * assert on that overlap; add it with priority clearly above
+         * the mirror's (1) and window's (2) instead, so the framebuffer
+         * always wins whether or not "-bios" is given -- matching the
+         * original, where devreg-registered devices are dispatched
+         * before the board's own ROM/RAM fallback is ever consulted
+         * (s. remap.c's own history comment). */
+        memory_region_add_subregion_overlap(
+            address_space_mem, Q9BOARD_FRAMEBUF_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(fb), 0), 10);
+    }
+
+    /* TODO (future sessions): QUICC, nettty, videobridge -- ported from
      * Q9-Flux-68k/src/devices/, one at a time. */
 
     if (!kernel_filename) {

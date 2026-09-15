@@ -44,11 +44,41 @@ index fc3d7ee..8eafef7 100644
  system_ss.add(when: 'CONFIG_DIGIC', if_true: files('digic-uart.c'))
  system_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4210_uart.c'))
  system_ss.add(when: 'CONFIG_MAX78000_UART', if_true: files('max78000_uart.c'))
+diff --git a/hw/display/Kconfig b/hw/display/Kconfig
+index 060274b..272eceb 100644
+--- a/hw/display/Kconfig
++++ b/hw/display/Kconfig
+@@ -158,3 +158,12 @@ config MAC_PVG_PCI
+     bool
+     depends on MAC_PVG && PCI
+     default y if PCI_DEVICES
++
++config Q9_MC6845
++    bool
++
++config Q9_CLUT
++    bool
++
++config Q9_FRAMEBUF
++    bool
+diff --git a/hw/display/meson.build b/hw/display/meson.build
+index d8b4e12..7e77c41 100644
+--- a/hw/display/meson.build
++++ b/hw/display/meson.build
+@@ -144,5 +144,8 @@ if config_all_devices.has_key('CONFIG_VIRTIO_VGA')
+ endif
+ 
+ system_ss.add(when: 'CONFIG_OMAP', if_true: files('omap_lcdc.c'))
++system_ss.add(when: 'CONFIG_Q9_MC6845', if_true: files('q9_mc6845.c'))
++system_ss.add(when: 'CONFIG_Q9_CLUT', if_true: files('q9_clut.c'))
++system_ss.add(when: 'CONFIG_Q9_FRAMEBUF', if_true: files('q9_framebuf.c'))
+ 
+ modules += { 'hw-display': hw_display_modules }
 diff --git a/hw/m68k/Kconfig b/hw/m68k/Kconfig
-index aff769b..152f59d 100644
+index aff769b..bf583f0 100644
 --- a/hw/m68k/Kconfig
 +++ b/hw/m68k/Kconfig
-@@ -46,3 +46,19 @@ config M68K_VIRT
+@@ -46,3 +46,22 @@ config M68K_VIRT
      select GOLDFISH_TTY
      select GOLDFISH_RTC
      select VIRTIO_MMIO
@@ -68,6 +98,9 @@ index aff769b..152f59d 100644
 +    select Q9_DUART68681
 +    select Q9_CF
 +    select Q9_REMAP
++    select Q9_MC6845
++    select Q9_CLUT
++    select Q9_FRAMEBUF
 diff --git a/hw/m68k/meson.build b/hw/m68k/meson.build
 index 84bc68f..65b7eaf 100644
 --- a/hw/m68k/meson.build
