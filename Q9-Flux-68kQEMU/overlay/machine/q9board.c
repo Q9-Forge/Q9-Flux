@@ -28,6 +28,98 @@
 
 #define Q9BOARD_KERNEL_LOAD_ADDR 0x10000
 
+/* Matches Q9_BOARD_ROM_MIRROR_TOP/_ROM_REMAP_BASE/_TOP in
+ * Q9-Flux-68k/src/kernel/q9board.h. The ROM/RAM address-space topology
+ * these implement is deliberately kept here rather than in
+ * devices/remap/q9_remap.c, matching remap.h's own header comment: it's
+ * the board's address-space layout, not window peripherality. Only
+ * created when a ROM/firmware image is actually given via "-bios" --
+ * without one, RAM stays directly visible at address 0 as before (s.
+ * q9board_init below for why: unlike the real board, which never runs
+ * without a boot ROM, every -kernel-based device test so far loads
+ * straight into RAM at Q9BOARD_KERNEL_LOAD_ADDR and jumps there
+ * directly, bypassing ROM/reset semantics entirely -- shadowing address
+ * 0 unconditionally would silently break all of that). */
+#define Q9BOARD_ROM_MIRROR_SIZE 0xFF000000u  /* 0..Q9_BOARD_ROM_MIRROR_TOP incl. */
+#define Q9BOARD_ROM_REMAP_BASE  0xFE000000u
+#define Q9BOARD_ROM_REMAP_SIZE  0x00080000u  /* Q9_BOARD_ROM_REMAP_TOP - _BASE + 1 */
+
+/* Matches Q9_BOARD_REMAP_REG_BASE in
+ * Q9-Flux-68k/src/devices/remap/remap.h. */
+#define Q9BOARD_REMAP_REG_BASE 0xFFFF8000u
+
+/* devices/remap/q9_remap.c -- no shared header in this QEMU-side
+ * devices/ tree (every device so far is a single self-contained .c),
+ * so this one cross-device call is declared directly where it's used,
+ * like q9board.c's other qdev property wiring just above it. */
+void q9_remap_set_targets(DeviceState *dev, MemoryRegion *rom_mirror,
+                           MemoryRegion *rom_window);
+
+typedef struct {
+    const uint8_t *rom;
+    uint32_t rom_len;
+} Q9RomCtx;
+
+static uint64_t q9board_rom_mirror_read(void *opaque, hwaddr addr, unsigned size)
+{
+    Q9RomCtx *ctx = opaque;
+    uint64_t val = 0;
+    unsigned i;
+
+    if (ctx->rom_len == 0) {
+        return 0;
+    }
+    for (i = 0; i < size; i++) {
+        val = (val << 8) | ctx->rom[(addr + i) % ctx->rom_len];
+    }
+    return val;
+}
+
+static uint64_t q9board_rom_window_read(void *opaque, hwaddr addr, unsigned size)
+{
+    Q9RomCtx *ctx = opaque;
+    uint64_t val = 0;
+    unsigned i;
+
+    for (i = 0; i < size; i++) {
+        uint8_t b = (addr + i < ctx->rom_len) ? ctx->rom[addr + i] : 0;
+        val = (val << 8) | b;
+    }
+    return val;
+}
+
+/* Both ROM regions are read-only in both board states (s. Dateikopf and
+ * the original's board_write_byte, which never writes to either the
+ * mirror or the fixed remap window) -- writes are simply discarded. */
+static void q9board_rom_write_discard(void *opaque, hwaddr addr, uint64_t val,
+                                       unsigned size)
+{
+    (void)opaque;
+    (void)addr;
+    (void)val;
+    (void)size;
+}
+
+static const MemoryRegionOps q9board_rom_mirror_ops = {
+    .read = q9board_rom_mirror_read,
+    .write = q9board_rom_write_discard,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 4,
+    .impl.min_access_size = 1,
+    .impl.max_access_size = 4,
+    .endianness = DEVICE_BIG_ENDIAN,
+};
+
+static const MemoryRegionOps q9board_rom_window_ops = {
+    .read = q9board_rom_window_read,
+    .write = q9board_rom_write_discard,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 4,
+    .impl.min_access_size = 1,
+    .impl.max_access_size = 4,
+    .endianness = DEVICE_BIG_ENDIAN,
+};
+
 /* Matches Q9_BOARD_RTC_BASE in Q9-Flux-68k/src/kernel/q9board.h. */
 #define Q9BOARD_RTC_BASE 0xFFFFD000
 
@@ -60,6 +152,56 @@ static void q9board_init(MachineState *machine)
     /* RAM at address zero, matching the real board's reset convention
      * (initial SSP/PC read from address 0/4). */
     memory_region_add_subregion(address_space_mem, 0, machine->ram);
+
+    /* ROM mirror / remap window (s. #define block above), REMAP trigger
+     * is the fifth ported peripheral -- see
+     * Q9-Flux-68kQEMU/devices/remap/q9_remap.c. Only set up when a ROM/
+     * firmware image is given via "-bios"; otherwise skipped entirely
+     * (RAM stays directly visible at 0, s. the #define block's own
+     * comment for why). */
+    {
+        DeviceState *remap = qdev_new("q9-remap");
+        MemoryRegion *rom_mirror = NULL;
+        MemoryRegion *rom_window = NULL;
+
+        if (machine->firmware) {
+            gchar *rom_data = NULL;
+            gsize  rom_len  = 0;
+            Q9RomCtx *ctx;
+
+            if (!g_file_get_contents(machine->firmware, &rom_data, &rom_len,
+                                      NULL)) {
+                error_report("Could not load ROM image '%s'", machine->firmware);
+                exit(1);
+            }
+
+            ctx = g_new0(Q9RomCtx, 1);
+            ctx->rom = (const uint8_t *)rom_data;   /* g_file_get_contents: never freed, s.o. */
+            ctx->rom_len = (uint32_t)rom_len;
+
+            rom_mirror = g_new0(MemoryRegion, 1);
+            memory_region_init_io(rom_mirror, OBJECT(remap),
+                                   &q9board_rom_mirror_ops, ctx,
+                                   "q9board.rom-mirror", Q9BOARD_ROM_MIRROR_SIZE);
+            memory_region_add_subregion_overlap(address_space_mem, 0,
+                                                 rom_mirror, 1);
+
+            rom_window = g_new0(MemoryRegion, 1);
+            memory_region_init_io(rom_window, OBJECT(remap),
+                                   &q9board_rom_window_ops, ctx,
+                                   "q9board.rom-window", Q9BOARD_ROM_REMAP_SIZE);
+            memory_region_add_subregion_overlap(address_space_mem,
+                                                 Q9BOARD_ROM_REMAP_BASE,
+                                                 rom_window, 2);
+            memory_region_set_enabled(rom_window, false);
+        }
+
+        q9_remap_set_targets(remap, rom_mirror, rom_window);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(remap), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_REMAP_REG_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(remap), 0));
+    }
 
     /* RTC72421 real-time clock, first ported peripheral -- see
      * Q9-Flux-68kQEMU/devices/rtc72421/q9_rtc72421.c. */
@@ -119,7 +261,7 @@ static void q9board_init(MachineState *machine)
             sysbus_mmio_get_region(SYS_BUS_DEVICE(cf), 0));
     }
 
-    /* TODO (future sessions): QUICC, remap trigger, nettty,
+    /* TODO (future sessions): QUICC, nettty,
      * MC6845/framebuf/CLUT/videobridge -- ported from
      * Q9-Flux-68k/src/devices/, one at a time. */
 

@@ -77,6 +77,35 @@ Bisherige Meilensteine:
    zweite RC2014-SC145-Interface und die Slave-Einheit bleiben für
    später, zusammen mit der insgesamt noch fest verdrahteten (nicht
    config-gesteuerten) Geräte-Instanziierung in q9board.c.
+6. **Fünfte Peripherie portiert: das REMAP-Register.** Anders als jedes
+   bisherige Gerät ist das keine eigenständige Register-/IRQ-Quelle —
+   auf dem echten Board schaltet es die Adressdekodierung des Boards
+   selbst um (ROM bei Adresse 0 gespiegelt im Reset-Zustand vs. RAM bei
+   0 / ROM einmalig bei $FE000000-$FE07FFFF nach dem Remap). Das
+   Trigger-Fenster selbst (`devices/remap/q9_remap.c`) bleibt so klein
+   wie das Original; die eigentlichen ROM-Mirror-/ROM-Fenster-
+   `MemoryRegion`s liegen in q9board.c (passend zum Kopfkommentar des
+   Originals: das ist Board-Topologie, keine Fenster-Peripherie) und
+   werden nur angelegt, wenn per `-bios` tatsächlich ein ROM-/Firmware-
+   Image übergeben wird — ohne eins bleibt RAM wie bisher direkt bei 0
+   sichtbar, sodass jeder frühere `-kernel`-basierte Gerätetest
+   unangetastet bleibt. Mit einem synthetischen ROM-Image über den
+   QEMU-Monitor verifiziert (der umgeht den eigenen Instruktions-Cache
+   der CPU, die Prüfung ist also unabhängig von TCG-
+   Übersetzungsblock-Feinheiten): ein Marker-Byte war vor dem Trigger
+   sowohl bei Adresse 0 als auch — über die Modulo-Indizierung des
+   Mirrors — an der `-kernel`-Ladeadresse sichtbar; nach einem
+   Gast-Zugriff auf das Trigger-Register war der Marker bei Adresse 0
+   verschwunden (RAM scheint jetzt durch) und stattdessen bei
+   $FE000000 aufgetaucht (die feste Remap-Position des ROMs) — genau
+   die Adressdekodierungs-Umschaltung des Originals. Hinweis für
+   künftige ROM-Boot-Arbeit: eine `-kernel`-Nutzlast, die geladen wird,
+   während der Mirror noch aktiv ist, wird durch ihn hindurch
+   geschrieben und dabei stillschweigend verworfen (der Schreib-
+   Callback des Mirrors verwirft Schreibzugriffe, passend zum
+   `if (!remapped) { return; }` des Originals) — echte Firmware muss
+   RAM erst *nach* dem eigenen Remap-Trigger beladen, genau wie auf der
+   echten Hardware.
 
 **Repository-Aufbau**, aufgeteilt danach, was die Dateien tatsächlich
 sind, nicht danach, wo QEMU sie haben will:
@@ -85,7 +114,8 @@ sind, nicht danach, wo QEMU sie haben will:
   von QEMUs Verzeichniskonvention benannt/organisiert (spiegelt
   `Q9-Flux-68k/src/devices/<gerät>/` aus dem Musashi-Zweig). Aktuell:
   `devices/rtc72421/q9_rtc72421.c`, `devices/timer_irq/q9_timer_irq.c`,
-  `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`.
+  `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`,
+  `devices/remap/q9_remap.c`.
 - `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
   (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige
   Gegenstück zu `Q9-Flux-68k/src/kernel/q9board.c`/`boardcfg.c`.
@@ -115,16 +145,9 @@ Standard-m68k-Maschinen `an5206`, `mcf5208evb`, `next-cube`, `q800`,
 daher das neue `q9board`-Grundgerüst).
 
 **Nächster Schritt** (groß, mehrere Sitzungen): die verbleibenden
-Geräte-Modelle — QUICC, Remap-Trigger, Netz-Terminals,
-MC6845/Framebuf/CLUT/Videobridge — von `Q9-Flux-68k/src/devices/` nach
-QEMUs QOM-/`MemoryRegion`-Muster portieren, ein Gerät nach dem anderen.
-Hinweis speziell zu `remap`: anders als jedes bisher portierte Gerät ist
-es keine eigenständige Register-/IRQ-Quelle — auf dem Musashi-Board
-schaltet es die Adressdekodierung des Boards selbst um (ROM bei 0
-gespiegelt im Reset-Zustand vs. RAM bei 0/ROM an anderer Stelle nach dem
-Remap), der QEMU-Port muss also `MemoryRegion`-Zuordnungen in
-`q9board.c` selbst umkonfigurieren, nicht nur eine neue Gerätedatei
-hinzufügen.
+Geräte-Modelle — QUICC, Netz-Terminals, MC6845/Framebuf/CLUT/Videobridge
+— von `Q9-Flux-68k/src/devices/` nach QEMUs QOM-/`MemoryRegion`-Muster
+portieren, ein Gerät nach dem anderen.
 
 ## QEMU installieren
 

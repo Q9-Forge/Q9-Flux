@@ -45,15 +45,18 @@ index fc3d7ee..8eafef7 100644
  system_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4210_uart.c'))
  system_ss.add(when: 'CONFIG_MAX78000_UART', if_true: files('max78000_uart.c'))
 diff --git a/hw/m68k/Kconfig b/hw/m68k/Kconfig
-index aff769b..a9cc0cd 100644
+index aff769b..152f59d 100644
 --- a/hw/m68k/Kconfig
 +++ b/hw/m68k/Kconfig
-@@ -46,3 +46,15 @@ config M68K_VIRT
+@@ -46,3 +46,19 @@ config M68K_VIRT
      select GOLDFISH_TTY
      select GOLDFISH_RTC
      select VIRTIO_MMIO
 +
 +config Q9_TIMER_IRQ
++    bool
++
++config Q9_REMAP
 +    bool
 +
 +config Q9BOARD
@@ -64,16 +67,18 @@ index aff769b..a9cc0cd 100644
 +    select Q9_TIMER_IRQ
 +    select Q9_DUART68681
 +    select Q9_CF
++    select Q9_REMAP
 diff --git a/hw/m68k/meson.build b/hw/m68k/meson.build
-index 84bc68f..64239a8 100644
+index 84bc68f..65b7eaf 100644
 --- a/hw/m68k/meson.build
 +++ b/hw/m68k/meson.build
-@@ -4,5 +4,7 @@ m68k_ss.add(when: 'CONFIG_MCF5208', if_true: files('mcf5208.c', 'mcf_intc.c'))
+@@ -4,5 +4,8 @@ m68k_ss.add(when: 'CONFIG_MCF5208', if_true: files('mcf5208.c', 'mcf_intc.c'))
  m68k_ss.add(when: 'CONFIG_NEXTCUBE', if_true: files('next-kbd.c', 'next-cube.c'))
  m68k_ss.add(when: 'CONFIG_Q800', if_true: files('q800.c', 'q800-glue.c'))
  m68k_ss.add(when: 'CONFIG_M68K_VIRT', if_true: files('virt.c'))
 +m68k_ss.add(when: 'CONFIG_Q9BOARD', if_true: files('q9board.c'))
 +m68k_ss.add(when: 'CONFIG_Q9_TIMER_IRQ', if_true: files('q9_timer_irq.c'))
++m68k_ss.add(when: 'CONFIG_Q9_REMAP', if_true: files('q9_remap.c'))
  
  hw_arch += {'m68k': m68k_ss}
 diff --git a/hw/rtc/Kconfig b/hw/rtc/Kconfig
