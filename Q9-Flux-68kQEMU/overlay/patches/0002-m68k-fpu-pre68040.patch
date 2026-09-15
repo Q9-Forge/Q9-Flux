@@ -1,8 +1,75 @@
 diff --git a/target/m68k/translate.c b/target/m68k/translate.c
-index 138c89d..167c695 100644
+index 138c89d..4d38257 100644
 --- a/target/m68k/translate.c
 +++ b/target/m68k/translate.c
-@@ -5367,6 +5367,28 @@ DISAS_INSN(frestore)
+@@ -5166,6 +5166,66 @@ undef:
+     disas_undef_fpu(env, s, insn);
+ }
+ 
++/*
++ * Q9 board: coprocessor ID 0 accept-and-discard stub for the
++ * coprocessor-general (cpGEN) opcode format ($F0xx).
++ *
++ * Superseded the board's earlier, narrower fix (an exact-match alias of
++ * just $F010 to the real FPU handler above, kept in this patch's git
++ * history/README for the record): that fix was built on the assumption
++ * that CpId 0 meant "this ROM's own FPU, board-wired to an unconventional
++ * coprocessor ID" -- plausible from the ROM's own $F010 probe alone, but
++ * wrong. A real MC68030 has an on-chip PMMU that responds to F-line
++ * opcodes at CpId 0 *in hardware*, unconditionally -- CpId 0 is never
++ * genuinely "this board's FPU" on this CPU family at all; the real FPU
++ * (external MC68881/68882, when present) is CpId 1 ($F2xx, s. the INSN
++ * entries for that just above, untouched by this stub). The kernel's own
++ * runtime PMMU setup (observed live: "pmove (a1),%crp", opcode $F011)
++ * confirms it: CpId 0 traffic on this board is PMMU control-register
++ * traffic, not FPU operand moves, and routing any of it into the real
++ * FPU dispatch above (as the narrower fix still did for its one exact
++ * opcode) risks exactly the kind of extension-word misinterpretation
++ * that motivated narrowing the fix in the first place -- just confined
++ * to a single opcode instead of a whole range.
++ *
++ * This board's kernel has no working software PMMU emulation to fall
++ * back on either: leaving CpId-0 pmove/pflush/ptest/... traffic to
++ * BASE(undef_fpu, f000, f000)'s plain illegal-instruction trap (as if
++ * this stub didn't exist) sends it through the kernel's F-line fault-
++ * signal-delivery path instead, which is designed for *runtime* process
++ * faults, not for a coprocessor probe still running during early kernel
++ * bootstrap (before ioman's console device is even open) -- confirmed
++ * to end in the CPU running off into never-initialized RAM.
++ *
++ * Real 68851/68030-PMMU semantics (TC/CRP/SRP/... register widths,
++ * transfer direction from the extension word's own encoding) aren't
++ * implemented here, matching the original Musashi-based emulator (s.
++ * m68kops.c -- no pmove support there either, just this same family's
++ * generic EXCEPTION_1111 for anything at CpId 0 it doesn't specifically
++ * decode) and this patch's own established precedent for this board's
++ * simplified coprocessor model (s. FRESTORE/FSAVE above: this board's
++ * "coprocessor" state is QEMU's own synchronous software core, with no
++ * genuine pipeline/register-file state worth modelling in detail).
++ * Consuming the handler-internal extension word (present for every
++ * cpGEN-format instruction, FPU or PMMU alike) and then one EA operand
++ * -- applying any addressing-mode side effect (e.g. postincrement)
++ * without any real read/write semantics attached -- is the same
++ * "accept the instruction, discard its effect" treatment already used
++ * there, extended to the whole CpId-0 range instead of one exact
++ * opcode.
++ */
++DISAS_INSN(pmove_cpid0)
++{
++    TCGv addr;
++
++    if (IS_USER(s)) {
++        gen_exception(s, s->base.pc_next, EXCP_PRIVILEGE);
++        return;
++    }
++    read_im16(env, s);
++    SRC_EA(env, addr, OS_LONG, 0, NULL);
++}
++
+ static void gen_fcc_cond(DisasCompare *c, DisasContext *s, int cond)
+ {
+     TCGv fpsr;
+@@ -5367,6 +5427,28 @@ DISAS_INSN(frestore)
      if (m68k_feature(s->env, M68K_FEATURE_M68040)) {
          SRC_EA(env, addr, OS_LONG, 0, NULL);
          /* FIXME: check the state frame */
@@ -31,7 +98,7 @@ index 138c89d..167c695 100644
      } else {
          disas_undef(env, s, insn);
      }
-@@ -5383,6 +5405,20 @@ DISAS_INSN(fsave)
+@@ -5383,6 +5465,20 @@ DISAS_INSN(fsave)
          /* always write IDLE */
          TCGv idle = tcg_constant_i32(0x41000000);
          DEST_EA(env, insn, OS_LONG, idle, NULL);
@@ -52,30 +119,24 @@ index 138c89d..167c695 100644
      } else {
          disas_undef(env, s, insn);
      }
-@@ -5990,6 +6026,26 @@ void register_m68k_insns (CPUM68KState *env)
+@@ -5990,6 +6086,20 @@ void register_m68k_insns (CPUM68KState *env)
      INSN(fpu,       f200, ffc0, CF_FPU);
      INSN(fbcc,      f280, ffc0, CF_FPU);
      INSN(fpu,       f200, ffc0, FPU);
 +    /*
-+     * Q9 board: the coprocessor-general (cpGEN) FPU opcode format
-+     * ($F2xx) is only recognized here for coprocessor ID 1 -- the
-+     * conventional MC68881/68882 wiring. Real hardware lets CpId be
-+     * wired to any of 0-7; this specific board's boot ROM issues its
-+     * FPU probe/setup instructions with CpId 0 ($F0xx, otherwise
-+     * unclaimed here -- QEMU's own PMMU support for this CPU family
-+     * uses CpId 2 ($F500/$F548, s. the pflush/ptest INSN entries
-+     * below), not CpId 0), which the original Musashi-based emulator's
-+     * always-compiled-in FPU core (m68kfpu.c, no CpId gating at all)
-+     * accepts unconditionally. Aliasing CpId 0 to the same handler as
-+     * CpId 1 matches that behaviour without touching CpId 1's own
-+     * entry or anything else in this table. Q9-Flux-68kQEMU's own
-+     * devices/ tree can't express a fix at this layer -- it's the
-+     * shared m68k CPU core, not board-specific -- so it lives here as
-+     * an overlay/patches/ diff instead (s. that directory's own
-+     * README section for why patches are used for files we don't
-+     * fully own).
++     * Q9 board: coprocessor ID 0 ($F0xx) is this CPU's on-chip PMMU
++     * (real MC68030 hardware, not a board-specific wiring choice --
++     * s. DISAS_INSN(pmove_cpid0)'s own comment, above the FPU handler
++     * this used to (mis)route a chunk of this range into, for the full
++     * story and the regression that motivated moving to a dedicated
++     * stub). The real FPU, when present, is CpId 1 ($F2xx) -- untouched
++     * by this entry. Q9-Flux-68kQEMU's own devices/ tree can't express
++     * a fix at this layer -- it's the shared m68k CPU core, not
++     * board-specific -- so it lives here as an overlay/patches/ diff
++     * instead (s. that directory's own README section for why patches
++     * are used for files we don't fully own).
 +     */
-+    INSN(fpu,       f000, ffc0, FPU);
++    INSN(pmove_cpid0, f000, ffc0, FPU);
      INSN(fscc,      f240, ffc0, FPU);
      INSN(ftrapcc,   f27a, fffe, FPU);       /* opmode 010, 011 */
      INSN(ftrapcc,   f27c, ffff, FPU);       /* opmode 100 */
