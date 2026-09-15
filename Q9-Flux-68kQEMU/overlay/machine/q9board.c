@@ -20,9 +20,11 @@
 #include "hw/core/boards.h"
 #include "hw/core/loader.h"
 #include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "elf.h"
 #include "qemu/error-report.h"
 #include "system/qtest.h"
+#include "system/system.h"
 
 #define Q9BOARD_KERNEL_LOAD_ADDR 0x10000
 
@@ -33,6 +35,9 @@
  * ON window is the upper half of the same 0x1000-byte device region, see
  * Q9-Flux-68kQEMU/devices/timer_irq/q9_timer_irq.c). */
 #define Q9BOARD_TIMER_IRQ_BASE 0xFFFF9000
+
+/* Matches Q9_BOARD_UART_BASE in Q9-Flux-68k/src/kernel/q9board.h. */
+#define Q9BOARD_UART_BASE 0xFFFFF000
 
 static void q9board_init(MachineState *machine)
 {
@@ -78,8 +83,26 @@ static void q9board_init(MachineState *machine)
             sysbus_mmio_get_region(SYS_BUS_DEVICE(tirq), 0));
     }
 
-    /* TODO (future sessions): CF, QUICC, 68681 DUART, remap trigger,
-     * nettty, MC6845/framebuf/CLUT/videobridge -- ported from
+    /* 68681 DUART (console, channel A only), third ported peripheral --
+     * see Q9-Flux-68kQEMU/devices/duart68681/q9_duart68681.c. Needs the
+     * CPU object (same "m68k-cpu" link pattern as timer_irq) to raise/
+     * lower its level-3 vectored interrupt, plus a chardev backend for
+     * the host-facing console -- serial_hd(0) is whatever "-serial"
+     * selects on the command line (defaults to the QEMU console when
+     * none is given). */
+    {
+        DeviceState *duart = qdev_new("q9-duart68681");
+        object_property_set_link(OBJECT(duart), "m68k-cpu", OBJECT(cpu),
+                                  &error_abort);
+        qdev_prop_set_chr(duart, "chardev", serial_hd(0));
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(duart), &error_fatal);
+        memory_region_add_subregion(
+            address_space_mem, Q9BOARD_UART_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(duart), 0));
+    }
+
+    /* TODO (future sessions): CF, QUICC, remap trigger, nettty,
+     * MC6845/framebuf/CLUT/videobridge -- ported from
      * Q9-Flux-68k/src/devices/, one at a time. */
 
     if (!kernel_filename) {
