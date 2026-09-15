@@ -260,6 +260,19 @@ static void q9_duart68681_realize(DeviceState *dev, Error **errp)
         return;
     }
 
+    /*
+     * Real 68681 silicon powers up with IVR = $0F ("uninitialized
+     * vector") -- not $00. The OS-9 sc68681 console driver reads IVR
+     * back at console-open time specifically to check for this exact
+     * reset value as part of verifying it's talking to a real chip
+     * (s. Q9-Flux-68k/src/kernel/q9board.c's own q9_board_init, which
+     * sets the Musashi-based emulator's uart_ivr to 0x0F for the same
+     * reason). Leaving this at its zero-initialized QOM default made
+     * that readback check fail, so ioman could never open the console
+     * ("ioman: can't open console device: Error $00CB").
+     */
+    s->ivr = 0x0F;
+
     memory_region_init_io(&s->iomem, OBJECT(dev), &q9_duart68681_ops, s,
                            TYPE_Q9_DUART68681, Q9_DUART_WINDOW_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);

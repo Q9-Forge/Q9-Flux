@@ -288,7 +288,7 @@ Decodier-Tabelle: die 68030-PMMU-Unterstützung nutzt CpId 2). Der
 FPU-Kern des originalen Musashi-basierten Emulators kennt gar keine
 solche CpId-Prüfung, weshalb diese ROM dort schon immer funktioniert
 hat. Behoben mit einer minimalen, gezielten Ergänzung an QEMUs eigener
-Opcode-Decodier-Tabelle — `overlay/patches/0002-m68k-fpu-cpid0.patch`
+Opcode-Decodier-Tabelle — `overlay/patches/0002-m68k-fpu-pre68040.patch`
 gegen `target/m68k/translate.c`, die CpId 0 auf denselben Handler wie
 CpId 1 aliast, ohne CpId 1s eigenen Eintrag oder sonst etwas
 anzufassen (bestätigt: kein anderer Decodier-Eintrag beansprucht
@@ -342,19 +342,89 @@ Das bestätigt: der CF-Port liest echte OS-9-Dateisystemstrukturen
 korrekt unter echter Firmware, nicht nur in isolierten
 Register-Ebenen-Tests. Der neue Fehler (`ioman` — OS-9s
 Ein-/Ausgabe-Manager — kann das Konsolengerät nicht öffnen) ist ein
-eigenständiges, späteres Problem, das eine eigene Untersuchung in
-einem Nachtrag verdient.
+eigenständiges, späteres Problem, das sich als zwei getrennte Ursachen
+herausstellte.
 
-**Nächste Schritte**: dem neuen `ioman`/Konsolen-Öffnen-Fehler oben
-nachgehen (der naheliegende nächste Schritt, vermutlich im oder rund
-um den DUART-Port, je nachdem was genau fehlschlägt); dann schauen,
-wie weit dieselbe ROM/CF-Kombination von dort aus kommt; danach die
-grundsätzlichere Board-Ebene — config-gesteuerte
-Geräte-Instanziierung (heute ist alles in `q9board.c` noch fest
-verdrahtet/per `-global` konfiguriert, passend zum eigenen
-Vor-boardcfg.c-Zustand des Originals, statt über eine deklarative
-Board-Config-Datei gesteuert zu werden, wie `boardcfg.c` das im
-Musashi-Zweig tut) — und irgendwann der eigentliche
+**Ursache 3a, gefunden und behoben (samt einer Selbstkorrektur
+unterwegs)**: eine `-d int`-Spur des Fehlers zeigte direkt nach der
+`ioman`-Meldung eine zweite Exception — `INT 31: FP Unimplemented Data
+Type(0xdc) pc=0000fb1a`. Live-Disassemblierung über den QEMU-Monitor
+(`xp`, da diese PC-Adresse im von der CF geladenen Kernel-RAM liegt,
+nicht im ROM) zeigte die tatsächliche Instruktion: `pmove %a1@,%crp`
+(Opcode `$F011`) — eine echte PMMU-Instruktion, keine FPU-Instruktion,
+an derselben Koprozessor-ID 0, die Ursache 1s Fix auf den
+FPU-Handler geliehen hatte. Dessen breitere Ursprungsform
+(`$F000`-`$F03F`, bevor sie auf ein exaktes `$F010`-Match verengt
+wurde) hatte `pmove`s Nicht-FPU-Extension-Wort in den FPU-Decoder
+umgeleitet und dabei verfälscht — eine Regression, die der eigene Fix
+von Ursache 1 selbst eingeführt hatte, kein vorbestehender Bug. Das
+Verengen auf den einen nachweislich benötigten Opcode behob *dieses*
+Fehlleiten, aber ein erneutes Hinterfragen der ganzen Prämisse förderte
+die eigentliche Geschichte zutage: Koprozessor-ID 0 ist nicht "die FPU
+dieses Boards, unkonventionell verdrahtet" — sie ist die eingebaute
+**PMMU** des MC68030, die echte 68030-Silizium per Hardware
+bedingungslos unter CpId 0 beantwortet, unabhängig von der
+Board-Verdrahtung. Die echte FPU (externe 68881/68882, falls
+vorhanden) ist CpId 1 (`$F2xx`), bereits separat behandelt und von all
+dem unberührt. Der schmale FPU-Alias-Hack wurde durch einen eigenen
+CpId-0-Stub ersetzt (`DISAS_INSN(pmove_cpid0)` in
+`overlay/patches/0002-m68k-fpu-pre68040.patch`), der den gesamten
+cpGEN-CpId-0-Bereich als "annehmen und verwerfen" behandelt — das
+(Handler-interne) Extension-Wort und einen EA-Operanden konsumierend,
+dieselbe "kein echter Koprozessor-Pipeline-Zustand zu modellieren"-
+Vereinfachung, die für FRESTORE/FSAVE bereits etabliert ist —, ohne je
+den echten FPU-Dispatch-Code zu berühren. Das entspricht auch dem
+originalen Musashi-basierten Emulator, der ebenfalls kein `pmove`
+unterstützt und es demselben generischen `EXCEPTION_1111`
+(F-Line)-Fallback überlässt wie jeden anderen unimplementierten
+Koprozessor-Opcode. **Behebung bestätigt**: die
+F-Line/FP-Exception-Absturzschleife ist weg; die CPU erreicht jetzt
+eine saubere `stop #$3000`-Scheduler-Leerlaufwartung, statt in
+uninitialisiertes RAM zu entgleisen.
+
+**Ursache 3b, gefunden und behoben**: mit dem behobenen Absturz
+erschien die Meldung `ioman: can't open console device: Error $00CB`
+weiterhin. Eine Register-Zugriffsspur des DUART (temporäre
+`Q9_DUART_TRACE`-Instrumentierung, nicht committet) zeigte die genaue
+Sequenz direkt vor dem Fehler: ein Lesezugriff auf das IVR
+(Interrupt Vector Register), der `$00` liefert, unmittelbar gefolgt
+vom Deaktivieren der Interrupts und der Fehlerausgabe. Echtes
+MC68681-Silizium startet mit IVR = `$0F` ("uninitialisierter Vektor"),
+nicht `$00` — und der OS-9-Treiber `sc68681` liest IVR beim Öffnen
+genau deshalb zurück, um exakt diesen Reset-Wert zu prüfen und so zu
+bestätigen, dass er es mit einem echten Chip zu tun hat. Der originale
+Musashi-basierte Emulator weiß das bereits: `Q9-Flux-68k/src/kernel/
+q9board.c`s `q9_board_init` setzt `uart_ivr` explizit auf `0x0F`, mit
+einem Kommentar, der genau diese Prüfung benennt. Unser QEMU-Port
+hatte für `Q9Duart68681State` keine solche Initialisierung und blieb
+beim Nullwert aus QOMs Standard-Initialisierung. Behoben durch
+`s->ivr = 0x0F` in `q9_duart68681_realize()`
+(`devices/duart68681/q9_duart68681.c`). **Behebung bestätigt**: der
+`ioman`-Konsolen-Öffnen-Fehler ist weg; der Boot läuft daran vorbei
+weiter und beginnt das nächste Kernel-Modul zu laden:
+
+```
+OS-9/68K System Bootstrap
+Now trying to boot from CompactFlash.
+A valid OS-9 bootfile was found.
+CompactFlash driver build 42
+```
+
+**Nächste Schritte**: der Boot erreicht jetzt eine *andere*
+`stop #$3000`-Scheduler-Leerlaufwartung (derselbe Leerlaufschleifen-
+Code wie bei Ursache 3as eigenem Vorher/Nachher-Vergleich, bei
+`$a2e4`/`$a2e8`), ein Stück weiter im Laden des CF/RBF-Moduls, und
+diese wacht nie wieder auf — vereinbar damit, dass ein Gerät, von dem
+das Startup-Skript jetzt abhängt, (noch) keinen Interrupt auslöst, den
+QEMU liefern sollte (der Completion-IRQ des CF-Controllers ist der
+naheliegendste Verdächtige, noch nicht abschließend als Ursache
+bestätigt); dann schauen, wie weit dieselbe ROM/CF-Kombination von
+dort aus kommt; danach die grundsätzlichere Board-Ebene —
+config-gesteuerte Geräte-Instanziierung (heute ist alles in
+`q9board.c` noch fest verdrahtet/per `-global` konfiguriert, passend
+zum eigenen Vor-boardcfg.c-Zustand des Originals, statt über eine
+deklarative Board-Config-Datei gesteuert zu werden, wie `boardcfg.c`
+das im Musashi-Zweig tut) — und irgendwann der eigentliche
 [Host-Passthrough-Dateisystem-Manager](docs/HOSTFS_MANAGER_de.md), für
 den diese ganze Umstellung ursprünglich begonnen wurde (s. "Warum QEMU"
 oben).

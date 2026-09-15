@@ -261,7 +261,7 @@ in QEMU's own decode table: its 68030 PMMU support uses CpId 2). The
 original Musashi-based emulator's FPU core has no such CpId gating at
 all, which is why this ROM has always worked there. Fixed with a
 minimal, targeted addition to QEMU's own opcode decode table --
-`overlay/patches/0002-m68k-fpu-cpid0.patch` against
+`overlay/patches/0002-m68k-fpu-pre68040.patch` against
 `target/m68k/translate.c`, aliasing CpId 0 to the same handler as CpId
 1 without touching CpId 1's own entry or anything else (verified no
 other decode entry claims CpId 0 for this CPU family). **Confirmed
@@ -312,19 +312,83 @@ Error: system state exception; vector $00DC at addr $0000FB1A
 This confirms the CF port reads real OS-9 filesystem structures
 correctly under real firmware, not just in isolated register-level
 tests. The new failure (`ioman` -- OS-9's I/O manager -- can't open
-the console device) is a distinct, later-stage issue worth its own
-investigation in a follow-up.
+the console device) is a distinct, later-stage issue that turned out
+to bundle together two separate root causes.
 
-**Next steps**: chase the new `ioman`/console-open failure above (the
-natural next step, likely in or around the DUART port given what's
-failing); then see how much further the same ROM/CF combination gets
-from there; then the more structural board-level work -- config-driven
-device instantiation (today everything in `q9board.c` is still
-hardcoded/`-global`-configured, mirroring the original's own
-pre-boardcfg.c state, rather than driven by a declarative board config
-file the way `boardcfg.c` drives the Musashi branch) -- and eventually
-the actual [host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md)
-this whole migration was started for in the first place (s. "Why QEMU"
+**Root cause #3a, found and fixed (and a self-correction along the
+way)**: a `-d int` trace of the failure showed a second exception right
+after the `ioman` message -- `INT 31: FP Unimplemented Data Type(0xdc)
+pc=0000fb1a`. Live disassembly via the QEMU monitor (`xp`, since this
+PC is CF-loaded kernel RAM, not ROM) showed the actual instruction:
+`pmove %a1@,%crp` (opcode `$F011`) -- a genuine PMMU instruction, not
+an FPU one, at the *same* coprocessor ID 0 that root cause #1's fix had
+aliased to the FPU handler. That fix's own broad form (`$F000`-`$F03F`,
+before it was narrowed to an exact `$F010` match) had been misrouting
+`pmove`'s non-FPU extension word into the FPU decoder, corrupting it --
+a regression self-introduced by root cause #1's own fix, not a
+pre-existing bug. Narrowing the match to the one proven-needed opcode
+fixed *that* misrouting, but re-examining the whole premise turned up
+the real story: coprocessor ID 0 is not "this board's FPU wired to an
+unconventional ID" at all -- it is the MC68030's own **on-chip PMMU**,
+which real 68030 silicon answers at CpId 0 unconditionally, by
+hardware, regardless of board wiring. The real FPU (external
+68881/68882, when present) is CpId 1 (`$F2xx`), already handled
+separately and untouched by any of this. Replaced the narrow FPU-alias
+hack with a dedicated CpId-0 stub (`DISAS_INSN(pmove_cpid0)` in
+`overlay/patches/0002-m68k-fpu-pre68040.patch`) that treats the whole
+cpGEN CpId-0 range as accept-and-discard -- consuming the (handler-
+internal) extension word and one EA operand, same "no real coprocessor
+pipeline state to model" simplification already established for
+FRESTORE/FSAVE -- without ever touching the real FPU dispatch code.
+This also matches the original Musashi-based emulator, which likewise
+has no `pmove` support and leaves it to the same generic
+`EXCEPTION_1111` (F-Line) fallback every other unimplemented
+coprocessor opcode gets. **Confirmed fixed**: the F-Line/FP-exception
+crash loop is gone; the CPU now reaches a clean `stop #$3000` scheduler
+idle wait instead of running off into uninitialized RAM.
+
+**Root cause #3b, found and fixed**: with the crash gone, the
+`ioman: can't open console device: Error $00CB` message itself still
+appeared. A register-access trace of the DUART (temporary
+`Q9_DUART_TRACE` instrumentation, not committed) showed the exact
+sequence right before the error: a read of the IVR (Interrupt Vector
+Register) returning `$00`, immediately followed by disabling
+interrupts and printing the failure. Real MC68681 silicon powers up
+with IVR = `$0F` ("uninitialized vector"), not `$00` -- and the OS-9
+`sc68681` console driver reads IVR back at open time specifically to
+verify this exact reset value as part of confirming it's talking to a
+real chip. The original Musashi-based emulator already knows this: `s.
+Q9-Flux-68k/src/kernel/q9board.c`'s `q9_board_init` explicitly sets
+`uart_ivr = 0x0F` with a comment calling out exactly this check. Our
+QEMU port's `Q9Duart68681State` had no such initialization and
+defaulted to QOM's zero-initialized `0x00`, failing the readback.
+Fixed by setting `s->ivr = 0x0F` in `q9_duart68681_realize()`
+(`devices/duart68681/q9_duart68681.c`). **Confirmed fixed**: the
+`ioman` console-open error is gone; the boot continues past it and
+starts loading the next kernel module:
+
+```
+OS-9/68K System Bootstrap
+Now trying to boot from CompactFlash.
+A valid OS-9 bootfile was found.
+CompactFlash driver build 42
+```
+
+**Next steps**: the boot now reaches a *different* `stop #$3000`
+scheduler idle wait (same idle-loop code as root cause #3a's own
+before/after check, at `$a2e4`/`$a2e8`) a bit further into CF/RBF
+module loading, and this one never wakes -- consistent with some
+device the startup script now depends on not (yet) raising an
+interrupt QEMU should be delivering (the CF controller's completion
+IRQ is the leading suspect, not yet root-caused); then see how much
+further the same ROM/CF combination gets from there; then the more
+structural board-level work -- config-driven device instantiation
+(today everything in `q9board.c` is still hardcoded/`-global`-
+configured, mirroring the original's own pre-boardcfg.c state, rather
+than driven by a declarative board config file the way `boardcfg.c`
+drives the Musashi branch) -- and eventually the actual
+[host-passthrough filesystem manager](docs/HOSTFS_MANAGER.md) this
+whole migration was started for in the first place (s. "Why QEMU"
 above).
 
 ## Installing QEMU
