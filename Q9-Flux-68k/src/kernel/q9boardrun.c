@@ -112,7 +112,6 @@ volatile int q9_dbg_dump_requested = 0;                /* s. q9boardrun.h */
 static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
 {
     fprintf(f, "\n--- Q9-eigener-Kernel-Zusatzdump ---\n");
-
     fprintf(f, "Q9K_BootList @0x%04lx (Regionen Basis/Laenge, bis Basis=0):\n",
             (unsigned long)Q9K_DBG_BOOTLIST_ADDR);
     for (int i = 0; i < 64; i++) {
@@ -160,7 +159,6 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
 
         fprintf(f, "  Slot=%08x HdrPtr=%08x Groesse=%08x TyLang=%04x Name=\"%s\"\n",
                 slot, hdrAddr, modSize, tyLang, name);
-
         slot = q9_board_read32(b, slot + Q9K_DBG_MODDIR_NEXT_OFF);
         guard++;
     }
@@ -223,7 +221,7 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
            Basis + Callcode*4. */
         uint32_t sysdis = q9_board_read32(b, 0x3a4u);
         uint32_t usrdis = q9_board_read32(b, 0x3a8u);
-        static const unsigned codes[] = { 0x00u, 0x01u, 0x03u, 0x0au, 0x28u, 0x2eu, 0x31u, 0x38u, 0x5cu, 0x64u, 0x84u, 0x89u, 0x8fu };
+        static const unsigned codes[] = { 0x00u, 0x01u, 0x03u, 0x0au, 0x28u, 0x2eu, 0x31u, 0x38u, 0x5cu, 0x64u, 0x82u, 0x84u, 0x86u, 0x89u, 0x8cu, 0x8fu };
         unsigned k;
 
         fprintf(f, "I$-Dispatch-Slots (SysDis @%08x / UsrDis @%08x):\n",
@@ -233,6 +231,10 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                     (unsigned)q9_board_read32(b, sysdis + codes[k] * 4u),
                     (unsigned)q9_board_read32(b, usrdis + codes[k] * 4u));
         }
+        fprintf(f, "F$SSvc extern markers: $82=%02x $84=%02x $8f=%02x\n",
+                (unsigned)q9_board_read8(b, 0x1482u),
+                (unsigned)q9_board_read8(b, 0x1484u),
+                (unsigned)q9_board_read8(b, 0x148fu));
     }
 
     {   /* Letzte Modulsuch-Anfrage (Q9-OS legt sie ab $1710 ab): Filter und
@@ -249,6 +251,33 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         fprintf(f, "Letzte Modulsuche: Filter=%04x Name=\"%s\"\n", (unsigned)filt, nm);
     }
 
+    {   /* F$Link-Diagnose des eigenen Kernels: der Status bleibt auch bei
+           einem wiederholten externen IOMan-Aufruf erhalten. */
+        fprintf(f, "F$Link-Trace: status=%08x d0=%08x d1=%08x a0=%08x a1=%08x a2=%08x frame=%08x\n",
+                (unsigned)q9_board_read32(b, 0x154140u),
+                (unsigned)q9_board_read32(b, 0x154144u),
+                (unsigned)q9_board_read32(b, 0x154148u),
+                (unsigned)q9_board_read32(b, 0x15414cu),
+                (unsigned)q9_board_read32(b, 0x154150u),
+                (unsigned)q9_board_read32(b, 0x154154u),
+                (unsigned)q9_board_read32(b, 0x13c4u));
+    }
+
+    {   /* F$Fork scratch fields: distinguish a failed lookup/allocation from
+           a child that was created but never reached its entry point. */
+        fprintf(f, "F$Fork-Trace: type=%08x addmem=%08x params=%08x paths=%08x prio=%08x name=%08x param=%08x child=%08x error=%08x success=%08x\n",
+                (unsigned)q9_board_read32(b, 0x1278u),
+                (unsigned)q9_board_read32(b, 0x127cu),
+                (unsigned)q9_board_read32(b, 0x1280u),
+                (unsigned)q9_board_read32(b, 0x1284u),
+                (unsigned)q9_board_read32(b, 0x1288u),
+                (unsigned)q9_board_read32(b, 0x128cu),
+                (unsigned)q9_board_read32(b, 0x1290u),
+                (unsigned)q9_board_read32(b, 0x1294u),
+                (unsigned)q9_board_read32(b, 0x1298u),
+                (unsigned)q9_board_read32(b, 0x129cu));
+    }
+
     {   /* Laufender Prozess: P$State ist im echten Layout ein WORT bei +$1c
            (REF/OS9/SRC/DEFS/process.a). sc68681 prueft nach dem Aufwachen
            dessen Bit 1 im OBEREN Byte und bricht dann ab. */
@@ -257,6 +286,36 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 (unsigned)cur,
                 cur ? (unsigned)q9_board_read16(b, cur + 0x1cu) : 0u,
                 cur ? (unsigned)q9_board_read16(b, cur + 0x26u) : 0u);
+        if (cur) {
+            fprintf(f, "  allocbase=%08x allocsize=%08x a6=%08x\n",
+                    (unsigned)q9_board_read32(b, cur + 0x1b0u),
+                    (unsigned)q9_board_read32(b, cur + 0x1b4u),
+                    (unsigned)(q9_board_read32(b, cur + 0x1b0u) + 0x8000u));
+            {
+                uint32_t savedsp = q9_board_read32(b, cur + 0x08u);
+                fprintf(f, "  savedsp=%08x entrypc=%08x frame:",
+                        (unsigned)savedsp,
+                        (unsigned)q9_board_read32(b, cur + 0x1c8u));
+                if (savedsp < BOARD_RAM_BYTES && savedsp + 68u <= BOARD_RAM_BYTES) {
+                    fprintf(f, " d0=%08x a6=%08x sr=%04x pc=%08x fmt=%04x",
+                            (unsigned)q9_board_read32(b, savedsp),
+                            (unsigned)q9_board_read32(b, savedsp + 0x38u),
+                            (unsigned)q9_board_read16(b, savedsp + 0x3cu),
+                            (unsigned)q9_board_read32(b, savedsp + 0x3eu),
+                            (unsigned)q9_board_read16(b, savedsp + 0x42u));
+                } else {
+                    fputs(" <unplausibel>", f);
+                }
+                fputc('\n', f);
+            }
+            unsigned path;
+            fprintf(f, "  P$Path:");
+            for (path = 0; path < 8u; path++) {
+                fprintf(f, " %u=%04x", path,
+                        (unsigned)q9_board_read16(b, cur + 0x168u + path * 2u));
+            }
+            fprintf(f, "\n");
+        }
     }
 
     {   /* Statischer Speicher des Konsolentreibers (V_STAT aus dem ersten
@@ -585,6 +644,17 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                 fprintf(f, " %08x", (unsigned)q9_board_read32(b, 0x144080u + z * 4u));
             }
             fputc('\n', f);
+            /* The exception frame is already gone by the time Q9K_ExcTrap
+               records it.  Keep the live process-stack words around the
+               saved SP as well; this distinguishes a bad RTS return address
+               from corruption of the exception frame itself. */
+            if (sp < BOARD_RAM_BYTES - 32u) {
+                fputs("  Live-Stack um SP:", f);
+                for (z = 0u; z < 8u; z++) {
+                    fprintf(f, " %08x", (unsigned)q9_board_read32(b, sp + z * 4u));
+                }
+                fputc('\n', f);
+            }
         }
         {   /* Code rund um den Exception-PC direkt aus dem LAUFENDEN Speicher.
                Die Moduldatei zu disassemblieren fuehrt in die Irre, sobald
