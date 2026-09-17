@@ -398,6 +398,19 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         fprintf(f, "\n");
     }
 
+    {   /* F$VModul bridge state ($162c-$163c). These fields preserve the
+           last module header, size, directory result, error, and success
+           flag without adding console traffic to the guest. */
+        fprintf(f,
+                "F$VModul-Trace: hdr=%08x size=%08x entry=%08x "
+                "error=%08x success=%08x\n",
+                (unsigned)q9_board_read32(b, 0x162cu),
+                (unsigned)q9_board_read32(b, 0x1630u),
+                (unsigned)q9_board_read32(b, 0x1634u),
+                (unsigned)q9_board_read32(b, 0x1638u),
+                (unsigned)q9_board_read32(b, 0x163cu));
+    }
+
     {   /* F$TLink/M$Init-Registerspur aus q9kernel_entry.a. Diese Felder
            werden nur vom aktuellen TLink-Aufruf beschrieben und erlauben
            den Vergleich von A3 (C-Runtime-Sentinel) vor/nach M$Init, ohne
