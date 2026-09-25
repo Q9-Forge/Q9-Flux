@@ -140,6 +140,27 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 
+# 2026-09-25: Q9-OS/Q9-DHF-68k's echtes 68k-Treibermodul (dhfdrv_68k.a, per psect gebauter
+# Modulkopf, s. dortige STATUS.md) -- Quelle liegt versioniert im Geschwister-Repo Q9-OS, wird HIER
+# frisch per qr68k/ql68k assembliert+gelinkt (nur test-dhf-driver braucht das fertige .mod, nicht
+# Teil des normalen "make host"). QR68K/QL68K-Pfade sind absolute Mehr-Repo-Pfade, analog
+# q9_dhf_init()s Q9-Images-Basepath in m68krt.c -- dieselbe Mehr-Repo-Realitaet dieses Projekts.
+QR68K      = /Volumes/SSD1TB/projects/Q9-Forge/Q9-QCC/Q9-BACKEND-68K/q9-qr68k/build/qr68k
+QL68K      = /Volumes/SSD1TB/projects/Q9-Forge/Q9-QCC/Q9-BACKEND-68K/q9-ql68k/build/ql68k
+DHFDRV_SRC = ../../Q9-OS/Q9-DHF-68k/driver/dhfdrv_68k.a
+DHFDRV_MOD = ../../Q9-OS/Q9-DHF-68k/driver/dhfdrv_68k.mod
+
+# dhfdrv_68k.a schreibt "use q9defs.d" in der nackten Form (wie q9_cstart.a, s. Q9-QCC/runtime/
+# os9/), die qr68 nur relativ zum eigenen Arbeitsverzeichnis sucht (-u= wirkt nur bei "use
+# <datei>" in spitzen Klammern) -- deshalb hier bewusst MIT cd in dieses Verzeichnis aufgerufen,
+# alle Pfade daher absolut.
+QR68K_DEFS_DIR = /Volumes/SSD1TB/projects/Q9-Forge/Q9-QCC/runtime/os9
+
+$(DHFDRV_MOD): $(DHFDRV_SRC)
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	cd $(QR68K_DEFS_DIR) && $(QR68K) $(CURDIR)/$(DHFDRV_SRC) -o=$(CURDIR)/$(BUILD)/$(PLATFORM_DIR)/dhfdrv_68k.r
+	$(QL68K) $(BUILD)/$(PLATFORM_DIR)/dhfdrv_68k.r -O=$@
+
 # 2026-08-21 (Hardware-Vereinheitlichung): alle q9_devdesc_t-Definitionen (devdesc.c's Registry
 # g_devdesc_registry[] referenziert JEDEN Eintrag unbedingt, s. dortiger Kommentar) -- jeder
 # Aufrufer von devdesc.c braucht deshalb ALLE hier gelisteten Dateien im Link, nicht nur devdesc.c
@@ -257,7 +278,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf
+test: test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf test-dhf-driver
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (2026-08-20: nach
 # src/devices/cf/cf.c umgezogen, s. dortige Historie) -- reines ATA-PIO-Protokoll gegen
@@ -286,6 +307,26 @@ test-dhf:
 	$(CC) $(CFLAGS) test/13_test_dhf.c src/devices/dhf/q9_dhf.c src/devices/dhf/dhf_emu_device.c src/devices/dhf/dhf_host_fs.c src/devices/dhf/dhf_socket_client.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_dhf
 	$(BUILD)/$(PLATFORM_DIR)/test_dhf
+
+# 2026-09-25: Ende-zu-Ende-Gegenstueck zu test-dhf -- laedt das ECHTE, per psect gebaute 68k-
+# Treibermodul (Q9-OS/Q9-DHF-68k/driver/dhfdrv_68k.a, s. $(DHFDRV_MOD) oben) in Gast-RAM und fuehrt
+# dessen Init/Read/Write/GetStat/SetStat-Einspruenge ueber die echte Musashi-CPU aus, inklusive
+# echter MMIO-Bus-Weiterleitung an q9_devtype_dhf (dasselbe Geraet wie test-io-dispatch). Braucht
+# denselben Quelldatei-/Musashi-Objektsatz wie test-io-dispatch, s. dortiger Kommentar.
+test-dhf-driver: $(MUSASHI_OBJS) $(DHFDRV_MOD)
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) -DQ9_HAVE_M68K -I$(MUSASHI_DIR) -I$(MUSASHI_GEN) \
+	    test/14_test_dhf_driver.c test/07_hal_stub.c \
+	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/devreg.c \
+	    src/devices/cf/cf.c \
+	    src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
+	    src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
+	    src/devices/remap/remap.c \
+	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
+	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
+	    src/devices/dhf/q9_dhf.c src/devices/dhf/dhf_emu_device.c src/devices/dhf/dhf_host_fs.c src/devices/dhf/dhf_socket_client.c \
+	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_dhf_driver
+	$(BUILD)/$(PLATFORM_DIR)/test_dhf_driver
 
 # Hardware-Vereinheitlichung (2026-08-20), Pilot "cf": Rauchtest fuer devdesc.h/.c -- Registry-
 # Lookup + typspezifische Felder (q9_devdesc_cf.extra_fields aus cf.c) + gemeinsame Basisfelder
@@ -634,7 +675,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-dhf test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-dhf test-dhf-driver test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 4.40
