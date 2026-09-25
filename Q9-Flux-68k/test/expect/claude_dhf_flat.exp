@@ -1,0 +1,37 @@
+#!/usr/bin/expect -f
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
+log_file -a /tmp/claude_dhf_flat.log
+set timeout 120
+set images /Volumes/SSD1TB/projects/Q9-Forge/Q9-Images
+set prompt {[#$] ?$}
+
+spawn ./build/macos/q9.exe --rom $images/rom_images/Claude_cb030_BIOS.BIN --cf $images/cf_images/OS9SYS_Claude.hda
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { exit 1 }
+
+proc run {cmd label} {
+    global prompt
+    send_log "\nCLAUDE-DHF: === $label ===\n"
+    send "$cmd\r"
+    expect {
+        -re $prompt { }
+        timeout     { send_log "\nCLAUDE-DHF: $label TIMEOUT\n"; exit 1 }
+    }
+}
+
+run "iniz dhf0" "iniz dhf0 (flach in /CMDS, ohne vorheriges load)"
+run "dir /dhf0" "Wurzelverzeichnis ueber DHF anzeigen"
+
+send "\x1d"
+expect eof

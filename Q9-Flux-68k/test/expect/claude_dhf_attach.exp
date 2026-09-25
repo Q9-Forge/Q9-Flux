@@ -1,0 +1,44 @@
+#!/usr/bin/expect -f
+# 2026-09-27: Bootet OS9SYS_Claude.hda und versucht "iniz dhf0" -- der echte Test, ob der
+# echte OS-9-Kernel den Geraetedeskriptor (Q9-OS/Q9-DHF-68k/descriptor/dhf0.a) akzeptiert und
+# damit dhfmgr_68k/dhfdrv_68k tatsaechlich an einen Pfad anbindet (I$Attach), nicht nur laedt
+# (das bewies bereits claude_dhf_load.exp).
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
+log_file -a /tmp/claude_dhf_attach.log
+set timeout 120
+set images /Volumes/SSD1TB/projects/Q9-Forge/Q9-Images
+set prompt {[#$] ?$}
+
+spawn ./build/macos/q9.exe --rom $images/rom_images/Claude_cb030_BIOS.BIN --cf $images/cf_images/OS9SYS_Claude.hda
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\nCLAUDE-DHF: LOGIN FEHLGESCHLAGEN\n"; exit 1 }
+
+proc run {cmd label} {
+    global prompt
+    send_log "\nCLAUDE-DHF: === $label ===\n"
+    send "$cmd\r"
+    expect {
+        -re $prompt { }
+        timeout     { send_log "\nCLAUDE-DHF: $label TIMEOUT\n"; exit 1 }
+    }
+}
+
+run "load /dd/CMDS/dhf/dhfmgr_68k" "Manager vorab laden (damit iniz ihn ohne Verzeichnis-Suche findet)"
+run "load /dd/CMDS/dhf/dhfdrv_68k" "Treiber vorab laden"
+run "load /dd/CMDS/dhf/dhf0" "Deskriptor vorab laden"
+run "iniz dhf0" "iniz dhf0 -- Geraet anhaengen (I\$Attach)"
+run "dir /dhf0" "Wurzelverzeichnis ueber DHF anzeigen"
+
+send "\x1d"
+expect eof

@@ -63,6 +63,13 @@
 #define DATA2_ADDR       0x00002300u
 #define STACK_TOP        0x0000F000u
 #define TRAMPOLINE_ADDR  0x00001F00u   /* stop #$2700 -- Rueckkehrpunkt nach dem Modul-rts       */
+/* 2026-09-27: statischer Speicher (a2) -- seit dhfdrv_68k.a Edition 1.10 liest der Treiber
+   die MMIO-Basis nicht mehr als einkompilierte Konstante, sondern aus V_PORT (Offset 0
+   der statischen Speicherzelle), die der ECHTE Kernel normalerweise automatisch aus dem
+   Geraetedeskriptor befuellt (s. dortiger Kopfkommentar, sc68681.a-Vorbild) -- dieser Test
+   hat keinen echten Deskriptor/Kernel, muss V_PORT also selbst setzen. */
+#define STATIC_ADDR      0x00001E00u
+#define STATIC_SIZE      46u           /* muss >= sysioStatic sein, s. Treiber-Kopfkommentar */
 #define ENTRY_OFF_FIELD  0x00000032u   /* Standard-OS-9-Kopffeld: 16-Bit-Offset zur Sprungtabelle */
 
 enum { E_INIT = 0, E_READ, E_WRITE, E_GETSTAT, E_SETSTAT, E_TERM, E_RESERVED, E_COUNT };
@@ -104,7 +111,7 @@ static int call_entry(int idx, uint32_t *out_d0, uint8_t *out_carry, uint8_t *ou
     m68k_write_memory_32(sp, TRAMPOLINE_ADDR);
     m68k_set_reg(M68K_REG_A7, sp);
     m68k_set_reg(M68K_REG_A1, SHARED_ADDR);
-    m68k_set_reg(M68K_REG_A2, 0);
+    m68k_set_reg(M68K_REG_A2, STATIC_ADDR);
     m68k_set_reg(M68K_REG_A4, 0);
     m68k_set_reg(M68K_REG_A6, 0);
     m68k_set_reg(M68K_REG_SR, 0x2700u);           /* Supervisor, IPL7, alle Flags geloescht        */
@@ -192,6 +199,11 @@ int main(void)
     q9_dhf_init(&board.dhf, tmpdir, board.ram, board.ram_len);
     printf("DHF-Testverzeichnis: %s\n\n", tmpdir);
 
+    /* V_PORT (Offset 0 der statischen Speicherzelle) = MMIO-Basis des DHF-Geraets --
+       normalerweise vom echten Kernel automatisch aus dem Geraetedeskriptor befuellt (s.
+       Treiber-Kopfkommentar), hier von Hand, da dieser Test keinen echten Deskriptor hat. */
+    m68k_write_memory_32(STATIC_ADDR, Q9_BOARD_DHF_BASE);
+
     for (i = 0; i < (int)modlen; i++) {
         m68k_write_memory_8((uint32_t)(MOD_LOAD_ADDR + i), modbuf[i]);
     }
@@ -207,7 +219,11 @@ int main(void)
     check("Read/Write/GetStat/SetStat zeigen auf denselben Code (Treiber-Design, s. Kopfkommentar)",
           g_entry[E_READ] == g_entry[E_WRITE] && g_entry[E_WRITE] == g_entry[E_GETSTAT] &&
           g_entry[E_GETSTAT] == g_entry[E_SETSTAT]);
-    check("Init und Term zeigen auf denselben (leeren) Code", g_entry[E_INIT] == g_entry[E_TERM]);
+    /* 2026-09-27: Init und Term liegen seit dhfdrv_68k.a Edition 1.10 NICHT mehr an
+       derselben Adresse -- Init liest jetzt echten Basispfad-Code aus dem Geraetedeskriptor
+       (s. Treiber-Kopfkommentar), nur Term ist noch der leere Rumpf. */
+    check("Init und Term zeigen auf UNTERSCHIEDLICHEN Code (Init hat jetzt echte Logik)",
+          g_entry[E_INIT] != g_entry[E_TERM]);
 
     m68k_write_memory_16(TRAMPOLINE_ADDR, 0x60FEu);        /* bra.s * -- Selbstschleife, Flags unberuehrt */
 
