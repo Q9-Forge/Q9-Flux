@@ -877,6 +877,10 @@ static uint32_t g_glob_base       = 0;    /* s. m68krt_dump_dispatch */
 static const char *g_dump_mem_spec = NULL;
 static int         g_dump_mem_done = 0;
 static long     g_itrace_callcode = -1;   /* Q9_ITRACE_CALLCODE: statt am Modulnamen */
+static char     g_itrace_path[96] = {0};  /* Q9_ITRACE_PATH: scharf erst bei DIESEM I$Open/
+                                              I$Attach-Pfad, nicht beim ersten Treffer des
+                                              Callcodes -- fuer spaete Aufrufe wie "iniz dhf0"
+                                              nach vielen frueheren I$Open waehrend des Boots. */
 
 /* 2026-08-10 (Claude, Modul-Klassifizierung Kernel/IOMan/SysCache/SSM): live pruefen, welches
    Modul einen F$/I$-Aufruf tatsaechlich bearbeitet -- als Gegenprobe zu den dokumentierten
@@ -1111,8 +1115,18 @@ static int m68krt_trap_trace_callback(int trap)
                     g_syscall_return_code = (uint16_t)callcode;
                     g_syscall_return_a0 = m68k_get_reg(NULL, M68K_REG_A0);
                 }
+                if (g_itrace_path[0] && !g_itrace_armed &&
+                    callcode == (uint32_t)g_itrace_callcode &&
+                    strcmp(path, g_itrace_path) == 0) {
+                    g_itrace_armed = 1;
+                    g_itrace_left  = g_itrace_budget;
+                    fprintf(g_trap_trace_fp,
+                            "itrace scharf ab pc=%08x fuer %ld Instruktionen (Pfad %s)\n",
+                            pc, g_itrace_left, path);
+                    fflush(g_trap_trace_fp);
+                }
             }
-            if (g_itrace_callcode >= 0 && !g_itrace_armed &&
+            if (!g_itrace_path[0] && g_itrace_callcode >= 0 && !g_itrace_armed &&
                 callcode == (uint32_t)g_itrace_callcode) {
                 g_itrace_armed = 1;
                 g_itrace_left  = g_itrace_budget;
@@ -1184,7 +1198,39 @@ static void m68krt_watch_pc_callback(unsigned int pc)
     }
     if (g_itrace_left > 0 && g_trap_trace_fp) {
         /* Bewusst KEIN Speicherlesen (Opcode) hier -- das liefe durch die PMMU
-           und koennte im Hook selbst einen Fault ausloesen. Nur Register. */
+           und koennte im Hook selbst einen Fault ausloesen. Nur Register.
+           2026-09-26 (E$NORAM-Untersuchung, Q9-DHF-68k): AUSSER an dieser einen,
+           per Hand identifizierten Schleifenadresse -- dort lesen wir bewusst 32
+           Byte DATEN (nicht Opcode) ab a2, um die Eintraege der vermuteten
+           Speicherverwaltungstabelle sichtbar zu machen, die die Schleife
+           durchsucht (s. STATUS.md "E$NORAM (current blocker)"). */
+        if (pc == 0x0000ec88u) {
+            uint32_t a2 = m68k_get_reg(NULL, M68K_REG_A2);
+            uint32_t k;
+            fprintf(g_trap_trace_fp, "pre-a2=%08x:", a2);
+            for (k = 0; k < 64; k++)
+                fprintf(g_trap_trace_fp, " %02x", m68k_read_memory_8(a2 + k));
+            fprintf(g_trap_trace_fp, "\n");
+        }
+        if (pc == 0x0000ecb4u) {
+            uint32_t a2 = m68k_get_reg(NULL, M68K_REG_A2);
+            uint32_t d0 = m68k_get_reg(NULL, M68K_REG_D0);
+            uint32_t k;
+            fprintf(g_trap_trace_fp, "slot d0=%08x a2=%08x:", d0, a2);
+            for (k = 0; k < 32; k++)
+                fprintf(g_trap_trace_fp, " %02x", m68k_read_memory_8(a2 + k));
+            fprintf(g_trap_trace_fp, "\n");
+        }
+        if (pc == 0x0000ece0u) {
+            uint32_t stk44 = m68k_read_memory_32(m68k_get_reg(NULL, M68K_REG_SP) + 0x44u);
+            fprintf(g_trap_trace_fp, "ece0 stk44(->a0)=%08x header:", stk44);
+            {
+                uint32_t k;
+                for (k = 0; k < 64; k++)
+                    fprintf(g_trap_trace_fp, " %02x", m68k_read_memory_8(stk44 + k));
+            }
+            fprintf(g_trap_trace_fp, "\n");
+        }
         fprintf(g_trap_trace_fp,
                 "i %08x a0=%08x a1=%08x a2=%08x a3=%08x a4=%08x a5=%08x a6=%08x "
                 "sp=%08x d0=%08x d1=%08x d2=%08x\n",
@@ -1327,6 +1373,9 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
         {
             const char *il = getenv("Q9_ITRACE_LINK");
             const char *in = getenv("Q9_ITRACE_N");
+            const char *ip = getenv("Q9_ITRACE_PATH");
+            if (ip)
+                strncpy(g_itrace_path, ip, sizeof(g_itrace_path) - 1);
             if (il)
                 strncpy(g_itrace_link, il, sizeof(g_itrace_link) - 1);
             if (in)
