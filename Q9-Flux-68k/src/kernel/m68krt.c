@@ -79,6 +79,7 @@
 #include "../devices/duart68681/duart68681.h"          /* 2026-08-21: q9_devtype_duart68681,      */
                                                         /* aus q9board.h ausgelagert                */
 #include "../devices/rtc72421/rtc72421.h"               /* 2026-08-21: q9_devtype_rtc72421          */
+#include "../devices/dhf/q9_dhf.h"                       /* 2026-09-25: q9_devtype_dhf/q9_dhf_init   */
 #include "../devices/timer_irq/timer_irq.h"             /* 2026-08-21: q9_devtype_timer_irq         */
 #include "../devices/remap/remap.h"                       /* 2026-08-21: q9_devtype_remap             */
 #include "../devices/nettty/nettty.h"                    /* 2026-08-21: q9_devtype_nettty, aus       */
@@ -497,6 +498,13 @@ void q9_dbg_instr_trace_init(void)
 
 void q9_dbg_instr_trace_note_tx(unsigned char val)
 {
+    static int no_tx_freeze = -1;
+    if (no_tx_freeze < 0) {
+        no_tx_freeze = getenv("Q9_TRACE_NO_TX_FREEZE") ? 1 : 0;
+    }
+    if (no_tx_freeze) {
+        return;
+    }
     if (val >= 0x80u) {                            /* nicht-ASCII = die gesuchte Anomalie */
         q9_dbg_tr_frozen = 1;
     }
@@ -1053,8 +1061,15 @@ static int m68krt_trap_trace_callback(int trap)
                Puffer sonst nie voll wird und die Datei bis zum (hier nicht vorhandenen) sauberen
                Prozessende leer bleibt. */
             if (g_trap_trace_all) {
-                fprintf(g_trap_trace_fp, "modulecall pc=%08x callcode=%04x name=%s a0=%08x\n",
-                        pc, callcode, name, m68k_get_reg(NULL, M68K_REG_A0));
+                uint32_t a5 = m68k_get_reg(NULL, M68K_REG_A5);
+                fprintf(g_trap_trace_fp, "modulecall pc=%08x callcode=%04x name=%s a0=%08x "
+                        "d0=%08x d1=%08x a1=%08x a2=%08x a5=%08x "
+                        "f20=%08x f24=%08x f28=%08x f3c=%04x\n",
+                        pc, callcode, name, m68k_get_reg(NULL, M68K_REG_A0),
+                        m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                        m68k_get_reg(NULL, M68K_REG_A1), m68k_get_reg(NULL, M68K_REG_A2),
+                        a5, m68k_read_memory_32(a5 + 0x20), m68k_read_memory_32(a5 + 0x24),
+                        m68k_read_memory_32(a5 + 0x28), m68k_read_memory_16(a5 + 0x3c));
                 fflush(g_trap_trace_fp);
                 g_trap_trace_n++;
             }
@@ -1404,6 +1419,23 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
         d.vt         = &q9_devtype_rtc72421;
         d.state      = board;
+        q9_devreg_add(d);
+
+        /* 2026-09-25: DHF (Direct Host Filesystem, docs/HOSTFS_MANAGER_de.md) -- kein IRQ. Basepath
+           vorerst hartkodiert (wie rtc72421 anfangs "noch ohne extra_fields") -- Config-Feld
+           "hostpath" analog "cf"s "image"-Feld folgt als eigener Schritt (s. q9_dhf.h/.c). */
+        q9_dhf_init(&board->dhf, "/Volumes/SSD1TB/projects/Q9-Forge/Q9-Images/cf_images/OS9SYS");
+        memset(&d, 0, sizeof(d));
+        d.type       = "dhf";
+        d.name       = "dhf0";
+        d.base       = Q9_BOARD_DHF_BASE;
+        d.size       = Q9_BOARD_DHF_TOP - Q9_BOARD_DHF_BASE + 1u;
+        d.irq_level  = 0;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
+        d.vt         = &q9_devtype_dhf;
+        d.state      = &board->dhf;
         q9_devreg_add(d);
 
         /* 2026-08-21 (Hardware-Vereinheitlichung, Andreas' Idee): der REMAP-Trigger selbst -- kein

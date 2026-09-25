@@ -152,7 +152,7 @@ DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c src/kernel/devreg.c \
               src/devices/framebuf/framebuf.c src/devices/clut/clut.c \
               src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
               src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
-              src/devices/remap/remap.c
+              src/devices/remap/remap.c src/devices/dhf/q9_dhf.c
 
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
@@ -165,7 +165,7 @@ BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src
             src/devices/clut/clut.h src/devices/videobridge/videobridge.h \
             src/devices/duart68681/duart68681.h src/devices/rtc72421/rtc72421.h \
             src/devices/timer_irq/timer_irq.h src/devices/nettty/nettty.h \
-            src/devices/remap/remap.h
+            src/devices/remap/remap.h src/devices/dhf/q9_dhf.h
 
 # Fuenfunddreissigste Runde (2026-08-22, Andreas: "ich wollte eigentlich das man in den
 # Configurator kommt wenn man den emulator ohne parameter aufruft"): der interaktive Launcher/
@@ -257,7 +257,7 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save
+test: test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (2026-08-20: nach
 # src/devices/cf/cf.c umgezogen, s. dortige Historie) -- reines ATA-PIO-Protokoll gegen
@@ -278,6 +278,14 @@ test-devschema:
 	$(CC) $(CFLAGS) test/08_test_devschema.c src/kernel/devschema.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_devschema
 	$(BUILD)/$(PLATFORM_DIR)/test_devschema
+
+# 2026-09-25: Rauchtest fuer DHF (Direct Host Filesystem, docs/HOSTFS_MANAGER_de.md) -- reines
+# MMIO-Registerprotokoll gegen q9_devtype_dhf, ohne 68k-CPU/OS-9-Treiber, analog test-cf-sector.
+test-dhf:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) test/13_test_dhf.c src/devices/dhf/q9_dhf.c \
+	    -o $(BUILD)/$(PLATFORM_DIR)/test_dhf
+	$(BUILD)/$(PLATFORM_DIR)/test_dhf
 
 # Hardware-Vereinheitlichung (2026-08-20), Pilot "cf": Rauchtest fuer devdesc.h/.c -- Registry-
 # Lookup + typspezifische Felder (q9_devdesc_cf.extra_fields aus cf.c) + gemeinsame Basisfelder
@@ -324,6 +332,7 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	    src/devices/remap/remap.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
 	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
+	    src/devices/dhf/q9_dhf.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
 	$(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
 
@@ -625,7 +634,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-dhf test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 4.40

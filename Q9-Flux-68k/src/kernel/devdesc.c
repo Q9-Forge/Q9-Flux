@@ -38,6 +38,7 @@
 #include "../devices/timer_irq/timer_irq.h"
 #include "../devices/nettty/nettty.h"
 #include "../devices/remap/remap.h"
+#include "../devices/dhf/q9_dhf.h"
 #include <string.h>
 
 /* Descriptor/DescriptorName -- EINMAL definiert (s. devdesc.h-Kopfkommentar), Inhalt entspricht
@@ -70,6 +71,7 @@ static const q9_devdesc_t *const g_devdesc_registry[] = {
     &q9_devdesc_timer_irq,
     &q9_devdesc_nettty,
     &q9_devdesc_remap,
+    &q9_devdesc_dhf,
 };
 #define Q9_DEVDESC_COUNT (int)(sizeof(g_devdesc_registry) / sizeof(g_devdesc_registry[0]))
 
