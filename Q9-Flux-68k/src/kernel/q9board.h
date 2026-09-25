@@ -117,11 +117,8 @@
 /* 2026-08-20: Compact-Flash-Adress-/Registerkonstanten sind nach src/devices/cf/cf.h umgezogen
    (Hardware-Vereinheitlichung, Pilot "cf") -- via #include oben weiterhin hier sichtbar. */
 
-/* 2026-09-25: DHF (Direct Host Filesystem, s. src/devices/dhf/q9_dhf.h) -- freie Luecke zwischen
-   nettty ($FFFF1000-17FF) und QUICC ($FFFF2000-3FFF, 8K-aligned) einerseits und REMAP ($FFFF8000)
-   andererseits: $FFFF4000-7FFF, 16K frei, DHF braucht nur 4K (Q9_DHF_WINDOW_SIZE). */
-#define Q9_BOARD_DHF_BASE          0xFFFF4000u
-#define Q9_BOARD_DHF_TOP           0xFFFF4FFFu
+/* 2026-09-25: DHF (Direct Host Filesystem) -- Q9_BOARD_DHF_BASE/_TOP kommen jetzt aus
+   src/devices/dhf/q9_dhf.h (via #include oben), analog dem CF-Vorbild. */
 
 /* 5.2b: 68681-DUART (docs/BOARD.md, Abschnitt "68681 DUART"). Nur die Adressen, die Aufrufer/
    Selbsttest wirklich brauchen, sind hier exponiert — der Rest des Registersatzes bleibt intern

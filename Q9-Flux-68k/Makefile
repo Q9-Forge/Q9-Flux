@@ -152,7 +152,7 @@ DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c src/kernel/devreg.c \
               src/devices/framebuf/framebuf.c src/devices/clut/clut.c \
               src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
               src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
-              src/devices/remap/remap.c src/devices/dhf/q9_dhf.c
+              src/devices/remap/remap.c src/devices/dhf/q9_dhf.c src/devices/dhf/dhf_emu_device.c src/devices/dhf/dhf_host_fs.c src/devices/dhf/dhf_socket_client.c
 
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
@@ -283,7 +283,7 @@ test-devschema:
 # MMIO-Registerprotokoll gegen q9_devtype_dhf, ohne 68k-CPU/OS-9-Treiber, analog test-cf-sector.
 test-dhf:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) test/13_test_dhf.c src/devices/dhf/q9_dhf.c \
+	$(CC) $(CFLAGS) test/13_test_dhf.c src/devices/dhf/q9_dhf.c src/devices/dhf/dhf_emu_device.c src/devices/dhf/dhf_host_fs.c src/devices/dhf/dhf_socket_client.c \
 	    -o $(BUILD)/$(PLATFORM_DIR)/test_dhf
 	$(BUILD)/$(PLATFORM_DIR)/test_dhf
 
@@ -332,7 +332,7 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	    src/devices/remap/remap.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
 	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
-	    src/devices/dhf/q9_dhf.c \
+	    src/devices/dhf/q9_dhf.c src/devices/dhf/dhf_emu_device.c src/devices/dhf/dhf_host_fs.c src/devices/dhf/dhf_socket_client.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
 	$(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
 

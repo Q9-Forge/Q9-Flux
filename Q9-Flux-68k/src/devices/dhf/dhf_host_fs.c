@@ -1,0 +1,480 @@
+/* dhf_host_fs.c - Host Filesystem implementation with path confinement
+ */
+
+#include "dhf_host_fs.h"
+#include "dhf_proto.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <limits.h>
+
+static uint8_t errno_to_dhf(int err) {
+    switch (err) {
+        case 0:         return DHF_ERR_OK;
+        case ENOENT:    return DHF_ERR_NOT_FOUND;
+        case EACCES:
+        case EPERM:     return DHF_ERR_NO_PERMISSION;
+        case EEXIST:    return DHF_ERR_FILE_EXISTS;
+        case EBADF:     return DHF_ERR_BAD_PATH;
+        case ENOSPC:    return DHF_ERR_DISK_FULL;
+        case EISDIR:    return DHF_ERR_IS_DIR;
+        case ENOTDIR:   return DHF_ERR_NOT_DIR;
+        default:        return DHF_ERR_ERROR;
+    }
+}
+
+/* Resolve path relative to cwd and basepath; enforce basepath confinement */
+static int resolve_confined_path(dhf_host_fs_t *fs, const char *rel_or_abs, char *out_buf, size_t out_len) {
+    char combined[DHF_PATH_MAX * 2];
+
+    if (!rel_or_abs || !rel_or_abs[0]) {
+        snprintf(combined, sizeof(combined), "%s/%s", fs->basepath, fs->cwd);
+    } else if (rel_or_abs[0] == '/') {
+        /* Virtual absolute path inside basepath */
+        snprintf(combined, sizeof(combined), "%s/%s", fs->basepath, rel_or_abs + 1);
+    } else {
+        /* Relative path */
+        if (fs->cwd[0]) {
+            snprintf(combined, sizeof(combined), "%s/%s/%s", fs->basepath, fs->cwd, rel_or_abs);
+        } else {
+            snprintf(combined, sizeof(combined), "%s/%s", fs->basepath, rel_or_abs);
+        }
+    }
+
+    /* Clean path / remove multiple slashes and /./ */
+    char resolved[PATH_MAX];
+    /* For non-existing targets (create), realpath might fail on full path,
+       so resolve directory component */
+    char *last_slash = strrchr(combined, '/');
+    if (last_slash && last_slash != combined) {
+        char dir_part[DHF_PATH_MAX];
+        size_t dlen = (size_t)(last_slash - combined);
+        if (dlen >= sizeof(dir_part)) dlen = sizeof(dir_part) - 1;
+        strncpy(dir_part, combined, dlen);
+        dir_part[dlen] = '\0';
+
+        if (realpath(dir_part, resolved) != NULL) {
+            snprintf(out_buf, out_len, "%s/%s", resolved, last_slash + 1);
+        } else {
+            strncpy(out_buf, combined, out_len - 1);
+            out_buf[out_len - 1] = '\0';
+        }
+    } else {
+        strncpy(out_buf, combined, out_len - 1);
+        out_buf[out_len - 1] = '\0';
+    }
+
+    /* Confinement check: out_buf must start with fs->basepath */
+    size_t base_len = strlen(fs->basepath);
+    if (strncmp(out_buf, fs->basepath, base_len) != 0) {
+        return -1; /* Escape detected */
+    }
+    return 0;
+}
+
+static int alloc_handle(dhf_host_fs_t *fs, int is_dir, const char *path) {
+    for (int i = 0; i < DHF_MAX_HANDLES; i++) {
+        if (!fs->handles[i].in_use) {
+            fs->handles[i].in_use = 1;
+            fs->handles[i].is_dir = is_dir;
+            fs->handles[i].fd = -1;
+            fs->handles[i].dir = NULL;
+            strncpy(fs->handles[i].path, path ? path : "", sizeof(fs->handles[i].path) - 1);
+            return i;
+        }
+    }
+    return -1;
+}
+
+int dhf_host_fs_init(dhf_host_fs_t *fs, const char *basepath) {
+    if (!fs) return -1;
+    memset(fs, 0, sizeof(*fs));
+
+    char real_base[PATH_MAX];
+    if (basepath && basepath[0]) {
+        if (realpath(basepath, real_base) != NULL) {
+            strncpy(fs->basepath, real_base, sizeof(fs->basepath) - 1);
+        } else {
+            strncpy(fs->basepath, basepath, sizeof(fs->basepath) - 1);
+        }
+    } else {
+        getcwd(fs->basepath, sizeof(fs->basepath) - 1);
+    }
+    fs->cwd[0] = '\0'; /* root inside basepath */
+    return 0;
+}
+
+void dhf_host_fs_cleanup(dhf_host_fs_t *fs) {
+    if (!fs) return;
+    for (int i = 0; i < DHF_MAX_HANDLES; i++) {
+        if (fs->handles[i].in_use) {
+            if (fs->handles[i].is_dir && fs->handles[i].dir) {
+                closedir(fs->handles[i].dir);
+            } else if (!fs->handles[i].is_dir && fs->handles[i].fd >= 0) {
+                close(fs->handles[i].fd);
+            }
+            fs->handles[i].in_use = 0;
+        }
+    }
+}
+
+int dhf_host_fs_open(dhf_host_fs_t *fs, const char *path, int flags, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    int oflags = 0;
+    if ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) == (DHF_MODE_READ | DHF_MODE_WRITE)) {
+        oflags = O_RDWR;
+    } else if (flags & DHF_MODE_WRITE) {
+        oflags = O_WRONLY;
+    } else {
+        oflags = O_RDONLY;
+    }
+
+    int fd = open(target, oflags);
+    if (fd < 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    int h = alloc_handle(fs, 0, target);
+    if (h < 0) {
+        close(fd);
+        if (status) *status = DHF_ERR_PATH_FULL;
+        return -1;
+    }
+
+    fs->handles[h].fd = fd;
+    if (status) *status = DHF_ERR_OK;
+    return h;
+}
+
+int dhf_host_fs_create(dhf_host_fs_t *fs, const char *path, int flags, int mode, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    int oflags = O_CREAT | O_TRUNC;
+    if ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) == (DHF_MODE_READ | DHF_MODE_WRITE)) {
+        oflags |= O_RDWR;
+    } else if (flags & DHF_MODE_WRITE) {
+        oflags |= O_WRONLY;
+    } else {
+        oflags |= O_RDWR;
+    }
+
+    mode_t pmode = (mode == 0) ? 0644 : (mode_t)mode;
+    int fd = open(target, oflags, pmode);
+    if (fd < 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    int h = alloc_handle(fs, 0, target);
+    if (h < 0) {
+        close(fd);
+        if (status) *status = DHF_ERR_PATH_FULL;
+        return -1;
+    }
+
+    fs->handles[h].fd = fd;
+    if (status) *status = DHF_ERR_OK;
+    return h;
+}
+
+int dhf_host_fs_close(dhf_host_fs_t *fs, int handle, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    if (fs->handles[handle].is_dir) {
+        if (fs->handles[handle].dir) closedir(fs->handles[handle].dir);
+    } else {
+        if (fs->handles[handle].fd >= 0) close(fs->handles[handle].fd);
+    }
+    fs->handles[handle].in_use = 0;
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+ssize_t dhf_host_fs_read(dhf_host_fs_t *fs, int handle, void *buf, size_t count, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    ssize_t res = read(fs->handles[handle].fd, buf, count);
+    if (res < 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return res;
+}
+
+ssize_t dhf_host_fs_write(dhf_host_fs_t *fs, int handle, const void *buf, size_t count, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    ssize_t res = write(fs->handles[handle].fd, buf, count);
+    if (res < 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return res;
+}
+
+off_t dhf_host_fs_seek(dhf_host_fs_t *fs, int handle, off_t offset, int whence, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    int pwhence = SEEK_SET;
+    if (whence == DHF_SEEK_CUR) pwhence = SEEK_CUR;
+    else if (whence == DHF_SEEK_END) pwhence = SEEK_END;
+
+    off_t res = lseek(fs->handles[handle].fd, offset, pwhence);
+    if (res == (off_t)-1) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return res;
+}
+
+int dhf_host_fs_readln(dhf_host_fs_t *fs, int handle, char *buf, size_t maxlen, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || fs->handles[handle].is_dir || maxlen == 0) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    size_t i = 0;
+    while (i < maxlen - 1) {
+        char ch;
+        ssize_t r = read(fs->handles[handle].fd, &ch, 1);
+        if (r <= 0) {
+            if (r < 0) {
+                if (status) *status = errno_to_dhf(errno);
+                return -1;
+            }
+            break; /* EOF */
+        }
+        buf[i++] = ch;
+        if (ch == '\n' || ch == '\r') {
+            break;
+        }
+    }
+    buf[i] = '\0';
+    if (status) *status = DHF_ERR_OK;
+    return (int)i;
+}
+
+int dhf_host_fs_writeln(dhf_host_fs_t *fs, int handle, const char *buf, size_t len, uint8_t *status) {
+    ssize_t w = dhf_host_fs_write(fs, handle, buf, len, status);
+    if (w < 0) return -1;
+    char nl = '\n';
+    if (len == 0 || buf[len - 1] != '\n') {
+        write(fs->handles[handle].fd, &nl, 1);
+        w++;
+    }
+    return (int)w;
+}
+
+int dhf_host_fs_getstat(dhf_host_fs_t *fs, const char *path, void *statbuf, size_t *out_size, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    struct stat st;
+    if (stat(target, &st) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    /* Serialize compact stat into statbuf:
+       uint32_t size, uint32_t mode, uint32_t mtime, uint32_t atime */
+    uint32_t *fields = (uint32_t*)statbuf;
+    fields[0] = htonl((uint32_t)st.st_size);
+    fields[1] = htonl((uint32_t)st.st_mode);
+    fields[2] = htonl((uint32_t)st.st_mtime);
+    fields[3] = htonl((uint32_t)st.st_atime);
+
+    if (out_size) *out_size = 16;
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+int dhf_host_fs_setstat(dhf_host_fs_t *fs, const char *path, const void *statbuf, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+    (void)statbuf;
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    struct stat st;
+    if (stat(target, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        if (status) *status = DHF_ERR_NOT_DIR;
+        return -1;
+    }
+
+    /* Compute new cwd relative to basepath */
+    size_t base_len = strlen(fs->basepath);
+    if (strlen(target) > base_len) {
+        const char *rel = target + base_len;
+        if (*rel == '/') rel++;
+        strncpy(fs->cwd, rel, sizeof(fs->cwd) - 1);
+    } else {
+        fs->cwd[0] = '\0';
+    }
+
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+int dhf_host_fs_mkdir(dhf_host_fs_t *fs, const char *path, int mode, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    mode_t pmode = (mode == 0) ? 0755 : (mode_t)mode;
+    if (mkdir(target, pmode) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+int dhf_host_fs_rmdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    if (rmdir(target) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+int dhf_host_fs_unlink(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    if (unlink(target) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+int dhf_host_fs_rename(dhf_host_fs_t *fs, const char *oldp, const char *newp, uint8_t *status) {
+    char target_old[DHF_PATH_MAX];
+    char target_new[DHF_PATH_MAX];
+
+    if (resolve_confined_path(fs, oldp, target_old, sizeof(target_old)) != 0 ||
+        resolve_confined_path(fs, newp, target_new, sizeof(target_new)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    if (rename(target_old, target_new) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+int dhf_host_fs_opendir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    DIR *d = opendir(target);
+    if (!d) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    int h = alloc_handle(fs, 1, target);
+    if (h < 0) {
+        closedir(d);
+        if (status) *status = DHF_ERR_PATH_FULL;
+        return -1;
+    }
+
+    fs->handles[h].dir = d;
+    if (status) *status = DHF_ERR_OK;
+    return h;
+}
+
+int dhf_host_fs_readdir(dhf_host_fs_t *fs, int handle, char *name_out, size_t max_name, uint32_t *size_out, uint32_t *mode_out, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || !fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    struct dirent *de = readdir(fs->handles[handle].dir);
+    if (!de) {
+        if (status) *status = DHF_ERR_OK;
+        return 0; /* EOF */
+    }
+
+    if (name_out && max_name > 0) {
+        strncpy(name_out, de->d_name, max_name - 1);
+        name_out[max_name - 1] = '\0';
+    }
+
+    /* Stat the file to get size and mode */
+    char fullpath[DHF_PATH_MAX * 2];
+    snprintf(fullpath, sizeof(fullpath), "%s/%s", fs->handles[handle].path, de->d_name);
+    struct stat st;
+    if (stat(fullpath, &st) == 0) {
+        if (size_out) *size_out = (uint32_t)st.st_size;
+        if (mode_out) *mode_out = (uint32_t)st.st_mode;
+    } else {
+        if (size_out) *size_out = 0;
+        if (mode_out) *mode_out = 0;
+    }
+
+    if (status) *status = DHF_ERR_OK;
+    return 1;
+}
