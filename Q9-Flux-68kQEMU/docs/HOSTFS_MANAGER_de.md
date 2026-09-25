@@ -3,9 +3,14 @@
 *Englische Version: [HOSTFS_MANAGER.md](HOSTFS_MANAGER.md)*
 
 Entstanden am 2026-09-15 aus der Frage, wie man das RBF-Konvertier-
-Theater beim Testen umgeht. **Noch nicht begonnen** — reiner
-Architekturentwurf, festgehalten für eine spätere Umsetzungssession,
-nach der [Musashi→QEMU-Umstellung](../README_de.md).
+Theater beim Testen umgeht. Ursprünglich als reiner Architekturentwurf
+festgehalten, für eine spätere Umsetzungssession nach der
+[Musashi→QEMU-Umstellung](../README_de.md) — **Schritt 1 (Musashi) ist
+seit 2026-09-25 umgesetzt**: das MMIO-Gerät existiert und ist verifiziert
+(`Q9-Flux-68k/src/devices/dhf/`, `make test-dhf`), s. Status-Tabelle in
+`Q9-OS/Q9-DHF-68k/STATUS.md`. Offen: das echte OS-9-Treibermodul, das
+dieses Gerät tatsächlich anspricht (braucht QCCs `driver`-Aufrufkonvention,
+noch nicht gemergt), sowie Schritt 2 (QEMU) weiterhin unangefangen.
 
 ## Warum kein RBF/PCF/NFS/FTP/Samba
 
