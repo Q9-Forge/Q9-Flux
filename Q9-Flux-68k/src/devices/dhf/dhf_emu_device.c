@@ -155,13 +155,15 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         }
 
         case DHF_CMD_OPEN: {
-            int h = dhf_host_fs_open(&dev->host_fs, path, (int)d2, &status);
+            /* 2026-09-26: d0 ist jetzt EINGABE -- die OS-9-Pfadnummer vom Manager (statt
+             * eines hier selbst vergebenen Handles), s. dhf_host_fs_open_at-Kommentar. */
+            int h = dhf_host_fs_open_at(&dev->host_fs, (int)d0, path, (int)d2, &status);
             if (h >= 0) s->d0 = htonl((uint32_t)h);
             break;
         }
 
         case DHF_CMD_CREATE: {
-            int h = dhf_host_fs_create(&dev->host_fs, path, (int)d2, (int)d1, &status);
+            int h = dhf_host_fs_create_at(&dev->host_fs, (int)d0, path, (int)d2, (int)d1, &status);
             if (h >= 0) s->d0 = htonl((uint32_t)h);
             break;
         }
