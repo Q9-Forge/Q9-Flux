@@ -1424,7 +1424,8 @@ void q9_m68krt_attach_board(q9_board_t *board)
         /* 2026-09-25: DHF (Direct Host Filesystem, docs/HOSTFS_MANAGER_de.md) -- kein IRQ. Basepath
            vorerst hartkodiert (wie rtc72421 anfangs "noch ohne extra_fields") -- Config-Feld
            "hostpath" analog "cf"s "image"-Feld folgt als eigener Schritt (s. q9_dhf.h/.c). */
-        q9_dhf_init(&board->dhf, "/Volumes/SSD1TB/projects/Q9-Forge/Q9-Images/cf_images/OS9SYS");
+        q9_dhf_init(&board->dhf, "/Volumes/SSD1TB/projects/Q9-Forge/Q9-Images/cf_images/OS9SYS",
+                    board->ram, board->ram_len);
         memset(&d, 0, sizeof(d));
         d.type       = "dhf";
         d.name       = "dhf0";

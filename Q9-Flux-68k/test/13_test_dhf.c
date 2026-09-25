@@ -1,11 +1,12 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   13_test_dhf.c                                                                   Ver. 1.00
+// File:   13_test_dhf.c                                                                   Ver. 2.00
 // Owner:  Claude
-// Desc.:  Rauchtest fuer das DHF-Geraet (src/devices/dhf/q9_dhf.c), analog test-cf-sector: faehrt
-//         das MMIO-Registerprotokoll direkt gegen q9_devtype_dhf.read8/write8, OHNE 68k-CPU, OHNE
-//         OS-9-Treiber -- die Frage ist ausschliesslich: kommen bei OPEN/WRITE/CLOSE/OPEN/READ/
-//         MKDIR/OPENDIR/READDIR/RENAME/UNLINK/RMDIR dieselben Bytes/Ergebnisse zurueck, die ein
-//         spaeter angeschlossener 68k-Treiber ueber genau dieses Registerfenster erwarten wuerde?
+// Desc.:  Rauchtest fuer das DHF-Geraet (src/devices/dhf/q9_dhf.c + dhf_emu_device.c), analog
+//         test-cf-sector: faehrt das MMIO-Registerprotokoll (dhf_shared, big-endian, A0/A1 als
+//         Gast-RAM-Zeiger fuer Pfad/Daten) direkt gegen q9_devtype_dhf.read8/write8, OHNE 68k-CPU,
+//         OHNE OS-9-Treiber -- simuliert Gast-RAM als schlichtes Array, genau wie es der spaetere
+//         echte 68k-Treiber (Q9-OS/Q9-DHFDRV-68k/driver/dhfdrv.c) tun wuerde (A0/A1 zeigen auf vom
+//         Treiber bereitgestellte Puffer im Gast-RAM, s. dessen README "Zero-Copy Pointer-Modell").
 //
 // Call:   make test-dhf   (baut+startet)
 //
@@ -13,44 +14,54 @@
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
-// 26-09-25│ 1.00 │ Initiale Version                                                        │ Cld
+// 26-09-25│ 1.00 │ Initiale Version (eigenes Byte-Kopier-Protokoll)                        │ Cld
+// 26-09-25│ 2.00 │ Umgestellt auf das Q9-DHFDRV-68k-Protokoll (dhf_shared/A0-A1/D0-D2)      │ Cld
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "../src/devices/dhf/q9_dhf.h"
+#include "../src/devices/dhf/dhf_proto.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
 static int g_total_fail = 0;
 static q9_device_t g_dev;
+static uint8_t g_ram[65536];
+#define GUEST_PATH_ADDR  0x1000u
+#define GUEST_PATH2_ADDR 0x1200u
+#define GUEST_DATA_ADDR  0x2000u
 
-static void dhf_w8(uint32_t off, uint8_t v)  { g_dev.vt->write8(&g_dev, g_dev.base + off, v); }
-static uint8_t dhf_r8(uint32_t off)          { return g_dev.vt->read8(&g_dev, g_dev.base + off); }
+static void dev_w8(uint32_t off, uint8_t v)  { g_dev.vt->write8(&g_dev, g_dev.base + off, v); }
+static uint8_t dev_r8(uint32_t off)          { return g_dev.vt->read8(&g_dev, g_dev.base + off); }
 
-static void dhf_wstr(uint32_t off, const char *s)
+static void put_str(uint32_t guest_addr, const char *s)
 {
-    size_t i, n = strlen(s);
-    for (i = 0; i <= n; i++) dhf_w8(off + (uint32_t)i, (uint8_t)s[i]); /* inkl. NUL */
+    strcpy((char *)&g_ram[guest_addr], s);
 }
 
-static void dhf_w32(uint32_t off, uint32_t v)
-{
-    dhf_w8(off + 0, (uint8_t)(v >> 24));
-    dhf_w8(off + 1, (uint8_t)(v >> 16));
-    dhf_w8(off + 2, (uint8_t)(v >> 8));
-    dhf_w8(off + 3, (uint8_t)(v));
-}
+static void set_a0(uint32_t v) { uint32_t be = htonl(v); size_t o = offsetof(struct dhf_shared, a0); for (int i = 0; i < 4; i++) dev_w8((uint32_t)o + i, ((uint8_t*)&be)[i]); }
+static void set_a1(uint32_t v) { uint32_t be = htonl(v); size_t o = offsetof(struct dhf_shared, a1); for (int i = 0; i < 4; i++) dev_w8((uint32_t)o + i, ((uint8_t*)&be)[i]); }
+static void set_d0(uint32_t v) { uint32_t be = htonl(v); size_t o = offsetof(struct dhf_shared, d0); for (int i = 0; i < 4; i++) dev_w8((uint32_t)o + i, ((uint8_t*)&be)[i]); }
+static void set_d1(uint32_t v) { uint32_t be = htonl(v); size_t o = offsetof(struct dhf_shared, d1); for (int i = 0; i < 4; i++) dev_w8((uint32_t)o + i, ((uint8_t*)&be)[i]); }
+static void set_d2(uint32_t v) { uint32_t be = htonl(v); size_t o = offsetof(struct dhf_shared, d2); for (int i = 0; i < 4; i++) dev_w8((uint32_t)o + i, ((uint8_t*)&be)[i]); }
 
-static uint32_t dhf_r32(uint32_t off)
+static uint32_t get_u32(size_t off)
 {
-    return ((uint32_t)dhf_r8(off + 0) << 24) | ((uint32_t)dhf_r8(off + 1) << 16)
-         | ((uint32_t)dhf_r8(off + 2) << 8)  | (uint32_t)dhf_r8(off + 3);
+    uint8_t b[4];
+    int i;
+    for (i = 0; i < 4; i++) b[i] = dev_r8((uint32_t)off + (uint32_t)i);
+    uint32_t be; memcpy(&be, b, 4);
+    return ntohl(be);
 }
+static uint32_t get_d0(void) { return get_u32(offsetof(struct dhf_shared, d0)); }
+static uint32_t get_d1(void) { return get_u32(offsetof(struct dhf_shared, d1)); }
+static uint8_t  get_status(void) { return dev_r8((uint32_t)offsetof(struct dhf_shared, status)); }
 
-static int32_t dhf_cmd(uint8_t cmd)
+static void run_cmd(uint8_t cmd)
 {
-    dhf_w8(Q9_DHF_OFF_CMD, cmd);
-    return (int32_t)dhf_r32(Q9_DHF_OFF_RESULT);
+    dev_w8((uint32_t)offsetof(struct dhf_shared, command), cmd);
 }
 
 static void check(const char *label, int ok)
@@ -67,125 +78,117 @@ int main(void)
     printf("Basepath: %s\n\n", tmpdir);
 
     static q9_dhf_t dhf;
-    q9_dhf_init(&dhf, tmpdir);
+    q9_dhf_init(&dhf, tmpdir, g_ram, sizeof(g_ram));
     memset(&g_dev, 0, sizeof(g_dev));
     g_dev.type = "dhf"; g_dev.name = "dhf0";
-    g_dev.base = 0xFFFF4000u; g_dev.size = Q9_DHF_WINDOW_SIZE;
+    g_dev.base = Q9_BOARD_DHF_BASE; g_dev.size = (uint32_t)sizeof(struct dhf_shared);
     g_dev.vt = &q9_devtype_dhf; g_dev.state = &dhf;
 
-    /* --- OPEN (create+trunc) "hello.txt", WRITE "Hello DHF!", CLOSE --- */
-    dhf_wstr(Q9_DHF_OFF_PATH, "hello.txt");
-    dhf_w32(Q9_DHF_OFF_ARG1, 0x4 | 0x8);           /* O_CREAT|O_TRUNC, s. dhf_open_mode() */
-    dhf_w32(Q9_DHF_OFF_ARG2, 0644);
-    int32_t r = dhf_cmd(Q9_DHF_CMD_OPEN);
-    uint8_t h1 = dhf_r8(Q9_DHF_OFF_HANDLE);
-    check("OPEN hello.txt (create+trunc)", r == 0);
+    /* --- CREATE hello.txt, WRITE "Hello DHF!", CLOSE --- */
+    put_str(GUEST_PATH_ADDR, "hello.txt");
+    set_a0(GUEST_PATH_ADDR);
+    set_d1(0644); set_d2(DHF_MODE_WRITE);
+    run_cmd(DHF_CMD_CREATE);
+    check("CREATE hello.txt", get_status() == DHF_ERR_OK);
+    uint32_t h1 = get_d0();
 
     const char *payload = "Hello DHF!";
     size_t plen = strlen(payload);
-    { size_t i; for (i = 0; i < plen; i++) dhf_w8(Q9_DHF_OFF_DATA + (uint32_t)i, (uint8_t)payload[i]); }
-    dhf_w8(Q9_DHF_OFF_HANDLE, h1);
-    dhf_w32(Q9_DHF_OFF_ARG1, (uint32_t)plen);
-    r = dhf_cmd(Q9_DHF_CMD_WRITE);
-    check("WRITE 10 Byte", r == (int32_t)plen);
+    memcpy(&g_ram[GUEST_DATA_ADDR], payload, plen);
+    set_d0(h1); set_a1(GUEST_DATA_ADDR); set_d1((uint32_t)plen);
+    run_cmd(DHF_CMD_WRITE);
+    check("WRITE 10 Byte", get_status() == DHF_ERR_OK && get_d1() == plen);
 
-    dhf_w8(Q9_DHF_OFF_HANDLE, h1);
-    r = dhf_cmd(Q9_DHF_CMD_CLOSE);
-    check("CLOSE", r == 0);
+    set_d0(h1);
+    run_cmd(DHF_CMD_CLOSE);
+    check("CLOSE", get_status() == DHF_ERR_OK);
 
-    /* --- OPEN (read-only), READ zurueck, vergleichen --- */
-    dhf_wstr(Q9_DHF_OFF_PATH, "hello.txt");
-    dhf_w32(Q9_DHF_OFF_ARG1, 0);                   /* O_RDONLY */
-    dhf_w32(Q9_DHF_OFF_ARG2, 0);
-    r = dhf_cmd(Q9_DHF_CMD_OPEN);
-    uint8_t h2 = dhf_r8(Q9_DHF_OFF_HANDLE);
-    check("OPEN hello.txt (rdonly)", r == 0);
+    /* --- OPEN (read), READ zurueck, vergleichen --- */
+    put_str(GUEST_PATH_ADDR, "hello.txt");
+    set_a0(GUEST_PATH_ADDR); set_d2(DHF_MODE_READ);
+    run_cmd(DHF_CMD_OPEN);
+    check("OPEN hello.txt", get_status() == DHF_ERR_OK);
+    uint32_t h2 = get_d0();
 
-    dhf_w8(Q9_DHF_OFF_HANDLE, h2);
-    dhf_w32(Q9_DHF_OFF_ARG1, 64);
-    r = dhf_cmd(Q9_DHF_CMD_READ);
-    char back[64] = {0};
-    { int32_t i; for (i = 0; i < r; i++) back[i] = (char)dhf_r8(Q9_DHF_OFF_DATA + (uint32_t)i); }
-    check("READ liefert genau 10 Byte", r == (int32_t)plen);
-    check("READ-Inhalt == geschriebener Inhalt", strncmp(back, payload, plen) == 0);
+    set_d0(h2); set_a1(GUEST_DATA_ADDR + 4096); set_d1(64);
+    run_cmd(DHF_CMD_READ);
+    uint32_t nread = get_d1();
+    check("READ liefert genau 10 Byte", get_status() == DHF_ERR_OK && nread == plen);
+    check("READ-Inhalt == geschriebener Inhalt",
+          memcmp(&g_ram[GUEST_DATA_ADDR + 4096], payload, plen) == 0);
 
-    dhf_w8(Q9_DHF_OFF_HANDLE, h2);
-    r = dhf_cmd(Q9_DHF_CMD_CLOSE);
-    check("CLOSE (2. Handle)", r == 0);
+    set_d0(h2);
+    run_cmd(DHF_CMD_CLOSE);
 
     /* --- SEEK-Roundtrip --- */
-    dhf_wstr(Q9_DHF_OFF_PATH, "hello.txt");
-    dhf_w32(Q9_DHF_OFF_ARG1, 0); dhf_w32(Q9_DHF_OFF_ARG2, 0);
-    r = dhf_cmd(Q9_DHF_CMD_OPEN);
-    uint8_t h3 = dhf_r8(Q9_DHF_OFF_HANDLE);
-    dhf_w8(Q9_DHF_OFF_HANDLE, h3);
-    dhf_w32(Q9_DHF_OFF_ARG1, 6); dhf_w32(Q9_DHF_OFF_ARG2, 0); /* SEEK_SET, offset 6 -> "DHF!" */
-    r = dhf_cmd(Q9_DHF_CMD_SEEK);
-    check("SEEK auf Offset 6", r == 6);
-    dhf_w8(Q9_DHF_OFF_HANDLE, h3);
-    dhf_w32(Q9_DHF_OFF_ARG1, 4);
-    r = dhf_cmd(Q9_DHF_CMD_READ);
-    memset(back, 0, sizeof(back));
-    { int32_t i; for (i = 0; i < r; i++) back[i] = (char)dhf_r8(Q9_DHF_OFF_DATA + (uint32_t)i); }
-    check("READ nach SEEK == \"DHF!\"", r == 4 && strncmp(back, "DHF!", 4) == 0);
-    dhf_w8(Q9_DHF_OFF_HANDLE, h3);
-    dhf_cmd(Q9_DHF_CMD_CLOSE);
+    put_str(GUEST_PATH_ADDR, "hello.txt");
+    set_a0(GUEST_PATH_ADDR); set_d2(DHF_MODE_READ);
+    run_cmd(DHF_CMD_OPEN);
+    uint32_t h3 = get_d0();
+    set_d0(h3); set_d1(6); set_d2(DHF_SEEK_SET);
+    run_cmd(DHF_CMD_SEEK);
+    check("SEEK auf Offset 6", get_status() == DHF_ERR_OK && get_d1() == 6);
+    set_d0(h3); set_a1(GUEST_DATA_ADDR + 4096); set_d1(4);
+    run_cmd(DHF_CMD_READ);
+    check("READ nach SEEK == \"DHF!\"",
+          get_d1() == 4 && memcmp(&g_ram[GUEST_DATA_ADDR + 4096], "DHF!", 4) == 0);
+    set_d0(h3);
+    run_cmd(DHF_CMD_CLOSE);
 
     /* --- MKDIR + OPENDIR/READDIR --- */
-    dhf_wstr(Q9_DHF_OFF_PATH, "subdir");
-    dhf_w32(Q9_DHF_OFF_ARG1, 0755);
-    r = dhf_cmd(Q9_DHF_CMD_MKDIR);
-    check("MKDIR subdir", r == 0);
+    put_str(GUEST_PATH_ADDR, "subdir");
+    set_a0(GUEST_PATH_ADDR); set_d1(0755);
+    run_cmd(DHF_CMD_MKDIR);
+    check("MKDIR subdir", get_status() == DHF_ERR_OK);
 
-    dhf_wstr(Q9_DHF_OFF_PATH, ".");
-    r = dhf_cmd(Q9_DHF_CMD_OPENDIR);
-    uint8_t hd = dhf_r8(Q9_DHF_OFF_HANDLE);
-    check("OPENDIR .", r == 0);
+    put_str(GUEST_PATH_ADDR, ".");
+    set_a0(GUEST_PATH_ADDR);
+    run_cmd(DHF_CMD_OPENDIR);
+    check("OPENDIR .", get_status() == DHF_ERR_OK);
+    uint32_t hd = get_d0();
 
     int saw_hello = 0, saw_subdir = 0, n = 0;
     for (;;) {
-        dhf_w8(Q9_DHF_OFF_HANDLE, hd);
-        r = dhf_cmd(Q9_DHF_CMD_READDIR);
-        if (r != 1) break;
-        char name[Q9_DHF_DATA_SIZE];
-        strncpy(name, (char *)&dhf.regs[Q9_DHF_OFF_DATA], sizeof(name) - 1);
-        name[sizeof(name) - 1] = 0;
+        set_d0(hd); set_a1(GUEST_DATA_ADDR + 8192);
+        run_cmd(DHF_CMD_READDIR);
+        if (get_d1() == 0) break;
+        const char *name = (const char *)&g_ram[GUEST_DATA_ADDR + 8192];
         if (strcmp(name, "hello.txt") == 0) saw_hello = 1;
         if (strcmp(name, "subdir") == 0) saw_subdir = 1;
         n++;
         if (n > 100) { fprintf(stderr, "READDIR-Endlosschleife?\n"); break; }
     }
-    check("READDIR beendet mit RESULT=0", r == 0);
     check("READDIR listet hello.txt", saw_hello);
     check("READDIR listet subdir", saw_subdir);
 
-    dhf_w8(Q9_DHF_OFF_HANDLE, hd);
-    r = dhf_cmd(Q9_DHF_CMD_CLOSEDIR);
-    check("CLOSEDIR", r == 0);
+    set_d0(hd);
+    run_cmd(DHF_CMD_CLOSE);
 
-    /* --- RENAME + UNLINK + RMDIR --- */
-    dhf_wstr(Q9_DHF_OFF_PATH, "hello.txt");
-    dhf_wstr(Q9_DHF_OFF_PATH2, "hello2.txt");
-    r = dhf_cmd(Q9_DHF_CMD_RENAME);
-    check("RENAME hello.txt -> hello2.txt", r == 0);
+    /* --- RENAME + DELETE + RMDIR --- */
+    put_str(GUEST_PATH_ADDR, "hello.txt");
+    put_str(GUEST_PATH2_ADDR, "hello2.txt");
+    set_a0(GUEST_PATH_ADDR); set_a1(GUEST_PATH2_ADDR);
+    run_cmd(DHF_CMD_RENAME);
+    check("RENAME hello.txt -> hello2.txt", get_status() == DHF_ERR_OK);
 
-    dhf_wstr(Q9_DHF_OFF_PATH, "hello2.txt");
-    r = dhf_cmd(Q9_DHF_CMD_UNLINK);
-    check("UNLINK hello2.txt", r == 0);
+    put_str(GUEST_PATH_ADDR, "hello2.txt");
+    set_a0(GUEST_PATH_ADDR);
+    run_cmd(DHF_CMD_DELETE);
+    check("DELETE hello2.txt", get_status() == DHF_ERR_OK);
 
-    dhf_wstr(Q9_DHF_OFF_PATH, "subdir");
-    r = dhf_cmd(Q9_DHF_CMD_RMDIR);
-    check("RMDIR subdir", r == 0);
+    put_str(GUEST_PATH_ADDR, "subdir");
+    set_a0(GUEST_PATH_ADDR);
+    run_cmd(DHF_CMD_RMDIR);
+    check("RMDIR subdir", get_status() == DHF_ERR_OK);
 
     /* --- Confinement: ".." muss abgelehnt werden --- */
-    dhf_wstr(Q9_DHF_OFF_PATH, "../escape.txt");
-    dhf_w32(Q9_DHF_OFF_ARG1, 0x4 | 0x8); dhf_w32(Q9_DHF_OFF_ARG2, 0644);
-    r = dhf_cmd(Q9_DHF_CMD_OPEN);
-    check("OPEN mit \"..\" wird abgelehnt", r < 0);
+    put_str(GUEST_PATH_ADDR, "../escape.txt");
+    set_a0(GUEST_PATH_ADDR); set_d1(0644); set_d2(DHF_MODE_WRITE);
+    run_cmd(DHF_CMD_CREATE);
+    check("CREATE mit \"..\" wird abgelehnt", get_status() != DHF_ERR_OK);
 
     printf("\n%s\n", g_total_fail == 0 ? "ALLE TESTS BESTANDEN" : "TESTS FEHLGESCHLAGEN");
 
-    /* Aufraeumen */
     char cmd[600];
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", tmpdir);
     if (system(cmd) != 0) { /* best effort */ }
@@ -193,5 +196,5 @@ int main(void)
     return g_total_fail == 0 ? 0 : 1;
 }
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF 13_test_dhf.c                                                                       Ver. 1.00
+// EOF 13_test_dhf.c                                                                       Ver. 2.00
 //────────────────────────────────────────────────────────────────────────────────────────────────
