@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+# 2026-09-27: Bootet OS9SYS_Claude.hda (eigene Arbeitskopie, s. Q9-Images/README_de.md) und
+# prueft, ob der echte OS-9-Kernel dhfdrv_68k/dhfmgr_68k (Q9-OS/Q9-DHF-68k) als gueltige
+# Module akzeptiert (F$Load/"load") -- ein staerkerer Test als die eigenen os9-ident/dump-
+# Pruefungen, da hier der ECHTE Kernel-Modul-Linker/-Lader entscheidet, nicht nur unser
+# eigenes Werkzeug.
+set script_dir [file dirname [file normalize [info script]]]
+cd [file normalize "$script_dir/../.."]
+log_file -a /tmp/claude_dhf_load.log
+set timeout 120
+set images /Volumes/SSD1TB/projects/Q9-Forge/Q9-Images
+set prompt {[#$] ?$}
+
+spawn ./build/macos/q9.exe --rom $images/rom_images/Claude_cb030_BIOS.BIN --cf $images/cf_images/OS9SYS_Claude.hda
+expect "devices online"
+send "\r"
+set logged_in 0
+for {set i 0} {$i < 10 && !$logged_in} {incr i} {
+    expect {
+        "User name?:" { send "super\r"; exp_continue }
+        -re {Password[^\r\n]*:} { send "Al35uUbC\r"; exp_continue }
+        -re $prompt { set logged_in 1 }
+        timeout { send "\r" }
+    }
+}
+if {!$logged_in} { send_log "\nCLAUDE-DHF: LOGIN FEHLGESCHLAGEN\n"; exit 1 }
+
+proc run {cmd label} {
+    global prompt
+    send_log "\nCLAUDE-DHF: === $label ===\n"
+    send "$cmd\r"
+    expect {
+        -re $prompt { }
+        timeout     { send_log "\nCLAUDE-DHF: $label TIMEOUT\n"; exit 1 }
+    }
+}
+
+run "load /dd/CMDS/dhf/dhfdrv_68k" "load Treibermodul"
+run "load /dd/CMDS/dhf/dhfmgr_68k" "load Managermodul"
+run "mdir" "Modulverzeichnis (alle geladenen Module)"
+run "ident dhfdrv_68k" "ident Treibermodul (aus dem Speicher, nach Modulnamen)"
+run "ident dhfmgr_68k" "ident Managermodul (aus dem Speicher, nach Modulnamen)"
+
+send "\x1d"
+expect eof
