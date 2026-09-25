@@ -32,6 +32,12 @@ void    dhf_host_fs_cleanup(dhf_host_fs_t *fs);
 
 int     dhf_host_fs_open(dhf_host_fs_t *fs, const char *path, int flags, uint8_t *status);
 int     dhf_host_fs_create(dhf_host_fs_t *fs, const char *path, int flags, int mode, uint8_t *status);
+/* 2026-09-26: wie oben, aber mit vom Aufrufer vorgegebenem Index (OS-9-Pfadnummer) statt
+ * automatischer Vergabe -- s. dhf_host_fs.c Kommentar bei alloc_handle_at. Fuer den
+ * Q9-DHF-Manager (Q9-OS/Q9-DHF-68k/manager/dhfmgr_68k.a), der dadurch kein eigenes Handle
+ * mehr merken muss. */
+int     dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, uint8_t *status);
+int     dhf_host_fs_create_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, int mode, uint8_t *status);
 int     dhf_host_fs_close(dhf_host_fs_t *fs, int handle, uint8_t *status);
 
 ssize_t dhf_host_fs_read(dhf_host_fs_t *fs, int handle, void *buf, size_t count, uint8_t *status);

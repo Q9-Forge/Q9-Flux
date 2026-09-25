@@ -75,6 +75,33 @@ static int resolve_confined_path(dhf_host_fs_t *fs, const char *rel_or_abs, char
     return 0;
 }
 
+/* 2026-09-26: statt eines vom Simulator selbst vergebenen Handles kann der Aufrufer (der
+ * Q9-DHF-Manager) einen FESTEN Index vorgeben -- die OS-9-Pfadnummer selbst, die IOMan
+ * ohnehin schon fuer die Lebensdauer des Pfades verwaltet. Damit muss der Manager kein
+ * eigenes Handle mehr ueber Aufrufe hinweg merken (s. Q9-OS/Q9-DHF-68k/STATUS.md); nur
+ * OPEN/CREATE nutzen das, alloc_handle() (scannend) bleibt fuer OPENDIR unveraendert. Ein
+ * bereits belegter Slot an diesem Index wird als verwaist behandelt (z.B. Pfad ohne
+ * ordnungsgemaesses CLOSE wiederverwendet) und sauber geschlossen, statt einen Fehler zu
+ * liefern -- robuster fuer Tests/Entwicklung als ein hartes E$-Fehlschlagen. */
+static int alloc_handle_at(dhf_host_fs_t *fs, int idx, int is_dir, const char *path) {
+    if (idx < 0 || idx >= DHF_MAX_HANDLES) {
+        return -1;
+    }
+    if (fs->handles[idx].in_use) {
+        if (fs->handles[idx].is_dir && fs->handles[idx].dir) {
+            closedir(fs->handles[idx].dir);
+        } else if (!fs->handles[idx].is_dir && fs->handles[idx].fd >= 0) {
+            close(fs->handles[idx].fd);
+        }
+    }
+    fs->handles[idx].in_use = 1;
+    fs->handles[idx].is_dir = is_dir;
+    fs->handles[idx].fd = -1;
+    fs->handles[idx].dir = NULL;
+    strncpy(fs->handles[idx].path, path ? path : "", sizeof(fs->handles[idx].path) - 1);
+    return idx;
+}
+
 static int alloc_handle(dhf_host_fs_t *fs, int is_dir, const char *path) {
     for (int i = 0; i < DHF_MAX_HANDLES; i++) {
         if (!fs->handles[i].in_use) {
@@ -182,6 +209,80 @@ int dhf_host_fs_create(dhf_host_fs_t *fs, const char *path, int flags, int mode,
     if (h < 0) {
         close(fd);
         if (status) *status = DHF_ERR_PATH_FULL;
+        return -1;
+    }
+
+    fs->handles[h].fd = fd;
+    if (status) *status = DHF_ERR_OK;
+    return h;
+}
+
+/* 2026-09-26: wie dhf_host_fs_open, aber mit vom Aufrufer vorgegebenem Index (s.
+ * alloc_handle_at-Kommentar) statt automatischer Vergabe -- fuer den Q9-DHF-Manager, der
+ * die OS-9-Pfadnummer direkt als Index nutzt und dadurch selbst kein Handle mehr merken
+ * muss. */
+int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    int oflags = 0;
+    if ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) == (DHF_MODE_READ | DHF_MODE_WRITE)) {
+        oflags = O_RDWR;
+    } else if (flags & DHF_MODE_WRITE) {
+        oflags = O_WRONLY;
+    } else {
+        oflags = O_RDONLY;
+    }
+
+    int fd = open(target, oflags);
+    if (fd < 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    int h = alloc_handle_at(fs, idx, 0, target);
+    if (h < 0) {
+        close(fd);
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    fs->handles[h].fd = fd;
+    if (status) *status = DHF_ERR_OK;
+    return h;
+}
+
+/* 2026-09-26: wie dhf_host_fs_create, aber mit vom Aufrufer vorgegebenem Index, s.o. */
+int dhf_host_fs_create_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, int mode, uint8_t *status) {
+    char target[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+
+    int oflags = O_CREAT | O_TRUNC;
+    if ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) == (DHF_MODE_READ | DHF_MODE_WRITE)) {
+        oflags |= O_RDWR;
+    } else if (flags & DHF_MODE_WRITE) {
+        oflags |= O_WRONLY;
+    } else {
+        oflags |= O_RDWR;
+    }
+
+    mode_t pmode = (mode == 0) ? 0644 : (mode_t)mode;
+    int fd = open(target, oflags, pmode);
+    if (fd < 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    int h = alloc_handle_at(fs, idx, 0, target);
+    if (h < 0) {
+        close(fd);
+        if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
     }
 
