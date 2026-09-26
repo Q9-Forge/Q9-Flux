@@ -43,6 +43,14 @@ enum dhf_command {
      * FD_CREAT, Rest genullt), aus stat() auf dem Host-Handle gebaut. Genutzt u.a. von der
      * echten "attr"-Utility, s. Q9-OS/Q9-DHF-68k/STATUS.md. */
     DHF_CMD_GETFD       = 20,
+    /* 2026-09-26: I$SetStt SS_Attr ($1C) -- setzt Unix-Rechte-Bits aus dem Attribut-Byte
+     * (Gegenstueck zu SS_FD's Lesen). d0=Pfadnummer, d1=neues Attribut-Byte. */
+    DHF_CMD_SETATTR     = 21,
+    /* I$GetStt SS_Pos ($05) -- aktuelle Dateiposition. d0=Pfadnummer, Ausgabe d1=Position. */
+    DHF_CMD_GETPOS      = 22,
+    /* I$GetStt SS_EOF ($06) -- Dateiende-Test. d0=Pfadnummer, status=DHF_ERR_EOF wenn am
+     * Ende, sonst DHF_ERR_OK mit d1=0. */
+    DHF_CMD_ISEOF       = 23,
     DHF_CMD_PING        = 254,
     DHF_CMD_RETURN      = 255
 };
