@@ -358,6 +358,10 @@ int dhf_host_fs_open(dhf_host_fs_t *fs, const char *path, int flags, uint8_t *st
 }
 
 int dhf_host_fs_create(dhf_host_fs_t *fs, const char *path, int flags, int mode, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
@@ -467,7 +471,7 @@ static void raw_lsn0(dhf_host_fs_t *fs, const dhf_raw_geo_t *g, unsigned char *p
     p[16] = 0x06;                                                                   /* dd_fmt */
     struct stat st;
     if (stat(fs->basepath, &st) == 0) {                                             /* dd_date */
-        struct tm tmv; gmtime_r(&st.st_ctime, &tmv);
+        struct tm tmv; localtime_r(&st.st_ctime, &tmv);
         p[26] = (unsigned char)tmv.tm_year; p[27] = (unsigned char)(tmv.tm_mon + 1);
         p[28] = (unsigned char)tmv.tm_mday; p[29] = (unsigned char)tmv.tm_hour;
         p[30] = (unsigned char)tmv.tm_min;
@@ -519,6 +523,10 @@ static int deldir_marked(dhf_host_fs_t *fs, const char *target, int consume) {
 }
 
 int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, uint8_t *status) {
+    if (fs && fs->readonly && (flags & DHF_MODE_WRITE)) {   /* nur lesbares Laufwerk */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     if (path_is_raw(path)) {
         if (flags & DHF_MODE_WRITE) {                 /* Rohgeraet nur lesbar */
             if (status) *status = DHF_ERR_WRITE_PROT;
@@ -612,6 +620,10 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
 
 /* 2026-09-26: wie dhf_host_fs_create, aber mit vom Aufrufer vorgegebenem Index, s.o. */
 int dhf_host_fs_create_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, int mode, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
@@ -684,10 +696,26 @@ int dhf_host_fs_close(dhf_host_fs_t *fs, int handle, uint8_t *status) {
    sequenziell in ganzen Eintraegen gelesen werden und I$Seek/SS_Pos/SS_EOF lehnten
    Verzeichnis-Handles ab -- die echte "dir"-Utility seekt nach dem Lesen von "."/".." auf
    Position 64 und brach mit 'can't seek past "." and ".."' ab. */
+/* 2026-09-26: Host-Namen, die OS-9 nicht darstellen kann, erscheinen nicht im Verzeichnis:
+   macOS-Metadaten (.DS_Store, AppleDouble "._*"), Namen ueber 28 Zeichen (RBF-Grenze; ein
+   abgeschnittener Name waere nicht mehr oeffnbar) und Namen mit Bytes >= $80 (UTF-8, z.B.
+   Umlaute -- Bit 7 markiert im RBF-Eintrag das Namensende) oder Steuerzeichen. */
+static int os9_name_ok(const char *n) {
+    size_t len = strlen(n);
+    if (len == 0 || len > 28) return 0;
+    if (strcmp(n, ".DS_Store") == 0 || strncmp(n, "._", 2) == 0) return 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)n[i];
+        if (c < 0x20 || c >= 0x7F) return 0;
+    }
+    return 1;
+}
+
 static int dir_real_next(DIR *d, char *name, size_t max) {
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+        if (!os9_name_ok(de->d_name)) continue;
         strncpy(name, de->d_name, max - 1);
         name[max - 1] = '\0';
         return 1;
@@ -930,6 +958,10 @@ ssize_t dhf_host_fs_read(dhf_host_fs_t *fs, int handle, void *buf, size_t count,
 }
 
 ssize_t dhf_host_fs_write(dhf_host_fs_t *fs, int handle, const void *buf, size_t count, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || fs->handles[handle].is_dir) {
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
@@ -1109,6 +1141,10 @@ int dhf_host_fs_setstat(dhf_host_fs_t *fs, const char *path, const void *statbuf
    gegen ein reines Host-Passthrough-Dateisystem ueberhaupt sinnvoll 1:1 abbildbar ist
    (SS_Attr/SS_Reset/SS_RFM/... haben auf einem Host-Verzeichnis kein Aequivalent). */
 int dhf_host_fs_setsize_at(dhf_host_fs_t *fs, int handle, uint32_t new_size, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use ||
         fs->handles[handle].is_dir) {
         if (status) *status = DHF_ERR_BAD_PATH;
@@ -1141,7 +1177,8 @@ int dhf_host_fs_setsize_at(dhf_host_fs_t *fs, int handle, uint32_t new_size, uin
 #define DHF_FD_SECTOR_SIZE 256
 
 /* FD-Sektor-Abbild ("OS-9 Technical Manual" Kap. 7, Figure 7-2) aus stat() -- gemeinsam fuer
-   SS_FD (per Handle) und SS_FDInf (per Pseudo-Sektornummer) */
+   SS_FD (per Handle) und SS_FDInf (per Pseudo-Sektornummer). 2026-09-26: Zeiten in ORTSZEIT
+   (vorher UTC -- "dir -e" zeigte alles 2 h zu frueh; die OS-9-Uhr laeuft in Ortszeit). */
 static size_t build_fd(const struct stat *st, const char *path, void *buf, size_t want_len) {
     unsigned char fd[DHF_FD_SECTOR_SIZE];
     memset(fd, 0, sizeof(fd));
@@ -1158,7 +1195,7 @@ static size_t build_fd(const struct stat *st, const char *path, void *buf, size_
     fd[0x01] = 0; fd[0x02] = 0;             /* FD_OWN */
 
     struct tm tmv;
-    gmtime_r(&st->st_mtime, &tmv);
+    localtime_r(&st->st_mtime, &tmv);
     fd[0x03] = (unsigned char)tmv.tm_year;  /* FD_DAT: Jahr (seit 1900, wie tm_year) */
     fd[0x04] = (unsigned char)(tmv.tm_mon + 1);
     fd[0x05] = (unsigned char)tmv.tm_mday;
@@ -1170,7 +1207,7 @@ static size_t build_fd(const struct stat *st, const char *path, void *buf, size_
     uint32_t size_be = htonl(S_ISDIR(st->st_mode) ? dir_virtual_size(path) : (uint32_t)st->st_size);
     memcpy(&fd[0x09], &size_be, 4);         /* FD_SIZ */
 
-    gmtime_r(&st->st_ctime, &tmv);
+    localtime_r(&st->st_ctime, &tmv);
     fd[0x0D] = (unsigned char)tmv.tm_year;  /* FD_CREAT: Jahr/Monat/Tag */
     fd[0x0E] = (unsigned char)(tmv.tm_mon + 1);
     fd[0x0F] = (unsigned char)tmv.tm_mday;
@@ -1204,9 +1241,13 @@ int dhf_host_fs_getfd_at(dhf_host_fs_t *fs, int handle, void *buf, size_t want_l
 
 /* 2026-09-26: I$SetStt SS_FD ("Write File Descriptor Sector", 68k_tech.pdf S. 587): nur
    FD_OWN, FD_DAT und FD_Creat werden uebernommen -- auf dem Host davon FD_DAT (Offset 3,
-   Jahr-1900/Monat/Tag/Stunde/Minute, UTC wie in build_fd) als Aenderungszeit. "copy" setzt
+   Jahr-1900/Monat/Tag/Stunde/Minute, Ortszeit wie in build_fd) als Aenderungszeit. "copy" setzt
    so das Datum der Kopie ("can't put file descriptor" ohne). */
 int dhf_host_fs_setfd_at(dhf_host_fs_t *fs, int handle, const unsigned char *fdimg, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || !fdimg) {
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
@@ -1218,7 +1259,8 @@ int dhf_host_fs_setfd_at(dhf_host_fs_t *fs, int handle, const unsigned char *fdi
     tmv.tm_mday = fdimg[5] ? fdimg[5] : 1;
     tmv.tm_hour = fdimg[6];
     tmv.tm_min  = fdimg[7];
-    time_t t = timegm(&tmv);
+    tmv.tm_isdst = -1;                  /* Sommerzeit selbst bestimmen lassen */
+    time_t t = mktime(&tmv);
     struct timeval tv[2];
     tv[0].tv_sec = time(NULL); tv[0].tv_usec = 0;   /* Zugriffszeit: jetzt */
     tv[1].tv_sec = t;          tv[1].tv_usec = 0;   /* Aenderungszeit: FD_DAT */
@@ -1260,6 +1302,10 @@ int dhf_host_fs_getfd_lsn(dhf_host_fs_t *fs, uint32_t lsn, void *buf, size_t wan
    directory file"), und "exklusiv" hat fuer ein Host-Passthrough-Dateisystem ohnehin keine
    Entsprechung. */
 int dhf_host_fs_setattr_at(dhf_host_fs_t *fs, int handle, uint8_t attr, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
@@ -1361,6 +1407,10 @@ int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint32_t *out_lsn, ui
 }
 
 int dhf_host_fs_mkdir(dhf_host_fs_t *fs, const char *path, int mode, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
@@ -1378,6 +1428,10 @@ int dhf_host_fs_mkdir(dhf_host_fs_t *fs, const char *path, int mode, uint8_t *st
 }
 
 int dhf_host_fs_rmdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
@@ -1397,6 +1451,10 @@ int dhf_host_fs_rmdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
    blosses "del" auf ein Verzeichnis bleibt E$FNA. Vorher scheiterte jedes Verzeichnis an
    unlink() -> "deldir -q" blieb auf dem leeren Verzeichnis stehen. */
 int dhf_host_fs_unlink(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
@@ -1426,6 +1484,10 @@ int dhf_host_fs_unlink(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
 }
 
 int dhf_host_fs_rename(dhf_host_fs_t *fs, const char *oldp, const char *newp, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     char target_old[DHF_PATH_MAX];
     char target_new[DHF_PATH_MAX];
 
@@ -1466,6 +1528,10 @@ static int os9_simple_name(const char *in, char *name, size_t max) {
    den Namen im Verzeichniseintrag ueberschreibt). Vorher: handle = die Datei selbst, ein
    Pfad als neuer Name -- geraten, von keinem echten Programm so benutzt. */
 int dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *oldname, const char *newname, uint8_t *status) {
+    if (fs && fs->readonly) {                      /* Laufwerk nur lesbar */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
     if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
