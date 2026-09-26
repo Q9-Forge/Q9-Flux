@@ -230,9 +230,11 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         }
 
         case DHF_CMD_GETSTT: {
+            /* 2026-09-26: by HANDLE (d0, the OS-9 path number), not by "path" -- the manager
+               has no pathname string for an already-open path (see dhf_host_fs_getstat_at). */
             char statbuf[64] = {0};
             size_t out_size = 0;
-            dhf_host_fs_getstat(&dev->host_fs, path, statbuf, &out_size, &status);
+            dhf_host_fs_getstat_at(&dev->host_fs, (int)d0, statbuf, &out_size, &status);
             if (out_size > 0 && a1) {
                 void *dest = resolve_guest_ptr(dev, a1, out_size);
                 if (dest) memcpy(dest, statbuf, out_size);

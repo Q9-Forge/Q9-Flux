@@ -420,6 +420,36 @@ int dhf_host_fs_getstat(dhf_host_fs_t *fs, const char *path, void *statbuf, size
     return 0;
 }
 
+/* 2026-09-26: I$GetStt (Q9-DHF-68k manager) has no pathname at hand for an already-open
+   path -- like Read/Write/Close, it only carries the OS-9 path number (here as "handle",
+   the array index dhf_host_fs_open_at() already assigned). fstat() on the stored fd avoids
+   re-resolving/re-confining a path string the caller doesn't have. */
+int dhf_host_fs_getstat_at(dhf_host_fs_t *fs, int handle, void *statbuf, size_t *out_size, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    struct stat st;
+    int rc = fs->handles[handle].is_dir
+             ? stat(fs->handles[handle].path, &st)
+             : fstat(fs->handles[handle].fd, &st);
+    if (rc != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    uint32_t *fields = (uint32_t*)statbuf;
+    fields[0] = htonl((uint32_t)st.st_size);
+    fields[1] = htonl((uint32_t)st.st_mode);
+    fields[2] = htonl((uint32_t)st.st_mtime);
+    fields[3] = htonl((uint32_t)st.st_atime);
+
+    if (out_size) *out_size = 16;
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
 int dhf_host_fs_setstat(dhf_host_fs_t *fs, const char *path, const void *statbuf, uint8_t *status) {
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
