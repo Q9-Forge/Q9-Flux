@@ -151,9 +151,19 @@ static void cfg_relativize(const char *dir, const char *path, char *out, unsigne
     }
 }
 
+static const q9_board_cfg_t *g_cfg_current = 0;   /* 2026-09-26, s. q9_board_cfg_current() */
+
+const q9_board_cfg_t *q9_board_cfg_current(void)
+{
+    return g_cfg_current;
+}
+
 void q9_board_cfg_default(q9_board_cfg_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
+    for (int i = 0; i < Q9_CFG_MAX_DHF; i++) {
+        cfg->dhf[i].readonly = -1;                   /* nicht gesetzt: Deskriptor entscheidet */
+    }
     /* Bestehende OS-9-Netzkonfiguration: nur die Config kann diese Werte ueberschreiben. */
     cfg_copy(cfg->vmnet_ip,       sizeof(cfg->vmnet_ip),       "192.168.200.2");
     cfg_copy(cfg->vmnet_gateway,  sizeof(cfg->vmnet_gateway),  "192.168.200.1");
@@ -285,8 +295,9 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
     char  line[Q9_CFG_PATH_MAX + 128];
     char  dir[Q9_CFG_PATH_MAX];
     int   lineno = 0;
-    enum { SEC_NONE, SEC_BOARD, SEC_CF } sec = SEC_NONE;
+    enum { SEC_NONE, SEC_BOARD, SEC_CF, SEC_DHF } sec = SEC_NONE;
     q9_cfg_cf_t *cur_cf = 0;                             /* aktueller [cfN]-Abschnitt              */
+    q9_cfg_dhf_t *cur_dhf = 0;                           /* aktueller [dhfN]-Abschnitt (2026-09-26)*/
 
     q9_board_cfg_default(cfg);
     cfg_dir_of(cfg_path, dir, sizeof(dir));
@@ -326,6 +337,20 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
             sec_name = cfg_trim(s + 1);
             if (cfg_ieq(sec_name, "board")) {
                 sec = SEC_BOARD;
+            } else if ((sec_name[0] == 'd' || sec_name[0] == 'D') &&
+                       (sec_name[1] == 'h' || sec_name[1] == 'H') &&
+                       (sec_name[2] == 'f' || sec_name[2] == 'F') &&
+                       sec_name[3] >= '0' && sec_name[3] <= '9' && sec_name[4] == '\0') {
+                int n = sec_name[3] - '0';
+                if (n >= Q9_CFG_MAX_DHF) {
+                    snprintf(err, err_max, "Zeile %d: [dhf%d] -- es gibt nur dhf0..dhf%d",
+                             lineno, n, Q9_CFG_MAX_DHF - 1);
+                    fclose(f);
+                    return -1;
+                }
+                cur_dhf = &cfg->dhf[n];
+                cur_dhf->set = 1;
+                sec = SEC_DHF;
             } else if ((strncmp(sec_name, "cf", 2) == 0 || strncmp(sec_name, "CF", 2) == 0 ||
                         ((sec_name[0] == 'c' || sec_name[0] == 'C' ||
                         sec_name[0] == 'd' || sec_name[0] == 'D' ||
@@ -417,6 +442,22 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cfg_copy(cfg->cpu, sizeof(cfg->cpu), val);
             } else {
                 snprintf(err, err_max, "Zeile %d: unbekannter [board]-Key '%s'", lineno, key);
+                fclose(f);
+                return -1;
+            }
+        } else if (sec == SEC_DHF && cur_dhf) {
+            if (cfg_ieq(key, "hostpath") || cfg_ieq(key, "path")) {
+                cfg_resolve_rel(dir, val, cur_dhf->hostpath, sizeof(cur_dhf->hostpath));
+            } else if (cfg_ieq(key, "readonly")) {
+                if (cfg_parse_bool(val, &cur_dhf->readonly) != 0) {
+                    snprintf(err, err_max, "Zeile %d: ungueltiger readonly-Wert '%s' (yes|no)",
+                             lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+            } else {
+                snprintf(err, err_max, "Zeile %d: unbekannter [dhf]-Key '%s' (hostpath|readonly)",
+                         lineno, key);
                 fclose(f);
                 return -1;
             }
@@ -546,6 +587,7 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
             }
         }
     }
+    g_cfg_current = cfg;
     return 0;
 }
 
@@ -618,6 +660,17 @@ int q9_board_cfg_save(const q9_board_cfg_t *cfg, const char *cfg_path, char *err
         if (cf->start_sector)   { fprintf(f, "start_sector = %u\n", cf->start_sector); }
         if (cf->length_sectors) { fprintf(f, "length_sectors = %u\n", cf->length_sectors); }
         if (cf->descriptor_lsn) { fprintf(f, "descriptor_lsn = %u\n", cf->descriptor_lsn); }
+    }
+
+    for (i = 0; i < Q9_CFG_MAX_DHF; i++) {            /* 2026-09-26: DHF-Laufwerke */
+        const q9_cfg_dhf_t *d = &cfg->dhf[i];
+        if (!d->set) continue;
+        fprintf(f, "\n[dhf%d]\n", i);
+        if (d->hostpath[0]) {
+            cfg_relativize(dir, d->hostpath, rel, sizeof(rel));
+            fprintf(f, "hostpath = %s\n", rel);
+        }
+        if (d->readonly >= 0) { fprintf(f, "readonly = %s\n", d->readonly ? "yes" : "no"); }
     }
 
     if (fclose(f) != 0) {

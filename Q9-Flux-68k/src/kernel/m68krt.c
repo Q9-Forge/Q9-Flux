@@ -80,6 +80,7 @@
                                                         /* aus q9board.h ausgelagert                */
 #include "../devices/rtc72421/rtc72421.h"               /* 2026-08-21: q9_devtype_rtc72421          */
 #include "../devices/dhf/q9_dhf.h"                       /* 2026-09-25: q9_devtype_dhf/q9_dhf_init   */
+#include "boardcfg.h"                                    /* 2026-09-26: [dhfN] aus der .q9 */
 #include "../devices/timer_irq/timer_irq.h"             /* 2026-08-21: q9_devtype_timer_irq         */
 #include "../devices/remap/remap.h"                       /* 2026-08-21: q9_devtype_remap             */
 #include "../devices/nettty/nettty.h"                    /* 2026-08-21: q9_devtype_nettty, aus       */
@@ -1555,6 +1556,13 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.vt         = &q9_devtype_dhf;
         d.state      = &board->dhf1;
         q9_devreg_add(d);
+
+        {   /* 2026-09-26: [dhf0]/[dhf1] aus der .q9-Config (hostpath/readonly) -- Vorrang vor dem
+               Deskriptor, s. boardcfg.h q9_cfg_dhf_t */
+            const q9_board_cfg_t *bc = q9_board_cfg_current();
+            if (bc && bc->dhf[0].set) q9_dhf_apply_cfg(&board->dhf,  bc->dhf[0].hostpath, bc->dhf[0].readonly);
+            if (bc && bc->dhf[1].set) q9_dhf_apply_cfg(&board->dhf1, bc->dhf[1].hostpath, bc->dhf[1].readonly);
+        }
 
         /* 2026-08-21 (Hardware-Vereinheitlichung, Andreas' Idee): der REMAP-Trigger selbst -- kein
            IRQ, Registrierungsreihenfolge daher egal (kein IRQ-Prioritaetskonflikt moeglich). state

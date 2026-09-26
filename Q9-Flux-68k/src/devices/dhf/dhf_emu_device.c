@@ -44,6 +44,7 @@ int dhf_emu_device_init_local(dhf_emu_device_t *dev, struct dhf_shared *mem, con
     dev->socket_fd = -1;
     dev->base_addr = DHF_DEFAULT_HW_BASE;
     dev->size = sizeof(struct dhf_shared);
+    dev->cfg_readonly = -1;
     return dhf_host_fs_init(&dev->host_fs, basepath);
 }
 
@@ -141,14 +142,18 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
     /* 2026-09-26: aktuelles Verzeichnis des aufrufenden Prozesses (SH_SEQ, vom Manager aus
      * P$DIO gefuellt) -- gilt fuer diese eine Anfrage, s. dhf_host_fs_set_cwd_lsn */
     dhf_host_fs_set_cwd_lsn(&dev->host_fs, ntohl(s->seq));
+    dev->host_fs.req_pid = ntohl(s->pid);               /* 2026-09-26: fuer Sperren */
 
     /* Local backend: evaluate command */
     switch (cmd) {
         case DHF_CMD_INIT: {
-            if (path && path[0]) {
-                dhf_host_fs_init(&dev->host_fs, path);
+            /* 2026-09-26: [dhfN] in der .q9-Config hat Vorrang vor dem Deskriptor */
+            const char *bp = dev->cfg_basepath[0] ? dev->cfg_basepath : path;
+            if (bp && bp[0]) {
+                dhf_host_fs_init(&dev->host_fs, bp);
             }
-            dev->host_fs.readonly = (d1 & 1) ? 1 : 0;   /* 2026-09-26: DevCon-Flags (Treiber) */
+            dev->host_fs.readonly = dev->cfg_readonly >= 0 ? dev->cfg_readonly
+                                                          : ((d1 & 1) ? 1 : 0);  /* DevCon-Flags */
             status = DHF_ERR_OK;
             break;
         }
@@ -320,6 +325,11 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
                 void *dest = resolve_guest_ptr(dev, a1, out_len);
                 if (dest) memcpy(dest, fdbuf, out_len);
             }
+            break;
+        }
+
+        case DHF_CMD_LOCK: {
+            dhf_host_fs_lock_at(&dev->host_fs, (int)d0, d1, &status);
             break;
         }
 

@@ -23,6 +23,8 @@ struct dhf_shared {
     uint32_t d0;          /* Pathnum / descriptor / handle (BE) */
     uint32_t d1;          /* Status / byte count / max length / offset (BE) */
     uint32_t d2;          /* Attributes / flags / whence (BE) */
+    uint32_t pid;         /* 2026-09-26: Prozess-ID des Aufrufers (Sperren: Pfade desselben
+                             Prozesses sperren sich nicht gegenseitig, wie RBF) (BE) */
 };
 #pragma pack(pop)
 

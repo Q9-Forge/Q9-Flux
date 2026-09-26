@@ -248,6 +248,63 @@ static uint32_t dir_handle_size(dhf_host_fs_t *fs, int h) {
     return (fs->handles[h].dir_count + 2) * 32u;
 }
 
+/* 2026-09-26: Sperren wie RBF ("OS-9 Technical Manual" Kap. 7, "Record Locking"). Konflikte
+   nur zwischen Pfaden VERSCHIEDENER Prozesse ("RBF notices the same process owns both paths
+   and keeps them from locking each other out"); per I$Dup/Fork geteilte Pfade sind derselbe
+   Handle. Warten macht der Manager (E$Lock -> F$Sleep, Wiederholung bis SS_Ticks). */
+static int same_file(dhf_host_fs_t *fs, int a, int b) {
+    return fs->handles[a].in_use && fs->handles[b].in_use && !fs->handles[a].is_dir &&
+           !fs->handles[b].is_dir && !fs->handles[a].is_raw && !fs->handles[b].is_raw &&
+           strcmp(fs->handles[a].path, fs->handles[b].path) == 0;
+}
+
+/* Bereich [pos, pos+len) von Handle h durch die Sperre eines ANDEREN Prozesses belegt?
+   len ~0 = ganze Datei (kollidiert mit jeder fremden Sperre). */
+static int lock_conflict(dhf_host_fs_t *fs, int h, uint32_t pos, uint32_t len) {
+    for (int i = 0; i < DHF_MAX_HANDLES; i++) {
+        if (i == h || !same_file(fs, i, h) || fs->handles[i].pid == fs->handles[h].pid) continue;
+        uint32_t lp = fs->handles[i].lk_pos, ll = fs->handles[i].lk_len;
+        if (ll == 0) continue;
+        if (ll == 0xFFFFFFFFu || len == 0xFFFFFFFFu) return 1;
+        uint64_t a0 = pos, a1 = (uint64_t)pos + len, b0 = lp, b1 = (uint64_t)lp + ll;
+        if (a0 < b1 && b0 < a1) return 1;
+    }
+    return 0;
+}
+
+/* Nicht teilbar (Share_ im Modus): Datei schon von einem anderen Prozess offen, der sie
+   nicht teilt oder den wir nicht teilen wollen? -> E$Share (#253) */
+static int share_conflict(dhf_host_fs_t *fs, const char *target, int want_share) {
+    for (int i = 0; i < DHF_MAX_HANDLES; i++) {
+        if (!fs->handles[i].in_use || fs->handles[i].is_dir || fs->handles[i].is_raw) continue;
+        if (strcmp(fs->handles[i].path, target) != 0 || fs->handles[i].pid == fs->req_pid) continue;
+        if (want_share || fs->handles[i].share) return 1;
+    }
+    return 0;
+}
+
+int dhf_host_fs_lock_at(dhf_host_fs_t *fs, int handle, uint32_t size, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use ||
+        fs->handles[handle].is_dir || fs->handles[handle].fd < 0) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    if (size == 0) {                                   /* alle Sperren dieses Pfads aufheben */
+        fs->handles[handle].lk_len = 0;
+        if (status) *status = DHF_ERR_OK;
+        return 0;
+    }
+    uint32_t pos = (uint32_t)lseek(fs->handles[handle].fd, 0, SEEK_CUR);
+    if (lock_conflict(fs, handle, pos, size)) {
+        if (status) *status = DHF_ERR_LOCKED;
+        return -1;
+    }
+    fs->handles[handle].lk_pos = (size == 0xFFFFFFFFu) ? 0 : pos;
+    fs->handles[handle].lk_len = size;
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
 static int alloc_handle_at(dhf_host_fs_t *fs, int idx, int is_dir, const char *path) {
     if (idx < 0 || idx >= DHF_MAX_HANDLES) {
         return -1;
@@ -266,6 +323,11 @@ static int alloc_handle_at(dhf_host_fs_t *fs, int idx, int is_dir, const char *p
     fs->handles[idx].dir = NULL;
     fs->handles[idx].dir_pos = 0;
     fs->handles[idx].is_raw = 0;
+    fs->handles[idx].pid = fs->req_pid;
+    fs->handles[idx].share = 0;
+    fs->handles[idx].update = 0;
+    fs->handles[idx].lk_pos = 0;
+    fs->handles[idx].lk_len = 0;
     fs->handles[idx].dir_names = NULL;
     fs->handles[idx].dir_count = 0;
     strncpy(fs->handles[idx].path, path ? path : "", sizeof(fs->handles[idx].path) - 1);
@@ -600,6 +662,10 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
     }
 
     if (flags & 0x10) oflags |= O_APPEND;   /* Append_: Schreiben immer ans Dateiende */
+    if (share_conflict(fs, target, flags & 0x40)) {   /* nicht teilbar */
+        if (status) *status = DHF_ERR_SHARING;
+        return -1;
+    }
     int fd = open(target, oflags);
     if (fd < 0) {
         if (status) *status = errno_to_dhf(errno);
@@ -607,6 +673,11 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
     }
 
     int h = alloc_handle_at(fs, idx, 0, target);
+    if (h >= 0) {
+        fs->handles[h].share  = (flags & 0x40) ? 1 : 0;
+        fs->handles[h].update = ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) ==
+                                 (DHF_MODE_READ | DHF_MODE_WRITE));
+    }
     if (h < 0) {
         close(fd);
         if (status) *status = DHF_ERR_BAD_PATH;
@@ -651,6 +722,11 @@ int dhf_host_fs_create_at(dhf_host_fs_t *fs, int idx, const char *path, int flag
     fchmod(fd, pmode);          /* exakt die OS-9-Attribute, unabhaengig von der Host-umask */
 
     int h = alloc_handle_at(fs, idx, 0, target);
+    if (h >= 0) {
+        fs->handles[h].share  = (flags & 0x40) ? 1 : 0;
+        fs->handles[h].update = ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) ==
+                                 (DHF_MODE_READ | DHF_MODE_WRITE));
+    }
     if (h < 0) {
         close(fd);
         if (status) *status = DHF_ERR_BAD_PATH;
@@ -939,7 +1015,24 @@ ssize_t dhf_host_fs_read(dhf_host_fs_t *fs, int handle, void *buf, size_t count,
         return raw_read(fs, handle, buf, count, status);
     }
 
+    /* Sperren: fremde Sperre im Bereich -> E$Lock (Manager wartet); im Update-Modus sperrt
+       das Read den gelesenen Bereich bis zum naechsten Read/Write/Close */
+    uint32_t rpos = (uint32_t)lseek(fs->handles[handle].fd, 0, SEEK_CUR);
+    if (lock_conflict(fs, handle, rpos, (uint32_t)(count ? count : 1))) {
+        if (status) *status = DHF_ERR_LOCKED;
+        return -1;
+    }
     ssize_t res = read(fs->handles[handle].fd, buf, count);
+    if (fs->handles[handle].lk_len != 0xFFFFFFFFu) {
+        if (fs->handles[handle].update && res > 0) {
+            fs->handles[handle].lk_pos = rpos;
+            fs->handles[handle].lk_len = (uint32_t)res;
+        } else {
+            fs->handles[handle].lk_len = 0;
+        }
+    } else if (count == 0) {
+        fs->handles[handle].lk_len = 0;                  /* Read von 0 Byte gibt Dateisperre frei */
+    }
     if (res < 0) {
         if (status) *status = errno_to_dhf(errno);
         return -1;
@@ -971,7 +1064,14 @@ ssize_t dhf_host_fs_write(dhf_host_fs_t *fs, int handle, const void *buf, size_t
         return -1;
     }
 
+    uint32_t wpos = (uint32_t)lseek(fs->handles[handle].fd, 0, SEEK_CUR);
+    if (lock_conflict(fs, handle, wpos, (uint32_t)(count ? count : 1))) {
+        if (status) *status = DHF_ERR_LOCKED;
+        return -1;
+    }
     ssize_t res = write(fs->handles[handle].fd, buf, count);
+    if (fs->handles[handle].lk_len != 0xFFFFFFFFu || count == 0)
+        fs->handles[handle].lk_len = 0;                  /* geschriebener Bereich wird frei */
     if (res < 0) {
         if (status) *status = errno_to_dhf(errno);
         return -1;
@@ -1025,6 +1125,11 @@ int dhf_host_fs_readln(dhf_host_fs_t *fs, int handle, char *buf, size_t maxlen, 
         return -1;
     }
 
+    uint32_t lpos = (uint32_t)lseek(fs->handles[handle].fd, 0, SEEK_CUR);
+    if (lock_conflict(fs, handle, lpos, (uint32_t)maxlen)) {
+        if (status) *status = DHF_ERR_LOCKED;
+        return -1;
+    }
     /* 2026-09-26: bis zu maxlen Byte (OS-9: "d1.l = maximum number of bytes to read"),
        nicht maxlen-1 -- der Puffer ist ein Gast-Puffer ohne NUL-Konvention. */
     size_t i = 0;

@@ -52,6 +52,8 @@ extern const q9_devdesc_t       q9_devdesc_dhf;
    damit dhf_emu_device_process() Gastadressen (A0/A1) direkt indizieren kann (board->ram[a0] usw.,
    dasselbe Prinzip wie board_read_byte in q9board.c). */
 void q9_dhf_init(q9_dhf_t *state, const char *basepath, uint8_t *ram, size_t ram_len);
+/* 2026-09-26: Werte aus [dhfN] der .q9-Config setzen (NULL/"" bzw. -1 = nicht gesetzt) */
+void q9_dhf_apply_cfg(q9_dhf_t *state, const char *hostpath, int readonly);
 
 #endif /* Q9_DHF_H */
 //────────────────────────────────────────────────────────────────────────────────────────────────

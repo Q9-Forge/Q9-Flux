@@ -76,6 +76,9 @@ enum dhf_command {
     /* I$SetStt SS_FD ($0F) -- FD-Abbild schreiben (nur FD_DAT wirkt: Aenderungszeit): d0=Handle,
      * a1=Zeiger auf das FD-Abbild im Gast-RAM */
     DHF_CMD_SETFD       = 28,
+    /* I$SetStt SS_Lock ($11) -- Bereich ab aktueller Position sperren: d0=Handle, d1=Groesse
+     * (0 = alle Sperren aufheben, $FFFFFFFF = ganze Datei). Konflikt -> E$Lock. */
+    DHF_CMD_LOCK        = 29,
     DHF_CMD_PING        = 254,
     DHF_CMD_RETURN      = 255
 };
@@ -96,6 +99,7 @@ enum dhf_error {
     DHF_ERR_NO_PERMISSION = 0xD6, /* E$FNA     -- File Not Accessible (EACCES/EPERM) */
     DHF_ERR_NOT_FOUND     = 0xD8, /* E$PNNF    -- Path Name Not Found (ENOENT) */
     DHF_ERR_SHARING       = 0xFD, /* E$Share   -- Non-sharable file busy (EBUSY/ETXTBSY) */
+    DHF_ERR_LOCKED        = 0xFC, /* E$Lock    -- Record is busy: der Manager wartet und wiederholt */
     DHF_ERR_IS_DIR        = 0xD6, /* E$FNA     -- OS-9 kennt kein EISDIR; RBF meldet E$FNA */
     DHF_ERR_NOT_DIR       = 0xD6, /* E$FNA     -- OS-9 kennt kein ENOTDIR; RBF meldet E$FNA */
     DHF_ERR_BAD_NAME      = 0xD7, /* E$BPNam   -- Bad Path Name (ENAMETOOLONG/ELOOP, Basispfad-Ausbruch) */

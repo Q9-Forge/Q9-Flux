@@ -27,6 +27,9 @@ typedef struct dhf_emu_device {
     int                 remote_port;
     uint32_t            base_addr;
     uint32_t            size;
+    /* 2026-09-26: aus der .q9-Config ([dhfN]) -- Vorrang vor Basispfad/Flag des Deskriptors */
+    char                cfg_basepath[1024];
+    int                 cfg_readonly;       /* -1 = nicht gesetzt */
 } dhf_emu_device_t;
 
 /* Device lifecycle */
