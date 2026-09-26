@@ -910,6 +910,7 @@ static char     g_itrace_path[96] = {0};  /* Q9_ITRACE_PATH: scharf erst bei DIE
 #define Q9_CLASSIFY_BIT_SSM      0x08
 #define Q9_CLASSIFY_BIT_OTHER    0x10
 static int      g_classify_active     = 0;
+static int      g_classify_enabled    = 0;   /* Q9_CLASSIFY -- s. Aktivierungsstelle unten */
 static uint32_t g_classify_return_pc  = 0;
 static uint32_t g_classify_call_pc    = 0;
 static uint16_t g_classify_callcode   = 0;
@@ -1094,9 +1095,21 @@ static int m68krt_trap_trace_callback(int trap)
             return 0;
         }
         if (g_trap_trace_all || callcode == 0x53 || callcode == 0x0a || callcode == 0x8d) {
-            if (g_trap_trace_all) {
+            if (g_trap_trace_all && g_classify_enabled) {
                 /* Klassifizierungs-Fenster fuer DIESEN Aufruf oeffnen -- Auswertung/Log erfolgt
-                   im Instruction-Hook, sobald die Rueckkehradresse pc+4 erreicht wird. */
+                   im Instruction-Hook, sobald die Rueckkehradresse pc+4 erreicht wird.
+                   2026-09-26 (Q9-DHF-68k, "dhftest" haengt beim Fork): jetzt HINTER einem eigenen
+                   Schalter (Q9_CLASSIFY), NICHT mehr automatisch mit Q9_TRAP_TRACE_ALL --
+                   "classify_active" ist ein einzelnes GLOBALES Flag (kein Prozessbezug), das bei
+                   echter Prozess-Verzahnung (ein neuer Kindprozess laeuft, waehrend die
+                   Rueckkehradresse des urspruenglichen Traps noch aussteht) nie mehr sauber
+                   schliesst -- jede folgende Instruktion JEDES Prozesses wird dann bis in alle
+                   Ewigkeit mitgezaehlt, was Q9_TRAP_TRACE_ALL fuer alles, was einen Fork/Exec
+                   beinhaltet (z.B. ein externes Programm wie "list" oder "dhftest" ueber die
+                   Shell starten), effektiv unbenutzbar machte (Timeout bei 300s, wo derselbe Lauf
+                   ohne Tracing < 1s braucht). Q9_ITRACE_PATH/-CALLCODE (das eigentliche Werkzeug
+                   fuer genau diesen Fall) brauchen dieses Flag nicht und bleiben unveraendert
+                   schnell. */
                 g_classify_active    = 1;
                 g_classify_return_pc = pc + 4;
                 g_classify_call_pc   = pc;
@@ -1364,6 +1377,7 @@ int q9_m68krt_init(q9_m68krt_t *rt, uint8_t *ram, uint32_t ram_len, q9_cpu_type_
         const char *trace_path = getenv("Q9_TRAP_TRACE");
         if (trace_path && !g_trap_trace_fp) {
             g_trap_trace_all = getenv("Q9_TRAP_TRACE_ALL") != NULL;
+            g_classify_enabled = getenv("Q9_CLASSIFY") != NULL;
             g_trap_trace_fp = fopen(trace_path, "w");
             if (g_trap_trace_fp) {
                 setvbuf(g_trap_trace_fp, NULL, _IOFBF, 4 * 1024 * 1024);
