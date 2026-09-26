@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <limits.h>
+#include <time.h>
 
 static uint8_t errno_to_dhf(int err) {
     switch (err) {
@@ -554,6 +555,80 @@ int dhf_host_fs_setsize_at(dhf_host_fs_t *fs, int handle, uint32_t new_size, uin
         if (status) *status = errno_to_dhf(errno);
         return -1;
     }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+/* 2026-09-26: I$GetStt SS_FD ("Read File Descriptor Sector", "OS-9 Technical Manual" Kap. 7
+   Figure 7-2 + "OS-9 System Calls" Kap. 2): liefert ein FD-Sektor-Abbild, das reale
+   RBF-Utilities wie "attr" ueber I$GetStt(SS_FD) anfordern -- KEIN physischer Sektor-
+   Zugriff (das waere bei einem Host-Passthrough-Dateisystem ohnehin nicht abbildbar),
+   sondern ein ganz normaler GetStt-Aufruf mit dokumentiertem Format:
+     Offset $00 (1)   FD_ATT    Dateiattribute (Bit7=Verzeichnis, Bit6=exklusiv,
+                                Bit5/4/3=oeffentlich x/w/r, Bit2/1/0=Besitzer x/w/r)
+     Offset $01 (2)   FD_OWN    Besitzer-User-ID (hier immer 0, DHF kennt keine echten
+                                OS-9-Benutzer)
+     Offset $03 (5)   FD_DAT    Letzte Aenderung: Jahr/Monat/Tag/Stunde/Minute
+     Offset $08 (1)   FD_LNK    Link-Zaehler (immer 1)
+     Offset $09 (4)   FD_SIZ    Dateigroesse
+     Offset $0D (3)   FD_CREAT  Erstellungsdatum: Jahr/Monat/Tag
+     Offset $10 (240) FD_SEG    Segmentliste -- bleibt genullt (kein echtes Medium mit
+                                LSNs; "Unused segments must be zero" laut Handbuch)
+   Gibt bis zu want_len Bytes (vom Aufrufer vorgegeben, <= Sektorgroesse) zurueck. */
+#define DHF_FD_SECTOR_SIZE 256
+
+int dhf_host_fs_getfd_at(dhf_host_fs_t *fs, int handle, void *buf, size_t want_len, size_t *out_len, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+
+    struct stat st;
+    int rc = fs->handles[handle].is_dir
+             ? stat(fs->handles[handle].path, &st)
+             : fstat(fs->handles[handle].fd, &st);
+    if (rc != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+
+    unsigned char fd[DHF_FD_SECTOR_SIZE];
+    memset(fd, 0, sizeof(fd));
+
+    unsigned char att = 0;
+    if (st.st_mode & S_IRUSR) att |= 0x01;
+    if (st.st_mode & S_IWUSR) att |= 0x02;
+    if (st.st_mode & S_IXUSR) att |= 0x04;
+    if (st.st_mode & S_IROTH) att |= 0x08;
+    if (st.st_mode & S_IWOTH) att |= 0x10;
+    if (st.st_mode & S_IXOTH) att |= 0x20;
+    if (S_ISDIR(st.st_mode))  att |= 0x80;
+    fd[0x00] = att;                         /* FD_ATT */
+    fd[0x01] = 0; fd[0x02] = 0;             /* FD_OWN */
+
+    struct tm tmv;
+    gmtime_r(&st.st_mtime, &tmv);
+    fd[0x03] = (unsigned char)tmv.tm_year;  /* FD_DAT: Jahr (seit 1900, wie tm_year) */
+    fd[0x04] = (unsigned char)(tmv.tm_mon + 1);
+    fd[0x05] = (unsigned char)tmv.tm_mday;
+    fd[0x06] = (unsigned char)tmv.tm_hour;
+    fd[0x07] = (unsigned char)tmv.tm_min;
+
+    fd[0x08] = 1;                           /* FD_LNK */
+
+    uint32_t size_be = htonl((uint32_t)st.st_size);
+    memcpy(&fd[0x09], &size_be, 4);         /* FD_SIZ */
+
+    gmtime_r(&st.st_ctime, &tmv);
+    fd[0x0D] = (unsigned char)tmv.tm_year;  /* FD_CREAT: Jahr/Monat/Tag */
+    fd[0x0E] = (unsigned char)(tmv.tm_mon + 1);
+    fd[0x0F] = (unsigned char)tmv.tm_mday;
+    /* FD_SEG (Offset $10, 240 Byte) bleibt genullt */
+
+    size_t n = want_len;
+    if (n > sizeof(fd)) n = sizeof(fd);
+    memcpy(buf, fd, n);
+    if (out_len) *out_len = n;
     if (status) *status = DHF_ERR_OK;
     return 0;
 }
