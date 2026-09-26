@@ -881,6 +881,17 @@ static char     g_itrace_path[96] = {0};  /* Q9_ITRACE_PATH: scharf erst bei DIE
                                               I$Attach-Pfad, nicht beim ersten Treffer des
                                               Callcodes -- fuer spaete Aufrufe wie "iniz dhf0"
                                               nach vielen frueheren I$Open waehrend des Boots. */
+/* 2026-09-26 (Q9-DHF-68k, I$Read/E$ILLINS-Untersuchung): I$Read ($89) traegt
+   im Gegensatz zu I$Open/I$Attach KEINEN Namen in a0, sondern nur die
+   Pfadnummer in d0.w -- Q9_ITRACE_PATH konnte sich bisher nur an I$Open
+   scharfschalten, nicht direkt an das nachfolgende I$Read. Fix: wenn das per
+   Q9_ITRACE_PATH beobachtete I$Open erfolgreich zurueckkehrt, wird dessen
+   zurueckgegebene Pfadnummer (d0.w) gemerkt; jedes darauffolgende I$Read mit
+   genau dieser Pfadnummer in d0.w scharft dann direkt, ohne den Umweg ueber
+   den I$Open-Trace-und-weiterlesen-Workaround. */
+static int      g_itrace_open_pending        = 0;
+static int      g_itrace_target_pathnum_valid = 0;
+static uint32_t g_itrace_target_pathnum      = 0;
 
 /* 2026-08-10 (Claude, Modul-Klassifizierung Kernel/IOMan/SysCache/SSM): live pruefen, welches
    Modul einen F$/I$-Aufruf tatsaechlich bearbeitet -- als Gegenprobe zu den dokumentierten
@@ -1138,6 +1149,23 @@ static int m68krt_trap_trace_callback(int trap)
                             pc, g_itrace_left, path);
                     fflush(g_trap_trace_fp);
                 }
+                if (callcode == 0x84 && g_itrace_path[0] &&
+                    !g_itrace_target_pathnum_valid &&
+                    strcmp(path, g_itrace_path) == 0) {
+                    g_itrace_open_pending = 1;
+                }
+            }
+            if (callcode == 0x89 && g_itrace_target_pathnum_valid && !g_itrace_armed) {
+                uint32_t d0 = m68k_get_reg(NULL, M68K_REG_D0) & 0xffffu;
+                if (d0 == g_itrace_target_pathnum) {
+                    g_itrace_armed = 1;
+                    g_itrace_left  = g_itrace_budget;
+                    fprintf(g_trap_trace_fp,
+                            "itrace scharf ab pc=%08x fuer %ld Instruktionen "
+                            "(I$Read auf gemerkte Pfadnummer %04x)\n",
+                            pc, g_itrace_left, g_itrace_target_pathnum);
+                    fflush(g_trap_trace_fp);
+                }
             }
             if (!g_itrace_path[0] && g_itrace_callcode >= 0 && !g_itrace_armed &&
                 callcode == (uint32_t)g_itrace_callcode) {
@@ -1288,12 +1316,21 @@ static void m68krt_watch_pc_callback(unsigned int pc)
     }
     if (g_syscall_return_pc && pc == g_syscall_return_pc && g_trap_trace_fp &&
         g_trap_trace_n < g_trap_trace_cap) {
+        uint32_t ret_d0 = m68k_get_reg(NULL, M68K_REG_D0);
         fprintf(g_trap_trace_fp,
                 "syscallret pc=%08x callcode=%04x a0=%08x d0=%08x d1=%08x a2=%08x\n",
                 pc, g_syscall_return_code, g_syscall_return_a0,
-                m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                ret_d0, m68k_get_reg(NULL, M68K_REG_D1),
                 m68k_get_reg(NULL, M68K_REG_A2));
         g_trap_trace_n++;
+        if (g_itrace_open_pending && g_syscall_return_code == 0x84) {
+            g_itrace_open_pending = 0;
+            g_itrace_target_pathnum_valid = 1;
+            g_itrace_target_pathnum = ret_d0 & 0xffffu;
+            fprintf(g_trap_trace_fp,
+                    "itrace merke Pfadnummer %04x aus I$Open fuer kuenftige I$Read\n",
+                    g_itrace_target_pathnum);
+        }
         g_syscall_return_pc = 0;
     }
     if (g_trap_trace_fp && g_trap_trace_n < g_trap_trace_cap &&
