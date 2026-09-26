@@ -73,6 +73,9 @@ enum dhf_command {
      * {Bytes/Sektor, Sektoren gesamt, Sektoren frei, groesster freier Block} (je u_int,
      * big-endian). Aufbau aus /CMDS/free ermittelt (nirgends dokumentiert, 2026-09-26). */
     DHF_CMD_VOLSTORE    = 27,
+    /* I$SetStt SS_FD ($0F) -- FD-Abbild schreiben (nur FD_DAT wirkt: Aenderungszeit): d0=Handle,
+     * a1=Zeiger auf das FD-Abbild im Gast-RAM */
+    DHF_CMD_SETFD       = 28,
     DHF_CMD_PING        = 254,
     DHF_CMD_RETURN      = 255
 };

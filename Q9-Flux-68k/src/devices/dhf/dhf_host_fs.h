@@ -13,7 +13,6 @@
 
 #define DHF_MAX_HANDLES 64
 #define DHF_PATH_MAX    1024
-#define DHF_LSN_SLOTS   1024
 #define DHF_DELDIR_SLOTS 8
 #define DHF_DIRCACHE_SLOTS 32
 
@@ -31,10 +30,14 @@ typedef struct {
         uint32_t dir_count; /* (ohne "."/".."); feste Positionen wie RBF, s. dhf_host_fs.c */
         char path[DHF_PATH_MAX];
     } handles[DHF_MAX_HANDLES];
-    /* 2026-09-26: Pseudo-Sektornummern fuer SS_FDInf ("dir -e"/"dir -r"): Nummer n (1..) steht
-       fuer lsn_path[n-1]; vergeben beim Verzeichnislesen, Ringpuffer (aelteste faellt raus). */
-    char     lsn_path[DHF_LSN_SLOTS][DHF_PATH_MAX];
-    uint32_t lsn_next;
+    /* 2026-09-26: Pseudo-Sektornummern (Verzeichniseintraege Byte 29-31, SS_FDInf, pd_fd,
+       P$DIO-Verzeichnis je Prozess): Nummer n (1..) steht fuer lsn_tab[n-1]. Dauerhaft fuer
+       die Laufzeit (kein Ring -- ein wiederverwendeter Platz haette gemerkte Verzeichnisse
+       von Prozessen auf fremde Pfade umgebogen), Suche per Hash. */
+    char   **lsn_tab;
+    uint32_t lsn_cnt, lsn_cap;
+    uint32_t *lsn_hash;     /* offene Adressierung, Eintrag = Index+1, 0 = frei */
+    uint32_t lsn_hcap;
     /* 2026-09-26: Verzeichnisse, deren Dir-Bit per SS_Attr entfernt wurde -- nur die darf
        I$Delete (wie RBF, so arbeitet "deldir": erst Attribut weg, dann loeschen). */
     char     deldir_ok[DHF_DELDIR_SLOTS][DHF_PATH_MAX];
@@ -81,11 +84,15 @@ int     dhf_host_fs_setattr_at(dhf_host_fs_t *fs, int handle, uint8_t attr, uint
 int     dhf_host_fs_getpos_at(dhf_host_fs_t *fs, int handle, uint32_t *out_pos, uint8_t *status);
 int     dhf_host_fs_iseof_at(dhf_host_fs_t *fs, int handle, uint8_t *status);
 int     dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *oldname, const char *newname, uint8_t *status);
+uint32_t dhf_host_fs_container_lsn(dhf_host_fs_t *fs, const char *path);
+int     dhf_host_fs_handle_lsns(dhf_host_fs_t *fs, int handle, uint32_t *self, uint32_t *parent);
+int     dhf_host_fs_setfd_at(dhf_host_fs_t *fs, int handle, const unsigned char *fdimg, uint8_t *status);
 int     dhf_host_fs_getfd_lsn(dhf_host_fs_t *fs, uint32_t lsn, void *buf, size_t want_len, size_t *out_len, uint8_t *status);
 int     dhf_host_fs_volstore(dhf_host_fs_t *fs, uint32_t out[4], uint8_t *status);
 int     dhf_host_fs_getfree(dhf_host_fs_t *fs, uint32_t *out_free, uint8_t *status);
 
-int     dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status);
+int     dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint32_t *out_lsn, uint8_t *status);
+void    dhf_host_fs_set_cwd_lsn(dhf_host_fs_t *fs, uint32_t lsn);
 int     dhf_host_fs_mkdir(dhf_host_fs_t *fs, const char *path, int mode, uint8_t *status);
 int     dhf_host_fs_rmdir(dhf_host_fs_t *fs, const char *path, uint8_t *status);
 int     dhf_host_fs_unlink(dhf_host_fs_t *fs, const char *path, uint8_t *status);

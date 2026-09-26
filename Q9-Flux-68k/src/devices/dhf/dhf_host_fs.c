@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <time.h>
+#include <sys/time.h>
 #include <sys/statvfs.h>
 
 /* OS-9-Attributbyte (FD_ATT-Bitlage: Bit0-2 Besitzer r/w/e, Bit3-5 oeffentlich r/w/e)
@@ -70,25 +71,45 @@ static uint8_t errno_to_dhf(int err) {
 static int resolve_confined_path(dhf_host_fs_t *fs, const char *rel_or_abs, char *out_buf, size_t out_len) {
     char combined[DHF_PATH_MAX * 2];
 
+    /* 2026-09-26: Pfad zuerst selbst normalisieren (Komponente fuer Komponente), dann erst
+       realpath(): "." entfaellt, ".." geht eine Ebene hoch ("..." zwei usw.), aber NIE ueber die Wurzel des
+       Laufwerks hinaus -- wie RBF, wo "/d0/.." wieder "/d0" ist. Vorher fuehrte "./.." in der
+       Wurzel (so fragt bashs getwd nach dem Elternverzeichnis) aus dem Basispfad heraus.
+       Absolute OS-9-Pfade "/<geraet>/rest": der Geraetename gehoert nicht zum Dateipfad
+       (Basispfad = Wurzel). Relative Pfade gelten ab cwd. */
+    char rel[DHF_PATH_MAX * 2];
     if (!rel_or_abs || !rel_or_abs[0]) {
-        snprintf(combined, sizeof(combined), "%s/%s", fs->basepath, fs->cwd);
+        snprintf(rel, sizeof(rel), "%s", fs->cwd);
     } else if (rel_or_abs[0] == '/') {
-        /* Absoluter OS-9-Pfad "/<geraet>/rest": IOMan reicht den Pfad samt Geraetenamen durch;
-           wie RBF gehoert der Geraetename nicht zum Dateipfad -- der Basispfad aus dem
-           Deskriptor IST die Wurzel des Laufwerks. 2026-09-26: vorher wurde "/d0/x" zu
-           <basis>/d0/x, ein Deskriptor konnte deshalb nie direkt auf ein vorhandenes
-           Verzeichnis (z.B. cf_images/OS9SYS) zeigen. */
         const char *rest = strchr(rel_or_abs + 1, '/');
-        rest = rest ? rest + 1 : "";
-        snprintf(combined, sizeof(combined), "%s/%s", fs->basepath, rest);
+        snprintf(rel, sizeof(rel), "%s", rest ? rest + 1 : "");
     } else {
-        /* Relative path */
-        if (fs->cwd[0]) {
-            snprintf(combined, sizeof(combined), "%s/%s/%s", fs->basepath, fs->cwd, rel_or_abs);
-        } else {
-            snprintf(combined, sizeof(combined), "%s/%s", fs->basepath, rel_or_abs);
-        }
+        snprintf(rel, sizeof(rel), "%s%s%s", fs->cwd, fs->cwd[0] ? "/" : "", rel_or_abs);
     }
+    char norm[DHF_PATH_MAX * 2];
+    size_t nlen = 0;
+    norm[0] = '\0';
+    for (char *tok = strtok(rel, "/"); tok; tok = strtok(NULL, "/")) {
+        if (strcmp(tok, ".") == 0) continue;
+        /* OS-9: ".." eine Ebene hoch, "..." zwei, "...." drei usw. (n Punkte = n-1 Ebenen) --
+           bashs getwd bildet genau so "./..", "./...", "./....". Nie ueber die Wurzel. */
+        size_t dots = strspn(tok, ".");
+        if (dots >= 2 && tok[dots] == '\0') {
+            for (size_t up = 1; up < dots; up++) {
+                char *sl = strrchr(norm, '/');
+                if (sl) { *sl = '\0'; nlen = (size_t)(sl - norm); }
+                else    { norm[0] = '\0'; nlen = 0; break; }
+            }
+            continue;
+        }
+        size_t tl = strlen(tok);
+        if (nlen + tl + 2 >= sizeof(norm)) return -1;
+        if (nlen) norm[nlen++] = '/';
+        memcpy(norm + nlen, tok, tl + 1);
+        nlen += tl;
+    }
+    if (nlen) snprintf(combined, sizeof(combined), "%s/%s", fs->basepath, norm);
+    else      snprintf(combined, sizeof(combined), "%s", fs->basepath);
 
     /* Clean path / remove multiple slashes and /./ */
     char resolved[PATH_MAX];
@@ -267,6 +288,9 @@ static int alloc_handle(dhf_host_fs_t *fs, int is_dir, const char *path) {
 
 int dhf_host_fs_init(dhf_host_fs_t *fs, const char *basepath) {
     if (!fs) return -1;
+    for (uint32_t i = 0; i < fs->lsn_cnt; i++) free(fs->lsn_tab[i]);   /* erneutes iniz */
+    free(fs->lsn_tab);
+    free(fs->lsn_hash);
     memset(fs, 0, sizeof(*fs));
 
     char real_base[PATH_MAX];
@@ -551,6 +575,13 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
         return h;
     }
 
+    /* 2026-09-26: wie RBF -- eine Datei MIT Verzeichnis-Bit ($80) oeffnen ist E$FNA. "copy"
+       prueft so, ob die Quelle ein Verzeichnis ist; gelang der Open, hielt es jede DHF-Datei
+       fuer ein Verzeichnis ("you must specify -z or files to copy"). */
+    if (flags & DHF_MODE_DIR) {
+        if (status) *status = DHF_ERR_IS_DIR;           /* E$FNA */
+        return -1;
+    }
     int oflags = 0;
     if ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) == (DHF_MODE_READ | DHF_MODE_WRITE)) {
         oflags = O_RDWR;
@@ -648,7 +679,7 @@ int dhf_host_fs_close(dhf_host_fs_t *fs, int handle, uint8_t *status) {
 /* 2026-09-26: Ein Host-Verzeichnis erscheint dem Gast als virtuelle RBF-Verzeichnisdatei aus
    32-Byte-Eintraegen ("OS-9 Technical Manual" Kap. 7) mit eigener Byteposition dir_pos --
    frei positionierbar per I$Seek und in beliebigen Stuecken lesbar, wie auf RBF. Eintrag 0
-   ist immer ".", Eintrag 1 immer "..", danach die echten Host-Eintraege (readdir()-
+   ist immer "..", Eintrag 1 immer "." (RBF-Reihenfolge), danach die echten Host-Eintraege (readdir()-
    Reihenfolge, "." und ".." dort uebersprungen). Vorher konnte ein Verzeichnis nur
    sequenziell in ganzen Eintraegen gelesen werden und I$Seek/SS_Pos/SS_EOF lehnten
    Verzeichnis-Handles ab -- die echte "dir"-Utility seekt nach dem Lesen von "."/".." auf
@@ -664,14 +695,18 @@ static int dir_real_next(DIR *d, char *name, size_t max) {
     return 0;
 }
 
-/* Name des Eintrags idx holen (0="." 1=".." ab 2 Host): 1 = Eintrag, 2 = freier Platz
+/* Name des Eintrags idx holen (0=".." 1="." ab 2 Host): 1 = Eintrag, 2 = freier Platz
    (inzwischen geloescht), 0 = hinter dem letzten Eintrag. 2026-09-26: aus der Momentaufnahme
    beim Open statt frisch per readdir() -- sonst rueckten nach einem Delete alle folgenden
    Eintraege eine Position vor und ein Aufrufer, der beim Lesen loescht ("deldir"),
    uebersprang jeden zweiten. Auf RBF bleibt ein geloeschter Eintrag als freier Platz stehen. */
 static int dir_entry_name(dhf_host_fs_t *fs, int handle, uint32_t idx, char *name, size_t max) {
-    if (idx == 0) { strncpy(name, ".", max); return 1; }
-    if (idx == 1) { strncpy(name, "..", max); return 1; }
+    /* RBF-Reihenfolge: Eintrag 0 = "..", Eintrag 1 = "." (2026-09-26 korrigiert -- dsave
+       vergleicht die Sektornummern von Eintrag 0 und 1, um die Wurzel zu erkennen, und sucht
+       danach Eintrag 1 im Elternverzeichnis; mit vertauschter Reihenfolge suchte es dort das
+       Elternverzeichnis selbst und brach mit 'can't read directory ".."' ab). */
+    if (idx == 0) { strncpy(name, "..", max); return 1; }
+    if (idx == 1) { strncpy(name, ".", max); return 1; }
     uint32_t i = idx - 2;
     if (i >= fs->handles[handle].dir_count) return 0;
     if (!fs->handles[handle].dir_names[i]) return 2;       /* freier Platz */
@@ -695,16 +730,64 @@ static uint32_t dir_virtual_size(const char *path) {
     return n * DHF_DIRENT_SIZE;
 }
 
-/* Pseudo-Sektornummer fuer einen Host-Pfad (1..DHF_LSN_SLOTS, nie 0); derselbe Pfad
-   bekommt dieselbe Nummer, solange er im Ring steht. */
+static uint32_t lsn_strhash(const char *p) {
+    uint32_t h = 2166136261u;
+    while (*p) { h ^= (unsigned char)*p++; h *= 16777619u; }
+    return h;
+}
+
+/* Pseudo-Sektornummer fuer einen Host-Pfad (1..0xFFFFFF, nie 0); derselbe Pfad behaelt seine
+   Nummer fuer die ganze Laufzeit (bis zum naechsten iniz). */
 static uint32_t lsn_for_path(dhf_host_fs_t *fs, const char *path) {
-    for (uint32_t i = 0; i < DHF_LSN_SLOTS; i++) {
-        if (fs->lsn_path[i][0] && strcmp(fs->lsn_path[i], path) == 0) return i + 1;
+    if (fs->lsn_hcap == 0 || (fs->lsn_cnt + 1) * 2 > fs->lsn_hcap) {        /* Hash vergroessern */
+        uint32_t nc = fs->lsn_hcap ? fs->lsn_hcap * 2 : 4096;
+        uint32_t *nh = calloc(nc, sizeof(uint32_t));
+        if (!nh) return 0;
+        for (uint32_t i = 0; i < fs->lsn_cnt; i++) {
+            uint32_t k = lsn_strhash(fs->lsn_tab[i]) & (nc - 1);
+            while (nh[k]) k = (k + 1) & (nc - 1);
+            nh[k] = i + 1;
+        }
+        free(fs->lsn_hash);
+        fs->lsn_hash = nh;
+        fs->lsn_hcap = nc;
     }
-    uint32_t slot = fs->lsn_next++ % DHF_LSN_SLOTS;
-    strncpy(fs->lsn_path[slot], path, DHF_PATH_MAX - 1);
-    fs->lsn_path[slot][DHF_PATH_MAX - 1] = '\0';
-    return slot + 1;
+    uint32_t k = lsn_strhash(path) & (fs->lsn_hcap - 1);
+    while (fs->lsn_hash[k]) {
+        if (strcmp(fs->lsn_tab[fs->lsn_hash[k] - 1], path) == 0) return fs->lsn_hash[k];
+        k = (k + 1) & (fs->lsn_hcap - 1);
+    }
+    if (fs->lsn_cnt >= 0xFFFFFEu) return 0;                                  /* 24 Bit voll */
+    if (fs->lsn_cnt == fs->lsn_cap) {
+        uint32_t nc = fs->lsn_cap ? fs->lsn_cap * 2 : 1024;
+        char **nt = realloc(fs->lsn_tab, nc * sizeof(char *));
+        if (!nt) return 0;
+        fs->lsn_tab = nt;
+        fs->lsn_cap = nc;
+    }
+    fs->lsn_tab[fs->lsn_cnt] = strdup(path);
+    fs->lsn_hash[k] = ++fs->lsn_cnt;
+    return fs->lsn_cnt;
+}
+
+static const char *lsn_to_path(dhf_host_fs_t *fs, uint32_t lsn) {
+    return (lsn >= 1 && lsn <= fs->lsn_cnt) ? fs->lsn_tab[lsn - 1] : NULL;
+}
+
+/* 2026-09-26: aktuelles Verzeichnis des AUFRUFENDEN Prozesses setzen (vor jeder Anfrage aus
+   SH_SEQ, das der Manager aus P$DIO des Prozesses fuellt). Vorher gab es EIN cwd je Laufwerk
+   fuer alle Prozesse -- "dsave ... | mshell" verstellte sich gegenseitig das Verzeichnis
+   ("dsave: can't chd to b"). 0/unbekannt -> Wurzel. */
+void dhf_host_fs_set_cwd_lsn(dhf_host_fs_t *fs, uint32_t lsn) {
+    const char *p = lsn_to_path(fs, lsn);
+    size_t bl = strlen(fs->basepath);
+    if (p && strncmp(p, fs->basepath, bl) == 0 && (p[bl] == '/' || p[bl] == '\0')) {
+        const char *rel = p + bl;
+        if (*rel == '/') rel++;
+        snprintf(fs->cwd, sizeof(fs->cwd), "%s", rel);
+    } else {
+        fs->cwd[0] = '\0';
+    }
 }
 
 /* Host-Pfad des Verzeichniseintrags "name" im Verzeichnis dirpath ("." / ".." / Datei);
@@ -723,6 +806,49 @@ static void dir_entry_hostpath(dhf_host_fs_t *fs, const char *dirpath, const cha
     } else {
         snprintf(out, max, "%s/%s", dirpath, name);
     }
+}
+
+/* 2026-09-26: Pseudo-Sektornummern eines offenen Handles und seines Elternverzeichnisses --
+   der Manager traegt sie nach Open/Create als pd_fd/pd_dfd in den RBF-Optionsteil des
+   Pfaddeskriptors ein (rbf.h struct rbf_opt, $B6/$BA). bashs getwd vergleicht pd_fd von "."
+   mit den Sektornummern (Byte 29-31) der Eintraege in "..". Dieselbe Pfadform wie in
+   dir_entry_hostpath(), damit die Nummern uebereinstimmen. */
+/* 2026-09-26: pd_dfd wie RBF = Sektornummer des Verzeichnisses, in dem der LETZTE
+   Bestandteil des uebergebenen Pfads gefunden wurde (nicht das Elternverzeichnis des Ziels):
+   "."  -> aktuelles Verzeichnis, "./.." -> ebenfalls das aktuelle (pd_fd dagegen dessen
+   Eltern), "/d0/a/b" -> /d0/a. Einzelner relativer Name -> cwd; Laufwerkswurzel -> sie selbst. */
+uint32_t dhf_host_fs_container_lsn(dhf_host_fs_t *fs, const char *path) {
+    char cont[DHF_PATH_MAX], target[DHF_PATH_MAX];
+    if (!fs) return 0;
+    const char *sl = path ? strrchr(path, '/') : NULL;
+    if (!path || !sl) {
+        cont[0] = '\0';                               /* relativer Einzelname: cwd */
+    } else if (sl == path) {
+        snprintf(cont, sizeof(cont), "%s", path);      /* "/d0": Wurzel selbst */
+    } else {
+        snprintf(cont, sizeof(cont), "%.*s", (int)(sl - path), path);
+        if (cont[0] == '/' && !strchr(cont + 1, '/')) {
+            /* "/d0/x" -> Behaelter "/d0" = Laufwerkswurzel */
+        }
+    }
+    if (resolve_confined_path(fs, cont, target, sizeof(target)) != 0) return 0;
+    char real[PATH_MAX];
+    return lsn_for_path(fs, realpath(target, real) ? real : target);
+}
+
+int dhf_host_fs_handle_lsns(dhf_host_fs_t *fs, int handle, uint32_t *self, uint32_t *parent) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) return -1;
+    const char *p = fs->handles[handle].path;
+    char par[DHF_PATH_MAX];
+    size_t bl = strlen(fs->basepath);
+    const char *sl = strrchr(p, '/');
+    if (strcmp(p, fs->basepath) == 0 || !sl || (size_t)(sl - p) < bl)
+        snprintf(par, sizeof(par), "%s", fs->basepath);
+    else
+        snprintf(par, sizeof(par), "%.*s", (int)(sl - p), p);
+    if (self) *self = lsn_for_path(fs, p);
+    if (parent) *parent = lsn_for_path(fs, par);
+    return 0;
 }
 
 static ssize_t dhf_read_dir_entries(dhf_host_fs_t *fs, int handle, void *buf, size_t count, uint8_t *status) {
@@ -1076,19 +1202,51 @@ int dhf_host_fs_getfd_at(dhf_host_fs_t *fs, int handle, void *buf, size_t want_l
     return 0;
 }
 
+/* 2026-09-26: I$SetStt SS_FD ("Write File Descriptor Sector", 68k_tech.pdf S. 587): nur
+   FD_OWN, FD_DAT und FD_Creat werden uebernommen -- auf dem Host davon FD_DAT (Offset 3,
+   Jahr-1900/Monat/Tag/Stunde/Minute, UTC wie in build_fd) als Aenderungszeit. "copy" setzt
+   so das Datum der Kopie ("can't put file descriptor" ohne). */
+int dhf_host_fs_setfd_at(dhf_host_fs_t *fs, int handle, const unsigned char *fdimg, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || !fdimg) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    struct tm tmv;
+    memset(&tmv, 0, sizeof(tmv));
+    tmv.tm_year = fdimg[3];
+    tmv.tm_mon  = fdimg[4] ? fdimg[4] - 1 : 0;
+    tmv.tm_mday = fdimg[5] ? fdimg[5] : 1;
+    tmv.tm_hour = fdimg[6];
+    tmv.tm_min  = fdimg[7];
+    time_t t = timegm(&tmv);
+    struct timeval tv[2];
+    tv[0].tv_sec = time(NULL); tv[0].tv_usec = 0;   /* Zugriffszeit: jetzt */
+    tv[1].tv_sec = t;          tv[1].tv_usec = 0;   /* Aenderungszeit: FD_DAT */
+    int rc = (fs->handles[handle].is_dir || fs->handles[handle].fd < 0)
+             ? utimes(fs->handles[handle].path, tv)
+             : futimes(fs->handles[handle].fd, tv);
+    if (rc != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
 /* 2026-09-26: I$GetStt SS_FDInf -- FD-Abbild zur Pseudo-Sektornummer aus einem frueher
    gelesenen Verzeichniseintrag (s. lsn_for_path). Unbekannte Nummer -> E$PNNF. */
 int dhf_host_fs_getfd_lsn(dhf_host_fs_t *fs, uint32_t lsn, void *buf, size_t want_len, size_t *out_len, uint8_t *status) {
-    if (!fs || lsn == 0 || lsn > DHF_LSN_SLOTS || !fs->lsn_path[lsn - 1][0]) {
+    const char *lp = fs ? lsn_to_path(fs, lsn) : NULL;
+    if (!lp) {
         if (status) *status = DHF_ERR_NOT_FOUND;
         return -1;
     }
     struct stat st;
-    if (stat(fs->lsn_path[lsn - 1], &st) != 0) {
+    if (stat(lp, &st) != 0) {
         if (status) *status = errno_to_dhf(errno);
         return -1;
     }
-    size_t n = build_fd(&st, fs->lsn_path[lsn - 1], buf, want_len);
+    size_t n = build_fd(&st, lp, buf, want_len);
     if (out_len) *out_len = n;
     if (status) *status = DHF_ERR_OK;
     return 0;
@@ -1173,7 +1331,9 @@ int dhf_host_fs_iseof_at(dhf_host_fs_t *fs, int handle, uint8_t *status) {
     return 0;
 }
 
-int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
+/* I$ChgDir: Verzeichnis pruefen und seine Pseudo-Sektornummer liefern -- der Manager legt sie
+   in P$DIO des Prozesses ab (wie RBF die Verzeichnisadresse); kein Zustand hier. */
+int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint32_t *out_lsn, uint8_t *status) {
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
@@ -1195,16 +1355,7 @@ int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
         target[sizeof(target) - 1] = '\0';
     }
 
-    /* Compute new cwd relative to basepath */
-    size_t base_len = strlen(fs->basepath);
-    if (strlen(target) > base_len) {
-        const char *rel = target + base_len;
-        if (*rel == '/') rel++;
-        strncpy(fs->cwd, rel, sizeof(fs->cwd) - 1);
-    } else {
-        fs->cwd[0] = '\0';
-    }
-
+    if (out_lsn) *out_lsn = lsn_for_path(fs, target);
     if (status) *status = DHF_ERR_OK;
     return 0;
 }
