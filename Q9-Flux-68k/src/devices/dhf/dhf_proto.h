@@ -38,6 +38,11 @@ enum dhf_command {
     DHF_CMD_READDIR     = 17,
     DHF_CMD_INIT        = 18,
     DHF_CMD_TERM        = 19,
+    /* 2026-09-26: I$GetStt SS_FD ($0F, "Read File Descriptor Sector") -- liefert dem
+     * Aufrufer ein synthetisches RBF-FD-Sektor-Abbild (FD_ATT/FD_OWN/FD_DAT/FD_LNK/FD_SIZ/
+     * FD_CREAT, Rest genullt), aus stat() auf dem Host-Handle gebaut. Genutzt u.a. von der
+     * echten "attr"-Utility, s. Q9-OS/Q9-DHF-68k/STATUS.md. */
+    DHF_CMD_GETFD       = 20,
     DHF_CMD_PING        = 254,
     DHF_CMD_RETURN      = 255
 };

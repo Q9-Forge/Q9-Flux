@@ -260,6 +260,21 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             break;
         }
 
+        case DHF_CMD_GETFD: {
+            /* 2026-09-26: I$GetStt SS_FD -- d0=Pfadnummer (Handle), d1=gewuenschte
+             * Byteanzahl (Aufrufer-d2.w), a1=Zielpuffer im Gast-RAM (Aufrufer-a0). Echte
+             * RBF-Utilities wie "attr" nutzen das, um Attribute/Groesse/Datum zu lesen --
+             * kein physischer Sektor, ein ganz normales GetStt (s. dhf_host_fs_getfd_at). */
+            unsigned char fdbuf[256];
+            size_t want = d1 > sizeof(fdbuf) ? sizeof(fdbuf) : d1;
+            size_t out_len = 0;
+            if (dhf_host_fs_getfd_at(&dev->host_fs, (int)d0, fdbuf, want, &out_len, &status) == 0 && a1) {
+                void *dest = resolve_guest_ptr(dev, a1, out_len);
+                if (dest) memcpy(dest, fdbuf, out_len);
+            }
+            break;
+        }
+
         case DHF_CMD_CHDIR: {
             dhf_host_fs_chdir(&dev->host_fs, path, &status);
             break;
