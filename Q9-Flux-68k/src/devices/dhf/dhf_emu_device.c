@@ -275,6 +275,25 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             break;
         }
 
+        case DHF_CMD_SETATTR: {
+            /* d0=Pfadnummer, d1=neues Attribut-Byte (SS_Attr, s. dhf_host_fs_setattr_at) */
+            dhf_host_fs_setattr_at(&dev->host_fs, (int)d0, (uint8_t)d1, &status);
+            break;
+        }
+
+        case DHF_CMD_GETPOS: {
+            uint32_t pos = 0;
+            if (dhf_host_fs_getpos_at(&dev->host_fs, (int)d0, &pos, &status) == 0) {
+                s->d1 = htonl(pos);
+            }
+            break;
+        }
+
+        case DHF_CMD_ISEOF: {
+            dhf_host_fs_iseof_at(&dev->host_fs, (int)d0, &status);
+            break;
+        }
+
         case DHF_CMD_CHDIR: {
             dhf_host_fs_chdir(&dev->host_fs, path, &status);
             break;

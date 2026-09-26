@@ -633,6 +633,74 @@ int dhf_host_fs_getfd_at(dhf_host_fs_t *fs, int handle, void *buf, size_t want_l
     return 0;
 }
 
+/* 2026-09-26: I$SetStt SS_Attr -- Gegenstueck zu SS_FD's Lesen (dhf_host_fs_getfd_at).
+   Setzt Unix-Rechte-Bits aus dem FD_ATT-Byte (gleiche Bitlage wie dort: Bit0-2=Besitzer
+   r/w/x, Bit3-5=oeffentlich r/w/x). Bit6 (exklusiv) und Bit7 (Verzeichnis) werden bewusst
+   ignoriert -- Verzeichnis-Status folgt bei uns aus dem tatsaechlichen Host-Dateityp, nicht
+   aus einem Flag ("OS-9 System Calls": "not permitted to set the dir bit of a non-
+   directory file"), und "exklusiv" hat fuer ein Host-Passthrough-Dateisystem ohnehin keine
+   Entsprechung. */
+int dhf_host_fs_setattr_at(dhf_host_fs_t *fs, int handle, uint8_t attr, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    mode_t mode = 0;
+    if (attr & 0x01) mode |= S_IRUSR;
+    if (attr & 0x02) mode |= S_IWUSR;
+    if (attr & 0x04) mode |= S_IXUSR;
+    if (attr & 0x08) mode |= S_IROTH;
+    if (attr & 0x10) mode |= S_IWOTH;
+    if (attr & 0x20) mode |= S_IXOTH;
+
+    int rc = fs->handles[handle].is_dir
+             ? chmod(fs->handles[handle].path, mode)
+             : fchmod(fs->handles[handle].fd, mode);
+    if (rc != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+/* I$GetStt SS_Pos -- aktuelle Dateiposition (Handle-basiert wie alle anderen `_at`-
+   Funktionen). */
+int dhf_host_fs_getpos_at(dhf_host_fs_t *fs, int handle, uint32_t *out_pos, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use ||
+        fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    off_t pos = lseek(fs->handles[handle].fd, 0, SEEK_CUR);
+    if (pos == (off_t)-1) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (out_pos) *out_pos = (uint32_t)pos;
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+/* I$GetStt SS_EOF -- Dateiende-Test: aktuelle Position mit Dateigroesse vergleichen.
+   status=DHF_ERR_EOF (== echtes E$EOF, keine Umrechnung noetig) wenn am Ende, sonst
+   DHF_ERR_OK. */
+int dhf_host_fs_iseof_at(dhf_host_fs_t *fs, int handle, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use ||
+        fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    off_t pos = lseek(fs->handles[handle].fd, 0, SEEK_CUR);
+    struct stat st;
+    if (pos == (off_t)-1 || fstat(fs->handles[handle].fd, &st) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = (pos >= st.st_size) ? DHF_ERR_EOF : DHF_ERR_OK;
+    return 0;
+}
+
 int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
