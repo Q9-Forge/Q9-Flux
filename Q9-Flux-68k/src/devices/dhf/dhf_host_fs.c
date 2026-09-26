@@ -318,6 +318,15 @@ ssize_t dhf_host_fs_read(dhf_host_fs_t *fs, int handle, void *buf, size_t count,
         if (status) *status = errno_to_dhf(errno);
         return -1;
     }
+    /* 2026-09-26: echtes I$Read MUSS am Dateiende einen Fehler (E$EOF) melden statt
+       Erfolg mit 0 Bytes -- "OS-9 System Calls" Kap. 2: "If there is no data available,
+       an EOF error is returned." Ohne das ruft ein Aufrufer wie das echte "list"-Kommando
+       I$Read endlos weiter (0 Bytes/kein Fehler ist aus seiner Sicht kein Abbruchgrund) --
+       gefunden, als "list /d0/hello.txt" nach korrekt ausgegebenem Inhalt haengenblieb. */
+    if (res == 0 && count > 0) {
+        if (status) *status = DHF_ERR_EOF;
+        return 0;
+    }
     if (status) *status = DHF_ERR_OK;
     return res;
 }
@@ -379,6 +388,12 @@ int dhf_host_fs_readln(dhf_host_fs_t *fs, int handle, char *buf, size_t maxlen, 
         }
     }
     buf[i] = '\0';
+    /* s. dhf_host_fs_read: 0 Bytes UND wirkliches Dateiende (keine Zeile, auch nicht
+       unvollstaendig, gelesen) muss E$EOF melden, sonst endlose I$ReadLn-Wiederholung. */
+    if (i == 0) {
+        if (status) *status = DHF_ERR_EOF;
+        return 0;
+    }
     if (status) *status = DHF_ERR_OK;
     return (int)i;
 }
