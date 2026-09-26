@@ -55,6 +55,8 @@ int     dhf_host_fs_getfd_at(dhf_host_fs_t *fs, int handle, void *buf, size_t wa
 int     dhf_host_fs_setattr_at(dhf_host_fs_t *fs, int handle, uint8_t attr, uint8_t *status);
 int     dhf_host_fs_getpos_at(dhf_host_fs_t *fs, int handle, uint32_t *out_pos, uint8_t *status);
 int     dhf_host_fs_iseof_at(dhf_host_fs_t *fs, int handle, uint8_t *status);
+int     dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *newname, uint8_t *status);
+int     dhf_host_fs_getfree(dhf_host_fs_t *fs, uint32_t *out_free, uint8_t *status);
 
 int     dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status);
 int     dhf_host_fs_mkdir(dhf_host_fs_t *fs, const char *path, int mode, uint8_t *status);

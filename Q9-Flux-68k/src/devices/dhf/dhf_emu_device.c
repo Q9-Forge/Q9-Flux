@@ -294,6 +294,21 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             break;
         }
 
+        case DHF_CMD_RENAMEAT: {
+            /* d0=Pfadnummer (alte, bereits offene Datei), a1=Zeiger auf neuen Namen */
+            const char *newname = resolve_guest_str(dev, a1);
+            dhf_host_fs_rename_at(&dev->host_fs, (int)d0, newname, &status);
+            break;
+        }
+
+        case DHF_CMD_GETFREE: {
+            uint32_t freeb = 0;
+            if (dhf_host_fs_getfree(&dev->host_fs, &freeb, &status) == 0) {
+                s->d1 = htonl(freeb);
+            }
+            break;
+        }
+
         case DHF_CMD_CHDIR: {
             dhf_host_fs_chdir(&dev->host_fs, path, &status);
             break;

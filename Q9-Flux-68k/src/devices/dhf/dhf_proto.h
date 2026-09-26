@@ -51,6 +51,20 @@ enum dhf_command {
     /* I$GetStt SS_EOF ($06) -- Dateiende-Test. d0=Pfadnummer, status=DHF_ERR_EOF wenn am
      * Ende, sonst DHF_ERR_OK mit d1=0. */
     DHF_CMD_ISEOF       = 23,
+    /* I$SetStt SS_Rename ($42) -- Handle-basierte Umbenennung (alte Datei bereits offen,
+     * a1=Zeiger auf neuen Namen). ACHTUNG: kein echtes Microware-Utility erreicht diesen
+     * Aufruf jemals -- das reale "rename"-Kommando verweigert sich bei jedem Nicht-RBF-
+     * FileManager schon VOR jedem Syscall hart mit "pathname not RBF device" (empirisch
+     * per Q9_TRAP_TRACE_ALL verifiziert, s. Q9-OS/Q9-DHF-68k/STATUS.md). Nur fuer eigene
+     * Werkzeuge nutzbar, Registerkonvention daher eigene, nicht gegen ein reales Utility
+     * verifizierte Annahme. */
+    DHF_CMD_RENAMEAT    = 24,
+    /* I$GetStt SS_Free ($43) -- freier Speicherplatz im Basisverzeichnis (statvfs()).
+     * ACHTUNG: das reale "free"-Kommando versucht IMMER einen rohen "@"-Physikalzugriff
+     * (I$Open("<geraet>@")) und Bitmap-Sektoren zu lesen -- fuer ein Host-Passthrough-
+     * Dateisystem ohne Medium/LSNs architektonisch nicht abbildbar (ebenfalls per Trace
+     * verifiziert). Auch dieser Aufruf ist daher nur fuer eigene Werkzeuge gedacht. */
+    DHF_CMD_GETFREE     = 25,
     DHF_CMD_PING        = 254,
     DHF_CMD_RETURN      = 255
 };
