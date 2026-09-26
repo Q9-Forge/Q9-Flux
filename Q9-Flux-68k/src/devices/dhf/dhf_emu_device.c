@@ -36,6 +36,22 @@ static inline const char *resolve_guest_str(dhf_emu_device_t *dev, uint32_t gues
     return (const char *)(uintptr_t)guest_addr;
 }
 
+/* 2026-09-26: OS-9-Pfadname aus dem Gast-RAM -- endet wie bei F$PrsNam am ersten Zeichen
+ * <= $20 (NUL, CR, Leerzeichen ...), nicht erst am NUL: sysgo uebergibt "CMDS" als
+ * "CMDS\rSysgo can't open ..." (Pfade direkt aus seinen Konstanten, CR-terminiert). Kopie
+ * nach buf; NULL wie resolve_guest_str, wenn die Adresse ungueltig ist. */
+static const char *guest_os9_path(dhf_emu_device_t *dev, uint32_t guest_addr, char *buf, size_t max) {
+    const char *p = resolve_guest_str(dev, guest_addr);
+    if (!p) return NULL;
+    size_t lim = max - 1;
+    if (dev->emu_memory && dev->emu_memory_size - guest_addr < lim)
+        lim = dev->emu_memory_size - guest_addr;
+    size_t n = 0;
+    while (n < lim && (unsigned char)p[n] > 0x20) { buf[n] = p[n]; n++; }
+    buf[n] = '\0';
+    return buf;
+}
+
 int dhf_emu_device_init_local(dhf_emu_device_t *dev, struct dhf_shared *mem, const char *basepath) {
     if (!dev || !mem) return -1;
     memset(dev, 0, sizeof(*dev));
@@ -95,7 +111,11 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
     uint32_t d1 = ntohl(s->d1);
     uint32_t d2 = ntohl(s->d2);
 
-    const char *path = resolve_guest_str(dev, a0);
+    /* INIT: Basispfad des Hosts (aus dem Deskriptor, NUL-terminiert, darf Leerzeichen
+     * enthalten); alles andere sind OS-9-Pfadnamen */
+    char pathbuf[DHF_PATH_MAX], namebuf[DHF_PATH_MAX];
+    const char *path = cmd == DHF_CMD_INIT ? resolve_guest_str(dev, a0)
+                                           : guest_os9_path(dev, a0, pathbuf, sizeof(pathbuf));
 
     /* If remote backend, forward request over TCP */
     if (dev->backend == DHF_BACKEND_REMOTE_SOCKET) {
@@ -149,9 +169,15 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         case DHF_CMD_INIT: {
             /* 2026-09-26: [dhfN] in der .q9-Config hat Vorrang vor dem Deskriptor */
             const char *bp = dev->cfg_basepath[0] ? dev->cfg_basepath : path;
-            if (bp && bp[0]) {
-                dhf_host_fs_init(&dev->host_fs, bp);
+            /* 2026-09-26: ohne Basispfad (a0 = 0) ruft nur der ROM-Booter bootdhf auf
+             * (Q9-Port ROM_CBOOT/io_dhf.c) -- er darf nur von einem in der .q9 AUSDRUECKLICH
+             * eingetragenen Laufwerk booten, sonst E$NotRdy und der Booter faellt auf CF
+             * zurueck. (Der Treiber schickt immer den Basispfad aus dem Deskriptor.) */
+            if (!bp || !bp[0]) {
+                status = DHF_ERR_NOT_READY;
+                break;
             }
+            dhf_host_fs_init(&dev->host_fs, bp);
             dev->host_fs.readonly = dev->cfg_readonly >= 0 ? dev->cfg_readonly
                                                           : ((d1 & 1) ? 1 : 0);  /* DevCon-Flags */
             status = DHF_ERR_OK;
@@ -371,8 +397,8 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         case DHF_CMD_RENAMEAT: {
             /* 2026-09-26, RBF-Konvention: d0=Pfadnummer eines VERZEICHNISSES, a0=alter Name,
              * a1=neuer Name (je ein Eintrag in diesem Verzeichnis, s. dhf_host_fs_rename_at) */
-            const char *oldname = resolve_guest_str(dev, a0);
-            const char *newname = resolve_guest_str(dev, a1);
+            const char *oldname = path;     /* a0, bereits als OS-9-Name gelesen */
+            const char *newname = guest_os9_path(dev, a1, namebuf, sizeof(namebuf));
             dhf_host_fs_rename_at(&dev->host_fs, (int)d0, oldname, newname, &status);
             break;
         }
@@ -408,7 +434,7 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         }
 
         case DHF_CMD_RENAME: {
-            const char *newp = resolve_guest_str(dev, a1);
+            const char *newp = guest_os9_path(dev, a1, namebuf, sizeof(namebuf));
             dhf_host_fs_rename(&dev->host_fs, path, newp, &status);
             break;
         }
@@ -449,6 +475,15 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             break;
     }
 
+    /* 2026-09-26: Q9_DHF_DEBUG=2 -- JEDES Kommando mit Verzeichnis (seq), Pfad und Status */
+    {
+        const char *dbg = getenv("Q9_DHF_DEBUG");
+        if (dbg && dbg[0] == '2')
+            fprintf(stderr, "[dhf] cmd=%u seq=%u d0=%u d1=%u d2=%u a1=%08x '%s' -> status=%u a0=%08x d1=%u\r\n",
+                    (unsigned)cmd, (unsigned)ntohl(s->seq), (unsigned)d0, (unsigned)d1, (unsigned)d2,
+                    (unsigned)a1, path ? path : "", (unsigned)status, (unsigned)ntohl(s->a0),
+                    (unsigned)ntohl(s->d1));
+    }
     s->status = status;
     __sync_synchronize();
     s->command = DHF_CMD_IDLE;
