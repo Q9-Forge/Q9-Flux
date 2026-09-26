@@ -50,6 +50,7 @@ int     dhf_host_fs_writeln(dhf_host_fs_t *fs, int handle, const char *buf, size
 int     dhf_host_fs_getstat(dhf_host_fs_t *fs, const char *path, void *statbuf, size_t *out_size, uint8_t *status);
 int     dhf_host_fs_getstat_at(dhf_host_fs_t *fs, int handle, void *statbuf, size_t *out_size, uint8_t *status);
 int     dhf_host_fs_setstat(dhf_host_fs_t *fs, const char *path, const void *statbuf, uint8_t *status);
+int     dhf_host_fs_setsize_at(dhf_host_fs_t *fs, int handle, uint32_t new_size, uint8_t *status);
 
 int     dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status);
 int     dhf_host_fs_mkdir(dhf_host_fs_t *fs, const char *path, int mode, uint8_t *status);

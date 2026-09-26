@@ -476,6 +476,26 @@ int dhf_host_fs_setstat(dhf_host_fs_t *fs, const char *path, const void *statbuf
     return 0;
 }
 
+/* 2026-09-26: I$SetStt (Q9-DHF-68k manager), wie schon I$GetStt, hat fuer einen bereits
+   offenen Pfad nur die OS-9-Pfadnummer (hier als "handle"), keinen Pfadnamen -- ftruncate()
+   auf dem gespeicherten fd braucht keine erneute Pfadaufloesung/-Confinement-Pruefung.
+   Bislang nur SS_Size (Dateigroesse setzen) verdrahtet -- die einzige SetStt-Funktion, die
+   gegen ein reines Host-Passthrough-Dateisystem ueberhaupt sinnvoll 1:1 abbildbar ist
+   (SS_Attr/SS_Reset/SS_RFM/... haben auf einem Host-Verzeichnis kein Aequivalent). */
+int dhf_host_fs_setsize_at(dhf_host_fs_t *fs, int handle, uint32_t new_size, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use ||
+        fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    if (ftruncate(fs->handles[handle].fd, (off_t)new_size) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
 int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {

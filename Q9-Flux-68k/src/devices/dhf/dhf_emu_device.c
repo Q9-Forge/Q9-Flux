@@ -244,8 +244,11 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         }
 
         case DHF_CMD_SETSTT: {
-            const void *src = a1 ? resolve_guest_ptr(dev, a1, 16) : NULL;
-            dhf_host_fs_setstat(&dev->host_fs, path, src, &status);
+            /* 2026-09-26: by HANDLE (d0), wie DHF_CMD_GETSTT -- der Manager schickt hier
+               nur die eine SetStt-Funktion, die er kennt (SS_Size), mit d0=Pfadnummer und
+               d1=gewuenschte Groesse (s. dhf_host_fs_setsize_at). Alle anderen SS_-Codes
+               bleiben im Manager selbst E$UnkSvc und erreichen dieses Kommando nie. */
+            dhf_host_fs_setsize_at(&dev->host_fs, (int)d0, d1, &status);
             break;
         }
 
