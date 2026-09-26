@@ -14,6 +14,8 @@
 #define DHF_MAX_HANDLES 64
 #define DHF_PATH_MAX    1024
 #define DHF_LSN_SLOTS   1024
+#define DHF_DELDIR_SLOTS 8
+#define DHF_DIRCACHE_SLOTS 32
 
 typedef struct {
     char basepath[DHF_PATH_MAX];
@@ -24,13 +26,28 @@ typedef struct {
         int fd;
         DIR *dir;
         uint32_t dir_pos;   /* Verzeichnis-Handles: Byteposition in der virtuellen RBF-Datei */
-        uint32_t dir_idx;   /* Verzeichnis-Handles: Index des naechsten readdir()-Eintrags */
+        char   **dir_names; /* Verzeichnis-Handles: Momentaufnahme der Eintraege beim Open */
+        uint32_t dir_count; /* (ohne "."/".."); feste Positionen wie RBF, s. dhf_host_fs.c */
         char path[DHF_PATH_MAX];
     } handles[DHF_MAX_HANDLES];
     /* 2026-09-26: Pseudo-Sektornummern fuer SS_FDInf ("dir -e"/"dir -r"): Nummer n (1..) steht
        fuer lsn_path[n-1]; vergeben beim Verzeichnislesen, Ringpuffer (aelteste faellt raus). */
     char     lsn_path[DHF_LSN_SLOTS][DHF_PATH_MAX];
     uint32_t lsn_next;
+    /* 2026-09-26: Verzeichnisse, deren Dir-Bit per SS_Attr entfernt wurde -- nur die darf
+       I$Delete (wie RBF, so arbeitet "deldir": erst Attribut weg, dann loeschen). */
+    char     deldir_ok[DHF_DELDIR_SLOTS][DHF_PATH_MAX];
+    uint32_t deldir_next;
+    /* 2026-09-26: stabile Eintragsplaetze je Verzeichnis ueber Handles hinweg (wie die
+       Verzeichnisdatei auf RBF): geloeschte Eintraege bleiben freie Plaetze (NULL), neue
+       belegen den ersten freien Platz oder kommen hinten dran. */
+    struct {
+        char     path[DHF_PATH_MAX];
+        char   **names;
+        uint32_t count;
+        uint32_t used;      /* LRU-Zaehler */
+    } dircache[DHF_DIRCACHE_SLOTS];
+    uint32_t dircache_clock;
 } dhf_host_fs_t;
 
 /* Public API */

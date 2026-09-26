@@ -136,11 +136,103 @@ static int resolve_confined_path(dhf_host_fs_t *fs, const char *rel_or_abs, char
  * bereits belegter Slot an diesem Index wird als verwaist behandelt (z.B. Pfad ohne
  * ordnungsgemaesses CLOSE wiederverwendet) und sauber geschlossen, statt einen Fehler zu
  * liefern -- robuster fuer Tests/Entwicklung als ein hartes E$-Fehlschlagen. */
+static int dir_real_next(DIR *d, char *name, size_t max);
+
+static void dir_snapshot_free(dhf_host_fs_t *fs, int h) {
+    for (uint32_t i = 0; i < fs->handles[h].dir_count; i++) free(fs->handles[h].dir_names[i]);
+    free(fs->handles[h].dir_names);
+    fs->handles[h].dir_names = NULL;
+    fs->handles[h].dir_count = 0;
+}
+
+/* Platztabelle des Verzeichnisses path holen/anlegen und mit dem Host abgleichen: nicht mehr
+   vorhandene Namen werden freie Plaetze, neue Host-Namen fuellen den ersten freien Platz oder
+   werden angehaengt. So bleiben Positionen ueber mehrere Opens stabil -- "deldir" oeffnet ein
+   Verzeichnis nach dem Abarbeiten eines Unterverzeichnisses NEU und seekt auf die alte
+   Position; ruecken die Eintraege dabei vor, uebersprang es jeden folgenden. */
+static int dircache_sync(dhf_host_fs_t *fs, const char *path) {
+    int slot = -1;
+    for (int i = 0; i < DHF_DIRCACHE_SLOTS; i++) {
+        if (fs->dircache[i].path[0] && strcmp(fs->dircache[i].path, path) == 0) { slot = i; break; }
+    }
+    if (slot < 0) {                            /* aeltesten Platz neu belegen */
+        slot = 0;
+        for (int i = 1; i < DHF_DIRCACHE_SLOTS; i++)
+            if (fs->dircache[i].used < fs->dircache[slot].used) slot = i;
+        for (uint32_t k = 0; k < fs->dircache[slot].count; k++) free(fs->dircache[slot].names[k]);
+        free(fs->dircache[slot].names);
+        fs->dircache[slot].names = NULL;
+        fs->dircache[slot].count = 0;
+        strncpy(fs->dircache[slot].path, path, DHF_PATH_MAX - 1);
+        fs->dircache[slot].path[DHF_PATH_MAX - 1] = '\0';
+    }
+    fs->dircache[slot].used = ++fs->dircache_clock;
+
+    /* aktuelle Host-Namen einlesen */
+    char **host = NULL; uint32_t nh = 0, cap = 0;
+    DIR *d = opendir(path);
+    if (d) {
+        char name[256];
+        while (dir_real_next(d, name, sizeof(name))) {
+            if (nh == cap) {
+                cap = cap ? cap * 2 : 32;
+                char **n = realloc(host, cap * sizeof(char *));
+                if (!n) break;
+                host = n;
+            }
+            host[nh++] = strdup(name);
+        }
+        closedir(d);
+    }
+    /* verschwundene Namen -> freie Plaetze */
+    for (uint32_t k = 0; k < fs->dircache[slot].count; k++) {
+        char *nm = fs->dircache[slot].names[k];
+        if (!nm) continue;
+        int found = 0;
+        for (uint32_t j = 0; j < nh; j++) if (host[j] && strcmp(host[j], nm) == 0) { found = 1; free(host[j]); host[j] = NULL; break; }
+        if (!found) { free(nm); fs->dircache[slot].names[k] = NULL; }
+    }
+    /* neue Namen -> erster freier Platz, sonst anhaengen */
+    for (uint32_t j = 0; j < nh; j++) {
+        if (!host[j]) continue;
+        uint32_t k;
+        for (k = 0; k < fs->dircache[slot].count; k++) if (!fs->dircache[slot].names[k]) break;
+        if (k == fs->dircache[slot].count) {
+            char **n = realloc(fs->dircache[slot].names, (k + 1) * sizeof(char *));
+            if (!n) { free(host[j]); continue; }
+            fs->dircache[slot].names = n;
+            fs->dircache[slot].count++;
+        }
+        fs->dircache[slot].names[k] = host[j];
+    }
+    free(host);
+    return slot;
+}
+
+/* Momentaufnahme der Platztabelle beim Open (s. dircache_sync/dir_entry_name) */
+static void dir_snapshot(dhf_host_fs_t *fs, int h) {
+    dir_snapshot_free(fs, h);
+    int c = dircache_sync(fs, fs->handles[h].path);
+    uint32_t n = fs->dircache[c].count;
+    if (!n) return;
+    fs->handles[h].dir_names = calloc(n, sizeof(char *));
+    if (!fs->handles[h].dir_names) return;
+    for (uint32_t k = 0; k < n; k++)
+        fs->handles[h].dir_names[k] = fs->dircache[c].names[k] ? strdup(fs->dircache[c].names[k]) : NULL;
+    fs->handles[h].dir_count = n;
+}
+
+/* Groesse der virtuellen Verzeichnisdatei eines offenen Handles (Momentaufnahme) */
+static uint32_t dir_handle_size(dhf_host_fs_t *fs, int h) {
+    return (fs->handles[h].dir_count + 2) * 32u;
+}
+
 static int alloc_handle_at(dhf_host_fs_t *fs, int idx, int is_dir, const char *path) {
     if (idx < 0 || idx >= DHF_MAX_HANDLES) {
         return -1;
     }
     if (fs->handles[idx].in_use) {
+        dir_snapshot_free(fs, idx);
         if (fs->handles[idx].is_dir && fs->handles[idx].dir) {
             closedir(fs->handles[idx].dir);
         } else if (!fs->handles[idx].is_dir && fs->handles[idx].fd >= 0) {
@@ -152,7 +244,8 @@ static int alloc_handle_at(dhf_host_fs_t *fs, int idx, int is_dir, const char *p
     fs->handles[idx].fd = -1;
     fs->handles[idx].dir = NULL;
     fs->handles[idx].dir_pos = 0;
-    fs->handles[idx].dir_idx = 2;
+    fs->handles[idx].dir_names = NULL;
+    fs->handles[idx].dir_count = 0;
     strncpy(fs->handles[idx].path, path ? path : "", sizeof(fs->handles[idx].path) - 1);
     return idx;
 }
@@ -193,6 +286,7 @@ void dhf_host_fs_cleanup(dhf_host_fs_t *fs) {
     if (!fs) return;
     for (int i = 0; i < DHF_MAX_HANDLES; i++) {
         if (fs->handles[i].in_use) {
+            dir_snapshot_free(fs, i);
             if (fs->handles[i].is_dir && fs->handles[i].dir) {
                 closedir(fs->handles[i].dir);
             } else if (!fs->handles[i].is_dir && fs->handles[i].fd >= 0) {
@@ -279,6 +373,19 @@ int dhf_host_fs_create(dhf_host_fs_t *fs, const char *path, int flags, int mode,
  * alloc_handle_at-Kommentar) statt automatischer Vergabe -- fuer den Q9-DHF-Manager, der
  * die OS-9-Pfadnummer direkt als Index nutzt und dadurch selbst kein Handle mehr merken
  * muss. */
+/* Wurde bei diesem Verzeichnis das Dir-Bit per SS_Attr entfernt? (s. dhf_host_fs_unlink) */
+static int deldir_marked(dhf_host_fs_t *fs, const char *target, int consume) {
+    char real[PATH_MAX];
+    const char *cmp = realpath(target, real) ? real : target;
+    for (uint32_t i = 0; i < DHF_DELDIR_SLOTS; i++) {
+        if (fs->deldir_ok[i][0] && strcmp(fs->deldir_ok[i], cmp) == 0) {
+            if (consume) fs->deldir_ok[i][0] = '\0';
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, uint8_t *status) {
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
@@ -299,7 +406,9 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
            sie oeffnet ihr Argument erst OHNE das Bit und erkennt ein Verzeichnis gerade am
            E$FNA; gelang der Open (wie bisher hier), hielt sie "/d0" fuer eine Datei und
            druckte nur den Namen. */
-        if (!(flags & DHF_MODE_DIR)) {
+        /* Ausnahme wie RBF: ist das Dir-Bit per SS_Attr schon entfernt, gilt der Eintrag
+           nicht mehr als Verzeichnis und darf ohne $80 geoeffnet werden ("deldir"). */
+        if (!(flags & DHF_MODE_DIR) && !deldir_marked(fs, target, 0)) {
             if (status) *status = DHF_ERR_IS_DIR;
             return -1;
         }
@@ -308,13 +417,17 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
             if (status) *status = errno_to_dhf(errno);
             return -1;
         }
-        int h = alloc_handle_at(fs, idx, 1, target);
+        /* aufgeloester Pfad als Schluessel: "/d0/dd" und "." (cwd dd) sind dasselbe
+           Verzeichnis und muessen dieselbe Platztabelle teilen (s. dircache_sync) */
+        char dreal[PATH_MAX];
+        int h = alloc_handle_at(fs, idx, 1, realpath(target, dreal) ? dreal : target);
         if (h < 0) {
             closedir(d);
             if (status) *status = DHF_ERR_BAD_PATH;
             return -1;
         }
         fs->handles[h].dir = d;
+        dir_snapshot(fs, h);
         if (status) *status = DHF_ERR_OK;
         return h;
     }
@@ -392,6 +505,7 @@ int dhf_host_fs_close(dhf_host_fs_t *fs, int handle, uint8_t *status) {
     }
 
     if (fs->handles[handle].is_dir) {
+        dir_snapshot_free(fs, handle);
         if (fs->handles[handle].dir) closedir(fs->handles[handle].dir);
     } else {
         if (fs->handles[handle].fd >= 0) close(fs->handles[handle].fd);
@@ -429,24 +543,23 @@ static int dir_real_next(DIR *d, char *name, size_t max) {
     return 0;
 }
 
-/* Name des Eintrags idx holen (0="." 1=".." ab 2 Host); 0 = kein solcher Eintrag */
+/* Name des Eintrags idx holen (0="." 1=".." ab 2 Host): 1 = Eintrag, 2 = freier Platz
+   (inzwischen geloescht), 0 = hinter dem letzten Eintrag. 2026-09-26: aus der Momentaufnahme
+   beim Open statt frisch per readdir() -- sonst rueckten nach einem Delete alle folgenden
+   Eintraege eine Position vor und ein Aufrufer, der beim Lesen loescht ("deldir"),
+   uebersprang jeden zweiten. Auf RBF bleibt ein geloeschter Eintrag als freier Platz stehen. */
 static int dir_entry_name(dhf_host_fs_t *fs, int handle, uint32_t idx, char *name, size_t max) {
     if (idx == 0) { strncpy(name, ".", max); return 1; }
     if (idx == 1) { strncpy(name, "..", max); return 1; }
-    DIR *d = fs->handles[handle].dir;
-    if (!d) return 0;
-    if (idx < fs->handles[handle].dir_idx) {
-        rewinddir(d);
-        fs->handles[handle].dir_idx = 2;
-    }
-    char skip[256];
-    while (fs->handles[handle].dir_idx < idx) {
-        if (!dir_real_next(d, skip, sizeof(skip))) return 0;
-        fs->handles[handle].dir_idx++;
-    }
-    if (!dir_real_next(d, name, max)) return 0;
-    fs->handles[handle].dir_idx++;
-    return 1;
+    uint32_t i = idx - 2;
+    if (i >= fs->handles[handle].dir_count) return 0;
+    if (!fs->handles[handle].dir_names[i]) return 2;       /* freier Platz */
+    strncpy(name, fs->handles[handle].dir_names[i], max - 1);
+    name[max - 1] = '\0';
+    char full[DHF_PATH_MAX * 2];
+    struct stat st;
+    snprintf(full, sizeof(full), "%s/%s", fs->handles[handle].path, name);
+    return (lstat(full, &st) == 0) ? 1 : 2;
 }
 
 /* Groesse der virtuellen Verzeichnisdatei in Byte (Eintraege inkl. "."/".." mal 32) */
@@ -498,9 +611,18 @@ static ssize_t dhf_read_dir_entries(dhf_host_fs_t *fs, int handle, void *buf, si
     while (produced < count) {
         uint32_t idx = pos / DHF_DIRENT_SIZE, off = pos % DHF_DIRENT_SIZE;
         char name[256];
-        if (!dir_entry_name(fs, handle, idx, name, sizeof(name))) break;
+        int kind = dir_entry_name(fs, handle, idx, name, sizeof(name));
+        if (!kind) break;
         unsigned char rec[DHF_DIRENT_SIZE];
         memset(rec, 0, sizeof(rec));
+        if (kind == 2) {                  /* geloeschter Eintrag: freier Platz, alles 0 */
+            size_t n0 = DHF_DIRENT_SIZE - off;
+            if (n0 > count - produced) n0 = count - produced;
+            memcpy(out + produced, rec + off, n0);
+            produced += n0;
+            pos += (uint32_t)n0;
+            continue;
+        }
         size_t nlen = strlen(name);
         if (nlen > 28) nlen = 28;
         memcpy(rec, name, nlen);
@@ -580,7 +702,7 @@ off_t dhf_host_fs_seek(dhf_host_fs_t *fs, int handle, off_t offset, int whence, 
     if (fs->handles[handle].is_dir) {
         off_t base = 0;
         if (whence == DHF_SEEK_CUR) base = fs->handles[handle].dir_pos;
-        else if (whence == DHF_SEEK_END) base = dir_virtual_size(fs->handles[handle].path);
+        else if (whence == DHF_SEEK_END) base = dir_handle_size(fs, handle);
         off_t np = base + offset;
         if (np < 0 || np > 0xFFFFFFFFLL) {
             if (status) *status = DHF_ERR_ERROR;
@@ -697,7 +819,7 @@ int dhf_host_fs_getstat_at(dhf_host_fs_t *fs, int handle, void *statbuf, size_t 
 
     uint32_t *fields = (uint32_t*)statbuf;
     /* Verzeichnis: Groesse der virtuellen RBF-Verzeichnisdatei, nicht die Host-Groesse */
-    fields[0] = htonl(fs->handles[handle].is_dir ? dir_virtual_size(fs->handles[handle].path)
+    fields[0] = htonl(fs->handles[handle].is_dir ? dir_handle_size(fs, handle)
                                                  : (uint32_t)st.st_size);
     fields[1] = htonl((uint32_t)st.st_mode);
     fields[2] = htonl((uint32_t)st.st_mtime);
@@ -851,6 +973,14 @@ int dhf_host_fs_setattr_at(dhf_host_fs_t *fs, int handle, uint8_t attr, uint8_t 
     }
     /* attr==0 heisst hier wirklich "alle Rechte weg", nicht "Voreinstellung" */
     mode_t mode = (attr & 0x3F) ? os9_attr_to_mode(attr, fs->handles[handle].is_dir) : 0;
+    if (fs->handles[handle].is_dir && !(attr & 0x80)) {
+        /* Dir-Bit entfernt: ab jetzt darf I$Delete dieses (leere) Verzeichnis loeschen */
+        uint32_t slot = fs->deldir_next++ % DHF_DELDIR_SLOTS;
+        char real[PATH_MAX];
+        const char *src = realpath(fs->handles[handle].path, real) ? real : fs->handles[handle].path;
+        strncpy(fs->deldir_ok[slot], src, DHF_PATH_MAX - 1);
+        fs->deldir_ok[slot][DHF_PATH_MAX - 1] = '\0';
+    }
 
     int rc = fs->handles[handle].is_dir
              ? chmod(fs->handles[handle].path, mode)
@@ -894,7 +1024,7 @@ int dhf_host_fs_iseof_at(dhf_host_fs_t *fs, int handle, uint8_t *status) {
         return -1;
     }
     if (fs->handles[handle].is_dir) {
-        uint32_t size = dir_virtual_size(fs->handles[handle].path);
+        uint32_t size = dir_handle_size(fs, handle);
         if (status) *status = (fs->handles[handle].dir_pos >= size) ? DHF_ERR_EOF : DHF_ERR_OK;
         return 0;
     }
@@ -919,6 +1049,15 @@ int dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
     if (stat(target, &st) != 0 || !S_ISDIR(st.st_mode)) {
         if (status) *status = DHF_ERR_NOT_DIR;
         return -1;
+    }
+
+    /* 2026-09-26: das Ziel vollstaendig aufloesen, bevor es als cwd gespeichert wird -- sonst
+       blieb nach "chd unter" + "chd .." der Text "dd/unter/.." stehen, der ins Leere zeigt,
+       sobald "unter" geloescht ist ("deldir": danach scheiterte jedes Open auf "."). */
+    char real[PATH_MAX];
+    if (realpath(target, real) != NULL) {
+        strncpy(target, real, sizeof(target) - 1);
+        target[sizeof(target) - 1] = '\0';
     }
 
     /* Compute new cwd relative to basepath */
@@ -967,11 +1106,29 @@ int dhf_host_fs_rmdir(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
     return 0;
 }
 
+/* I$Delete. 2026-09-26: Verzeichnisse wie RBF -- nur loeschbar, nachdem ihr Dir-Bit per
+   SS_Attr entfernt wurde ("deldir" macht genau das), und nur wenn leer (sonst E$DNE); ein
+   blosses "del" auf ein Verzeichnis bleibt E$FNA. Vorher scheiterte jedes Verzeichnis an
+   unlink() -> "deldir -q" blieb auf dem leeren Verzeichnis stehen. */
 int dhf_host_fs_unlink(dhf_host_fs_t *fs, const char *path, uint8_t *status) {
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
         return -1;
+    }
+
+    struct stat st;
+    if (stat(target, &st) == 0 && S_ISDIR(st.st_mode)) {
+        if (!deldir_marked(fs, target, 1)) {
+            if (status) *status = DHF_ERR_IS_DIR;      /* E$FNA wie RBF */
+            return -1;
+        }
+        if (rmdir(target) != 0) {
+            if (status) *status = errno_to_dhf(errno);  /* nicht leer -> E$DNE */
+            return -1;
+        }
+        if (status) *status = DHF_ERR_OK;
+        return 0;
     }
 
     if (unlink(target) != 0) {
