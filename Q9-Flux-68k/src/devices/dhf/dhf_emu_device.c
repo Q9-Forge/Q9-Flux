@@ -148,6 +148,7 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             if (path && path[0]) {
                 dhf_host_fs_init(&dev->host_fs, path);
             }
+            dev->host_fs.readonly = (d1 & 1) ? 1 : 0;   /* 2026-09-26: DevCon-Flags (Treiber) */
             status = DHF_ERR_OK;
             break;
         }

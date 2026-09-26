@@ -18,6 +18,7 @@
 
 typedef struct {
     char basepath[DHF_PATH_MAX];
+    int  readonly;          /* 2026-09-26: Laufwerk nur lesbar (DevCon-Flag Bit 0) -> E$WP */
     char cwd[DHF_PATH_MAX];
     struct {
         int in_use;

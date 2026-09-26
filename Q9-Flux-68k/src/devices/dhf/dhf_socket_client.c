@@ -1,4 +1,8 @@
 /* dhf_socket_client.c - Client side for remote DHF socket forwarding
+ *
+ * VERALTET (2026-09-26): nicht auf dem aktuellen Protokollstand (a0/a1-Rueckgaben, SH_SEQ als
+ * Prozessverzeichnis, Kommandos 20-28, RBF-Verzeichnissemantik) und nicht getestet. Aktiv
+ * ist nur das lokale Backend (dhf_host_fs.c), s. Q9-OS/Q9-DHF-68k/README.md.
  */
 
 #include "dhf_socket.h"

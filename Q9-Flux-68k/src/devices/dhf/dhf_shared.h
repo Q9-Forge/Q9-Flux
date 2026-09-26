@@ -14,7 +14,9 @@ struct dhf_shared {
     uint8_t  command;     /* 0 = Idle, 1..N = Commands, 255 = Return */
     uint8_t  status;      /* Result error code (0 = OK, OS-9 error) */
     uint8_t  flags;       /* Reserved flags */
-    uint32_t seq;         /* Incremented by driver for each request (BE) */
+    uint32_t seq;         /* 2026-09-26: aktuelles Verzeichnis des aufrufenden Prozesses
+                             (Pseudo-Sektornummer aus P$DIO, vom Manager gesetzt), s.
+                             Q9-OS/Q9-DHF-68k/docs/PROTOCOL.md (BE) */
 
     uint32_t a0;          /* Guest 68k pointer: pathname / string */
     uint32_t a1;          /* Guest 68k pointer: data buffer */
