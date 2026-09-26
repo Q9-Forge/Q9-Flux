@@ -19,6 +19,7 @@
 typedef struct {
     char basepath[DHF_PATH_MAX];
     int  readonly;          /* 2026-09-26: Laufwerk nur lesbar (DevCon-Flag Bit 0) -> E$WP */
+    uint32_t req_pid;       /* Prozess-ID der laufenden Anfrage (Fenster-Feld pid) */
     char cwd[DHF_PATH_MAX];
     struct {
         int in_use;
@@ -27,6 +28,11 @@ typedef struct {
         DIR *dir;
         uint32_t dir_pos;   /* Verzeichnis-Handles: Byteposition in der virtuellen RBF-Datei */
         int      is_raw;    /* "/<geraet>@": virtuelles Rohgeraet (LSN0 + Bitmap), nur lesen */
+        /* 2026-09-26: Sperren wie RBF ("OS-9 Technical Manual" Kap. 7, Record Locking) */
+        uint32_t pid;       /* besitzender Prozess (vom Open/Create) */
+        int      share;     /* mit Share_ ($40) geoeffnet: nicht teilbar */
+        int      update;    /* Update-Modus: jedes Read sperrt den gelesenen Bereich */
+        uint32_t lk_pos, lk_len;   /* gesperrter Bereich, lk_len 0 = keiner, ~0 = ganze Datei */
         char   **dir_names; /* Verzeichnis-Handles: Momentaufnahme der Eintraege beim Open */
         uint32_t dir_count; /* (ohne "."/".."); feste Positionen wie RBF, s. dhf_host_fs.c */
         char path[DHF_PATH_MAX];
@@ -90,6 +96,7 @@ int     dhf_host_fs_handle_lsns(dhf_host_fs_t *fs, int handle, uint32_t *self, u
 int     dhf_host_fs_setfd_at(dhf_host_fs_t *fs, int handle, const unsigned char *fdimg, uint8_t *status);
 int     dhf_host_fs_getfd_lsn(dhf_host_fs_t *fs, uint32_t lsn, void *buf, size_t want_len, size_t *out_len, uint8_t *status);
 int     dhf_host_fs_volstore(dhf_host_fs_t *fs, uint32_t out[4], uint8_t *status);
+int     dhf_host_fs_lock_at(dhf_host_fs_t *fs, int handle, uint32_t size, uint8_t *status);
 int     dhf_host_fs_getfree(dhf_host_fs_t *fs, uint32_t *out_free, uint8_t *status);
 
 int     dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint32_t *out_lsn, uint8_t *status);

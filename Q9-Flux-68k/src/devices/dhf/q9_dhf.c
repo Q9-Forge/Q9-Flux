@@ -21,6 +21,17 @@ void q9_dhf_init(q9_dhf_t *state, const char *basepath, uint8_t *ram, size_t ram
     dhf_emu_device_set_ram(&state->dev, ram, ram_len);
 }
 
+void q9_dhf_apply_cfg(q9_dhf_t *state, const char *hostpath, int readonly)
+{
+    if (hostpath && hostpath[0]) {
+        strncpy(state->dev.cfg_basepath, hostpath, sizeof(state->dev.cfg_basepath) - 1);
+        state->dev.cfg_basepath[sizeof(state->dev.cfg_basepath) - 1] = '\0';
+        dhf_host_fs_init(&state->dev.host_fs, state->dev.cfg_basepath);
+    }
+    state->dev.cfg_readonly = readonly;
+    if (readonly >= 0) state->dev.host_fs.readonly = readonly;
+}
+
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: dhf_dev_read8 / dhf_dev_write8 / ... / q9_devtype_dhf
 // Desc.:    Adapter (q9_device_t*, absolute Adresse) -> (dhf_emu_device_t*, fensterrelativer

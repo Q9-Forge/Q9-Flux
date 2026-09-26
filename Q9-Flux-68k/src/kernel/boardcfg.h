@@ -40,6 +40,16 @@
 
 #define Q9_CFG_PATH_MAX 512
 #define Q9_CFG_MAX_CF   4
+#define Q9_CFG_MAX_DHF  2           /* 2026-09-26: [dhf0]/[dhf1] = DHF-Laufwerke d0/d1 */
+
+/* 2026-09-26: DHF-Laufwerk (Direct Host Filesystem, Q9-OS/Q9-DHF-68k). Gesetzte Werte haben
+   Vorrang vor Basispfad/Flag im OS-9-Geraetedeskriptor -- anderes Host-Verzeichnis oder
+   Schreibschutz also ohne Neubau des Deskriptors. */
+typedef struct {
+    int  set;                                /* Abschnitt vorhanden                               */
+    char hostpath[Q9_CFG_PATH_MAX];          /* hostpath = <verzeichnis> (relativ zur Config)     */
+    int  readonly;                           /* readonly = yes|no; -1 = nicht gesetzt (Deskriptor)*/
+} q9_cfg_dhf_t;
 
 /* CF-Bus: an welches der beiden emulierten CF-Interfaces das Image geht. */
 #define Q9_CFG_BUS_ONBOARD 0                 /* $FFFFE000, Descriptoren c0..c3 (DrvNum 0/Master)   */
@@ -92,7 +102,12 @@ typedef struct {
                                                  s. m68krt.h q9_cpu_type_t) -- Q9FLUX_EDITOR_de.md 4.1 */
     q9_cfg_cf_t cf[Q9_CFG_MAX_CF];
     int         cf_count;
+    q9_cfg_dhf_t dhf[Q9_CFG_MAX_DHF];        /* 2026-09-26: [dhf0]/[dhf1]                         */
 } q9_board_cfg_t;
+
+/* 2026-09-26: zuletzt erfolgreich geladene Config (fuer Geraete, die beim Aufbau darauf
+   zugreifen, z.B. DHF in m68krt.c); NULL ohne Config-Datei. */
+const q9_board_cfg_t *q9_board_cfg_current(void);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_board_cfg_default
