@@ -237,18 +237,55 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 (unsigned)q9_board_read8(b, 0x148fu));
     }
 
-    {   /* Letzte Modulsuch-Anfrage (Q9-OS legt sie ab $1710 ab): Filter und
-           Name. Beantwortet "wonach sucht IOMan eigentlich?" */
-        uint32_t filt = q9_board_read32(b, 0x1710u);
+    {   /* FLink-Eingabe direkt aus dem Q9-OS-Trace: $15414c ist der
+           zuletzt beobachtete Namezeiger. Die fruehere Anzeige ab $1710
+           war falsch, weil dieser Bereich zur Memory-Owner-Tabelle gehoert. */
+        uint32_t namePtr = q9_board_read32(b, 0x15414cu);
+        uint32_t filt = q9_board_read32(b, 0x154144u);
         char nm[13];
         unsigned k;
         for (k = 0; k < 12u; k++) {
-            unsigned ch = q9_board_read8(b, 0x1714u + k);
+            unsigned ch = (namePtr < BOARD_RAM_BYTES)
+                        ? q9_board_read8(b, namePtr + k) : 0;
             nm[k] = (ch >= 0x20u && ch < 0x7fu) ? (char)ch : (ch ? '?' : '\0');
             if (!ch) { break; }
         }
         nm[12] = '\0';
-        fprintf(f, "Letzte Modulsuche: Filter=%04x Name=\"%s\"\n", (unsigned)filt, nm);
+        uint32_t inputNamePtr = q9_board_read32(b, 0x154158u);
+        char inputNm[64];
+        memset(inputNm, 0, sizeof(inputNm));
+        for (size_t k = 0; k + 1 < sizeof(inputNm); ++k) {
+            unsigned char ch = (inputNamePtr < BOARD_RAM_BYTES) ? q9_board_read8(b, inputNamePtr + k) : 0;
+            inputNm[k] = (char)ch;
+            if (ch == 0 || (ch & 0x80u)) {
+                inputNm[k] = (char)(ch & 0x7fu);
+                break;
+            }
+        }
+        fprintf(f, "Letzte Modulsuche: Filter=%04x Name=\"%s\" InputA0=%08x InputName=\"%s\"\n",
+                (unsigned)filt, nm, (unsigned)inputNamePtr, inputNm);
+        fprintf(f, "FModul-Scratch: ty=%08x name=%08x outty=%08x outar=%08x entry=%08x err=%08x ok=%08x\n",
+                (unsigned)q9_board_read32(b, 0x1a00u),
+                (unsigned)q9_board_read32(b, 0x1a04u),
+                (unsigned)q9_board_read32(b, 0x1a08u),
+                (unsigned)q9_board_read32(b, 0x1a0cu),
+                (unsigned)q9_board_read32(b, 0x1a10u),
+                (unsigned)q9_board_read32(b, 0x1a14u),
+                (unsigned)q9_board_read32(b, 0x1a18u));
+        fprintf(f, "FModul-C-Trace: ty=%08x name=%08x slot=%08x err=%08x ok=%08x\n",
+                (unsigned)q9_board_read32(b, 0x15415cu),
+                (unsigned)q9_board_read32(b, 0x154160u),
+                (unsigned)q9_board_read32(b, 0x154164u),
+                (unsigned)q9_board_read32(b, 0x154168u),
+                (unsigned)q9_board_read32(b, 0x15416cu));
+        fprintf(f, "FLink-C-Bridge: ty=%08x name=%08x slot=%08x\n",
+                (unsigned)q9_board_read32(b, 0x154170u),
+                (unsigned)q9_board_read32(b, 0x154174u),
+                (unsigned)q9_board_read32(b, 0x154178u));
+        fprintf(f, "FLink-A0-before-C: %08x\n",
+                (unsigned)q9_board_read32(b, 0x15417cu));
+        fprintf(f, "FLink-C-entry: %08x\n",
+                (unsigned)q9_board_read32(b, 0x1f70u));
     }
 
     {   /* F$Link-Diagnose des eigenen Kernels: der Status bleibt auch bei
