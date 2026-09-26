@@ -178,6 +178,7 @@ typedef struct q9_board {
     /* 2026-09-25: DHF (Direct Host Filesystem) -- kompletter Zustand in q9_dhf_t (s.o.), analog
        "cf" oben: eigener Sourcebaum src/devices/dhf/, statisch eingebettet. */
     q9_dhf_t       dhf;
+    q9_dhf_t       dhf1;           /* 2026-09-26: zweites DHF-Laufwerk, s. Q9_BOARD_DHF1_BASE */
 } q9_board_t;
 
 

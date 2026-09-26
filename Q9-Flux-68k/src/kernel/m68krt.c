@@ -1539,6 +1539,23 @@ void q9_m68krt_attach_board(q9_board_t *board)
         d.state      = &board->dhf;
         q9_devreg_add(d);
 
+        /* 2026-09-26: zweite DHF-Instanz (Deskriptor d1) -- eigener Basispfad per DHF_CMD_INIT
+           aus dem Deskriptor, eigene Handle-Tabelle, sonst identisch zur ersten. */
+        q9_dhf_init(&board->dhf1, "/Volumes/SSD1TB/projects/Q9-Forge/Q9-Images/cf_images/OS9SYS",
+                    board->ram, board->ram_len);
+        memset(&d, 0, sizeof(d));
+        d.type       = "dhf";
+        d.name       = "dhf1";
+        d.base       = Q9_BOARD_DHF1_BASE;
+        d.size       = Q9_BOARD_DHF1_TOP - Q9_BOARD_DHF1_BASE + 1u;
+        d.irq_level  = 0;
+        d.irq_vector = -1;
+        d.level_held = 0;
+        d.use_table  = 1;
+        d.vt         = &q9_devtype_dhf;
+        d.state      = &board->dhf1;
+        q9_devreg_add(d);
+
         /* 2026-08-21 (Hardware-Vereinheitlichung, Andreas' Idee): der REMAP-Trigger selbst -- kein
            IRQ, Registrierungsreihenfolge daher egal (kein IRQ-Prioritaetskonflikt moeglich). state
            zeigt wie bei duart68681/rtc72421 auf das ganze q9_board_t. */

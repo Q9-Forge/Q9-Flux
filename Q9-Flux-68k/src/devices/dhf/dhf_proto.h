@@ -65,27 +65,38 @@ enum dhf_command {
      * Dateisystem ohne Medium/LSNs architektonisch nicht abbildbar (ebenfalls per Trace
      * verifiziert). Auch dieser Aufruf ist daher nur fuer eigene Werkzeuge gedacht. */
     DHF_CMD_GETFREE     = 25,
+    /* I$GetStt SS_FDInf ($20) -- FD-Abbild zu einer (Pseudo-)Sektornummer: d2=Sektornummer
+     * (aus Byte 29-31 eines Verzeichniseintrags), d1=Byteanzahl, a1=Zielpuffer. DHF hat keine
+     * Sektoren; dhf_host_fs vergibt die Nummern beim Verzeichnislesen je Host-Pfad. */
+    DHF_CMD_FDINF       = 26,
     DHF_CMD_PING        = 254,
     DHF_CMD_RETURN      = 255
 };
 
-/* OS-9 Compatible Error Codes */
+/* OS-9-Fehlercodes. Das status-Byte geht UNVERAENDERT als d1.w (Carry gesetzt) an den
+ * I$-Aufrufer (driver/dhfdrv_68k.a), die Werte MUESSEN also die echten OS-9-Nummern aus
+ * MWOS/SRC/DEFS/errno.h sein. 2026-09-26 korrigiert: vorher stimmten nur EOF ($D3) und
+ * NOT_FOUND ($D8); alle anderen lagen um 1-4 daneben und trafen fremde Codes (z.B.
+ * FILE_EXISTS=$D5 war E$NES, DISK_FULL=$D6 war E$FNA, BAD_PATH=$CD war E$BMID). */
 enum dhf_error {
-    DHF_ERR_OK          = 0,
-    DHF_ERR_ERROR       = 1,
-    DHF_ERR_BAD_PATH    = 205, /* E: Bad path number */
-    DHF_ERR_PATH_FULL   = 206, /* E: Path table full */
-    DHF_ERR_EOF         = 211, /* E: End of file reached */
-    DHF_ERR_FILE_EXISTS = 213, /* E: File already exists / create error */
-    DHF_ERR_DISK_FULL   = 214, /* E: Device full */
-    DHF_ERR_NO_PERMISSION=215, /* E: Write protect / Permission denied */
-    DHF_ERR_NOT_FOUND   = 216, /* E: Path name not found */
-    DHF_ERR_SHARING     = 217, /* E: Sharing violation */
-    DHF_ERR_IS_DIR      = 218, /* E: Is a directory */
-    DHF_ERR_NOT_DIR     = 219, /* E: Not a directory */
-    DHF_ERR_UNSUPPORTED = 240, /* E: Unknown service */
-    DHF_ERR_TIMEOUT     = 241, /* Timeout waiting for device */
-    DHF_ERR_NET         = 242  /* Remote socket / network error */
+    DHF_ERR_OK            = 0,
+    DHF_ERR_ERROR         = 0xF5, /* E$Write   -- unerwarteter Host-Fehler (Sammelcode) */
+    DHF_ERR_BAD_PATH      = 0xC9, /* E$BPNum   -- ungueltige/unbekannte Pfadnummer */
+    DHF_ERR_PATH_FULL     = 0xC8, /* E$PthFul  -- keine freien Handles (EMFILE/ENFILE) */
+    DHF_ERR_EOF           = 0xD3, /* E$EOF     -- Dateiende */
+    DHF_ERR_FILE_EXISTS   = 0xDA, /* E$CEF     -- Creating Existing File (EEXIST) */
+    DHF_ERR_DISK_FULL     = 0xF8, /* E$Full    -- Media Full (ENOSPC/EDQUOT/EFBIG) */
+    DHF_ERR_NO_PERMISSION = 0xD6, /* E$FNA     -- File Not Accessible (EACCES/EPERM) */
+    DHF_ERR_NOT_FOUND     = 0xD8, /* E$PNNF    -- Path Name Not Found (ENOENT) */
+    DHF_ERR_SHARING       = 0xFD, /* E$Share   -- Non-sharable file busy (EBUSY/ETXTBSY) */
+    DHF_ERR_IS_DIR        = 0xD6, /* E$FNA     -- OS-9 kennt kein EISDIR; RBF meldet E$FNA */
+    DHF_ERR_NOT_DIR       = 0xD6, /* E$FNA     -- OS-9 kennt kein ENOTDIR; RBF meldet E$FNA */
+    DHF_ERR_BAD_NAME      = 0xD7, /* E$BPNam   -- Bad Path Name (ENAMETOOLONG/ELOOP, Basispfad-Ausbruch) */
+    DHF_ERR_DIR_NOT_EMPTY = 0xEE, /* E$DNE     -- Directory not empty (ENOTEMPTY) */
+    DHF_ERR_WRITE_PROT    = 0xF2, /* E$WP      -- Write Protect (EROFS) */
+    DHF_ERR_UNSUPPORTED   = 0xD0, /* E$UnkSvc  -- unbekanntes Kommando */
+    DHF_ERR_TIMEOUT       = 0xF6, /* E$NotRdy  -- Geraet antwortet nicht */
+    DHF_ERR_NET           = 0xF6  /* E$NotRdy  -- entfernter Socket-Backend nicht erreichbar */
 };
 
 /* File Open / Access Modes (OS-9 compatible) */

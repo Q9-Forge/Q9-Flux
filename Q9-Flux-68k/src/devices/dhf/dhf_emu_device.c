@@ -275,6 +275,19 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             break;
         }
 
+        case DHF_CMD_FDINF: {
+            /* 2026-09-26: I$GetStt SS_FDInf -- d2=Pseudo-Sektornummer, d1=Byteanzahl,
+             * a1=Zielpuffer im Gast-RAM (s. dhf_host_fs_getfd_lsn) */
+            unsigned char fdbuf[256];
+            size_t want = d1 > sizeof(fdbuf) ? sizeof(fdbuf) : d1;
+            size_t out_len = 0;
+            if (dhf_host_fs_getfd_lsn(&dev->host_fs, d2, fdbuf, want, &out_len, &status) == 0 && a1) {
+                void *dest = resolve_guest_ptr(dev, a1, out_len);
+                if (dest) memcpy(dest, fdbuf, out_len);
+            }
+            break;
+        }
+
         case DHF_CMD_SETATTR: {
             /* d0=Pfadnummer, d1=neues Attribut-Byte (SS_Attr, s. dhf_host_fs_setattr_at) */
             dhf_host_fs_setattr_at(&dev->host_fs, (int)d0, (uint8_t)d1, &status);

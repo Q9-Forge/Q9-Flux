@@ -13,6 +13,7 @@
 
 #define DHF_MAX_HANDLES 64
 #define DHF_PATH_MAX    1024
+#define DHF_LSN_SLOTS   1024
 
 typedef struct {
     char basepath[DHF_PATH_MAX];
@@ -22,8 +23,14 @@ typedef struct {
         int is_dir;
         int fd;
         DIR *dir;
+        uint32_t dir_pos;   /* Verzeichnis-Handles: Byteposition in der virtuellen RBF-Datei */
+        uint32_t dir_idx;   /* Verzeichnis-Handles: Index des naechsten readdir()-Eintrags */
         char path[DHF_PATH_MAX];
     } handles[DHF_MAX_HANDLES];
+    /* 2026-09-26: Pseudo-Sektornummern fuer SS_FDInf ("dir -e"/"dir -r"): Nummer n (1..) steht
+       fuer lsn_path[n-1]; vergeben beim Verzeichnislesen, Ringpuffer (aelteste faellt raus). */
+    char     lsn_path[DHF_LSN_SLOTS][DHF_PATH_MAX];
+    uint32_t lsn_next;
 } dhf_host_fs_t;
 
 /* Public API */
@@ -56,6 +63,7 @@ int     dhf_host_fs_setattr_at(dhf_host_fs_t *fs, int handle, uint8_t attr, uint
 int     dhf_host_fs_getpos_at(dhf_host_fs_t *fs, int handle, uint32_t *out_pos, uint8_t *status);
 int     dhf_host_fs_iseof_at(dhf_host_fs_t *fs, int handle, uint8_t *status);
 int     dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *newname, uint8_t *status);
+int     dhf_host_fs_getfd_lsn(dhf_host_fs_t *fs, uint32_t lsn, void *buf, size_t want_len, size_t *out_len, uint8_t *status);
 int     dhf_host_fs_getfree(dhf_host_fs_t *fs, uint32_t *out_free, uint8_t *status);
 
 int     dhf_host_fs_chdir(dhf_host_fs_t *fs, const char *path, uint8_t *status);
