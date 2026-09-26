@@ -228,6 +228,30 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
         return -1;
     }
 
+    /* 2026-09-26: OS-9 kennt kein eigenes I$OpenDir -- ein Verzeichnis wird per ganz
+       normalem I$Open geoeffnet (wie jede andere Datei) und per I$Read gelesen ("OS-9
+       Technical Manual" Kap. 7, "Directory File Format"). Ein Host-Verzeichnis kann nicht
+       mit open()+read() gelesen werden (read() auf einem Directory-fd liefert EISDIR) --
+       deshalb hier per stat() erkennen und stattdessen opendir() benutzen; dhf_host_fs_read()
+       liefert fuer is_dir-Handles die RBF-Verzeichniseintraege (s. dort). */
+    struct stat pst;
+    if (stat(target, &pst) == 0 && S_ISDIR(pst.st_mode)) {
+        DIR *d = opendir(target);
+        if (!d) {
+            if (status) *status = errno_to_dhf(errno);
+            return -1;
+        }
+        int h = alloc_handle_at(fs, idx, 1, target);
+        if (h < 0) {
+            closedir(d);
+            if (status) *status = DHF_ERR_BAD_PATH;
+            return -1;
+        }
+        fs->handles[h].dir = d;
+        if (status) *status = DHF_ERR_OK;
+        return h;
+    }
+
     int oflags = 0;
     if ((flags & (DHF_MODE_READ | DHF_MODE_WRITE)) == (DHF_MODE_READ | DHF_MODE_WRITE)) {
         oflags = O_RDWR;
@@ -307,10 +331,48 @@ int dhf_host_fs_close(dhf_host_fs_t *fs, int handle, uint8_t *status) {
     return 0;
 }
 
+/* 2026-09-26: RBF-Verzeichnisformat ("OS-9 Technical Manual" Kap. 7, "Directory File
+   Format", lokal unter /Volumes/SSD1TB/Documents/OS-9 v2.4 Technical Reference Manual):
+   32-Byte-Eintraege je Datei -- Byte 0-27 Dateiname (High-Bit auf dem LETZTEN Zeichen
+   gesetzt, erstes Byte 0 = geloescht/unbenutzt), Byte 28 unbenutzt/muss 0 sein, Byte 29-31
+   3-Byte "FD"-Zeiger (LSN des File-Descriptor-Sektors auf echten RBF-Medien -- DHF hat kein
+   Medium mit LSNs, bleibt hier bewusst 0; "dir" braucht fuer eine einfache Namensliste nur
+   den Namen). */
+#define DHF_DIRENT_SIZE 32
+
+static ssize_t dhf_read_dir_entries(dhf_host_fs_t *fs, int handle, void *buf, size_t count, uint8_t *status) {
+    unsigned char *out = (unsigned char*)buf;
+    size_t produced = 0;
+    while (produced + DHF_DIRENT_SIZE <= count) {
+        struct dirent *de = readdir(fs->handles[handle].dir);
+        if (!de) break;
+        unsigned char rec[DHF_DIRENT_SIZE];
+        memset(rec, 0, sizeof(rec));
+        size_t nlen = strlen(de->d_name);
+        if (nlen > 28) nlen = 28;
+        memcpy(rec, de->d_name, nlen);
+        if (nlen > 0) rec[nlen - 1] |= 0x80;
+        memcpy(out + produced, rec, DHF_DIRENT_SIZE);
+        produced += DHF_DIRENT_SIZE;
+    }
+    if (produced == 0) {
+        /* echtes Verzeichnisende -- wie bei Dateien ein Fehler, kein stiller 0-Byte-Erfolg
+           (s. Kommentar unten bei der Datei-Variante). */
+        if (status) *status = DHF_ERR_EOF;
+        return 0;
+    }
+    if (status) *status = DHF_ERR_OK;
+    return (ssize_t)produced;
+}
+
 ssize_t dhf_host_fs_read(dhf_host_fs_t *fs, int handle, void *buf, size_t count, uint8_t *status) {
-    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use || fs->handles[handle].is_dir) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
+    }
+
+    if (fs->handles[handle].is_dir) {
+        return dhf_read_dir_entries(fs, handle, buf, count, status);
     }
 
     ssize_t res = read(fs->handles[handle].fd, buf, count);

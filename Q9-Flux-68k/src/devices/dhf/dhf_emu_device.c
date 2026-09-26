@@ -158,7 +158,15 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             /* 2026-09-26: d0 ist jetzt EINGABE -- die OS-9-Pfadnummer vom Manager (statt
              * eines hier selbst vergebenen Handles), s. dhf_host_fs_open_at-Kommentar. */
             int h = dhf_host_fs_open_at(&dev->host_fs, (int)d0, path, (int)d2, &status);
-            if (h >= 0) s->d0 = htonl((uint32_t)h);
+            if (h >= 0) {
+                s->d0 = htonl((uint32_t)h);
+                /* 2026-09-26: d2 ist bei OPEN sonst unbenutzte AUSGABE -- meldet dem Manager,
+                 * ob das Ziel ein Host-Verzeichnis war (open_at() erkennt das per stat() und
+                 * benutzt opendir() statt open()). Der Manager braucht das, um das RBF-
+                 * spezifische PD_ATT-Feld im Pfaddeskriptor zu setzen -- ohne das haelt die
+                 * echte "dir"-Utility JEDEN Pfad fuer eine normale Datei, s. STATUS.md. */
+                s->d2 = htonl(dev->host_fs.handles[h].is_dir ? 1u : 0u);
+            }
             break;
         }
 
