@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <time.h>
+#include <sys/statvfs.h>
 
 static uint8_t errno_to_dhf(int err) {
     switch (err) {
@@ -788,6 +789,55 @@ int dhf_host_fs_rename(dhf_host_fs_t *fs, const char *oldp, const char *newp, ui
         if (status) *status = errno_to_dhf(errno);
         return -1;
     }
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+/* 2026-09-26: I$SetStt SS_Rename, Handle-basiert -- die alte Datei ist bereits ueber ihre
+   OS-9-Pfadnummer offen (kein Pfadname mehr bekannt, wie bei allen anderen `_at`-
+   Funktionen), nur der neue Name kommt vom Aufrufer als String. Nutzt den beim Open/Create
+   gespeicherten Host-Pfad (`fs->handles[handle].path`) als "alt"-Seite von rename(), und
+   aktualisiert ihn danach, damit spaetere Aufrufe auf demselben Handle (z.B. ein
+   anschliessendes GetStt/Close) nicht auf einen veralteten Pfad zeigen. */
+int dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *newname, uint8_t *status) {
+    if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    char target_new[DHF_PATH_MAX];
+    if (resolve_confined_path(fs, newname, target_new, sizeof(target_new)) != 0) {
+        if (status) *status = DHF_ERR_NO_PERMISSION;
+        return -1;
+    }
+    if (rename(fs->handles[handle].path, target_new) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    strncpy(fs->handles[handle].path, target_new, sizeof(fs->handles[handle].path) - 1);
+    fs->handles[handle].path[sizeof(fs->handles[handle].path) - 1] = '\0';
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
+/* I$GetStt SS_Free -- freier Speicherplatz im Basisverzeichnis. Braucht kein Handle (wirkt
+   auf das gesamte DHF-"Geraet", nicht auf eine einzelne Datei) -- der Aufrufer liefert per
+   Spezifikation trotzdem eine Pfadnummer mit, die hier aber ungenutzt bleibt (DHF hat nur
+   einen einzigen Basispfad je Deskriptor, keine Mehrfach-Volumes). Ergebnis auf 32 Bit
+   gekappt (OS-9s d0.l ist 32 Bit; ein Host-Dateisystem kann theoretisch mehr freien Platz
+   melden als das darstellbar ist). */
+int dhf_host_fs_getfree(dhf_host_fs_t *fs, uint32_t *out_free, uint8_t *status) {
+    if (!fs) {
+        if (status) *status = DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    struct statvfs sv;
+    if (statvfs(fs->basepath, &sv) != 0) {
+        if (status) *status = errno_to_dhf(errno);
+        return -1;
+    }
+    uint64_t free_bytes = (uint64_t)sv.f_bavail * (uint64_t)sv.f_frsize;
+    if (free_bytes > 0xFFFFFFFFULL) free_bytes = 0xFFFFFFFFULL;
+    if (out_free) *out_free = (uint32_t)free_bytes;
     if (status) *status = DHF_ERR_OK;
     return 0;
 }
