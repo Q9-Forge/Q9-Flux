@@ -138,6 +138,10 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         return res;
     }
 
+    /* 2026-09-26: aktuelles Verzeichnis des aufrufenden Prozesses (SH_SEQ, vom Manager aus
+     * P$DIO gefuellt) -- gilt fuer diese eine Anfrage, s. dhf_host_fs_set_cwd_lsn */
+    dhf_host_fs_set_cwd_lsn(&dev->host_fs, ntohl(s->seq));
+
     /* Local backend: evaluate command */
     switch (cmd) {
         case DHF_CMD_INIT: {
@@ -166,6 +170,18 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
                  * spezifische PD_ATT-Feld im Pfaddeskriptor zu setzen -- ohne das haelt die
                  * echte "dir"-Utility JEDEN Pfad fuer eine normale Datei, s. STATUS.md. */
                 s->d2 = htonl(dev->host_fs.handles[h].is_dir ? 1u : 0u);
+                /* 2026-09-26: a0/a1 = pd_fd (Ziel) / pd_dfd (Verzeichnis des letzten Pfadbestandteils) */
+                uint32_t ls = 0;
+                dhf_host_fs_handle_lsns(&dev->host_fs, h, &ls, NULL);
+                /* RBF fuehrt pd_fd/pd_dfd als BYTEADRESSE (Sektornummer x Sektorgroesse): bashs
+                 * getwd rechnet pd_fd >> log2(pd_ssize) und vergleicht erst dann mit Byte 28-31
+                 * der Verzeichniseintraege. pd_ssize der DHF-Deskriptoren = 256 -> << 8. */
+                s->a0 = htonl(ls << 8);
+                s->a1 = htonl(dhf_host_fs_container_lsn(&dev->host_fs, path) << 8);
+                if (getenv("Q9_DHF_DEBUG"))
+                    fprintf(stderr, "[dhf] cmd=%u pfad=%u '%s' -> %s  pd_fd=%08x pd_dfd=%08x\r\n",
+                            (unsigned)cmd, (unsigned)d0, path ? path : "", dev->host_fs.handles[h].path,
+                            (unsigned)ntohl(s->a0), (unsigned)ntohl(s->a1));
             }
             break;
         }
@@ -177,6 +193,19 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             if (h >= 0 && (d2 & 0x20)) {
                 uint8_t st2 = DHF_ERR_OK;
                 if (dhf_host_fs_setsize_at(&dev->host_fs, h, a1, &st2) != 0) status = st2;
+            }
+            if (h >= 0) {                  /* wie OPEN: pd_fd/pd_dfd fuer den Manager */
+                uint32_t ls = 0;
+                dhf_host_fs_handle_lsns(&dev->host_fs, h, &ls, NULL);
+                /* RBF fuehrt pd_fd/pd_dfd als BYTEADRESSE (Sektornummer x Sektorgroesse): bashs
+                 * getwd rechnet pd_fd >> log2(pd_ssize) und vergleicht erst dann mit Byte 28-31
+                 * der Verzeichniseintraege. pd_ssize der DHF-Deskriptoren = 256 -> << 8. */
+                s->a0 = htonl(ls << 8);
+                s->a1 = htonl(dhf_host_fs_container_lsn(&dev->host_fs, path) << 8);
+                if (getenv("Q9_DHF_DEBUG"))
+                    fprintf(stderr, "[dhf] cmd=%u pfad=%u '%s' -> %s  pd_fd=%08x pd_dfd=%08x\r\n",
+                            (unsigned)cmd, (unsigned)d0, path ? path : "", dev->host_fs.handles[h].path,
+                            (unsigned)ntohl(s->a0), (unsigned)ntohl(s->a1));
             }
             break;
         }
@@ -293,6 +322,12 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             break;
         }
 
+        case DHF_CMD_SETFD: {
+            const unsigned char *img = resolve_guest_ptr(dev, a1, 16);
+            dhf_host_fs_setfd_at(&dev->host_fs, (int)d0, img, &status);
+            break;
+        }
+
         case DHF_CMD_VOLSTORE: {
             /* 2026-09-26: I$GetStt SS_VolStore -- a1 = 16-Byte-Puffer im Gast-RAM */
             uint32_t v[4];
@@ -340,7 +375,9 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         }
 
         case DHF_CMD_CHDIR: {
-            dhf_host_fs_chdir(&dev->host_fs, path, &status);
+            /* 2026-09-26: a0 = Pseudo-Sektornummer des Verzeichnisses -> P$DIO (Manager) */
+            uint32_t l = 0;
+            if (dhf_host_fs_chdir(&dev->host_fs, path, &l, &status) == 0) s->a0 = htonl(l);
             break;
         }
 
