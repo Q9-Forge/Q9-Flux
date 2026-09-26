@@ -107,6 +107,7 @@ enum dhf_error {
     DHF_ERR_WRITE_PROT    = 0xF2, /* E$WP      -- Write Protect (EROFS) */
     DHF_ERR_UNSUPPORTED   = 0xD0, /* E$UnkSvc  -- unbekanntes Kommando */
     DHF_ERR_TIMEOUT       = 0xF6, /* E$NotRdy  -- Geraet antwortet nicht */
+    DHF_ERR_NOT_READY     = 0xF6, /* E$NotRdy  -- INIT ohne Basispfad und ohne [dhfN] (ROM-Booter) */
     DHF_ERR_NET           = 0xF6  /* E$NotRdy  -- entfernter Socket-Backend nicht erreichbar */
 };
 
