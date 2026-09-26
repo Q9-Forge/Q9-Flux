@@ -34,6 +34,11 @@
    dhf_emu_device_t sowieso Instanz-Felder, kein Compile-Zeit-Zwang. */
 #define Q9_BOARD_DHF_BASE          0xFFFF4000u
 #define Q9_BOARD_DHF_TOP           (Q9_BOARD_DHF_BASE + (uint32_t)sizeof(struct dhf_shared) - 1u)
+/* 2026-09-26: zweite, voellig unabhaengige Instanz (eigener Basispfad, eigene Handle-Tabelle)
+   fuer ein zweites DHF-Laufwerk (Deskriptor d1, Q9-OS/Q9-DHF-68k/descriptor/d1_dhf.a) -- wie
+   ein zweiter Controller. Eigener 256-Byte-Slot der Fast-Table (m68krt.c Q9_IO_SLOT_SHIFT). */
+#define Q9_BOARD_DHF1_BASE         0xFFFF4100u
+#define Q9_BOARD_DHF1_TOP          (Q9_BOARD_DHF1_BASE + (uint32_t)sizeof(struct dhf_shared) - 1u)
 
 typedef struct {
     struct dhf_shared shared;      /* das eigentliche Registerfenster, s. dhf_shared.h */
