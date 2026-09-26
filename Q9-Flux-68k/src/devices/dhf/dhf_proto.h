@@ -69,6 +69,10 @@ enum dhf_command {
      * (aus Byte 29-31 eines Verzeichniseintrags), d1=Byteanzahl, a1=Zielpuffer. DHF hat keine
      * Sektoren; dhf_host_fs vergibt die Nummern beim Verzeichnislesen je Host-Pfad. */
     DHF_CMD_FDINF       = 26,
+    /* I$GetStt SS_VolStore ($45) -- Speicherstatistik des Laufwerks: a1=16-Byte-Puffer mit
+     * {Bytes/Sektor, Sektoren gesamt, Sektoren frei, groesster freier Block} (je u_int,
+     * big-endian). Aufbau aus /CMDS/free ermittelt (nirgends dokumentiert, 2026-09-26). */
+    DHF_CMD_VOLSTORE    = 27,
     DHF_CMD_PING        = 254,
     DHF_CMD_RETURN      = 255
 };

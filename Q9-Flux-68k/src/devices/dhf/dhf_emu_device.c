@@ -173,6 +173,11 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         case DHF_CMD_CREATE: {
             int h = dhf_host_fs_create_at(&dev->host_fs, (int)d0, path, (int)d2, (int)d1, &status);
             if (h >= 0) s->d0 = htonl((uint32_t)h);
+            /* 2026-09-26: Modus-Bit ISize_ ($20) -> a1 = Anfangsgroesse (d2.l des Aufrufers) */
+            if (h >= 0 && (d2 & 0x20)) {
+                uint8_t st2 = DHF_ERR_OK;
+                if (dhf_host_fs_setsize_at(&dev->host_fs, h, a1, &st2) != 0) status = st2;
+            }
             break;
         }
 
@@ -288,6 +293,16 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
             break;
         }
 
+        case DHF_CMD_VOLSTORE: {
+            /* 2026-09-26: I$GetStt SS_VolStore -- a1 = 16-Byte-Puffer im Gast-RAM */
+            uint32_t v[4];
+            if (dhf_host_fs_volstore(&dev->host_fs, v, &status) == 0 && a1) {
+                uint32_t *dest = resolve_guest_ptr(dev, a1, 16);
+                if (dest) for (int i = 0; i < 4; i++) dest[i] = htonl(v[i]);
+            }
+            break;
+        }
+
         case DHF_CMD_SETATTR: {
             /* d0=Pfadnummer, d1=neues Attribut-Byte (SS_Attr, s. dhf_host_fs_setattr_at) */
             dhf_host_fs_setattr_at(&dev->host_fs, (int)d0, (uint8_t)d1, &status);
@@ -308,9 +323,11 @@ int dhf_emu_device_process(dhf_emu_device_t *dev) {
         }
 
         case DHF_CMD_RENAMEAT: {
-            /* d0=Pfadnummer (alte, bereits offene Datei), a1=Zeiger auf neuen Namen */
+            /* 2026-09-26, RBF-Konvention: d0=Pfadnummer eines VERZEICHNISSES, a0=alter Name,
+             * a1=neuer Name (je ein Eintrag in diesem Verzeichnis, s. dhf_host_fs_rename_at) */
+            const char *oldname = resolve_guest_str(dev, a0);
             const char *newname = resolve_guest_str(dev, a1);
-            dhf_host_fs_rename_at(&dev->host_fs, (int)d0, newname, &status);
+            dhf_host_fs_rename_at(&dev->host_fs, (int)d0, oldname, newname, &status);
             break;
         }
 

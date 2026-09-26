@@ -244,6 +244,7 @@ static int alloc_handle_at(dhf_host_fs_t *fs, int idx, int is_dir, const char *p
     fs->handles[idx].fd = -1;
     fs->handles[idx].dir = NULL;
     fs->handles[idx].dir_pos = 0;
+    fs->handles[idx].is_raw = 0;
     fs->handles[idx].dir_names = NULL;
     fs->handles[idx].dir_count = 0;
     strncpy(fs->handles[idx].path, path ? path : "", sizeof(fs->handles[idx].path) - 1);
@@ -313,6 +314,7 @@ int dhf_host_fs_open(dhf_host_fs_t *fs, const char *path, int flags, uint8_t *st
         oflags = O_RDONLY;
     }
 
+    if (flags & 0x10) oflags |= O_APPEND;   /* Append_: Schreiben immer ans Dateiende */
     int fd = open(target, oflags);
     if (fd < 0) {
         if (status) *status = errno_to_dhf(errno);
@@ -350,6 +352,7 @@ int dhf_host_fs_create(dhf_host_fs_t *fs, const char *path, int flags, int mode,
     }
 
     mode_t pmode = os9_attr_to_mode((unsigned)mode, 0);
+    if (flags & 0x10) oflags |= O_APPEND;   /* Append_: Schreiben immer ans Dateiende */
     int fd = open(target, oflags, pmode);
     if (fd < 0) {
         if (status) *status = errno_to_dhf(errno);
@@ -373,6 +376,111 @@ int dhf_host_fs_create(dhf_host_fs_t *fs, const char *path, int flags, int mode,
  * alloc_handle_at-Kommentar) statt automatischer Vergabe -- fuer den Q9-DHF-Manager, der
  * die OS-9-Pfadnummer direkt als Index nutzt und dadurch selbst kein Handle mehr merken
  * muss. */
+/* 2026-09-26: virtuelles Rohgeraet "/<geraet>@" (RBF: das ganze Medium ab LSN 0). DHF hat
+   keine Sektoren -- "free" braucht aber genau das: LSN 0 (Identifikationssektor, rbf.h
+   struct sector0) und die Belegungs-Bitmap ab dd_maplsn. Beides wird aus statvfs() des
+   Basispfads berechnet: Sektorgroesse (dd_lsnsize, 256..32768) und Clustergroesse (dd_bit) so
+   gewaehlt, dass Gesamtsektoren in 24 Bit und die Bitmap in 65535 Byte passen (Kapazitaet
+   notfalls gekappt, freier Platz exakt bis 256 GB); die ersten
+   Cluster gelten als belegt (Host-Belegung), der Rest als frei. Nur lesbar (E$WP). */
+typedef struct { uint32_t lsnsize, tot, bit, map, clusters, used; } dhf_raw_geo_t;
+
+static void raw_geometry(dhf_host_fs_t *fs, dhf_raw_geo_t *g) {
+    struct statvfs sv;
+    uint64_t total = 0, freeb = 0;
+    if (statvfs(fs->basepath, &sv) == 0) {
+        total = (uint64_t)sv.f_blocks * sv.f_frsize;
+        freeb = (uint64_t)sv.f_bavail * sv.f_frsize;
+    }
+    /* hoechstens 16384: "free" liest dd_lsnsize vorzeichenbehaftet ($8000 = negativ -> faellt
+       auf 256 zurueck). 16384 x 24 Bit = 256 GB; eine groessere Host-Platte wird in der
+       Kapazitaet gekappt, der FREIE Platz bleibt bis 256 GB exakt. */
+    uint32_t ls = 256;
+    while (ls < 16384 && total / ls > 0xFFFFFFu) ls <<= 1;
+    uint64_t tot = total / ls;
+    if (tot > 0xFFFFFFu) tot = 0xFFFFFFu;
+    if (tot < 16) tot = 16;
+    uint64_t fr = freeb / ls;
+    if (fr > tot) fr = tot;
+    uint32_t bit = 1;
+    while (bit < 32768 && (tot + bit - 1) / bit > 65535u * 8u) bit <<= 1;
+    g->lsnsize = ls;
+    g->tot = (uint32_t)tot;
+    g->bit = bit;
+    g->clusters = (uint32_t)((tot + bit - 1) / bit);
+    g->map = (g->clusters + 7) / 8;
+    uint64_t usedsec = tot - fr;
+    g->used = (uint32_t)((usedsec + bit - 1) / bit);
+    if (g->used < 1) g->used = 1;              /* LSN 0 + Bitmap sind immer belegt */
+}
+
+/* Byte an Position pos des virtuellen Rohgeraets */
+static unsigned char raw_byte(dhf_host_fs_t *fs, const dhf_raw_geo_t *g, const unsigned char *lsn0, uint64_t pos) {
+    if (pos < 256) return lsn0[pos];
+    uint64_t mstart = (uint64_t)g->lsnsize;     /* dd_maplsn = 1 */
+    if (pos >= mstart && pos < mstart + g->map) {
+        uint64_t k = pos - mstart;
+        unsigned char b = 0;
+        for (int i = 0; i < 8; i++) {
+            uint64_t c = k * 8 + (uint64_t)i;   /* Bit 7 = erster Cluster des Bytes */
+            if (c < g->used || c >= g->clusters) b |= (unsigned char)(0x80 >> i);
+        }
+        return b;
+    }
+    (void)fs;
+    return 0;
+}
+
+static void raw_lsn0(dhf_host_fs_t *fs, const dhf_raw_geo_t *g, unsigned char *p) {
+    memset(p, 0, 256);
+    p[0] = (unsigned char)(g->tot >> 16); p[1] = (unsigned char)(g->tot >> 8); p[2] = (unsigned char)g->tot;
+    p[4] = (unsigned char)(g->map >> 8);  p[5] = (unsigned char)g->map;           /* dd_map */
+    p[6] = (unsigned char)(g->bit >> 8);  p[7] = (unsigned char)g->bit;           /* dd_bit */
+    uint32_t dir = 1 + (g->map + g->lsnsize - 1) / g->lsnsize;                      /* dd_dir */
+    p[8] = (unsigned char)(dir >> 16); p[9] = (unsigned char)(dir >> 8); p[10] = (unsigned char)dir;
+    p[13] = 0xFF;                                                                   /* dd_att */
+    p[14] = 0x44; p[15] = 0x48;                                                     /* dd_dsk "DH" */
+    p[16] = 0x06;                                                                   /* dd_fmt */
+    struct stat st;
+    if (stat(fs->basepath, &st) == 0) {                                             /* dd_date */
+        struct tm tmv; gmtime_r(&st.st_ctime, &tmv);
+        p[26] = (unsigned char)tmv.tm_year; p[27] = (unsigned char)(tmv.tm_mon + 1);
+        p[28] = (unsigned char)tmv.tm_mday; p[29] = (unsigned char)tmv.tm_hour;
+        p[30] = (unsigned char)tmv.tm_min;
+    }
+    const char *nm = strrchr(fs->basepath, '/');                                    /* dd_name */
+    nm = nm ? nm + 1 : fs->basepath;
+    size_t n = strlen(nm); if (n > 31) n = 31;
+    memcpy(p + 31, nm, n); if (n) p[31 + n - 1] |= 0x80;
+    p[63] = 1;                                                                      /* dd_opt: DT_RBF */
+    memcpy(p + 96, "Cruz", 4);                                                      /* dd_sync */
+    p[103] = 1;                                                                     /* dd_maplsn = 1 */
+    p[104] = (unsigned char)(g->lsnsize >> 8); p[105] = (unsigned char)g->lsnsize;  /* dd_lsnsize */
+    p[107] = 1;                                                                     /* dd_versid */
+}
+
+static ssize_t raw_read(dhf_host_fs_t *fs, int h, void *buf, size_t count, uint8_t *status) {
+    dhf_raw_geo_t g; raw_geometry(fs, &g);
+    unsigned char lsn0[256]; raw_lsn0(fs, &g, lsn0);
+    uint64_t size = (uint64_t)g.tot * g.lsnsize;
+    uint64_t pos = fs->handles[h].dir_pos;
+    if (pos >= size || count == 0) { if (status) *status = DHF_ERR_EOF; return 0; }
+    if (pos + count > size) count = (size_t)(size - pos);
+    unsigned char *out = (unsigned char *)buf;
+    for (size_t i = 0; i < count; i++) out[i] = raw_byte(fs, &g, lsn0, pos + i);
+    fs->handles[h].dir_pos = (uint32_t)(pos + count);
+    if (status) *status = DHF_ERR_OK;
+    return (ssize_t)count;
+}
+
+/* "/<geraet>@..." -> Rohgeraet? (erste Pfadkomponente endet auf '@') */
+static int path_is_raw(const char *path) {
+    if (!path || path[0] != '/') return 0;
+    const char *e = strchr(path + 1, '/');
+    size_t n = e ? (size_t)(e - path - 1) : strlen(path + 1);
+    return n > 0 && path[n] == '@';
+}
+
 /* Wurde bei diesem Verzeichnis das Dir-Bit per SS_Attr entfernt? (s. dhf_host_fs_unlink) */
 static int deldir_marked(dhf_host_fs_t *fs, const char *target, int consume) {
     char real[PATH_MAX];
@@ -387,6 +495,17 @@ static int deldir_marked(dhf_host_fs_t *fs, const char *target, int consume) {
 }
 
 int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags, uint8_t *status) {
+    if (path_is_raw(path)) {
+        if (flags & DHF_MODE_WRITE) {                 /* Rohgeraet nur lesbar */
+            if (status) *status = DHF_ERR_WRITE_PROT;
+            return -1;
+        }
+        int h = alloc_handle_at(fs, idx, 0, fs->basepath);
+        if (h < 0) { if (status) *status = DHF_ERR_BAD_PATH; return -1; }
+        fs->handles[h].is_raw = 1;
+        if (status) *status = DHF_ERR_OK;
+        return h;
+    }
     char target[DHF_PATH_MAX];
     if (resolve_confined_path(fs, path, target, sizeof(target)) != 0) {
         if (status) *status = DHF_ERR_BAD_NAME;
@@ -441,6 +560,7 @@ int dhf_host_fs_open_at(dhf_host_fs_t *fs, int idx, const char *path, int flags,
         oflags = O_RDONLY;
     }
 
+    if (flags & 0x10) oflags |= O_APPEND;   /* Append_: Schreiben immer ans Dateiende */
     int fd = open(target, oflags);
     if (fd < 0) {
         if (status) *status = errno_to_dhf(errno);
@@ -479,6 +599,7 @@ int dhf_host_fs_create_at(dhf_host_fs_t *fs, int idx, const char *path, int flag
     }
 
     mode_t pmode = os9_attr_to_mode((unsigned)mode, 0);
+    if (flags & 0x10) oflags |= O_APPEND;   /* Append_: Schreiben immer ans Dateiende */
     int fd = open(target, oflags, pmode);
     if (fd < 0) {
         if (status) *status = errno_to_dhf(errno);
@@ -660,6 +781,9 @@ ssize_t dhf_host_fs_read(dhf_host_fs_t *fs, int handle, void *buf, size_t count,
     if (fs->handles[handle].is_dir) {
         return dhf_read_dir_entries(fs, handle, buf, count, status);
     }
+    if (fs->handles[handle].is_raw) {
+        return raw_read(fs, handle, buf, count, status);
+    }
 
     ssize_t res = read(fs->handles[handle].fd, buf, count);
     if (res < 0) {
@@ -684,6 +808,10 @@ ssize_t dhf_host_fs_write(dhf_host_fs_t *fs, int handle, const void *buf, size_t
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
     }
+    if (fs->handles[handle].is_raw) {                 /* Rohgeraet: kein Schreiben (format!) */
+        if (status) *status = DHF_ERR_WRITE_PROT;
+        return -1;
+    }
 
     ssize_t res = write(fs->handles[handle].fd, buf, count);
     if (res < 0) {
@@ -698,6 +826,13 @@ off_t dhf_host_fs_seek(dhf_host_fs_t *fs, int handle, off_t offset, int whence, 
     if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
+    }
+    if (fs->handles[handle].is_raw) {
+        off_t np = (whence == DHF_SEEK_CUR ? (off_t)fs->handles[handle].dir_pos : 0) + offset;
+        if (np < 0 || np > 0xFFFFFFFFLL) { if (status) *status = DHF_ERR_ERROR; return -1; }
+        fs->handles[handle].dir_pos = (uint32_t)np;
+        if (status) *status = DHF_ERR_OK;
+        return np;
     }
     if (fs->handles[handle].is_dir) {
         off_t base = 0;
@@ -1157,28 +1292,69 @@ int dhf_host_fs_rename(dhf_host_fs_t *fs, const char *oldp, const char *newp, ui
     return 0;
 }
 
-/* 2026-09-26: I$SetStt SS_Rename, Handle-basiert -- die alte Datei ist bereits ueber ihre
-   OS-9-Pfadnummer offen (kein Pfadname mehr bekannt, wie bei allen anderen `_at`-
-   Funktionen), nur der neue Name kommt vom Aufrufer als String. Nutzt den beim Open/Create
-   gespeicherten Host-Pfad (`fs->handles[handle].path`) als "alt"-Seite von rename(), und
-   aktualisiert ihn danach, damit spaetere Aufrufe auf demselben Handle (z.B. ein
-   anschliessendes GetStt/Close) nicht auf einen veralteten Pfad zeigen. */
-int dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *newname, uint8_t *status) {
+/* Ein einzelner OS-9-Dateiname (Eintrag in einem Verzeichnis) in name kopieren; Hochbit am
+   letzten Zeichen (RBF-Verzeichnisformat) wird entfernt. 0 = ungueltig ('/', "."/"..",
+   leer, >28 Zeichen). */
+static int os9_simple_name(const char *in, char *name, size_t max) {
+    if (!in) return 0;
+    size_t n = 0;
+    while (in[n] && n + 1 < max) {
+        name[n] = (char)(in[n] & 0x7F);
+        if ((unsigned char)in[n] & 0x80) { n++; break; }
+        n++;
+    }
+    name[n] = '\0';
+    if (n == 0 || n > 28 || strchr(name, '/') || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        return 0;
+    return 1;
+}
+
+/* 2026-09-26: I$SetStt SS_Rename in der RBF-Konvention (ermittelt per Ablaufverfolgung der
+   echten /CMDS/rename): handle ist ein offenes VERZEICHNIS, oldname/newname sind Eintraege
+   darin. Der Eintrag behaelt seinen Platz in der Verzeichnis-Platztabelle (wie RBF, das nur
+   den Namen im Verzeichniseintrag ueberschreibt). Vorher: handle = die Datei selbst, ein
+   Pfad als neuer Name -- geraten, von keinem echten Programm so benutzt. */
+int dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *oldname, const char *newname, uint8_t *status) {
     if (!fs || handle < 0 || handle >= DHF_MAX_HANDLES || !fs->handles[handle].in_use) {
         if (status) *status = DHF_ERR_BAD_PATH;
         return -1;
     }
-    char target_new[DHF_PATH_MAX];
-    if (resolve_confined_path(fs, newname, target_new, sizeof(target_new)) != 0) {
-        if (status) *status = DHF_ERR_BAD_NAME;
+    if (!fs->handles[handle].is_dir) {
+        if (status) *status = DHF_ERR_NOT_DIR;          /* E$FNA */
         return -1;
     }
-    if (rename(fs->handles[handle].path, target_new) != 0) {
+    char on[64], nn[64];
+    if (!os9_simple_name(oldname, on, sizeof(on)) || !os9_simple_name(newname, nn, sizeof(nn))) {
+        if (status) *status = DHF_ERR_BAD_NAME;         /* E$BPNam */
+        return -1;
+    }
+    char from[DHF_PATH_MAX * 2], to[DHF_PATH_MAX * 2];
+    snprintf(from, sizeof(from), "%s/%s", fs->handles[handle].path, on);
+    snprintf(to, sizeof(to), "%s/%s", fs->handles[handle].path, nn);
+    struct stat st;
+    if (lstat(from, &st) != 0) {
+        if (status) *status = DHF_ERR_NOT_FOUND;        /* E$PNNF */
+        return -1;
+    }
+    if (lstat(to, &st) == 0) {
+        if (status) *status = DHF_ERR_FILE_EXISTS;      /* E$CEF */
+        return -1;
+    }
+    if (rename(from, to) != 0) {
         if (status) *status = errno_to_dhf(errno);
         return -1;
     }
-    strncpy(fs->handles[handle].path, target_new, sizeof(fs->handles[handle].path) - 1);
-    fs->handles[handle].path[sizeof(fs->handles[handle].path) - 1] = '\0';
+    /* Platz in der Platztabelle behalten: alten Namen dort durch den neuen ersetzen */
+    for (int c = 0; c < DHF_DIRCACHE_SLOTS; c++) {
+        if (!fs->dircache[c].path[0] || strcmp(fs->dircache[c].path, fs->handles[handle].path) != 0) continue;
+        for (uint32_t k = 0; k < fs->dircache[c].count; k++) {
+            if (fs->dircache[c].names[k] && strcmp(fs->dircache[c].names[k], on) == 0) {
+                free(fs->dircache[c].names[k]);
+                fs->dircache[c].names[k] = strdup(nn);
+                break;
+            }
+        }
+    }
     if (status) *status = DHF_ERR_OK;
     return 0;
 }
@@ -1189,6 +1365,27 @@ int dhf_host_fs_rename_at(dhf_host_fs_t *fs, int handle, const char *newname, ui
    einen einzigen Basispfad je Deskriptor, keine Mehrfach-Volumes). Ergebnis auf 32 Bit
    gekappt (OS-9s d0.l ist 32 Bit; ein Host-Dateisystem kann theoretisch mehr freien Platz
    melden als das darstellbar ist). */
+/* 2026-09-26: I$GetStt SS_VolStore -- was "free" zuerst fragt. Gelingt es, benutzt es die
+   Werte direkt (kein LSN0/Bitmap noetig) und zeigt die echte Groesse des Host-Dateisystems;
+   512-Byte-Sektoren in 32 Bit reichen bis 2 TB. */
+int dhf_host_fs_volstore(dhf_host_fs_t *fs, uint32_t out[4], uint8_t *status) {
+    struct statvfs sv;
+    if (!fs || statvfs(fs->basepath, &sv) != 0) {
+        if (status) *status = fs ? errno_to_dhf(errno) : DHF_ERR_BAD_PATH;
+        return -1;
+    }
+    uint64_t tot = (uint64_t)sv.f_blocks * sv.f_frsize / 512;
+    uint64_t fr  = (uint64_t)sv.f_bavail * sv.f_frsize / 512;
+    if (tot > 0xFFFFFFFFULL) tot = 0xFFFFFFFFULL;
+    if (fr > tot) fr = tot;
+    out[0] = 512;
+    out[1] = (uint32_t)tot;
+    out[2] = (uint32_t)fr;
+    out[3] = (uint32_t)fr;          /* Host-Dateisystem: freier Platz ist "ein Block" */
+    if (status) *status = DHF_ERR_OK;
+    return 0;
+}
+
 int dhf_host_fs_getfree(dhf_host_fs_t *fs, uint32_t *out_free, uint8_t *status) {
     if (!fs) {
         if (status) *status = DHF_ERR_BAD_PATH;
