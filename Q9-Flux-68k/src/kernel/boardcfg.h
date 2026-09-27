@@ -100,6 +100,9 @@ typedef struct {
     char        cpu[16];                     /* [board] cpu = 68030|68000|68010|68020|68ec020|
                                                  68ec030|68040|68ec040|68lc040 (leer = 68030-Default,
                                                  s. m68krt.h q9_cpu_type_t) -- Q9FLUX_EDITOR_de.md 4.1 */
+    unsigned    ram_mb;                      /* [board] ram = <MByte> (0 = Default 16, max. 256) --
+                                                 2026-09-27; OS-9 sieht nur, was ROM/init bis
+                                                 _RAMMax (systype.d) absuchen */
     q9_cfg_cf_t cf[Q9_CFG_MAX_CF];
     int         cf_count;
     q9_cfg_dhf_t dhf[Q9_CFG_MAX_DHF];        /* 2026-09-26: [dhf0]/[dhf1]                         */

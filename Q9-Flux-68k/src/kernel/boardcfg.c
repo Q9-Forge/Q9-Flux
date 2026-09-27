@@ -417,6 +417,16 @@ int q9_board_cfg_load(q9_board_cfg_t *cfg, const char *cfg_path, char *err, unsi
                 cfg_copy(cfg->vmnet_dhcp_end, sizeof(cfg->vmnet_dhcp_end), val);
             } else if (cfg_ieq(key, "net_hostfwd")) {
                 cfg_copy(cfg->net_hostfwd, sizeof(cfg->net_hostfwd), val);
+            } else if (cfg_ieq(key, "ram")) {
+                /* 2026-09-27: RAM-Groesse in MByte (1..256); Default 16 = SIM-Bestueckung */
+                char *endp = NULL;
+                unsigned long mb = strtoul(val, &endp, 10);
+                if (!endp || *endp != '\0' || mb < 1 || mb > 256) {
+                    snprintf(err, err_max, "Zeile %d: ungueltiger ram-Wert '%s' (1..256 MByte)", lineno, val);
+                    fclose(f);
+                    return -1;
+                }
+                cfg->ram_mb = (unsigned)mb;
             } else if (cfg_ieq(key, "cpu")) {
                 /* Q9FLUX_EDITOR_de.md 4.1: Whitelist statt freiem String -- Tippfehler sollen
                    beim Parsen auffallen, nicht erst als "bootet nicht" beim Aufrufer. Bewusst
@@ -636,6 +646,7 @@ int q9_board_cfg_save(const q9_board_cfg_t *cfg, const char *cfg_path, char *err
     }
     if (cfg->net_hostfwd[0]) { fprintf(f, "net_hostfwd = %s\n", cfg->net_hostfwd); }
     if (cfg->cpu[0])         { fprintf(f, "cpu  = %s\n", cfg->cpu); }
+    if (cfg->ram_mb)         { fprintf(f, "ram  = %u\n", cfg->ram_mb); }
 
     for (i = 0; i < cfg->cf_count; i++) {
         const q9_cfg_cf_t *cf = &cfg->cf[i];

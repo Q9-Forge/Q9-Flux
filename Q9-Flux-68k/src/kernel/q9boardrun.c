@@ -56,7 +56,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BOARD_RAM_BYTES   (16u * 1024u * 1024u)       /* 16 MByte SIM-Bestueckung (docs/BOARD.md) */
+#define BOARD_RAM_DEFAULT (16u * 1024u * 1024u)       /* 16 MByte SIM-Bestueckung (docs/BOARD.md) */
+/* 2026-09-27: RAM-Groesse aus [board] ram = <MByte> (Default 16), deshalb Variable statt Konstante;
+   der Name BOARD_RAM_BYTES bleibt fuer die vielen Grenzpruefungen unten erhalten. */
+static uint32_t board_ram_bytes = BOARD_RAM_DEFAULT;
+#define BOARD_RAM_BYTES   board_ram_bytes
 #define BOARD_ROM_MAX     (512u * 1024u)              /* 29F040-Flash: 512 KByte                  */
 #define BOARD_CF_IMAGE    "local_images/board_cf.img" /* Backing-Datei, lazy angelegt (5.2c)      */
 #define BOARD_SLICE_CYCLES 20000                       /* CPU-Takte je Runde zwischen Timer-Polls  */
@@ -64,7 +68,7 @@
 
 /* Statisch statt Host-malloc (Q9-Grundsatz, vgl. Fixed-Heap-Entscheidung 4.9) — native-only,
    im BSS kostet das nichts, solange es unberuehrt bleibt. */
-static uint8_t board_ram[BOARD_RAM_BYTES];
+static uint8_t *board_ram;                        /* board_ram_bytes, s. o. */
 static uint8_t board_rom[BOARD_ROM_MAX];
 static uint8_t board_vram[Q9_FRAMEBUF_MAX_SIZE];       /* 5.26: VRAM-Backing, s. framebuf.h        */
 
@@ -1166,10 +1170,19 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
     if (cfg && cfg->name[0]) {
         printf("q9board: Board-Config '%s'\r\n", cfg->name);
     }
+    if (cfg && cfg->ram_mb) {
+        board_ram_bytes = cfg->ram_mb * 1024u * 1024u;
+    }
+    free(board_ram);
+    board_ram = (uint8_t *)calloc(1, board_ram_bytes);
+    if (!board_ram) {
+        fprintf(stderr, "q9board: %u MByte RAM nicht allozierbar\n", board_ram_bytes / (1024u * 1024u));
+        return 1;
+    }
     printf("q9board: ROM '%s' geladen (%u Byte), %u MByte RAM — Reset.\r\n",
            rom_path, rom_len, BOARD_RAM_BYTES / (1024u * 1024u));
 
-    q9_board_init(&board, board_rom, rom_len, board_ram, sizeof(board_ram));
+    q9_board_init(&board, board_rom, rom_len, board_ram, board_ram_bytes);
     cf_extra_count = 0;
 
     /* 5.19: CF-Images aus der Config verteilen — Onboard-CF (board.cf) und RC2014-Zweitinterface
@@ -1236,14 +1249,14 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
 
     fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
 
-    q9_m68krt_init(&rt, board_ram, sizeof(board_ram), q9_board_resolve_cpu(cfg ? cfg->cpu : ""));
+    q9_m68krt_init(&rt, board_ram, board_ram_bytes, q9_board_resolve_cpu(cfg ? cfg->cpu : ""));
     q9_m68krt_get_backend(&rt, &cpu);                  /* 6.5: ab hier nur noch ueber die Vtable  */
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     if (cf2_used) {
         for (int i = 0; i < cf_extra_count; i++)
             q9_m68krt_attach_cf_at(&cf_extra[i], cf_extra_base[i], "cf-secondary");
     }
-    q9_quicc_init(&quicc, board_ram, sizeof(board_ram));
+    q9_quicc_init(&quicc, board_ram, board_ram_bytes);
     if (q9_quicc_net_mode(&quicc, net_mode, vmnet_config_ptr,
                           slirp_config_ptr, slirp_hostfwd, slirp_hostfwd_count) != 0) {
         return 1;

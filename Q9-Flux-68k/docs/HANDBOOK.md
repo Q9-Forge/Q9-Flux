@@ -636,6 +636,7 @@ only briefly named here — full details are in `ARBEITSPLAN.md`:
 | Video pipeline | MC6845 register model (`src/devices/mc6845/`) + framebuffer/VRAM (`src/devices/framebuf/`) + CLUT color palette (`src/devices/clut/`) + Q9-Frame network protocol for remote display (`src/devices/videobridge/`) | Steps 5.24–5.29 |
 | RTC72421 | Real-time clock (Epson chip), reads the host clock | Step 5.6 |
 | Debug hotkey | Ctrl-^ dumps physical RAM content (an analysis aid for Q9-OS) | see `q9_dbg_dump_requested` in `q9boardrun.h` |
+| RAM size | `[board] ram = <MByte>` in the `.q9` (1–256, default 16). OS-9 only uses what the ROM (`_RAMMax` in `systype.d`) and `init` describe – for 64 MB: DHF ROM and `Q9-OS/Q9-DHF-68k/boot/mk_init.sh 64`, example `Q9-Images/emu_config/q9sys.q9` | 2026-09-27 |
 | Multi-architecture planning | RISC-V32/ARM64/x86 32-bit as further target architectures, board emulator vs. native runtime — still pure planning | Phase 6 |
 
 ---
