@@ -111,7 +111,10 @@ uint pmmu_translate_addr(uint addr_in)
 	switch (tamode)
 	{
 		case 0: // invalid, should cause MMU exception
-			fatalerror("680x0 PMMU: Unhandled Table A mode %d (addr_in %08x)\n", tamode, addr_in);
+			{ int dbgi; fprintf(stderr, "REGS D:"); for (dbgi=0; dbgi<8; dbgi++) fprintf(stderr, " %08x", REG_D[dbgi]); fprintf(stderr, " A:"); for (dbgi=0; dbgi<8; dbgi++) fprintf(stderr, " %08x", REG_A[dbgi]); fputc(10,stderr); }
+			{ int dbgi; fprintf(stderr, "BYTES:"); for (dbgi=-16; dbgi<16; dbgi++) fprintf(stderr, " %02x", m68k_read_memory_8(REG_PPC+dbgi)); fputc(10,stderr); fprintf(stderr,"STACK:"); for (dbgi=0; dbgi<64; dbgi+=4) fprintf(stderr, " %08x", m68k_read_memory_32(REG_A[7]+dbgi)); fputc(10,stderr); }
+			fatalerror("680x0 PMMU: Unhandled Table A mode %d (addr_in %08x) PC=%08x PPC=%08x A7=%08x A6=%08x A5=%08x A4=%08x A3=%08x D0=%08x D5=%08x D6=%08x SR=%04x\n",
+				tamode, addr_in, REG_PC, REG_PPC, REG_A[7], REG_A[6], REG_A[5], REG_A[4], REG_A[3], REG_D[0], REG_D[5], REG_D[6], m68ki_get_sr());
 			break;
 
 		case 2: // 4-byte table B descriptor
