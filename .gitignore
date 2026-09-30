@@ -7,3 +7,8 @@ Q9-Flux-Devices/Q9-Frame/build/
 Q9-Flux-Devices/Q9-Frame/*.o
 Q9-Flux-Devices/Q9-Frame/Q9Frame
 Q9-Flux-Devices/Q9-Frame/dummy_server
+
+# Lokale, nicht zu veroeffentlichende Dateien (Fremdmaterial)
+.hide/
+OS9Boot*
+*.mod
