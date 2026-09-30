@@ -33,7 +33,7 @@
 //         Hoehe/Modus (mc6845.h) mit dem zuletzt an den Client gemeldeten Stand verglichen -- bei
 //         Aenderung wird komplett neu gehandshaked (VIDEO_INFO(+PALETTE)+FRAME_FULL), analog zum
 //         Live-Moduswechsel in `dummy_server.cpp` (dort per stdin-Kommando ausgeloest, hier durch
-//         echte Registeraenderungen eines OS-9-Treibers).
+//         echte Registeraenderungen eines (Q9 -Treibers).
 //
 //         **Dirty-Rects:** framebuf.h liefert sie in (Byte-Spalte, Zeile); die Umrechnung in Pixel-
 //         Koordinaten (Q9DirtyRectHeader) nutzt q9_mc6845_bpp() -- Byte-Spalte*[8/4/2/1] bzw.
