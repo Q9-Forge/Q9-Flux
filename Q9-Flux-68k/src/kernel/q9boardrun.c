@@ -219,8 +219,7 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         }
     }
 
-    {   /* Wohin zeigen die I$-Slots wirklich? Verlaesslicher als jede
-           Disassemblierung von Hand: die Dispatch-Tabellen stehen in
+    {   /* Wohin zeigen die I$-Slots wirklich? Verlaesslich: die Dispatch-Tabellen stehen in
            D_SysDis ($3a4) / D_UsrDis ($3a8), der Eintrag eines Dienstes bei
            Basis + Callcode*4. */
         uint32_t sysdis = q9_board_read32(b, 0x3a4u);
@@ -711,7 +710,7 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
             }
         }
         {   /* Code rund um den Exception-PC direkt aus dem LAUFENDEN Speicher.
-               Die Moduldatei zu disassemblieren fuehrt in die Irre, sobald
+               Die Moduldatei statisch zu lesen fuehrt in die Irre, sobald
                ueber die Instruktionsgrenzen Unklarheit besteht -- hier steht,
                was die CPU wirklich vorgefunden hat. */
             uint32_t base = (pc >= 24u) ? (pc - 24u) : 0u;
@@ -949,7 +948,7 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
     /* D_ExcJmp: 256 Eintraege x 10 Byte, Format bereits geklaert (Q9-OS-RE-Sitzung 2026-08-02):
        PEA (vektor*4+8).W ; JMP.L <ziel> -- <ziel> ist die tatsaechliche Dispatcher-Adresse.
        Kernel-Basis wird aus dem Fehler-Stub-Mehrheitswert der Syscall-Tabelle abgeleitet
-       (Fehler-Stub liegt bei Modul-Offset 0x1380, s. REVERSE_ENGINEERING.md), damit direkt
+       (Fehler-Stub des Kernel-Moduls), damit direkt
        <ziel>-Kernel-Basis mit ausgegeben wird -- das laesst sich sofort gegen die bekannten
        Q9_disp_*-Offsets (0x180/0x452/0x472/0x488/0x5d0/0x888/0x8d0/0xba4) abgleichen. Alle
        Vektoren 2-63 (kompletter dokumentierter Bereich) plus ein paar Stichproben aus dem

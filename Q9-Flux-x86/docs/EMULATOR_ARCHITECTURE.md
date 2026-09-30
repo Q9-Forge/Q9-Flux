@@ -72,4 +72,4 @@ kept in `images/flux-x86.img` locally and is intentionally ignored by Git.
 
 This does not rule out a future CPU backend shared with Q9-Flux.  It says only
 that a working OS-9000 machine and its device contract come first, using QEMU
-as the compatibility oracle.
+as the compatibility reference.

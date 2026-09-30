@@ -34,8 +34,7 @@
 //           q9_hal_con_get() setzt dieses Flag und schluckt die Taste, statt sie an den Gast
 //           weiterzureichen. Der Board-Runner (q9boardrun.c) prueft es einmal pro Hauptschleifen-
 //           Durchlauf und dumpt bei Bedarf physischen RAM-Inhalt (direkt ueber q9_board_read32,
-//           OHNE MMU-Uebersetzung -- Debug-Werkzeug fuer die Q9-OS-Kernel-RE-Arbeit, s.
-//           Q9-OS/docs/REVERSE_ENGINEERING.md).
+//           OHNE MMU-Uebersetzung -- Debug-Werkzeug fuer die Q9-OS-Kernel-Entwicklung).
 //════════════════════════════════════════════════════════════════════════════════════════════════
 extern volatile int q9_dbg_dump_requested;
 

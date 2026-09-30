@@ -2,10 +2,8 @@
 
 **Nachtrag 2026-08-12:** Diese Live-Stichprobe (~40 tatsächlich ausgeführte
 Aufrufe) wurde inzwischen auf **alle** ~90 im Kernel-Build definierten
-Callcodes erweitert — per Adressvergleich gegen die vollständige
-Syscall-Tabelle aus der Kernel-Disassemblierung, ohne Widerspruch zu den
-hier gemessenen Werten. Vollständige Tabelle:
-[`Q9-OS/modules/SYSCALL_MODULE_MAP.md`](../../Q9-OS/modules/SYSCALL_MODULE_MAP.md).
+Callcodes erweitert — per Adressvergleich gegen die Syscall-Tabelle
+des Kernels, ohne Widerspruch zu den hier gemessenen Werten.
 
 Live-Gegenprobe im laufenden Q9-Flux-Emulator (echtes OS-9/68K-Boot-Image, nicht Q9s eigene
 Reimplementierung — dafür siehe `docs/SYSCALLS.md`/`docs/MODULES.md`) zur Frage: als frühere
@@ -128,9 +126,7 @@ würden hier mitgezählt).
 (a) einen Testlauf mit abgeschalteten Hintergrundprozessen (`tsmon`/`telnetd`), oder (b) eine
 gezielte PC-Sample-Auswertung *innerhalb* des SSM-Bereichs (welche exakte Adresse wird
 getroffen — eine feste Einstiegsroutine spräche für einen echten MMU-Aufruf, verstreute Adressen
-für IRQ-Rauschen), oder (c) ein Disassembler-Blick auf die IOMan-Aufrufstelle selbst (ruft sie
-sichtbar eine MMU-Übersetzungsroutine auf, wenn und nur wenn ein Zeiger-Parameter im Spiel ist?),
-oder (d) ein gezielter Test mit einem Kernel-Call, der garantiert **keinen** Zeiger übergibt, als
+für IRQ-Rauschen), oder (d) ein gezielter Test mit einem Kernel-Call, der garantiert **keinen** Zeiger übergibt, als
 Kontrollgruppe gegen einen mit Zeiger.
 
 ## 4. Reproduzierbarkeit

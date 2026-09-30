@@ -27,8 +27,8 @@ Last reviewed: 2026-09-03
    protected-mode / 32-bit execution where the selected CPU backend supports
    them.
 
-4. **OS-9000/x86 executable modules are not ELF.**  Local reverse-engineering
-   shows a proprietary little-endian module header and relocation scheme.  A
+4. **OS-9000/x86 executable modules are not ELF.**  Private research notes
+   show a proprietary little-endian module header and relocation scheme.  A
    generic `i686-elf-gcc` or Clang can produce useful machine code, but cannot
    alone create a loadable OS-9000 module.
 
@@ -58,7 +58,7 @@ best way to build native OS-9000/x86 applications or drivers.
 | `Q9-Tools/System/qid` | Identifies OS-9 modules, ROF objects, and ELF32/ELF64 files | Parser/reference only; it is not a converter. |
 | `Q9-qr68` | Assembles 68k source to Microware-compatible ROF, byte-identical to `r68` for the tested corpus | Strong model for a future open Q9 linker path. |
 | Q9-QCC | Produces 68k assembly and already runs on genuine OS-9/68k | The compiler architecture is reusable, but the x86 backend is a separate task. |
-| Q9-OS x86 research | Documents original module format and live QEMU boot behaviour | Primary compatibility oracle for any x86 module packer. |
+| Q9-OS x86 research | Documents original module format and live QEMU boot behaviour | Primary compatibility reference for any x86 module packer. |
 
 ## Recommended sequence
 

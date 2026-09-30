@@ -841,8 +841,7 @@ static uint32_t g_syscall_return_a0 = 0;
        Instruktions-Trace, scharfgeschaltet durch den F$Link/F$Load auf genau
        diesen Modulnamen. Notwendig, weil reale Systm-Module (IOMan) Kernel-
        Dienste NICHT nur per trap #0 rufen, sondern auch direkt ueber einen
-       PEA+RTS-Sprung durch die SYSDIS-Tabelle (s. Q9-OS/modules/ioman/docs/
-       REVERSE_ENGINEERING.md, FUN_000015ca). Solche Aufrufe sind fuer einen
+       PEA+RTS-Sprung durch die SYSDIS-Tabelle. Solche Aufrufe sind fuer einen
        Trap-Callback komplett unsichtbar -- im trap0-Log sieht es aus, als
        ende der Syscall-Verkehr nach dem F$Link. Der Instruktions-Trace zeigt
        stattdessen den tatsaechlichen Kontrollfluss inklusive dieser Spruenge.
@@ -928,8 +927,8 @@ static uint32_t g_classify_call_pc    = 0;
 static uint16_t g_classify_callcode   = 0;
 static unsigned g_classify_seen_mask  = 0;
 
-/* Testlauf 3 (2026-07-14) zeigte: D0/D1 allein liefern keine brauchbare Filterung -- Grund
-   (Ghidra-Nachanalyse): der eigentliche OS-9-Aufrufcode (F$Event = 0x53) steckt NICHT in einem
+/* Testlauf 3 (2026-07-14) zeigte: D0/D1 allein liefern keine brauchbare Filterung -- Grund:
+   der eigentliche OS-9-Aufrufcode (F$Event = 0x53) steckt NICHT in einem
    Register, sondern klassisch OS-9-typisch als INLINE-DATENWORT direkt hinter der trap#0-
    Instruktion im Code (Kernel liest es beim Rueckkehren und ueberspringt es). Deshalb jetzt
    gezielt genau dieses Wort mitlesen (m68k_read_disassembler_16, seiteneffektfrei) und nur bei
@@ -1225,8 +1224,7 @@ static int m68krt_trap_trace_callback(int trap)
 }
 
 /* Testlauf 4 (2026-07-15): der Trap#0-Callback feuert nur VOR dem Trap (Eingaberegister), nicht
-   beim Rueckkehren -- der Rueckgabewert von I$GetStt/SS_Ready (in D1, s. Disassemblierung des
-   Wrapers bei telnetdc-Offset 0x32a8) blieb dadurch unsichtbar. Deshalb zusaetzlich ein gezielter
+   beim Rueckkehren -- der Rueckgabewert von I$GetStt/SS_Ready (in D1) blieb dadurch unsichtbar. Deshalb zusaetzlich ein gezielter
    PC-Watchpoint ueber M68K_INSTRUCTION_HOOK: feuert vor JEDER Instruktion (teuer, aber der
    Vergleich selbst ist trivial und es wird nur bei echtem Treffer geloggt/geflusht -- anders als
    der frueher verworfene ungefilterte Trap-Log-Versuch, der pro Zeile schrieb). Adresse kommt aus

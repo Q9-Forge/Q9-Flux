@@ -17,8 +17,8 @@ QCC / qcpp
   -> loadable OS-9/68k module
 ```
 
-`Q9-qr68` replaces Microware `r68`.  Its tested outputs are byte-identical to
-`r68` (including complete QCC modules and Q9-OS kernel assembly, apart from
+`Q9-qr68` is an independent assembler that writes the ROF object format.  In
+tests its output is byte-identical to that of the reference assembler (including complete QCC modules and Q9-OS kernel assembly, apart from
 the controlled timestamp field).  `l68` remains the required final linker in
 the present pipeline.
 
@@ -55,7 +55,7 @@ linker.
 
 ## Lessons for a future Q9 linker
 
-1. Treat the original linker/assembler as an oracle.  Generate focused probes,
+1. Use a reference linker/assembler for comparison.  Generate focused probes,
    compare byte-for-byte, and document each discrepancy.
 2. Start with a narrow, explicit relocation subset.  A rejected relocation is
    safer than a module that loads at an incorrect address.

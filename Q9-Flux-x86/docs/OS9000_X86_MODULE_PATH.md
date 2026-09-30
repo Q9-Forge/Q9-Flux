@@ -39,10 +39,6 @@ an ELF parser inside the guest.
 
 ## Where the format evidence belongs
 
-The canonical current reverse-engineering notes are kept in Q9-OS:
-
-- `../Q9-OS/modules/os9000-x86/docs/KERNEL_INIT.md`
-- `../Q9-OS/modules/os9000-x86/docs/FINDINGS.md`
-
+Format notes are kept in the private Q9-OS-Research repository and are not published here.
 When a field is inferred or tested, record its source module, offset, and boot
 test here or in a dedicated format specification before depending on it.
