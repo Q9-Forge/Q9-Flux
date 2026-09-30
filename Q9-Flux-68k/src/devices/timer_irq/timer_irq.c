@@ -35,9 +35,9 @@ static int q9_board_poll_timer(q9_board_t *b, uint32_t now_ms)
         /* 5.6: Tick-Schulden nachholen statt verwerfen — vorher wurde timer_last_ms auf
            "jetzt" gesetzt, d.h. pro Poll hoechstens EIN Tick, egal wie viel Echtzeit
            vergangen war. Im Idle-Betrieb (STOP + Host-Schlafdrossel, 5.9) verlor die
-           OS-9-Uhr dadurch fast alle Ticks und blieb praktisch stehen ('date' fror ein).
+           Q9-Uhr dadurch fast alle Ticks und blieb praktisch stehen ('date' fror ein).
            Jetzt rueckt timer_last_ms nur um EINE Periode vor, so dass aufeinanderfolgende
-           Polls die aufgelaufenen Ticks einzeln nachliefern (OS-9 zaehlt pro Interrupt
+           Polls die aufgelaufenen Ticks einzeln nachliefern (Q9 zaehlt pro Interrupt
            genau einen Tick). Deckel bei 30 s Rueckstand, damit ein stundenlang
            schlafender Host keinen minutenlangen Tick-Sturm ausloest — den absoluten
            Abgleich liefert dann ohnehin die RTC (setime -s). */
