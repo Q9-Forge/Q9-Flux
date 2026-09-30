@@ -8,7 +8,7 @@
 //         q9_m68krt_get_backend).
 //
 //         Bewusst KLEIN gehalten: nur die vier Operationen, die die Hauptschleife tatsaechlich
-//         braucht. Diagnosefunktionen wie q9_m68krt_debug_state/quicc_acks bleiben ausserhalb --
+//         braucht. Diagnosefunktionen wie q9_m68krt_debug_state/nic_acks bleiben ausserhalb --
 //         die sind 68k-spezifische Fehlersuche (SR-Register, QUICC-Zaehler), keine allgemeine
 //         CPU-Eigenschaft, und muessten fuer eine zweite Architektur ohnehin anders aussehen.
 //

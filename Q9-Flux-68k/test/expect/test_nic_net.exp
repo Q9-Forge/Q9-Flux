@@ -5,13 +5,13 @@ cd [file normalize "$script_dir/../.."]
 # 5.11 End-to-End-Test: QUICC-Ethernet-Emulation gegen den echten sp360-Treiber.
 # Ablauf: Boot bis Login (super), SPF-Modulpaket laden (/dd/netmods, von
 # ToolShed aufs Test-Image kopiert), ipstart, ifconfig, ping 192.168.200.1
-# (= Mini-NAT-Gegenstelle im Emulator, quicc.c).
+# (= Mini-NAT-Gegenstelle im Emulator, q9nic.c).
 #
 # Login: super / Al35uUbC (s. /dd/SYS/password im Image)
 
 set timeout 90
 set send_slow {1 .003}
-log_file -noappend test/expect/results/quicc_net_result.txt
+log_file -noappend test/expect/results/nic_net_result.txt
 
 set image local_images/OS9SYS.claudia-net-test.hda
 

@@ -13,7 +13,7 @@
 //         │      │ auch ohne neues THRA-Byte im selben Durchlauf                           │
 // 26-07-10│ 1.30 │ 5.9: Idle-Drossel -- q9_hal_sleep_ms(1) statt Busy-Loop, wenn die CPU    │ CF
 //         │      │ per STOP angehalten ist UND kein IRQ ansteht (OS-9-Leerlauf)             │
-// 26-07-13│ 1.40 │ 5.12: net_mode-Parameter -> q9_quicc_net_mode (nat|vmnet)               │ CF
+// 26-07-13│ 1.40 │ 5.12: net_mode-Parameter -> q9_nic_net_mode (nat|vmnet)               │ CF
 // 26-07-14│ 1.50 │ 5.17: Hauptschleifen-Poll fuer DUART/Timer genericisiert (Geraete-        │ CF
 //         │      │ Registry statt hartkodierter Bloecke), QUICC bleibt bis zu seinem eigenen │
 //         │      │ 5.17-Schritt explizit verdrahtet                                          │
@@ -21,15 +21,15 @@
 //         │      │ einzige Schleife ueber die Geraete-Registry, keine Sonderfaelle mehr       │
 // 26-07-16│ 1.70 │ 5.19: Board-Config (cfg-Parameter) -- mehrere CF-Images (rbf/pcf) auf       │ CF
 //         │      │ Onboard-CF (Master/Slave) + RC2014-SC145-Zweitinterface verteilen           │
-// 26-08-03│ 1.71 │ 5.24/5.26: MC6845 (crtc) + VRAM-Geraet (fb) nach attach_quicc verdrahtet    │ Ada
+// 26-08-03│ 1.71 │ 5.24/5.26: MC6845 (crtc) + VRAM-Geraet (fb) nach attach_nic verdrahtet    │ Ada
 // 26-08-03│ 1.72 │ 5.27: Host-Video-Bridge (videobridge) initialisiert + je Hauptschleifen-    │ Ada
 //         │      │ Runde gepollt                                                              │
-// 26-08-07│ 1.80 │ 5.14: slirp_config/slirp_hostfwd an q9_quicc_net_mode -- net_hostfwd aus    │ AF
+// 26-08-07│ 1.80 │ 5.14: slirp_config/slirp_hostfwd an q9_nic_net_mode -- net_hostfwd aus    │ AF
 //         │      │ der Config wird per q9_parse_hostfwd zerlegt                               │
 // 26-08-13│ 1.81 │ 6.5: CPU-Zugriffe (reset/execute/set_irq/is_stopped) auf die neue           │ Cld
 //         │      │ q9_cpu_backend_t-Vtable (cpu_backend.h) umgestellt, statt m68krt-Funktionen  │
 //         │      │ direkt zu rufen -- Vorbereitung fuer eine zweite Zielarchitektur, reines     │
-//         │      │ Refactoring (debug_state/quicc_acks bleiben bewusst direkt, s. dortige       │
+//         │      │ Refactoring (debug_state/nic_acks bleiben bewusst direkt, s. dortige       │
 //         │      │ Kommentare)                                                                 │
 // 26-08-14│ 1.90 │ 5.18-Fortsetzung: q9_cfg_cf_effective_base() (boardcfg.c) statt zweier hier   │ Cld
 //         │      │ duplizierter Inline-Berechnungen; neue q9_board_validate_no_overlap() prueft │
@@ -45,7 +45,7 @@
 #include "q9board.h"
 #include "m68krt.h"
 #include "../devices/duart68681/duart68681.h"      /* THRA-Mitschrift, s. dort                */
-#include "../devices/quicc/quicc.h"
+#include "../devices/nic/q9nic.h"
 #include "../devices/mc6845/mc6845.h"                  /* 5.24: MC6845-CRT-Controller             */
 #include "../devices/framebuf/framebuf.h"              /* 5.26: VRAM-Geraet                       */
 #include "../devices/videobridge/videobridge.h"        /* 5.27: Host-Video-Bridge                  */
@@ -1146,7 +1146,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                   const q9_board_cfg_t *cfg)
 {
     static q9_board_t board;                           /* eine Instanz, wie Musashi selbst (5.1) */
-    static q9_quicc_t quicc;                           /* 5.11: QUICC-Ethernet (SCC1)            */
+    static q9_nic_t nic;                           /* 5.11: QUICC-Ethernet (SCC1)            */
     static q9_mc6845_t crtc;                           /* 5.24: MC6845-CRT-Controller             */
     static q9_framebuf_t fb;                            /* 5.26: VRAM-Geraet                       */
     static q9_clut_t  clut;                             /* 5.29-Nachtrag: CLUT-Geraet               */
@@ -1176,7 +1176,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
         return 1;
     }
 
-    /* Netz-Backend: CLI schlaegt Config schlaegt Default (nat, in q9_quicc_net_mode). */
+    /* Netz-Backend: CLI schlaegt Config schlaegt Default (nat, in q9_nic_net_mode). */
     if ((net_mode == NULL || net_mode[0] == '\0') && cfg && cfg->net_mode[0]) {
         net_mode = cfg->net_mode;
     }
@@ -1292,12 +1292,12 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
         for (int i = 0; i < cf_extra_count; i++)
             q9_m68krt_attach_cf_at(&cf_extra[i], cf_extra_base[i], "cf-secondary");
     }
-    q9_quicc_init(&quicc, board_ram, board_ram_bytes);
-    if (q9_quicc_net_mode(&quicc, net_mode, vmnet_config_ptr,
+    q9_nic_init(&nic, board_ram, board_ram_bytes);
+    if (q9_nic_net_mode(&nic, net_mode, vmnet_config_ptr,
                           slirp_config_ptr, slirp_hostfwd, slirp_hostfwd_count) != 0) {
         return 1;
     }
-    q9_m68krt_attach_quicc(&quicc);                    /* 5.11: Ethernet-Fenster $FFFF2000       */
+    q9_m68krt_attach_nic(&nic);                    /* 5.11: Ethernet-Fenster $FFFF2000       */
     q9_mc6845_init(&crtc);                              /* 5.24: MC6845, Reset-Zustand = alle 0   */
     q9_m68krt_attach_mc6845(&crtc);                     /* 5.24: CRTC-Fenster $FFFFA000           */
     q9_framebuf_init(&fb, board_vram, sizeof(board_vram), Q9_FRAMEBUF_DEFAULT_SIZE, &crtc);
@@ -1355,7 +1355,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                unabhaengigen Level-Leitungen, s. m68krt.c-Kommentar bei
                m68krt_reassert_pending_irq) -- der LETZTE Aufruf in dieser Runde gewinnt. Die
                Registrierungsreihenfolge (m68krt.c: DUART 3, Netz-Terminals 4, QUICC 5, Timer 6 --
-               s. Kommentare in q9_m68krt_attach_board/attach_quicc) ist deshalb bewusst
+               s. Kommentare in q9_m68krt_attach_board/attach_nic) ist deshalb bewusst
                aufsteigend nach IRQ-Level gehalten, damit bei gleichzeitig anstehenden Interrupts
                am Ende dieser Schleife das hoechste Level uebrig bleibt -- genau wie vor 5.17. */
             irq = 0;
@@ -1393,12 +1393,12 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                    -> Level-5-Interrupt wird nicht zugestellt (Emulator). qack steigt weiter, Gast
                    haengt trotzdem -> Bug sitzt im geschlossenen Gast-Treiber. bsy>0 -> RX-Ring lief
                    voll und Frames wurden STILL (ohne sonstiges Log) verworfen. */
-                fprintf(stderr, "[quiccdiag rxf=%u bsy=%u txb=%u qack=%u rxfull=%d pending=%d scce=%04x sccm=%04x]\n",
-                        quicc.diag_rxf, quicc.diag_bsy, quicc.diag_txb,
-                        q9_m68krt_quicc_acks(), q9_quicc_rx_filled(&quicc),
-                        q9_quicc_irq_pending(&quicc),
-                        q9_quicc_read16(&quicc, 0xFFFF2000u + 0x1610u),
-                        q9_quicc_read16(&quicc, 0xFFFF2000u + 0x1614u));
+                fprintf(stderr, "[nicdiag rxf=%u bsy=%u txb=%u qack=%u rxfull=%d pending=%d scce=%04x sccm=%04x]\n",
+                        nic.diag_rxf, nic.diag_bsy, nic.diag_txb,
+                        q9_m68krt_nic_acks(), q9_nic_rx_filled(&nic),
+                        q9_nic_irq_pending(&nic),
+                        q9_nic_read16(&nic, 0xFFFF2000u + 0x1610u),
+                        q9_nic_read16(&nic, 0xFFFF2000u + 0x1614u));
                 last_dbg_ms = now_ms;
             }
         }

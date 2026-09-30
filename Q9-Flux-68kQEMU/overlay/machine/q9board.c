@@ -147,12 +147,12 @@ static const MemoryRegionOps q9board_rom_window_ops = {
 /* Matches Q9_FRAMEBUF_BASE in Q9-Flux-68k/src/devices/framebuf/framebuf.h. */
 #define Q9BOARD_FRAMEBUF_BASE 0xFD000000
 
-/* Matches Q9_QUICC_BASE in Q9-Flux-68k/src/devices/quicc/quicc.h. */
-#define Q9BOARD_QUICC_BASE 0xFFFF2000
+/* Matches Q9_NIC_BASE in Q9-Flux-68k/src/devices/nic/q9nic.h. */
+#define Q9BOARD_NIC_BASE 0xFFFF2000
 
-/* devices/quicc/q9_quicc.c, s. there for why this is a plain function
+/* devices/nic/q9_nic.c, s. there for why this is a plain function
  * rather than a qdev property. */
-void q9_quicc_set_ram(DeviceState *dev, uint8_t *ram, uint32_t ram_len);
+void q9_nic_set_ram(DeviceState *dev, uint8_t *ram, uint32_t ram_len);
 
 /* Matches Q9_BOARD_NET_BASE in Q9-Flux-68k/src/devices/nettty/nettty.h. */
 #define Q9BOARD_NETTTY_BASE 0xFFFF1000
@@ -360,31 +360,31 @@ static void q9board_init(MachineState *machine)
     }
 
     /* QUICC Ethernet (MC68360 SCC1), ninth ported peripheral -- see
-     * Q9-Flux-68kQEMU/devices/quicc/q9_quicc.c. Needs the CPU object
+     * Q9-Flux-68kQEMU/devices/nic/q9_nic.c. Needs the CPU object
      * (same "m68k-cpu" link pattern as timer_irq/duart) for its level-5
      * IRQ, and a host pointer into guest RAM for the buffer-descriptor
-     * rings' SDMA-style frame transfer (q9_quicc_set_ram(), same
+     * rings' SDMA-style frame transfer (q9_nic_set_ram(), same
      * rationale as q9_mc6845_get_stride()). This is a standard QEMU NIC
      * frontend -- give it a network with the usual "-netdev"/"-nic"
      * machinery, e.g.
-     * "-netdev user,id=net0 -global q9-quicc.netdev=net0" (see
-     * q9_quicc.c's own header comment for why this replaces the
+     * "-netdev user,id=net0 -global q9-nic.netdev=net0" (see
+     * q9_nic.c's own header comment for why this replaces the
      * original's four hand-rolled host network backends outright). */
     {
-        DeviceState *quicc = qdev_new("q9-quicc");
-        object_property_set_link(OBJECT(quicc), "m68k-cpu", OBJECT(cpu),
+        DeviceState *nic = qdev_new("q9-nic");
+        object_property_set_link(OBJECT(nic), "m68k-cpu", OBJECT(cpu),
                                   &error_abort);
-        sysbus_realize_and_unref(SYS_BUS_DEVICE(quicc), &error_fatal);
-        q9_quicc_set_ram(quicc, memory_region_get_ram_ptr(machine->ram),
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(nic), &error_fatal);
+        q9_nic_set_ram(nic, memory_region_get_ram_ptr(machine->ram),
                           (uint32_t)memory_region_size(machine->ram));
         memory_region_add_subregion(
-            address_space_mem, Q9BOARD_QUICC_BASE,
-            sysbus_mmio_get_region(SYS_BUS_DEVICE(quicc), 0));
+            address_space_mem, Q9BOARD_NIC_BASE,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(nic), 0));
     }
 
     /* Network terminals (8 channels /x1../x8), tenth ported peripheral --
      * see Q9-Flux-68kQEMU/devices/nettty/q9_nettty.c. Needs the CPU
-     * object (same "m68k-cpu" link pattern as timer_irq/duart/quicc) for
+     * object (same "m68k-cpu" link pattern as timer_irq/duart/nic) for
      * its shared level-4 IRQ. Each channel is its own "chardevN" (N=0-7)
      * property, attached the usual QEMU way, e.g.
      * "-chardev socket,id=x1,port=2001,server=on,wait=off,telnet=on

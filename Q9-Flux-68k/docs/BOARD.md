@@ -238,7 +238,7 @@ massgebliche Quelle ist jetzt der Code selbst (`m68krt.c`) + ARBEITSPLAN 5.17/5.
    registriertes devreg-Geraet** (`src/devices/remap/remap.c`) — NUR der Trigger selbst
    (reiner Adress-Trigger, kein Datenwert, kein IRQ), die RAM/ROM-**Interpretation** danach
    bleibt bewusst im Performance-Fast-Path (`q9board.c`/`ram_fast_hit()`, s.o.). Heute (10
-   Typen: cf/quicc/mc6845/framebuf/clut/duart68681/rtc72421/timer_irq/nettty/remap)
+   Typen: cf/nic/mc6845/framebuf/clut/duart68681/rtc72421/timer_irq/nettty/remap)
    vollstaendig auf dieses Muster umgestellt.
 
 Der REMAP-Zustand ("schon umgeschaltet: ja/nein") ist weiterhin ein einzelner Merker in der

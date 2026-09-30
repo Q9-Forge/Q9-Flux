@@ -9,7 +9,7 @@
 //
 //         2026-08-20 (Hardware-Vereinheitlichung, Pilot-Migration): aus src/kernel/q9board.c/.h
 //         HIERHER verschoben -- Andreas' Vorgabe (2026-08-19), pro Hardware-Typ EIN eigenes
-//         Sourcefile zu haben (Vorbild: src/devices/mc6845/quicc/framebuf/clut, "6.6"-Migration
+//         Sourcefile zu haben (Vorbild: src/devices/mc6845/nic/framebuf/clut, "6.6"-Migration
 //         2026-08-11). Reines Verschieben, KEINE Verhaltensaenderung -- Registerlogik, ATA-PIO-
 //         Protokoll, RBF-Sektorgroessen-Heuristik unveraendert (per Boot-Test verifiziert, s.
 //         Q9FLUX_EDITOR_de.md). NEU dabei: q9_devdesc_cf (devdesc.h) buendelt Vtable + die bisher in

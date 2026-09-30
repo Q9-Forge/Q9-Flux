@@ -127,7 +127,7 @@ Milestones reached so far:
    and the SDMA-style frame transfer to/from guest RAM are ported 1:1
    (same offsets, same write-1-to-clear SCCE/CISR semantics). What's
    deliberately *not* ported is the original's four hand-rolled host
-   network backends (nat/vmnet/bridge/slirp, ~500 of quicc.c's 872
+   network backends (nat/vmnet/bridge/slirp, ~500 of q9nic.c's 872
    lines) -- this device is instead a standard QEMU NIC frontend
    (`qemu_new_nic()`), so the usual `-netdev user/tap/socket/...`
    machinery gives it a network, and the original's entire
@@ -196,7 +196,7 @@ where QEMU wants them:
   `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`,
   `devices/remap/q9_remap.c`, `devices/mc6845/q9_mc6845.c`,
   `devices/clut/q9_clut.c`, `devices/framebuf/q9_framebuf.c`,
-  `devices/quicc/q9_quicc.c`, `devices/nettty/q9_nettty.c`,
+  `devices/nic/q9_nic.c`, `devices/nettty/q9_nettty.c`,
   `devices/videobridge/q9_videobridge.c`.
 - `overlay/machine/q9board.c` — the board "wiring" itself (instantiates
   and maps the devices above), the QEMU-side counterpart to

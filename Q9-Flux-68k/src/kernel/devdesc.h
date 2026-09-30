@@ -30,7 +30,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-08-20│ 1.00 │ Hardware-Vereinheitlichung, Pilot "cf": Erster Wurf                      │ Cld
-// 26-08-21│ 1.10 │ Vier weitere Deskriptoren registriert (quicc/mc6845/framebuf/clut, alle    │ Cld
+// 26-08-21│ 1.10 │ Vier weitere Deskriptoren registriert (nic/mc6845/framebuf/clut, alle    │ Cld
 //         │      │ bereits eigene Dateien seit "6.6") -- noch ohne extra_fields (kein Config-  │
 //         │      │ Schema fuer diese Typen)                                                    │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════

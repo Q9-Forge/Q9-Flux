@@ -140,7 +140,7 @@ int      q9_device_irq_vector (q9_device_t *dev);
 // Typ-Registry: explizite, statisch kompilierte Tabelle Typname -> Vtable (bewusst KEINE Linker-
 // Magie). Fuer 5.17 nur bereitgestellt/testbar, noch nicht zur Instanziierung genutzt (kommt mit
 // der Config-Datei in 5.19). Die Vtables selbst sind in den jeweiligen Geraete-Dateien definiert
-// (q9board.c: DUART/CF/Timer/RTC, m68krt.c: nettty, quicc.c: QUICC) und werden hier nur verzeichnet.
+// (q9board.c: DUART/CF/Timer/RTC, m68krt.c: nettty, q9nic.c: QUICC) und werden hier nur verzeichnet.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 typedef struct {
     const char                *type;

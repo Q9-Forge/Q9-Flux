@@ -19,7 +19,7 @@
 //             das jeweils andere treffen), Adressen im selben Slot, die zu KEINEM der beiden
 //             gehoeren, muessen "kein Geraet" liefern.
 //         (4) Slot komplett unregistriert (in diesem schlanken Testaufbau z.B. der QUICC-Bereich,
-//             da attach_quicc hier bewusst NICHT aufgerufen wird): muss weiterhin "kein Geraet"
+//             da attach_nic hier bewusst NICHT aufgerufen wird): muss weiterhin "kein Geraet"
 //             liefern, kein Crash, kein falscher Treffer.
 //         (5) NEU 2026-08-14 (ARBEITSPLAN 5.18-Fortsetzung): Netz-Terminals x1-x8 wurden von 16-
 //             auf 256-Byte-Abstand umgestellt (eigener I/O-Tabellenplatz je Kanal statt geteiltem
@@ -107,7 +107,7 @@ int main(void)
     q9_m68krt_attach_mc6845(&crtc);                     /* $FFFFA000-A001, Slot $A0                */
     q9_clut_init(&clut);
     q9_m68krt_attach_clut(&clut);                       /* $FFFFA010-A013, TEILT sich Slot $A0     */
-    /* Bewusst NICHT attach_quicc/attach_cf_at aufgerufen -- damit bleibt der QUICC-Adressraum
+    /* Bewusst NICHT attach_nic/attach_cf_at aufgerufen -- damit bleibt der QUICC-Adressraum
        ($FFFF2000+) in DIESEM Testaufbau unregistriert (Fall 4 oben), ohne dass es hier auf einen
        zweiten Geraetetyp mit demselben Verhalten wie CF/RTC ankaeme. */
 

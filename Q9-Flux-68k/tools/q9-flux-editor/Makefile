@@ -37,7 +37,7 @@
 # 26-08-20│ 2.00 │ Hardware-Vereinheitlichung, Pilot "cf": demo-integration linkt jetzt      │ Cld
 #         │      │ zusaetzlich devdesc.c/devschema.c/cf.c (boardcfg.c ruft seit dieser Runde │
 #         │      │ q9_devdesc_lookup() fuer eine Schema-Gegenprobe auf)                       │
-# 26-08-21│ 2.10 │ Hardware-Vereinheitlichung, Folgeschritte: quicc/mc6845/framebuf/clut/     │ Cld
+# 26-08-21│ 2.10 │ Hardware-Vereinheitlichung, Folgeschritte: nic/mc6845/framebuf/clut/     │ Cld
 #         │      │ duart68681/rtc72421/timer_irq dazu (DEVDESC_SRC erweitert) -- die letzten   │
 #         │      │ beiden brauchen q9_hal_*, dafuer neu HAL_STUB_SRC (Root-Teststub statt      │
 #         │      │ voller nativer HAL)                                                          │
@@ -73,7 +73,7 @@ demo-integration: $(BUILD)/integration_demo
 	$(BUILD)/integration_demo
 
 DEVDESC_SRC := ../../src/kernel/devdesc.c ../../src/kernel/devschema.c ../../src/kernel/devreg.c \
-               ../../src/devices/cf/cf.c ../../src/devices/quicc/quicc.c \
+               ../../src/devices/cf/cf.c ../../src/devices/nic/q9nic.c \
                ../../src/devices/mc6845/mc6845.c ../../src/devices/framebuf/framebuf.c \
                ../../src/devices/clut/clut.c \
                ../../src/devices/duart68681/duart68681.c ../../src/devices/rtc72421/rtc72421.c \

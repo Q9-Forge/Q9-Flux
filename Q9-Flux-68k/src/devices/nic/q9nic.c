@@ -1,11 +1,11 @@
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// File:   quicc.c                                                                         Ver. 1.30
+// File:   q9nic.c                                                                         Ver. 1.30
 // Owner:  AF
-// Desc.:  Implementierung der QUICC-Ethernet-Emulation, siehe quicc.h. Verhaltens-Referenz ist
-//         ausschliesslich der sp360-Treiber (REF SRC/DPIO/SPF/DRVR/SPQUICC, init.c/isr.c):
-//         emuliert wird genau das Teilverhalten des MC68360, das dieser Treiber benutzt.
+// Desc.:  Implementierung der emulierten Ethernet-Karte (NIC), siehe q9nic.h. Nachgebildet wird
+//         das Registermodell des SCC1 im Ethernet-Modus (MC68360, 10Base-T) -- und zwar nur der
+//         Teil, den ein Gast-Treiber fuer Senden und Empfangen benoetigt.
 //
-//         Ablauf aus Treibersicht:
+//         Ablauf aus Sicht des Gast-Treibers:
 //           init_hdw():  PRAM fuellen (rbase/tbase/mrblr/MAC/...), RX-BDs mit mbuf-Adressen
 //                        bestuecken (R_E|R_I), CR = INIT_RXTX_PARAMS|FLG (Emulator: rbptr:=rbase,
 //                        tbptr:=tbase, FLG sofort loeschen), CIMR |= INTR_SCC1, SCCE alles
@@ -20,7 +20,7 @@
 //           isr():       prueft CIPR&INTR_SCC1, quittiert per CISR, liest SCCE, schreibt die
 //                        behandelten Bits zurueck (write-1-to-clear).
 //
-//         Host-Backend, waehlbar per q9_quicc_net_mode (5.12):
+//         Host-Backend, waehlbar per q9_nic_net_mode (5.12):
 //           nat   (Default) User-Mode-Mini-NAT, kein Root/TAP: der Emulator IST die Gegenstelle
 //                 192.168.200.1 — beantwortet jede ARP-Anfrage mit seiner MAC (Proxy-ARP) und
 //                 ICMP-Echo-Requests an 192.168.200.1 mit einem Echo-Reply.
@@ -33,16 +33,16 @@
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┼──────
 // 26-07-12│ 1.00 │ 5.11: Erster Wurf — Registerfenster, BD-Ringe, IRQ, ARP/ICMP-Backend    │ CF
 // 26-07-13│ 1.10 │ 5.12: vmnet-Backend (--net vmnet) + MAC-Uebersetzung Gast<->vmnet       │ CF
-// 26-07-14│ 1.20 │ 5.17: q9_devtype_quicc-Vtable fuer die Geraete-Registry (sechstes/letztes │ CF
+// 26-07-14│ 1.20 │ 5.17: q9_devtype_nic-Vtable fuer die Geraete-Registry (sechstes/letztes │ CF
 //         │      │ umgezogenes Geraet, s. devreg.h) -- delegiert unveraendert an bestehende  │
-//         │      │ q9_quicc_*-API                                                            │
+//         │      │ q9_nic_*-API                                                            │
 // 26-08-07│ 1.30 │ 5.14: slirp-Backend (--net slirp) -- q_slirp_tx/q_slirp_rx_frame, kein     │ AF
 //         │      │ MAC-Mapping noetig (libslirp lernt die Gast-MAC selbst), q9_slirp_poll()   │
-//         │      │ aus q9_quicc_poll()                                                        │
+//         │      │ aus q9_nic_poll()                                                        │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
-#include "quicc.h"
+#include "q9nic.h"
 #include "../../kernel/devreg.h"                        /* 5.17: q9_device_t/Vtable, s. devreg.h  */
-#include "../../kernel/devdesc.h"                       /* 2026-08-21: q9_devdesc_quicc, s.u.      */
+#include "../../kernel/devdesc.h"                       /* 2026-08-21: q9_devdesc_nic, s.u.      */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,7 +58,7 @@
 #include "../net/slirp_net.h"                        /* 5.14: slirp-Backend (plattformuebergreifend) */
 #endif
 
-//─── Register-/PRAM-Offsets (per offsetof aus Motorolas quicc.h verifiziert, 2026-07-12) ─────────
+//─── Register-/PRAM-Offsets des MC68360 (per offsetof aus Motorolas quicc.h verifiziert) ─────────
 #define QO_PRAM_RBASE    0x0C00u                      /* u16: RX-BD-Ringanfang (DPRAM-Offset)     */
 #define QO_PRAM_TBASE    0x0C02u                      /* u16: TX-BD-Ringanfang                    */
 #define QO_PRAM_MRBLR    0x0C06u                      /* u16: max. RX-Pufferlaenge                */
@@ -74,7 +74,7 @@
 #define QO_SCC1_SCCE     0x1610u                      /* u16: Ereignisregister (W1C)              */
 #define QO_SCC1_SCCM     0x1614u                      /* u16: Ereignismaske                       */
 
-//─── Konstanten aus dem 68360/Treiber (regs360.h/enet360.h/quicc.h des Referenz-Toolchain) ─────────────────
+//─── Konstanten des MC68360 (CPM-Kommandoregister, SCC-Mode/Event-Bits, Buffer-Descriptor-Flags) ────
 #define QC_CMD_FLAG      0x0001u                      /* CR: Kommando ausfuehren (CP loescht es)  */
 #define QC_CMD_OPMASK    0x0F00u                      /* CR: Opcode-Bits                          */
 #define QC_INIT_RXTX     0x0000u                      /* CR: INIT RX & TX PARAMS                  */
@@ -95,30 +95,30 @@
 #define QC_FRAME_MAX     1518u                        /* max. Ethernet-Frame (inkl. Header)       */
 #define QC_TX_RING_MAX   64u                          /* Schutz gegen kaputte Ringe               */
 
-//─── Mini-NAT-Gegenstelle (muss zu interfaces.conf im REF-Q9-Port passen: Gast = 192.168.200.2) ─
+//─── Mini-NAT-Gegenstelle (muss zu interfaces.conf im Q9-Port passen: Gast = 192.168.200.2) ─
 #define QH_IP0 192
 #define QH_IP1 168
 #define QH_IP2 200
 #define QH_IP3 1                                      /* Host-Gegenstelle: 192.168.200.1          */
 static const uint8_t qh_mac[6] = { 0x02, 0x51, 0x39, 0x00, 0x00, 0x02 };   /* lokal verwaltet    */
 
-static int qd_debug = -1;                             /* Q9_QUICC_DEBUG=1: Frame-Trace auf stderr */
+static int qd_debug = -1;                             /* Q9_NIC_DEBUG=1: Frame-Trace auf stderr */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: qd_trace
-// Desc.:    Debug-Ausgabe, nur wenn Q9_QUICC_DEBUG gesetzt ist (einmalig gecacht).
+// Desc.:    Debug-Ausgabe, nur wenn Q9_NIC_DEBUG gesetzt ist (einmalig gecacht).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static int qd_on(void)
 {
     if (qd_debug < 0) {
-        qd_debug = getenv("Q9_QUICC_DEBUG") != 0;
+        qd_debug = getenv("Q9_NIC_DEBUG") != 0;
     }
     return qd_debug;
 }
 
 /* In bridge mode the physical NIC is promiscuous.  A full RX trace therefore
  * includes unrelated LAN broadcasts and makes an FTP diagnosis unreadable.
- * Q9_QUICC_DEBUG=ftp keeps ARP plus IPv4/TCP frames involving port 21. */
+ * Q9_NIC_DEBUG=ftp keeps ARP plus IPv4/TCP frames involving port 21. */
 static int qd_ftp_frame(const uint8_t *f, uint32_t len)
 {
     uint32_t ihl;
@@ -149,7 +149,7 @@ static int qd_ftp_frame(const uint8_t *f, uint32_t len)
 
 static int qd_should_trace_frame(const uint8_t *f, uint32_t len)
 {
-    const char *mode = getenv("Q9_QUICC_DEBUG");
+    const char *mode = getenv("Q9_NIC_DEBUG");
     return mode && strcmp(mode, "ftp") == 0 ? qd_ftp_frame(f, len) : qd_on();
 }
 
@@ -157,24 +157,24 @@ static int qd_should_trace_frame(const uint8_t *f, uint32_t len)
 // Function: q_rd16/q_wr16/q_rd32/q_wr32
 // Desc.:    Big-Endian-Zugriffe auf das Fensterabbild (Offsets relativ zur QUICC-Basis).
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static uint16_t q_rd16(const q9_quicc_t *q, uint32_t off)
+static uint16_t q_rd16(const q9_nic_t *q, uint32_t off)
 {
     return (uint16_t)(((uint16_t)q->mem[off] << 8) | q->mem[off + 1]);
 }
 
-static void q_wr16(q9_quicc_t *q, uint32_t off, uint16_t val)
+static void q_wr16(q9_nic_t *q, uint32_t off, uint16_t val)
 {
     q->mem[off]     = (uint8_t)(val >> 8);
     q->mem[off + 1] = (uint8_t)val;
 }
 
-static uint32_t q_rd32(const q9_quicc_t *q, uint32_t off)
+static uint32_t q_rd32(const q9_nic_t *q, uint32_t off)
 {
     return ((uint32_t)q->mem[off]     << 24) | ((uint32_t)q->mem[off + 1] << 16) |
            ((uint32_t)q->mem[off + 2] <<  8) |  (uint32_t)q->mem[off + 3];
 }
 
-static void q_wr32(q9_quicc_t *q, uint32_t off, uint32_t val)
+static void q_wr32(q9_nic_t *q, uint32_t off, uint32_t val)
 {
     q->mem[off]     = (uint8_t)(val >> 24);
     q->mem[off + 1] = (uint8_t)(val >> 16);
@@ -186,9 +186,9 @@ static void q_wr32(q9_quicc_t *q, uint32_t off, uint32_t val)
 // Function: q_irq_update
 // Desc.:    CIPR aus SCCE/SCCM ableiten: steht ein unmaskiertes SCC1-Ereignis an, geht das
 //           SCC1-Bit im CIPR hoch (Pegel, nicht Flanke) — sonst wieder runter. Ob daraus ein
-//           CPU-Interrupt wird, entscheidet q9_quicc_irq_pending (CIMR) im Runner-Poll.
+//           CPU-Interrupt wird, entscheidet q9_nic_irq_pending (CIMR) im Runner-Poll.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void q_irq_update(q9_quicc_t *q)
+static void q_irq_update(q9_nic_t *q)
 {
     uint32_t cipr = q_rd32(q, QO_INTR_CIPR);
 
@@ -204,7 +204,7 @@ static void q_irq_update(q9_quicc_t *q)
 // Function: q_event
 // Desc.:    SCC1-Ereignisbit(s) setzen und den Interrupt-Pegel nachziehen.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void q_event(q9_quicc_t *q, uint16_t bits)
+static void q_event(q9_nic_t *q, uint16_t bits)
 {
     q_wr16(q, QO_SCC1_SCCE, (uint16_t)(q_rd16(q, QO_SCC1_SCCE) | bits));
     q_irq_update(q);
@@ -238,14 +238,14 @@ static uint16_t q_ipsum(const uint8_t *data, uint32_t len)
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q_vmnet_tx
 // Desc.:    5.12: Frame vom Gast an vmnet durchreichen. vmnet (Shared Mode) verwirft Frames,
-//           deren Absender-MAC nicht die zugewiesene Interface-MAC ist — der sp360-Treiber
-//           sendet aber mit der festen MAC aus dem spqe0-Descriptor. Deshalb: Gast-MAC aus dem
+//           deren Absender-MAC nicht die zugewiesene Interface-MAC ist — der Gast-Treiber
+//           sendet aber mit der festen MAC aus dem Gast-Descriptor. Deshalb: Gast-MAC aus dem
 //           Frame lernen (fuer die Rueckrichtung), dann Quell-MAC ersetzen; bei ARP zusaetzlich
 //           das Sender-Hardware-Feld im Paket (Offset 22), sonst lernen die Gegenstellen die
 //           Gast-MAC, die vmnet nie zustellen wuerde.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 #ifdef Q9_HAVE_VMNET
-static void q_vmnet_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
+static void q_vmnet_tx(q9_nic_t *q, const uint8_t *f, uint32_t len)
 {
     uint8_t out[QC_FRAME_MAX];
 
@@ -270,7 +270,7 @@ static void q_vmnet_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 //           den RX-Ring einspeisen. Broadcast/Multicast geht unveraendert durch; Unicast an
 //           fremde MACs wird verworfen (vmnet stellt normalerweise ohnehin nur eigene zu).
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void q_vmnet_rx_poll(q9_quicc_t *q)
+static void q_vmnet_rx_poll(q9_nic_t *q)
 {
     uint8_t f[QC_FRAME_MAX];
     uint32_t len;
@@ -293,7 +293,7 @@ static void q_vmnet_rx_poll(q9_quicc_t *q)
             memcmp(f + 32, q9_vmnet_mac(), 6) == 0) {
             memcpy(f + 32, q->guest_mac, 6);          /* ARP: Target-HW-Adresse zuruecktauschen   */
         }
-        q9_quicc_rx_frame(q, f, len);
+        q9_nic_rx_frame(q, f, len);
     }
 }
 #endif /* Q9_HAVE_VMNET */
@@ -307,7 +307,7 @@ static void q_vmnet_rx_poll(q9_quicc_t *q)
 //           und zu verwerfen (falls der Treiber/BPF-Pfad eigene Writes zurueckspiegelt).
 //────────────────────────────────────────────────────────────────────────────────────────────────
 #ifdef Q9_HAVE_BPF
-static void q_bridge_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
+static void q_bridge_tx(q9_nic_t *q, const uint8_t *f, uint32_t len)
 {
     if (len < 14u) {
         return;
@@ -323,7 +323,7 @@ static void q_bridge_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 //           RX-Ring einspeisen (kein MAC-Mapping noetig). Frames mit der eigenen Gast-MAC als
 //           Absender werden verworfen (Selbst-Echo-Schutz, s. q_bridge_tx).
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void q_bridge_rx_poll(q9_quicc_t *q)
+static void q_bridge_rx_poll(q9_nic_t *q)
 {
     uint8_t f[QC_FRAME_MAX];
     uint32_t len;
@@ -337,7 +337,7 @@ static void q_bridge_rx_poll(q9_quicc_t *q)
         if (q->guest_mac_ok && memcmp(f + 6, q->guest_mac, 6) == 0) {
             continue;                                 /* eigenes gesendetes Frame: verwerfen      */
         }
-        q9_quicc_rx_frame(q, f, len);
+        q9_nic_rx_frame(q, f, len);
     }
 }
 #endif /* Q9_HAVE_BPF */
@@ -346,17 +346,17 @@ static void q_bridge_rx_poll(q9_quicc_t *q)
 // Function: q_slirp_tx / q_slirp_rx_frame
 // Desc.:    5.14: KEINE MAC-Uebersetzung noetig (anders als vmnet) -- libslirp lernt die Gast-MAC
 //           selbst aus dem Frame, genau wie ein virtueller Switch. q_slirp_rx_frame ist der
-//           send_packet-Callback aus slirp_net.c's Sicht (opaque = dieses q9_quicc_t), liefert
+//           send_packet-Callback aus slirp_net.c's Sicht (opaque = dieses q9_nic_t), liefert
 //           SYNCHRON waehrend q9_slirp_poll()/q9_slirp_input() -- kein Ringpuffer noetig.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 #ifdef Q9_HAVE_SLIRP
 static int q_slirp_rx_frame(const uint8_t *frame, uint32_t len, void *opaque)
 {
-    q9_quicc_t *q = (q9_quicc_t *)opaque;
+    q9_nic_t *q = (q9_nic_t *)opaque;
     if (qd_on()) {
-        fprintf(stderr, "[quicc rx<slirp %u]\n", (unsigned)len);
+        fprintf(stderr, "[nic rx<slirp %u]\n", (unsigned)len);
     }
-    q9_quicc_rx_frame(q, frame, len);
+    q9_nic_rx_frame(q, frame, len);
     return (int)len;
 }
 
@@ -375,14 +375,14 @@ static void q_slirp_tx(const uint8_t *f, uint32_t len)
 //           ICMP-Echo-Requests an 192.168.200.1 kommen als Echo-Reply zurueck. Alles andere wird
 //           verworfen.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
+static void q_backend_tx(q9_nic_t *q, const uint8_t *f, uint32_t len)
 {
     uint8_t reply[QC_FRAME_MAX];
 
 #ifdef Q9_HAVE_VMNET
     if (q->net_backend == Q9_NET_VMNET) {
         if (qd_on()) {
-            fprintf(stderr, "[quicc tx>vmnet %u]\n", (unsigned)len);
+            fprintf(stderr, "[nic tx>vmnet %u]\n", (unsigned)len);
         }
         q_vmnet_tx(q, f, len);
         return;
@@ -391,7 +391,7 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 #ifdef Q9_HAVE_BPF
     if (q->net_backend == Q9_NET_BRIDGE) {
         if (qd_on()) {
-            fprintf(stderr, "[quicc tx>bridge %u]\n", (unsigned)len);
+            fprintf(stderr, "[nic tx>bridge %u]\n", (unsigned)len);
         }
         q_bridge_tx(q, f, len);
         return;
@@ -400,7 +400,7 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 #ifdef Q9_HAVE_SLIRP
     if (q->net_backend == Q9_NET_SLIRP) {
         if (qd_on()) {
-            fprintf(stderr, "[quicc tx>slirp %u]\n", (unsigned)len);
+            fprintf(stderr, "[nic tx>slirp %u]\n", (unsigned)len);
         }
         q_slirp_tx(f, len);
         return;
@@ -408,7 +408,7 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 #endif
 
     if (qd_on()) {
-        fprintf(stderr, "[quicc tx %u] %02x%02x%02x%02x%02x%02x <- %02x%02x%02x%02x%02x%02x typ %02x%02x\n",
+        fprintf(stderr, "[nic tx %u] %02x%02x%02x%02x%02x%02x <- %02x%02x%02x%02x%02x%02x typ %02x%02x\n",
                 (unsigned)len, f[0], f[1], f[2], f[3], f[4], f[5],
                 f[6], f[7], f[8], f[9], f[10], f[11], f[12], f[13]);
     }
@@ -430,7 +430,7 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
         memcpy(reply + 22, qh_mac,  6);               /* Sender-MAC = Host                        */
         memcpy(reply + 28, f + 38,  4);               /* Sender-IP  = erfragte Ziel-IP            */
         memcpy(reply + 32, f + 22, 10);               /* Ziel-MAC/-IP = anfragender Gast          */
-        q9_quicc_rx_frame(q, reply, 42);
+        q9_nic_rx_frame(q, reply, 42);
         return;
     }
 
@@ -468,7 +468,7 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
             uint16_t s = q_ipsum(reply + icmpo, icmpl);
             reply[icmpo + 2] = (uint8_t)(s >> 8); reply[icmpo + 3] = (uint8_t)s;
         }
-        q9_quicc_rx_frame(q, reply, len);
+        q9_nic_rx_frame(q, reply, len);
         return;
     }
 }
@@ -478,9 +478,9 @@ static void q_backend_tx(q9_quicc_t *q, const uint8_t *f, uint32_t len)
 // Desc.:    TX-Ring ab tbptr abarbeiten, wie es der CP nach TODR=$8000 taete: jeden BD mit
 //           gesetztem Ready-Bit ans Backend geben, Ready loeschen, TXB-Ereignis setzen, tbptr
 //           fortschreiben (Wrap zurueck auf tbase). Multi-BD-Frames (T_L erst spaeter) kommen
-//           beim sp360-Treiber nicht vor (1 mbuf = 1 BD), werden aber verlustfrei uebersprungen.
+//           beim Gast-Treiber nicht vor (1 mbuf = 1 BD), werden aber verlustfrei uebersprungen.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void q_tx_run(q9_quicc_t *q)
+static void q_tx_run(q9_nic_t *q)
 {
     uint32_t guard;
 
@@ -494,7 +494,7 @@ static void q_tx_run(q9_quicc_t *q)
         uint16_t flen;
         uint32_t buf;
 
-        if (tbptr + QC_BD_SIZE > Q9_QUICC_MEM_LEN) {
+        if (tbptr + QC_BD_SIZE > Q9_NIC_MEM_LEN) {
             return;                                   /* kaputter Zeiger — nichts anfassen        */
         }
         status = q_rd16(q, tbptr);
@@ -527,7 +527,7 @@ static void q_tx_run(q9_quicc_t *q)
 //           wird interpretiert; INIT RX&TX PARAMS setzt die Ringzeiger auf die Ringanfaenge,
 //           alle uebrigen Kommandos (ENTER HUNT MODE, RESTART TX, ...) sind hier No-Ops.
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static void q_cp_command(q9_quicc_t *q, uint16_t cmd)
+static void q_cp_command(q9_nic_t *q, uint16_t cmd)
 {
     if ((cmd & QC_CMD_FLAG) != 0 && (cmd & 0x00C0u) == 0) {
         if ((cmd & QC_CMD_OPMASK) == QC_INIT_RXTX) {
@@ -542,14 +542,14 @@ static void q_cp_command(q9_quicc_t *q, uint16_t cmd)
 // API-Implementierung
 //────────────────────────────────────────────────────────────────────────────────────────────────
 
-void q9_quicc_init(q9_quicc_t *q, uint8_t *ram, uint32_t ram_len)
+void q9_nic_init(q9_nic_t *q, uint8_t *ram, uint32_t ram_len)
 {
     memset(q, 0, sizeof(*q));
     q->ram     = ram;
     q->ram_len = ram_len;
 }
 
-int q9_quicc_net_mode(q9_quicc_t *q, const char *mode,
+int q9_nic_net_mode(q9_nic_t *q, const char *mode,
                       const q9_vmnet_config_t *vmnet_config,
                       const q9_slirp_config_t *slirp_config,
                       const q9_slirp_hostfwd_t *slirp_hostfwd, int slirp_hostfwd_count)
@@ -605,46 +605,46 @@ int q9_quicc_net_mode(q9_quicc_t *q, const char *mode,
     return 1;
 }
 
-int q9_quicc_hit(uint32_t addr)
+int q9_nic_hit(uint32_t addr)
 {
-    return addr >= Q9_QUICC_BASE && addr <= Q9_QUICC_TOP;
+    return addr >= Q9_NIC_BASE && addr <= Q9_NIC_TOP;
 }
 
-uint8_t q9_quicc_read8(q9_quicc_t *q, uint32_t addr)
+uint8_t q9_nic_read8(q9_nic_t *q, uint32_t addr)
 {
-    uint32_t off = addr - Q9_QUICC_BASE;
-    return (off < Q9_QUICC_MEM_LEN) ? q->mem[off] : 0;
+    uint32_t off = addr - Q9_NIC_BASE;
+    return (off < Q9_NIC_MEM_LEN) ? q->mem[off] : 0;
 }
 
-uint16_t q9_quicc_read16(q9_quicc_t *q, uint32_t addr)
+uint16_t q9_nic_read16(q9_nic_t *q, uint32_t addr)
 {
-    uint32_t off = addr - Q9_QUICC_BASE;
-    return (off + 1u < Q9_QUICC_MEM_LEN) ? q_rd16(q, off) : 0;
+    uint32_t off = addr - Q9_NIC_BASE;
+    return (off + 1u < Q9_NIC_MEM_LEN) ? q_rd16(q, off) : 0;
 }
 
-uint32_t q9_quicc_read32(q9_quicc_t *q, uint32_t addr)
+uint32_t q9_nic_read32(q9_nic_t *q, uint32_t addr)
 {
-    uint32_t off = addr - Q9_QUICC_BASE;
-    return (off + 3u < Q9_QUICC_MEM_LEN) ? q_rd32(q, off) : 0;
+    uint32_t off = addr - Q9_NIC_BASE;
+    return (off + 3u < Q9_NIC_MEM_LEN) ? q_rd32(q, off) : 0;
 }
 
-void q9_quicc_write8(q9_quicc_t *q, uint32_t addr, uint8_t val)
+void q9_nic_write8(q9_nic_t *q, uint32_t addr, uint8_t val)
 {
-    uint32_t off = addr - Q9_QUICC_BASE;
+    uint32_t off = addr - Q9_NIC_BASE;
 
-    if (off >= Q9_QUICC_MEM_LEN) {
+    if (off >= Q9_NIC_MEM_LEN) {
         return;
     }
-    /* Byteschreiber auf Register mit Nebenwirkung kommen beim sp360-Treiber nicht vor
+    /* Byteschreiber auf Register mit Nebenwirkung kommen beim Gast-Treiber nicht vor
        (write_word/write_long) — Bytes gehen deshalb schlicht ins Abbild. */
     q->mem[off] = val;
 }
 
-void q9_quicc_write16(q9_quicc_t *q, uint32_t addr, uint16_t val)
+void q9_nic_write16(q9_nic_t *q, uint32_t addr, uint16_t val)
 {
-    uint32_t off = addr - Q9_QUICC_BASE;
+    uint32_t off = addr - Q9_NIC_BASE;
 
-    if (off + 1u >= Q9_QUICC_MEM_LEN) {
+    if (off + 1u >= Q9_NIC_MEM_LEN) {
         return;
     }
     switch (off) {
@@ -671,11 +671,11 @@ void q9_quicc_write16(q9_quicc_t *q, uint32_t addr, uint16_t val)
     }
 }
 
-void q9_quicc_write32(q9_quicc_t *q, uint32_t addr, uint32_t val)
+void q9_nic_write32(q9_nic_t *q, uint32_t addr, uint32_t val)
 {
-    uint32_t off = addr - Q9_QUICC_BASE;
+    uint32_t off = addr - Q9_NIC_BASE;
 
-    if (off + 3u >= Q9_QUICC_MEM_LEN) {
+    if (off + 3u >= Q9_NIC_MEM_LEN) {
         return;
     }
     if (off == QO_INTR_CISR) {                        /* write-1-to-clear                         */
@@ -688,12 +688,12 @@ void q9_quicc_write32(q9_quicc_t *q, uint32_t addr, uint32_t val)
     }
 }
 
-int q9_quicc_irq_pending(const q9_quicc_t *q)
+int q9_nic_irq_pending(const q9_nic_t *q)
 {
     return (q_rd32(q, QO_INTR_CIPR) & q_rd32(q, QO_INTR_CIMR) & QC_INTR_SCC1) != 0;
 }
 
-int q9_quicc_rx_filled(const q9_quicc_t *q)
+int q9_nic_rx_filled(const q9_nic_t *q)
 {
     /* 5.15-Diagnose zur User-Hypothese "Interrupt erst zuruecknehmen, wenn der Buffer wirklich
        leer ist": zaehlt die RX-BDs im Ring, die GEFUELLT sind (R_E/empty geloescht = vom Emulator
@@ -706,7 +706,7 @@ int q9_quicc_rx_filled(const q9_quicc_t *q)
 
     for (guard = 0; guard < 64; guard++) {
         uint16_t status;
-        if (off + QC_BD_SIZE > Q9_QUICC_MEM_LEN) {
+        if (off + QC_BD_SIZE > Q9_NIC_MEM_LEN) {
             break;
         }
         status = q_rd16(q, off);
@@ -721,7 +721,7 @@ int q9_quicc_rx_filled(const q9_quicc_t *q)
     return filled;
 }
 
-void q9_quicc_poll(q9_quicc_t *q)
+void q9_nic_poll(q9_nic_t *q)
 {
     /* Sicherheitsnetz: haengengebliebene TX-BDs abraeumen (der Treiber kickt zwar bei jedem
        Frame per TODR, aber ein verpasster Kick darf keinen Stillstand bedeuten). Das
@@ -746,7 +746,7 @@ void q9_quicc_poll(q9_quicc_t *q)
 #endif
 }
 
-void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
+void q9_nic_rx_frame(q9_nic_t *q, const uint8_t *frame, uint32_t len)
 {
     uint16_t rbptr;
     uint16_t status;
@@ -758,7 +758,7 @@ void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
     }
 
     rbptr = q_rd16(q, QO_PRAM_RBPTR);
-    if (rbptr + QC_BD_SIZE > Q9_QUICC_MEM_LEN) {
+    if (rbptr + QC_BD_SIZE > Q9_NIC_MEM_LEN) {
         return;                                       /* kaputter Zeiger — nichts anfassen        */
     }
     status = q_rd16(q, rbptr);
@@ -788,85 +788,85 @@ void q9_quicc_rx_frame(q9_quicc_t *q, const uint8_t *frame, uint32_t len)
                                  : (uint16_t)(rbptr + QC_BD_SIZE));
 
     if (qd_should_trace_frame(frame, len)) {
-        fprintf(stderr, "[quicc rx %u]\n", (unsigned)len);
+        fprintf(stderr, "[nic rx %u]\n", (unsigned)len);
     }
 }
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// Function: quicc_dev_* / q9_devtype_quicc
+// Function: nic_dev_* / q9_devtype_nic
 // Desc.:    5.17: Vtable-Adapter fuer die Geraete-Registry (devreg.h), sechstes und letztes
-//           umgezogenes Geraet. dev->state zeigt auf das q9_quicc_t-Handle; alle sechs Funktionen
-//           delegieren unveraendert an die bestehende q9_quicc_read/write8/16/32/poll/irq_pending
+//           umgezogenes Geraet. dev->state zeigt auf das q9_nic_t-Handle; alle sechs Funktionen
+//           delegieren unveraendert an die bestehende q9_nic_read/write8/16/32/poll/irq_pending
 //           API (die selbst schon eigene, ECHTE 16/32-Bit-Pfade hat -- KEINE Byte-Synthese noetig,
-//           anders als bei den meisten anderen Geraeten). Fester Vektor (Q9_QUICC_IRQ_VECTOR=254,
-//           s. quicc.h) -- kein irq_vector_fn noetig (anders als DUART/nettty mit laufzeit-
+//           anders als bei den meisten anderen Geraeten). Fester Vektor (Q9_NIC_IRQ_VECTOR=254,
+//           s. q9nic.h) -- kein irq_vector_fn noetig (anders als DUART/nettty mit laufzeit-
 //           programmiertem bzw. pro-Kanal-Vektor).
 //────────────────────────────────────────────────────────────────────────────────────────────────
-static uint8_t quicc_dev_read8(q9_device_t *dev, uint32_t addr)
+static uint8_t nic_dev_read8(q9_device_t *dev, uint32_t addr)
 {
-    return q9_quicc_read8((q9_quicc_t *)dev->state, addr);
+    return q9_nic_read8((q9_nic_t *)dev->state, addr);
 }
 
-static void quicc_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
+static void nic_dev_write8(q9_device_t *dev, uint32_t addr, uint8_t val)
 {
-    q9_quicc_write8((q9_quicc_t *)dev->state, addr, val);
+    q9_nic_write8((q9_nic_t *)dev->state, addr, val);
 }
 
-static uint16_t quicc_dev_read16(q9_device_t *dev, uint32_t addr)
+static uint16_t nic_dev_read16(q9_device_t *dev, uint32_t addr)
 {
-    return q9_quicc_read16((q9_quicc_t *)dev->state, addr);
+    return q9_nic_read16((q9_nic_t *)dev->state, addr);
 }
 
-static void quicc_dev_write16(q9_device_t *dev, uint32_t addr, uint16_t val)
+static void nic_dev_write16(q9_device_t *dev, uint32_t addr, uint16_t val)
 {
-    q9_quicc_write16((q9_quicc_t *)dev->state, addr, val);
+    q9_nic_write16((q9_nic_t *)dev->state, addr, val);
 }
 
-static uint32_t quicc_dev_read32(q9_device_t *dev, uint32_t addr)
+static uint32_t nic_dev_read32(q9_device_t *dev, uint32_t addr)
 {
-    return q9_quicc_read32((q9_quicc_t *)dev->state, addr);
+    return q9_nic_read32((q9_nic_t *)dev->state, addr);
 }
 
-static void quicc_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
+static void nic_dev_write32(q9_device_t *dev, uint32_t addr, uint32_t val)
 {
-    q9_quicc_write32((q9_quicc_t *)dev->state, addr, val);
+    q9_nic_write32((q9_nic_t *)dev->state, addr, val);
 }
 
-static void quicc_dev_poll(q9_device_t *dev, uint32_t now_ms)
+static void nic_dev_poll(q9_device_t *dev, uint32_t now_ms)
 {
     (void)now_ms;
-    q9_quicc_poll((q9_quicc_t *)dev->state);
+    q9_nic_poll((q9_nic_t *)dev->state);
 }
 
-static int quicc_dev_irq_pending(q9_device_t *dev)
+static int nic_dev_irq_pending(q9_device_t *dev)
 {
-    return q9_quicc_irq_pending((const q9_quicc_t *)dev->state);
+    return q9_nic_irq_pending((const q9_nic_t *)dev->state);
 }
 
-const q9_device_vtable_t q9_devtype_quicc = {
-    .read8         = quicc_dev_read8,
-    .write8        = quicc_dev_write8,
-    .read16        = quicc_dev_read16,                /* eigener Pfad, keine Byte-Synthese      */
-    .write16       = quicc_dev_write16,
-    .read32        = quicc_dev_read32,
-    .write32       = quicc_dev_write32,
-    .poll          = quicc_dev_poll,
-    .irq_pending   = quicc_dev_irq_pending,
+const q9_device_vtable_t q9_devtype_nic = {
+    .read8         = nic_dev_read8,
+    .write8        = nic_dev_write8,
+    .read16        = nic_dev_read16,                /* eigener Pfad, keine Byte-Synthese      */
+    .write16       = nic_dev_write16,
+    .read32        = nic_dev_read32,
+    .write32       = nic_dev_write32,
+    .poll          = nic_dev_poll,
+    .irq_pending   = nic_dev_irq_pending,
     .reset         = NULL,
     .irq_vector_fn = NULL,                            /* fester Vektor, s. dev->irq_vector       */
 };
 
-/* 2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): q9_devdesc_quicc --
+/* 2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): q9_devdesc_nic --
    noch OHNE extra_fields (kein Config-Schema fuer diesen Typ vorhanden, QUICC wird bisher immer
-   hartkodiert instanziiert, s. m68krt.c q9_m68krt_attach_quicc -- eigener, spaeterer Schritt). */
-const q9_devdesc_t q9_devdesc_quicc = {
-    .type              = "quicc",
+   hartkodiert instanziiert, s. m68krt.c q9_m68krt_attach_nic -- eigener, spaeterer Schritt). */
+const q9_devdesc_t q9_devdesc_nic = {
+    .type              = "nic",
     .desc              = "QUICC-Ethernet (MC68360 SCC1, 10Base-T)",
-    .vt                = &q9_devtype_quicc,
+    .vt                = &q9_devtype_nic,
     .use_table_default = 1,                            /* liegt im Fast-Table-Cluster              */
     .extra_fields      = NULL,
     .extra_field_count = 0,
 };
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
-// EOF quicc.c                                                                             Ver. 1.30
+// EOF q9nic.c                                                                             Ver. 1.30
 //────────────────────────────────────────────────────────────────────────────────────────────────

@@ -415,7 +415,7 @@ int      q9_m68krt_is_stopped(void);                // CPU per STOP angehalten?
 `q9_m68krt_get_backend(rt, &backend)` befüllt eine solche mit dünnen
 Wrappern um die obigen Funktionen; `q9boardrun.c`s Hauptschleife ruft nur
 noch über diese Vtable, nie direkt `q9_m68krt_*`. Reine Diagnosefunktionen
-(`q9_m68krt_debug_state`, `q9_m68krt_quicc_acks`) bleiben bewusst außerhalb
+(`q9_m68krt_debug_state`, `q9_m68krt_nic_acks`) bleiben bewusst außerhalb
 der Vtable — sie sind 68k-spezifisch (Status-Register, QUICC-Zähler), keine
 allgemeine CPU-Eigenschaft. Das ist Vorbereitung für eine zweite
 Zielarchitektur, noch nicht an eine angeschlossen (s. den vendorten
@@ -534,9 +534,9 @@ und im laufenden Emulator auf dasselbe `.hda` schreiben.
 
 ---
 
-### 5.5 QUICC-Ethernet-Emulation (`src/devices/quicc/quicc.c/.h`)
+### 5.5 QUICC-Ethernet-Emulation (`src/devices/nic/q9nic.c/.h`)
 
-Details: der Quellcode selbst (`quicc.c/.h`) und die Netzwerk-Backend-Wahl
+Details: der Quellcode selbst (`q9nic.c/.h`) und die Netzwerk-Backend-Wahl
 in Abschnitt 5.8. QUICC ist ein CB030/Board-spezifischer Ethernet-Controller
 (Motorola-Kommunikationsprozessor) — die Emulation reicht für OS-9s
 `enet0`-Treiber aus, ohne den vollen QUICC-Befehlssatz nachzubilden.

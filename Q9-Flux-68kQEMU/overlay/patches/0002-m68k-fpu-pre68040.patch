@@ -89,7 +89,7 @@ index 138c89d..4d38257 100644
 +         * long word common to all; since nothing here has genuine
 +         * coprocessor pipeline state to validate against (this board's
 +         * FPU is QEMU's own synchronous software float implementation,
-+         * s. devices/quicc & co.'s own "no real coprocessor" framing),
++         * s. devices/nic & co.'s own "no real coprocessor" framing),
 +         * accepting any frame exactly like the 68040 path does is the
 +         * correct amount of implementation, not a shortcut around one
 +         * that exists.

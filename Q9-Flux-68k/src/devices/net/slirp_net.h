@@ -10,7 +10,7 @@
 //
 //         Architektur-Unterschied zu vmnet_net.c: libslirp braucht KEINEN Hintergrund-Thread. Es
 //         liefert Frames synchron per Callback (send_packet, s. q9_slirp_start) direkt beim Poll-
-//         Aufruf (q9_slirp_poll, aus q9_quicc_poll, einmal je Hauptschleifen-Runde) -- kein
+//         Aufruf (q9_slirp_poll, aus q9_nic_poll, einmal je Hauptschleifen-Runde) -- kein
 //         Ringpuffer/Mutex noetig, dafuer muss q9_slirp_poll die SLIRP-eigenen Sockets (fuer die
 //         echten Verbindungen ins Internet) selbst pollen (slirp_pollfds_fill/_poll, s. .c).
 //
@@ -20,9 +20,9 @@
 //
 // Call:   q9_slirp_config_t cfg = { "192.168.200.2", "192.168.200.1", "255.255.255.0", 0 };
 //         q9_slirp_hostfwd_t fwd[] = { { 0, 2323, 23 } };  // TCP hostport 2323 -> Gast-Port 23
-//         q9_slirp_start(&cfg, fwd, 1, quicc_send_cb, quicc_opaque);
+//         q9_slirp_start(&cfg, fwd, 1, nic_send_cb, nic_opaque);
 //         q9_slirp_input(frame, len);           // Gast -> Slirp (aus q_backend_tx)
-//         q9_slirp_poll();                      // einmal je Hauptschleifen-Runde (q9_quicc_poll)
+//         q9_slirp_poll();                      // einmal je Hauptschleifen-Runde (q9_nic_poll)
 //
 // Edition History
 //─────────┬──────┬─────────────────────────────────────────────────────────────────────────┬──────
@@ -56,7 +56,7 @@ typedef struct q9_slirp_hostfwd {
 } q9_slirp_hostfwd_t;
 
 /* Frame Slirp -> Gast (send_packet-Callback von libslirp, s. .c) -- vom Aufrufer bereitgestellt,
-   i.d.R. q9_quicc_rx_frame. Rueckgabe: >=0 Anzahl geschriebener Bytes (ignoriert), <0 Fehler. */
+   i.d.R. q9_nic_rx_frame. Rueckgabe: >=0 Anzahl geschriebener Bytes (ignoriert), <0 Fehler. */
 typedef int (*q9_slirp_recv_cb)(const uint8_t *frame, uint32_t len, void *opaque);
 
 /* Startet die Slirp-Instanz. hostfwd/hostfwd_count duerfen NULL/0 sein (kein Port-Forwarding).
@@ -68,7 +68,7 @@ int q9_slirp_start(const q9_slirp_config_t *config,
 /* Frame rein (komplettes Ethernet-Frame inkl. Header) -- Gast -> Slirp. */
 void q9_slirp_input(const uint8_t *frame, uint32_t len);
 
-/* Einmal je Hauptschleifen-Runde aufrufen (q9_quicc_poll): pollt Slirps eigene Sockets (echte
+/* Einmal je Hauptschleifen-Runde aufrufen (q9_nic_poll): pollt Slirps eigene Sockets (echte
    Verbindungen ins Internet) und liefert eingegangene Frames synchron per recv_cb aus q9_slirp_start. */
 void q9_slirp_poll(void);
 

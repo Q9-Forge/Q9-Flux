@@ -27,7 +27,7 @@
 #         │      │ windows/ (vendorte libslirp+glib2, kein Paketmanager noetig), macOS/Linux  │
 #         │      │ gegen System-libslirp per pkg-config; DLLs werden nach dem Link neben      │
 #         │      │ q9.exe kopiert                                                             │
-# 26-08-11│ 3.40 │ 6.6: Geraete (mc6845/clut/framebuf/quicc/videobridge/slirp_net/vmnet_net/  │ AF
+# 26-08-11│ 3.40 │ 6.6: Geraete (mc6845/clut/framebuf/nic/videobridge/slirp_net/vmnet_net/  │ AF
 #         │      │ bpf_net) von src/kernel/ nach src/devices/<name>/ verschoben (je ein         │
 #         │      │ Unterordner pro Modul, Mehrarchitektur-Vorbereitung); q9board.c/m68krt.c/   │
 #         │      │ q9boardrun.c/devreg.c/boardcfg.c bleiben bewusst in src/kernel/ (Bus/CPU-    │
@@ -169,7 +169,7 @@ $(DHFDRV_MOD): $(DHFDRV_SRC)
 # nettty dazu (q9_nettty_attach() ruft q9_devreg_add() selbst auf, s. nettty.c) -- deshalb NICHT
 # mehr zusaetzlich explizit in BOARD_SRC unten (sonst doppelt kompiliert/gelinkt).
 DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c src/kernel/devreg.c \
-              src/devices/cf/cf.c src/devices/quicc/quicc.c src/devices/mc6845/mc6845.c \
+              src/devices/cf/cf.c src/devices/nic/q9nic.c src/devices/mc6845/mc6845.c \
               src/devices/framebuf/framebuf.c src/devices/clut/clut.c \
               src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
               src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
@@ -182,7 +182,7 @@ BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/boardcfg.c \
             src/devices/videobridge/videobridge.c
 BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src/kernel/boardcfg.h \
             src/devices/cf/cf.h \
-            src/devices/quicc/quicc.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
+            src/devices/nic/q9nic.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
             src/devices/clut/clut.h src/devices/videobridge/videobridge.h \
             src/devices/duart68681/duart68681.h src/devices/rtc72421/rtc72421.h \
             src/devices/timer_irq/timer_irq.h src/devices/nettty/nettty.h \
@@ -220,7 +220,7 @@ endif
 # Windows gegen die vendorten Dateien in third_party/slirp/windows/ (s. dortige Q9_VENDOR.md: kein
 # Paketmanager noetig, w64devkit allein reicht), unter macOS/Linux gegen ein System-libslirp per
 # pkg-config (brew install libslirp / apt install libslirp-dev). Fehlt beides, bleibt Q9_HAVE_SLIRP
-# ungesetzt und "--net slirp" meldet sich beim Start sauber ab (s. quicc.c).
+# ungesetzt und "--net slirp" meldet sich beim Start sauber ab (s. q9nic.c).
 SLIRP_SRC = src/devices/net/slirp_net.c
 SLIRP_HDR = src/devices/net/slirp_net.h
 ifeq ($(PLATFORM),windows)
@@ -323,7 +323,7 @@ test-dhf-driver: $(MUSASHI_OBJS) $(DHFDRV_MOD)
 	    src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
 	    src/devices/remap/remap.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
-	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
+	    src/devices/nic/q9nic.c src/devices/framebuf/framebuf.c \
 	    src/devices/dhf/q9_dhf.c src/devices/dhf/dhf_emu_device.c src/devices/dhf/dhf_host_fs.c src/devices/dhf/dhf_socket_client.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_dhf_driver
 	$(BUILD)/$(PLATFORM_DIR)/test_dhf_driver
@@ -372,7 +372,7 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	    src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
 	    src/devices/remap/remap.c \
 	    src/devices/mc6845/mc6845.c src/devices/clut/clut.c \
-	    src/devices/quicc/quicc.c src/devices/framebuf/framebuf.c \
+	    src/devices/nic/q9nic.c src/devices/framebuf/framebuf.c \
 	    src/devices/dhf/q9_dhf.c src/devices/dhf/dhf_emu_device.c src/devices/dhf/dhf_host_fs.c src/devices/dhf/dhf_socket_client.c \
 	    $(MUSASHI_OBJS) $(HOST_EXTRA_LIBS) -o $(BUILD)/$(PLATFORM_DIR)/test_io_dispatch
 	$(BUILD)/$(PLATFORM_DIR)/test_io_dispatch

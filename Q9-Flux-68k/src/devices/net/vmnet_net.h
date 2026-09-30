@@ -2,7 +2,7 @@
 // File:   vmnet_net.h                                                                     Ver. 1.00
 // Owner:  AF
 // Desc.:  5.12: vmnet-Netzwerk-Backend fuer die QUICC-Ethernet-Emulation (macOS-only). Statt des
-//         eingebauten Mini-NAT (quicc.c) reicht dieses Backend rohe Ethernet-Frames an Apples
+//         eingebauten Mini-NAT (q9nic.c) reicht dieses Backend rohe Ethernet-Frames an Apples
 //         vmnet.framework durch (VMNET_SHARED_MODE): macOS uebernimmt NAT, DHCP und Routing ins
 //         echte Netz — das emulierte OS-9 kommt damit raus ins Internet, und der Mac erreicht
 //         es direkt unter seiner Gast-IP (rein UND raus).
@@ -15,7 +15,7 @@
 //
 //         Threading: vmnet liefert Frames auf einer eigenen Dispatch-Queue; sie landen in einem
 //         mutex-geschuetzten Ringpuffer und werden vom Runner-Thread per q9_vmnet_recv()
-//         abgeholt (Poll im CPU-Loop, s. q9_quicc_poll).
+//         abgeholt (Poll im CPU-Loop, s. q9_nic_poll).
 //
 // Edition History
 //─────────┬──────┬────────────────────────────────────────────────────────────────────────┬──────
@@ -39,7 +39,7 @@ typedef struct q9_vmnet_config {
 int q9_vmnet_start(const q9_vmnet_config_t *config);
 
 /* Die von vmnet zugewiesene Interface-MAC — der Gast MUSS mit dieser Absender-MAC senden,
-   sonst verwirft vmnet die Frames; die Uebersetzung von/zur Gast-MAC macht quicc.c. */
+   sonst verwirft vmnet die Frames; die Uebersetzung von/zur Gast-MAC macht q9nic.c. */
 const uint8_t *q9_vmnet_mac(void);
 
 /* Frame raus (komplettes Ethernet-Frame inkl. Header). Fehler werden still verworfen —

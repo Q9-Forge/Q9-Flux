@@ -232,7 +232,7 @@ Same manager, only the driver + transport protocol changes:
 
 1. **Q9-Flux emulator** (first): driver writes commands into MMIO
    registers (analogous to the existing `src/devices/` pattern: `cf`,
-   `quicc`, `rtc72421`, etc.). The new emulator-side device performs
+   `nic`, `rtc72421`, etc.). The new emulator-side device performs
    real host calls behind it (`open()`/`read()`/`opendir()`).
 2. **CH375/CH376 chip** (real hardware, later): the chip has FAT12/16/32
    parsing built in already and itself speaks file-level commands (not

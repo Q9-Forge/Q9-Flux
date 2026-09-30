@@ -9,7 +9,7 @@
 //         2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt): aus src/kernel/m68krt.c/q9board.h
 //         HIERHER verschoben. ANDERS als bei duart68681/rtc72421/timer_irq (deren Zustand weiterhin
 //         in q9_board_t steckt, s. dortige Kopfkommentare) UND anders als bei den bisherigen
-//         Aufrufmuster von quicc/mc6845/framebuf/clut (die q9boardrun.c-verwaltete Zustands-
+//         Aufrufmuster von nic/mc6845/framebuf/clut (die q9boardrun.c-verwaltete Zustands-
 //         Zeiger per eigener q9_m68krt_attach_*()-Funktion uebergeben bekommen): `channels[]` war
 //         schon vor dieser Runde vollstaendig SELBSTVERWALTET (kein externer Eigentuemer, kein von
 //         aussen hereingereichter Zeiger) -- bleibt deshalb `static` in nettty.c, `q9_nettty_

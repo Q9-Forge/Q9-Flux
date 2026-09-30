@@ -109,7 +109,7 @@ index aff769b..d678b32 100644
 +    select Q9_MC6845
 +    select Q9_CLUT
 +    select Q9_FRAMEBUF
-+    select Q9_QUICC
++    select Q9_NIC
 +    select Q9_NETTTY
 +    select Q9_VIDEOBRIDGE
 diff --git a/hw/m68k/meson.build b/hw/m68k/meson.build
@@ -154,7 +154,7 @@ index b56a173..7c94177 100644
      depends on IMX
      select CAN_BUS
 +
-+config Q9_QUICC
++config Q9_NIC
 +    bool
 diff --git a/hw/net/meson.build b/hw/net/meson.build
 index 63b0e96..d921c72 100644
@@ -164,7 +164,7 @@ index 63b0e96..d921c72 100644
  endif
  
  subdir('can')
-+system_ss.add(when: 'CONFIG_Q9_QUICC', if_true: files('q9_quicc.c'))
++system_ss.add(when: 'CONFIG_Q9_NIC', if_true: files('q9_nic.c'))
 diff --git a/hw/rtc/Kconfig b/hw/rtc/Kconfig
 index 315b0e4..289438f 100644
 --- a/hw/rtc/Kconfig

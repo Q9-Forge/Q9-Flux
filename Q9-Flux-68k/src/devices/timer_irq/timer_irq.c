@@ -108,7 +108,7 @@ const q9_device_vtable_t q9_devtype_timer_irq = {
 
 /* 2026-08-21 (Hardware-Vereinheitlichung, Folgeschritt nach dem "cf"-Piloten): q9_devdesc_
    timer_irq -- noch OHNE extra_fields (kein Config-Schema, immer hartkodiert instanziiert, s.
-   m68krt.c q9_m68krt_attach_quicc -- eigener, spaeterer Schritt). */
+   m68krt.c q9_m68krt_attach_nic -- eigener, spaeterer Schritt). */
 const q9_devdesc_t q9_devdesc_timer_irq = {
     .type              = "timer_irq",
     .desc              = "Timer/IRQ3-Adress-Trigger (100 Hz, kooperativ)",

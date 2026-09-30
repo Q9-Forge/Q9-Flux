@@ -28,10 +28,10 @@
 // 26-07-14│ 1.35 │ 5.17: Netz-Terminals /x1../x8 umgezogen (q9_devtype_nettty, EIN Geraet    │ CF
 //         │      │ fuer alle acht Kanaele) -- channels[]-Fallback-Loops in IACK/Reassert       │
 //         │      │ entfernt, nur noch QUICC hartkodiert                                        │
-// 26-07-14│ 1.36 │ 5.17: QUICC umgezogen (q9_devtype_quicc, letztes von sechs Geraeten) --    │ CF
-//         │      │ alle g_quicc-Sonderpruefungen in den sechs m68k_read/write_memory_*-        │
+// 26-07-14│ 1.36 │ 5.17: QUICC umgezogen (q9_devtype_nic, letztes von sechs Geraeten) --    │ CF
+//         │      │ alle g_nic-Sonderpruefungen in den sechs m68k_read/write_memory_*-        │
 //         │      │ Funktionen sowie in IACK/Reassert entfernt; Timer/IRQ3 wird jetzt erst in   │
-//         │      │ attach_quicc (nach QUICC) registriert, damit die Registrierungsreihenfolge  │
+//         │      │ attach_nic (nach QUICC) registriert, damit die Registrierungsreihenfolge  │
 //         │      │ ueberall aufsteigend nach Level bleibt (3,4,5,6) -- s. dortige Kommentare    │
 // 26-08-06│ 1.37 │ Nativer Windows-Build: init/update_network_terminals auf q9_sockcompat.h    │ AF
 //         │      │ umgestellt (Winsock2 statt BSD-Sockets), write()/read() auf Socket-Fds durch │
@@ -75,7 +75,7 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "m68krt.h"
 #include "q9board.h"
-#include "../devices/quicc/quicc.h"
+#include "../devices/nic/q9nic.h"
 #include "../devices/duart68681/duart68681.h"          /* 2026-08-21: q9_devtype_duart68681,      */
                                                         /* aus q9board.h ausgelagert                */
 #include "../devices/rtc72421/rtc72421.h"               /* 2026-08-21: q9_devtype_rtc72421          */
@@ -102,7 +102,7 @@
 static uint8_t     *g_ram;
 static uint32_t     g_ram_len;
 static q9_board_t  *g_board;
-static q9_quicc_t  *g_quicc;                          /* 5.11: QUICC-Ethernet, optional (attach) */
+static q9_nic_t  *g_nic;                          /* 5.11: QUICC-Ethernet, optional (attach) */
 
 /* 2026-08-21: die komplette Netzwerk-Terminal-Server-Implementierung (channels[]/network_
    irq_resync/Telnet-Filterung/init_network_terminals/update_network_terminals/network_read8/
@@ -724,7 +724,7 @@ void m68k_write_memory_32(unsigned int address, unsigned int value)
 static uint32_t g_ack_count;                          /* Diagnose: wie oft wurde IACK durchlaufen */
 uint32_t q9_dbg_ackvec[256];                          /* Diagnose: Vektoren beim IACK, s. u. */
 uint32_t q9_dbg_acklevel[8];                          /* Diagnose: Pegel beim IACK           */
-static uint32_t g_quicc_ack_count;                    /* 5.15-Diagnose: davon QUICC (Level 5)     */
+static uint32_t g_nic_ack_count;                    /* 5.15-Diagnose: davon QUICC (Level 5)     */
 
 /* 5.15-Befund: echte Hardware haelt pro Geraet eine EIGENE IRQ-Leitung; quittiert die CPU
    das Level eines Geraets, senken NUR dessen eigene Leitung, alle anderen gleichzeitig
@@ -779,8 +779,8 @@ static int m68krt_board_int_ack(int int_level)
     q9_device_t *dev;
 
     g_ack_count++;
-    if (int_level == Q9_QUICC_IRQ_LEVEL) {
-        g_quicc_ack_count++;                           /* 5.15-Diagnose: QUICC-ISR wurde zugestellt */
+    if (int_level == Q9_NIC_IRQ_LEVEL) {
+        g_nic_ack_count++;                           /* 5.15-Diagnose: QUICC-ISR wurde zugestellt */
     }
     m68k_set_irq(0);
     if ((dev = devreg_pending_level_held(int_level)) != NULL) {
@@ -1505,7 +1505,7 @@ void q9_m68krt_attach_board(q9_board_t *board)
         q9_devreg_add(d);
 
         /* 5.17: RTC72421, viertes board-internes Geraet -- kein IRQ. (Timer/IRQ3 wird bewusst
-           NICHT hier, sondern erst in q9_m68krt_attach_quicc registriert -- s. dort, Grund ist
+           NICHT hier, sondern erst in q9_m68krt_attach_nic registriert -- s. dort, Grund ist
            Registrierungsreihenfolge/IRQ-Prioritaet, Level 6 muss NACH QUICC/Level 5 kommen.) */
         memset(&d, 0, sizeof(d));
         d.type       = "rtc72421";
@@ -1590,14 +1590,14 @@ void q9_m68krt_attach_board(q9_board_t *board)
     }
 }
 
-void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
+void q9_m68krt_attach_nic(q9_nic_t *nic)
 {
-    g_quicc = quicc;                                  /* 5.11: ab jetzt dekodiert das QUICC-     */
+    g_nic = nic;                                  /* 5.11: ab jetzt dekodiert das QUICC-     */
                                                        /* Fenster $FFFF2000-$FFFF3FFF             */
 
     /* 5.17: QUICC, sechstes und letztes umgezogenes Geraet -- fester Vektor 254 (kein
        irq_vector_fn noetig, anders als DUART/nettty). Registriert NACH den Netz-Terminals
-       (Level 4 vor Level 5) -- s. q9_devtype_quicc-Kommentar in quicc.c und die Reihenfolge-
+       (Level 4 vor Level 5) -- s. q9_devtype_nic-Kommentar in q9nic.c und die Reihenfolge-
        Erklaerung in q9_m68krt_attach_board.
        Timer/IRQ3 (Level 6, viertes 5.17-Geraet inhaltlich, aber ERST HIER registriert statt in
        attach_board) folgt bewusst GANZ ZULETZT: Level 6 muss in der Registrierungsreihenfolge
@@ -1606,19 +1606,19 @@ void q9_m68krt_attach_quicc(q9_quicc_t *quicc)
        Registry in Registrierungsreihenfolge) am Ende bei gleichzeitig anstehenden Interrupts
        konsistent das hoechste Level uebrig lassen -- exakt das Verhalten, das vor 5.17 durch die
        hartkodierte Aufrufreihenfolge (DUART 3, QUICC 5, Timer 6) in q9boardrun.c sichergestellt war. */
-    if (quicc && g_board) {
+    if (nic && g_board) {
         q9_device_t d;
         memset(&d, 0, sizeof(d));
-        d.type       = "quicc";
+        d.type       = "nic";
         d.name       = "enet0";
-        d.base       = Q9_QUICC_BASE;
-        d.size       = Q9_QUICC_TOP - Q9_QUICC_BASE + 1u;
-        d.irq_level  = Q9_QUICC_IRQ_LEVEL;
-        d.irq_vector = Q9_QUICC_IRQ_VECTOR;            /* fest, s. q9_devtype_quicc-Kommentar    */
+        d.base       = Q9_NIC_BASE;
+        d.size       = Q9_NIC_TOP - Q9_NIC_BASE + 1u;
+        d.irq_level  = Q9_NIC_IRQ_LEVEL;
+        d.irq_vector = Q9_NIC_IRQ_VECTOR;            /* fest, s. q9_devtype_nic-Kommentar    */
         d.level_held = 1;
         d.use_table  = 1;                             /* liegt im Fast-Table-Cluster, s. devreg.h */
-        d.vt         = &q9_devtype_quicc;
-        d.state      = quicc;
+        d.vt         = &q9_devtype_nic;
+        d.state      = nic;
         q9_devreg_add(d);
 
         memset(&d, 0, sizeof(d));
@@ -1765,7 +1765,7 @@ void q9_m68krt_free(q9_m68krt_t *rt)
     g_ram     = NULL;
     g_ram_len = 0;
     g_board   = NULL;
-    g_quicc   = NULL;
+    g_nic   = NULL;
     m68k_set_int_ack_callback(0);
     memset(rt, 0, sizeof(*rt));
 }
@@ -1782,9 +1782,9 @@ void q9_m68krt_debug_state(uint32_t *pc, uint32_t *sr, uint32_t *acks)
     *acks = g_ack_count;
 }
 
-uint32_t q9_m68krt_quicc_acks(void)
+uint32_t q9_m68krt_nic_acks(void)
 {
-    return g_quicc_ack_count;
+    return g_nic_ack_count;
 }
 
 int q9_m68krt_is_stopped(void)

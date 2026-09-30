@@ -60,7 +60,7 @@ Gefundene Module/Quellen:
 
 - Treiberquelle: `/Volumes/SSD1TB/projects/REF/SRC/DPIO/SPF/DRVR/SPQUICC`
   (`main.c`, `init.c`, `isr.c`, `entry.c`, `term.c`, `pins.c`, `defs.h`,
-  `qedvr.h`, `quicc.h`, `regs360.h`, `pram360.h`, `enet360.h`)
+  `qedvr.h`, `q9nic.h`, `regs360.h`, `pram360.h`, `enet360.h`)
 - Port: `/Volumes/SSD1TB/projects/REF/OS9/CPU32/PORTS/QUADS/SPF/SPQUICC`
 - Fertige Module: `sp360`, `spqe0`
 

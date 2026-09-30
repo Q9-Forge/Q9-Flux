@@ -11,7 +11,7 @@
 // Date    │ Ver. │ Description                                                            │ By
 //─────────┼──────┼────────────────────────────────────────────────────────────────────────┬──────
 // 26-08-20│ 1.00 │ Hardware-Vereinheitlichung, Pilot "cf": Erster Wurf                      │ Cld
-// 26-08-21│ 1.10 │ quicc/mc6845/framebuf/clut dazu (bereits eigene Dateien seit "6.6", nur    │ Cld
+// 26-08-21│ 1.10 │ nic/mc6845/framebuf/clut dazu (bereits eigene Dateien seit "6.6", nur    │ Cld
 //         │      │ der devdesc-Eintrag war neu) -- DEVDESC_SRC (Makefile) fasst die dadurch    │
 //         │      │ noetigen Link-Abhaengigkeiten an einer Stelle zusammen                      │
 // 26-08-21│ 1.20 │ duart68681/rtc72421/timer_irq dazu -- letzte drei Typen, die noch in         │ Cld
@@ -29,7 +29,7 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "devdesc.h"
 #include "../devices/cf/cf.h"
-#include "../devices/quicc/quicc.h"
+#include "../devices/nic/q9nic.h"
 #include "../devices/mc6845/mc6845.h"
 #include "../devices/framebuf/framebuf.h"
 #include "../devices/clut/clut.h"
@@ -62,7 +62,7 @@ const q9_field_schema_t q9_devschema_common_fields[2] = {
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static const q9_devdesc_t *const g_devdesc_registry[] = {
     &q9_devdesc_cf,
-    &q9_devdesc_quicc,
+    &q9_devdesc_nic,
     &q9_devdesc_mc6845,
     &q9_devdesc_framebuf,
     &q9_devdesc_clut,

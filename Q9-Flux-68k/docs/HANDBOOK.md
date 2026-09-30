@@ -421,7 +421,7 @@ int      q9_m68krt_is_stopped(void);                // CPU halted via STOP?
 `q9_m68krt_get_backend(rt, &backend)` fills one with thin wrappers around
 the functions above; `q9boardrun.c`'s main loop calls only through this
 vtable, never `q9_m68krt_*` directly. Diagnostics-only functions
-(`q9_m68krt_debug_state`, `q9_m68krt_quicc_acks`) stay outside the vtable
+(`q9_m68krt_debug_state`, `q9_m68krt_nic_acks`) stay outside the vtable
 on purpose — they're 68k-specific (status register, QUICC counters), not a
 generic CPU property. This is preparation for a second target
 architecture, not yet wired to one (see the vendored TinyEMU RISC-V core,
@@ -544,9 +544,9 @@ Toolshed in Debian WSL (`~/.local/bin/os9`). Don't write to the same
 
 ---
 
-### 5.5 QUICC Ethernet Emulation (`src/devices/quicc/quicc.c/.h`)
+### 5.5 QUICC Ethernet Emulation (`src/devices/nic/q9nic.c/.h`)
 
-Details: the source code itself (`quicc.c/.h`) and the network-backend
+Details: the source code itself (`q9nic.c/.h`) and the network-backend
 choice in section 5.8. QUICC is a CB030/board-specific Ethernet
 controller (a Motorola communications processor) — the emulation is
 enough for OS-9's `enet0` driver, without reproducing the full QUICC

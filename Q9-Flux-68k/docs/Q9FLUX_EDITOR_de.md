@@ -136,7 +136,7 @@
 #         │      │ Fast-Table-Flag, CF komplett nach src/devices/cf/cf.c verschoben, boardcfg.c-Schema-    │
 #         │      │ Gegenprobe, echte Tasten N/D fuer die vier CF-Image-Slots im Editor. Abschnitt 4        │
 #         │      │ ("Hardware hinzufuegen" fuer BELIEBIGE Typen) bleibt Folgeschritt, s. dort              │
-# 26-08-21│ 5.20 │ Einunddreissigste Runde: dasselbe Muster fuer alle restlichen Typen -- quicc/mc6845/     │ Cld
+# 26-08-21│ 5.20 │ Einunddreissigste Runde: dasselbe Muster fuer alle restlichen Typen -- nic/mc6845/     │ Cld
 #         │      │ framebuf/clut (nur q9_devdesc_t-Eintrag, lebten schon eigenstaendig) UND               │
 #         │      │ duart68681/rtc72421/timer_irq (komplette Verschiebung aus q9board.c, bit-identisch      │
 #         │      │ per Boot-Test bestaetigt). q9board.c auf reine RAM/ROM/REMAP-Logik geschrumpft.         │
@@ -1354,7 +1354,7 @@ festen I/O-Cluster, ohne explizites Pro-Geraet-Flag. Ebenso existierte bereits e
 Feldbeschreibungstabelle (`devschema.c`), aber NICHT ins Haupt-Binary gelinkt und NICHT mit dem
 Parser verdrahtet. Die eigentliche Geraete-Instanziierung lief ueber zehn hartcodierte
 `q9_devreg_add()`-Aufrufe in `m68krt.c`. Bereits gelebtes Vorbild fuer "ein Sourcefile je Typ":
-mc6845/clut/framebuf/quicc liegen seit der "6.6"-Migration (2026-08-11) schon in `src/devices/<typ>/`
+mc6845/clut/framebuf/nic liegen seit der "6.6"-Migration (2026-08-11) schon in `src/devices/<typ>/`
 -- nur die vier aeltesten, 5.17-Ära-Geraete (duart68681/cf/rtc72421/timer_irq) steckten noch
 gebuendelt in `q9board.c`.
 
@@ -1410,7 +1410,7 @@ komplett gruen, kein neues Warning. Zwei echte Boot-Tests (vor/nach der CF-Migra
 Auftrag nach dem "cf"-Piloten: "kannst du... mit den weiteren Hardware-Typen nach dem gleichen
 Muster umbauen". Zwei Gruppen, unterschiedlich viel Arbeit:
 
-1. **quicc/mc6845/framebuf/clut** -- lebten dank der frueheren "6.6"-Migration (2026-08-11) bereits
+1. **nic/mc6845/framebuf/clut** -- lebten dank der frueheren "6.6"-Migration (2026-08-11) bereits
    in eigenen Dateien (`src/devices/<typ>/`). Brauchten nur einen neuen `q9_devdesc_t`-Eintrag am
    Dateiende (noch OHNE `extra_fields` -- keiner dieser vier Typen hat bisher ein Config-Schema,
    sie werden weiterhin hartcodiert instanziiert). `framebuf` bekam bewusst `use_table_default=0`
@@ -1497,7 +1497,7 @@ bereits am Vorher-Stand auf**, also keine Regression dieser Runde, sondern eine 
 Eigenart der lokalen Testumgebung/des verwendeten Images (nicht weiter verfolgt, ausserhalb des
 Rahmens dieser Runde).
 
-Damit sind **alle neun heutigen Hardware-Typen** (cf/quicc/mc6845/framebuf/clut/duart68681/
+Damit sind **alle neun heutigen Hardware-Typen** (cf/nic/mc6845/framebuf/clut/duart68681/
 rtc72421/timer_irq/nettty) auf das einheitliche `q9_devdesc_t`-Muster umgestellt.
 
 **Dreiunddreissigste Runde (2026-08-21) -- der REMAP-Trigger als zehntes Geraet:** Andreas' eigene
@@ -1592,7 +1592,7 @@ An erster Stelle immer **Speicher** (Memory), danach **CPU-Auswahl**, dann Butto
 (`src/kernel/devdesc.h/.c`) vereint pro Hardware-Typ Vtable + Feldbeschreibung + Fast-Table-Flag an
 einem Ort. Nach dem Pilot am Beispiel "cf" (2026-08-20, "Dreissigste Runde" in Abschnitt 2) folgten
 direkt danach ALLE verbliebenen Typen nach demselben Muster ("Einunddreissigste Runde",
-2026-08-21): quicc/mc6845/framebuf/clut (lebten bereits in eigenen Dateien seit "6.6", brauchten
+2026-08-21): nic/mc6845/framebuf/clut (lebten bereits in eigenen Dateien seit "6.6", brauchten
 nur einen `q9_devdesc_t`-Eintrag) sowie duart68681/rtc72421/timer_irq (komplette Verschiebung aus
 `q9board.c` nach `src/devices/duart68681/`, `src/devices/rtc72421/`, `src/devices/timer_irq/`,
 analog zu "cf" -- bit-identisch per Boot-Test bestaetigt: RTC-Uhrzeit, DUART-Konsole, Timer-Tick

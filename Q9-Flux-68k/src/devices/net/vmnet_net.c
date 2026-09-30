@@ -39,7 +39,7 @@ typedef struct qv_state {
     uint32_t         dropped;                         /* verworfene Frames (Diagnose)             */
 } qv_state_t;
 
-static qv_state_t qv;                                 /* eine Instanz, wie q9_quicc_t (statisch)  */
+static qv_state_t qv;                                 /* eine Instanz, wie q9_nic_t (statisch)  */
 static char       qv_macs[32];                        /* MAC-String aus dem Start-Handler (Blocks
                                                          koennen keine Arrays einfangen)          */
 

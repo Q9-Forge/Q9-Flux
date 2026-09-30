@@ -148,16 +148,16 @@ void q9_m68krt_set_irq(int level);
 void q9_m68krt_attach_board(q9_board_t *board);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// Function: q9_m68krt_attach_quicc
-// Desc.:    5.11: Haengt die QUICC-Ethernet-Emulation (quicc.h) in den Adress-Dispatch ein —
-//           Zugriffe auf das Fenster $FFFF2000-$FFFF3FFF gehen dann an q9_quicc_read/write*,
+// Function: q9_m68krt_attach_nic
+// Desc.:    5.11: Haengt die QUICC-Ethernet-Emulation (q9nic.h) in den Adress-Dispatch ein —
+//           Zugriffe auf das Fenster $FFFF2000-$FFFF3FFF gehen dann an q9_nic_read/write*,
 //           und der Interrupt-Acknowledge liefert fuer Level 5 den QUICC-Vektor (254), solange
-//           der QUICC einen Interrupt anfordert. quicc = NULL haengt das Fenster wieder aus;
+//           der QUICC einen Interrupt anfordert. nic = NULL haengt das Fenster wieder aus;
 //           q9_m68krt_free setzt ebenfalls zurueck. Aufruf NACH q9_m68krt_attach_board.
-// Call:     q9_m68krt_attach_quicc(&quicc);  ...  q9_m68krt_attach_quicc(0);
+// Call:     q9_m68krt_attach_nic(&nic);  ...  q9_m68krt_attach_nic(0);
 //════════════════════════════════════════════════════════════════════════════════════════════════
-struct q9_quicc;
-void q9_m68krt_attach_quicc(struct q9_quicc *quicc);
+struct q9_nic;
+void q9_m68krt_attach_nic(struct q9_nic *nic);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_attach_mc6845
@@ -209,14 +209,14 @@ void q9_m68krt_attach_cf_at(q9_cf_t *cf, uint32_t base, const char *name);
 void q9_m68krt_debug_state(uint32_t *pc, uint32_t *sr, uint32_t *acks);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
-// Function: q9_m68krt_quicc_acks
+// Function: q9_m68krt_nic_acks
 // Desc.:    5.15-Diagnose (TCP-Haenger): Anzahl der bisher tatsaechlich an die CPU zugestellten
 //           QUICC-Interrupts (Level 5). Waechst dieser Zaehler waehrend eines Haengers NICHT
-//           weiter, obwohl die QUICC-RXF-Zaehler (quicc.c diag_rxf) steigen, wird der Hardware-
+//           weiter, obwohl die QUICC-RXF-Zaehler (q9nic.c diag_rxf) steigen, wird der Hardware-
 //           Interrupt nicht zugestellt -> Emulator-Bug. Waechst er weiter -> ISR laeuft, der
 //           Stillstand sitzt im (geschlossenen) Gast-Treiber.
 //════════════════════════════════════════════════════════════════════════════════════════════════
-uint32_t q9_m68krt_quicc_acks(void);
+uint32_t q9_m68krt_nic_acks(void);
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_m68krt_is_stopped

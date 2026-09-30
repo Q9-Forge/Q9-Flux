@@ -142,7 +142,7 @@ Bisherige Meilensteine:
    Gast-RAM sind 1:1 portiert (dieselben Offsets, dieselbe
    Write-1-to-Clear-Semantik für SCCE/CISR). Bewusst *nicht* portiert
    sind die vier handgeschriebenen Host-Netzwerk-Backends des Originals
-   (nat/vmnet/bridge/slirp, ~500 der 872 Zeilen von quicc.c) — dieses
+   (nat/vmnet/bridge/slirp, ~500 der 872 Zeilen von q9nic.c) — dieses
    Gerät ist stattdessen ein Standard-QEMU-NIC-Frontend
    (`qemu_new_nic()`), sodass die übliche
    `-netdev user/tap/socket/...`-Maschinerie ihm ein Netz verschafft,
@@ -217,7 +217,7 @@ sind, nicht danach, wo QEMU sie haben will:
   `devices/duart68681/q9_duart68681.c`, `devices/cf/q9_cf.c`,
   `devices/remap/q9_remap.c`, `devices/mc6845/q9_mc6845.c`,
   `devices/clut/q9_clut.c`, `devices/framebuf/q9_framebuf.c`,
-  `devices/quicc/q9_quicc.c`, `devices/nettty/q9_nettty.c`,
+  `devices/nic/q9_nic.c`, `devices/nettty/q9_nettty.c`,
   `devices/videobridge/q9_videobridge.c`.
 - `overlay/machine/q9board.c` — die Board-"Verdrahtung" selbst
   (instanziiert und hängt die obigen Geräte ein), das QEMU-seitige

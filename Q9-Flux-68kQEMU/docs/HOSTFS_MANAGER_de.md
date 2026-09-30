@@ -244,7 +244,7 @@ Derselbe Manager, nur der Driver + das Transportprotokoll ändern sich:
 
 1. **Q9-Flux-Emulator** (zuerst): Driver schreibt Kommandos in
    MMIO-Register (analog zum bestehenden `src/devices/`-Muster: `cf`,
-   `quicc`, `rtc72421` usw.). Emulator-seitiges neues Gerät macht
+   `nic`, `rtc72421` usw.). Emulator-seitiges neues Gerät macht
    dahinter echte Host-Aufrufe (`open()`/`read()`/`opendir()`).
 2. **CH375/CH376-Chip** (echte Hardware, später): Der Chip hat
    FAT12/16/32-Parsing bereits eingebaut und spricht selbst schon

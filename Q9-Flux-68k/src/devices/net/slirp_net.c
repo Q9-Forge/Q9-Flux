@@ -163,7 +163,7 @@ static void q_slirp_unregister_poll_socket(slirp_os_socket s, void *opaque) { (v
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: q_slirp_send_packet / q_slirp_guest_error
 // Desc.:    send_packet: Slirp -> Gast (Frame komplett fertig, direkt an recv_cb aus
-//           q9_slirp_start durchreichen -- i.d.R. q9_quicc_rx_frame). guest_error: nur Diagnose.
+//           q9_slirp_start durchreichen -- i.d.R. q9_nic_rx_frame). guest_error: nur Diagnose.
 //────────────────────────────────────────────────────────────────────────────────────────────────
 static slirp_ssize_t q_slirp_send_packet(const void *buf, size_t len, void *opaque)
 {
@@ -397,7 +397,7 @@ void q9_slirp_poll(void)
     if (g_pollfd_count > 0) {
         int pollret = Q9_SOCK_POLL(g_pollfds, g_pollfd_count, 0);
         /* Q9_SLIRP_DEBUG=1: Poll-Diagnose bei echten Ereignissen (bewusst NICHT jeden Tick -- sonst
-           Log-Flut, s. Q9_QUICC_DEBUG-Pendant in quicc.c fuer den Frame-Verkehr). War entscheidend
+           Log-Flut, s. Q9_NIC_DEBUG-Pendant in q9nic.c fuer den Frame-Verkehr). War entscheidend
            beim Aufspueren von Bug 3 (2026-08-07, s. Edition History): zeigte pollret=-1 bei jedem
            Aufruf, sobald der falsche SLIRP_POLL_*->WSAPOLLFD.events-Bit-Mismatch (jetzt oben behoben)
            WSAPoll() die Eingabe verweigern liess. */

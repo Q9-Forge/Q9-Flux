@@ -47,7 +47,7 @@ extern volatile int q9_dbg_dump_requested;
 //           pollen (q9_board_poll_timer -> q9_m68krt_set_irq(3), s. 5.2d). Kehrt nur bei
 //           Ladefehler zurueck (Exit-Code fuer main); beendet wird der Lauf per Ctrl-C (die HAL
 //           stellt das Terminal via atexit-Handler zurueck).
-//           net_mode waehlt das Ethernet-Backend (s. q9_quicc_net_mode): NULL/"nat" =
+//           net_mode waehlt das Ethernet-Backend (s. q9_nic_net_mode): NULL/"nat" =
 //           eingebautes Mini-NAT, "vmnet" = echtes Netz via vmnet.framework (macOS, sudo/
 //           Entitlement), "bridge:<ifname>" = echtes Netz via BPF an physischer NIC (macOS,
 //           kein root, s. bpf_net.h).
