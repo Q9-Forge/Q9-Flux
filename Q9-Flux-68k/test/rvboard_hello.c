@@ -14,7 +14,7 @@
 //           0x1000_0000  UART0, NS16550A, Register im Abstand 1 Byte
 //           0x8000_0000  RAM
 //         Wer diese Lage einhaelt, kann spaeter dieselben Abbilder benutzen wie
-//         qemu-system-riscv32 -M virt -- und gegen QEMU als unabhaengiges Orakel gegenpruefen.
+//         qemu-system-riscv32 -M virt -- und gegen QEMU als unabhaengige Referenz gegenpruefen.
 //
 // Call:   build/<platform>/rvboard_hello <programm.elf>     (gebaut per "make test-rvboard")
 //════════════════════════════════════════════════════════════════════════════════════════════════
