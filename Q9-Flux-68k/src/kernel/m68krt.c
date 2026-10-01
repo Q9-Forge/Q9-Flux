@@ -465,6 +465,23 @@ static void q9_dbg_instr_hook(unsigned int pc)
     if (pc < 0x1000u) {
         q9_dbg_tr_frozen = 1;
     }
+    {   /* Freeze auf einen frei waehlbaren SP-Wert (Q9_FREEZE_SP, 2026-10-02).
+           Zeigt die Instruktion, die A7 zuerst auf einen verdaechtigen Wert
+           setzt -- Q9_FREEZE_PC allein kann das nicht, wenn der verdaechtige
+           Zustand selbst schon lange vor dem eigentlichen Absturz-PC beginnt
+           und der Ring bis dahin laengst wieder ueberschrieben waere. */
+        static uint32_t fsp_target = 0xFFFFFFFFu;
+        static int fsp_init = 0;
+        if (!fsp_init) {
+            const char *e = getenv("Q9_FREEZE_SP");
+            fsp_target = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
+            fsp_init = 1;
+        }
+        if (fsp_target != 0xFFFFFFFFu &&
+            (uint32_t)m68k_get_reg(NULL, M68K_REG_SP) == fsp_target) {
+            q9_dbg_tr_frozen = 1;
+        }
+    }
     {   /* Freeze auf eine frei waehlbare Adresse (Q9_FREEZE_PC). Zeigt, WIE
            der Code an eine bestimmte Stelle gelangt ist -- reine
            Trefferzaehler koennen das nicht, sie kennen keine Reihenfolge. */
