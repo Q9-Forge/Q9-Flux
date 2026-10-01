@@ -482,10 +482,10 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         uint32_t z, first, cnt;
         fprintf(f, "\n--- Schreibzugriffe im Watch-Fenster (Q9_WATCH_ADDR/_LEN): %u, Zaehlerstand jetzt #%u ---\n",
                 (unsigned)q9_dbg_wv_n, (unsigned)q9_dbg_write_seq_now());
-        cnt   = (q9_dbg_wv_n < 64u) ? q9_dbg_wv_n : 64u;
+        cnt   = (q9_dbg_wv_n < Q9_DBG_WV_SIZE) ? q9_dbg_wv_n : Q9_DBG_WV_SIZE;
         first = q9_dbg_wv_n - cnt;   /* aeltester noch vorhandener Treffer */
         for (z = first; z < q9_dbg_wv_n; z++) {
-            uint32_t i = z % 64u;
+            uint32_t i = z % Q9_DBG_WV_SIZE;
             fprintf(f, "    #%-10u pc=%08x -> %08x schrieb %08x (%u Byte)\n",
                     (unsigned)q9_dbg_wv_seq[i],
                     (unsigned)q9_dbg_wv_pc[i], (unsigned)q9_dbg_wv_adr[i],
@@ -518,7 +518,13 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
             uint32_t marker = q9_board_read32(b, addr);
 
             if (marker == 0x58u || marker == 0x41u ||
-                (marker >= 0x5400u && marker <= 0x54FFu)) {
+                (marker >= 0x5400u && marker <= 0x54FFu) ||
+                /* 2026-10-02, Fortsetzung 101: zeigt auch einen
+                   Q9K_TimerIRQHandler-Rahmenvalidierungs-Treffer (Marker
+                   30 mit einem implausibel grossen PC-Wert aus dem
+                   faulen Rahmen) -- bleibt sonst wie jeder gewoehnliche
+                   Timer-Tick ohne X/A-Naehe unsichtbar gefiltert. */
+                (marker == 30u && q9_board_read32(b, addr + 4u) > 0x01000000u)) {
                 uint32_t s = (z >= first + 3u) ? z - 3u : first;
                 uint32_t e = (z + 4u < idx) ? z + 4u : idx;
                 uint32_t w;

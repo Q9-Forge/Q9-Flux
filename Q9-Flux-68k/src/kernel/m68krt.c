@@ -591,11 +591,11 @@ unsigned int m68k_read_memory_32(unsigned int address)
    alle anderen korrekt auf dessen Einstieg zeigen -- gesucht ist, WER den
    Wert dorthin schreibt. */
 uint32_t q9_dbg_wv_n = 0u;
-uint32_t q9_dbg_wv_pc[64];
-uint32_t q9_dbg_wv_val[64];
-uint32_t q9_dbg_wv_size[64];
-uint32_t q9_dbg_wv_adr[64];
-uint32_t q9_dbg_wv_seq[64];
+uint32_t q9_dbg_wv_pc[Q9_DBG_WV_SIZE];
+uint32_t q9_dbg_wv_val[Q9_DBG_WV_SIZE];
+uint32_t q9_dbg_wv_size[Q9_DBG_WV_SIZE];
+uint32_t q9_dbg_wv_adr[Q9_DBG_WV_SIZE];
+uint32_t q9_dbg_wv_seq[Q9_DBG_WV_SIZE];
 static uint32_t g_dbg_write_seq = 0u;   /* zaehlt ALLE Schreibzugriffe -- monotone Zeitachse */
 static uint32_t g_dbg_watch_addr = 0u;
 static uint32_t g_dbg_watch_len  = 0u;
@@ -626,7 +626,7 @@ static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int 
         /* Ringpuffer: die JUENGSTEN 64 Treffer bleiben stehen. Bei einem oft
            beschriebenen Feld (z.B. D_Proc bei jedem Prozesswechsel) waren die
            ersten 64 Treffer sonst laengst vor dem interessanten Moment voll. */
-        uint32_t i = q9_dbg_wv_n % 64u;
+        uint32_t i = q9_dbg_wv_n % Q9_DBG_WV_SIZE;
         q9_dbg_wv_pc[i]   = (uint32_t)m68k_get_reg(NULL, M68K_REG_PPC);
         q9_dbg_wv_val[i]  = (uint32_t)value;
         q9_dbg_wv_size[i] = size;

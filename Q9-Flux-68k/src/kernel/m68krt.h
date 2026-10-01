@@ -349,12 +349,13 @@ extern uint32_t q9_dbg_tmr_pcs[8];
 extern uint32_t q9_dbg_wake_enter;
 extern uint32_t q9_dbg_wake_send;
 
+#define Q9_DBG_WV_SIZE 65536u   /* 2026-10-02: 64->65536, s. Fortsetzung 101 */
 extern uint32_t q9_dbg_wv_n;
-extern uint32_t q9_dbg_wv_pc[64];
-extern uint32_t q9_dbg_wv_val[64];
-extern uint32_t q9_dbg_wv_size[64];
-extern uint32_t q9_dbg_wv_adr[64];
-extern uint32_t q9_dbg_wv_seq[64];
+extern uint32_t q9_dbg_wv_pc[Q9_DBG_WV_SIZE];
+extern uint32_t q9_dbg_wv_val[Q9_DBG_WV_SIZE];
+extern uint32_t q9_dbg_wv_size[Q9_DBG_WV_SIZE];
+extern uint32_t q9_dbg_wv_adr[Q9_DBG_WV_SIZE];
+extern uint32_t q9_dbg_wv_seq[Q9_DBG_WV_SIZE];
 extern uint32_t q9_dbg_write_seq_now(void);
 /* Frei waehlbare PC-Zaehler, s. Q9_COUNT_PC in m68krt.c. */
 #define Q9_DBG_CPC_MAX 16
