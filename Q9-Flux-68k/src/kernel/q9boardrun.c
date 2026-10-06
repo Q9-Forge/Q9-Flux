@@ -326,14 +326,14 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
         uint32_t pbase = q9_board_read32(b, 0x1204u);
         uint32_t pcnt  = q9_board_read32(b, 0x1220u);
         uint32_t pid;
-        if (pbase && pcnt && pcnt < 64u) {
+        if (pbase && pcnt && pcnt <= 256u) {
             fprintf(f, "Prozessliste (Pool %08x, %u Slots):\n", (unsigned)pbase, (unsigned)pcnt);
             for (pid = 1; pid <= pcnt; pid++) {
                 uint32_t d = pbase + (pid - 1u) * 0x400u;
                 uint32_t ssp = q9_board_read32(b, d + 0x08u);
                 uint32_t mh = q9_board_read32(b, d + 0x38u);
                 char nm[16] = "";
-                if (q9_board_read16(b, d + 0x00u) == 0) continue;
+                if (q9_board_read16(b, d + 0x00u) != pid) continue; /* frei: Freilisten-Zeiger bei +0 */
                 if (mh && mh < 0x1000000u) {
                     uint32_t no = q9_board_read32(b, mh + 0x0cu), k;
                     for (k = 0; k < 15u; k++) {
@@ -351,6 +351,29 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                         (unsigned)q9_board_read16(b, d + 0x168u), (unsigned)q9_board_read16(b, d + 0x16au),
                         (unsigned)q9_board_read16(b, d + 0x16cu), (unsigned)q9_board_read16(b, d + 0x16eu));
             }
+        }
+    }
+
+    {   /* Syscall-Trace-Ringpuffer des Developer-Kernels (Q9-OS Fortsetzung 119):
+           Buchfuehrung ab $2000 (Adresse, Groesse, Schreib-/Leseoffset,
+           belegt, geschrieben, verloren). Roh ausgegeben, damit ein Host-
+           Dekoder (Q9-OS tools/q9trace_decode.py) die letzten Saetze lesen
+           kann -- auch nach einem Haenger, wenn kein OS-9-Programm mehr laeuft. */
+        uint32_t ta = q9_board_read32(b, 0x2000u), ts = q9_board_read32(b, 0x2004u);
+        if (ta && ts && ts <= 0x100000u && ta < 0x1000000u) {
+            uint32_t k;
+            fprintf(f, "\n--- Q9-Trace-Puffer addr=%08x size=%08x wr=%08x rd=%08x used=%08x written=%08x lost=%08x enabled=%08x ---\n",
+                    (unsigned)ta, (unsigned)ts, (unsigned)q9_board_read32(b, 0x2008u), (unsigned)q9_board_read32(b, 0x200Cu),
+                    (unsigned)q9_board_read32(b, 0x2010u), (unsigned)q9_board_read32(b, 0x2014u),
+                    (unsigned)q9_board_read32(b, 0x2018u), (unsigned)q9_board_read32(b, 0x2020u));
+            for (k = 0; k < ts; k += 32u) {
+                uint32_t j;
+                fprintf(f, "T %06x ", (unsigned)k);
+                for (j = 0; j < 32u && k + j < ts; j++)
+                    fprintf(f, "%02x", (unsigned)q9_board_read8(b, ta + k + j));
+                fputc('\n', f);
+            }
+            fprintf(f, "--- Ende Q9-Trace-Puffer ---\n");
         }
     }
 
