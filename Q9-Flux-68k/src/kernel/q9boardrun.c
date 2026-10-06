@@ -318,6 +318,42 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 (unsigned)q9_board_read32(b, 0x129cu));
     }
 
+    {   /* Prozessliste (Q9-Kernel, 2026-10-06): alle belegten Deskriptoren des
+           Pools ($1204 Basis, $1220 Anzahl, Slot $400). Zeigt Zustand, Signal,
+           gesicherten PC (Rahmen bei SavedSP: 60 Byte Register, SR, PC),
+           Primaermodul und I/O-Warteschlangenfelder -- um "verschwundene"
+           Prozesse zu finden, die in keiner Queue stehen. */
+        uint32_t pbase = q9_board_read32(b, 0x1204u);
+        uint32_t pcnt  = q9_board_read32(b, 0x1220u);
+        uint32_t pid;
+        if (pbase && pcnt && pcnt < 64u) {
+            fprintf(f, "Prozessliste (Pool %08x, %u Slots):\n", (unsigned)pbase, (unsigned)pcnt);
+            for (pid = 1; pid <= pcnt; pid++) {
+                uint32_t d = pbase + (pid - 1u) * 0x400u;
+                uint32_t ssp = q9_board_read32(b, d + 0x08u);
+                uint32_t mh = q9_board_read32(b, d + 0x38u);
+                char nm[16] = "";
+                if (q9_board_read16(b, d + 0x00u) == 0) continue;
+                if (mh && mh < 0x1000000u) {
+                    uint32_t no = q9_board_read32(b, mh + 0x0cu), k;
+                    for (k = 0; k < 15u; k++) {
+                        uint8_t ch = q9_board_read8(b, mh + no + k);
+                        if (ch < 0x20u || ch > 0x7eu) break;
+                        nm[k] = (char)ch; nm[k + 1] = 0;
+                    }
+                }
+                fprintf(f, "  pid=%2u desc=%08x id=%04x state=%04x sig=%04x ssp=%08x pc=%08x mod=%-10s ioq=%04x/%04x nest=%08x rtrap=%04x path=%04x %04x %04x %04x\n",
+                        (unsigned)pid, (unsigned)d, (unsigned)q9_board_read16(b, d),
+                        (unsigned)q9_board_read16(b, d + 0x1cu), (unsigned)q9_board_read16(b, d + 0x26u),
+                        (unsigned)ssp, ssp && ssp < 0x1000000u ? (unsigned)q9_board_read32(b, ssp + 62u) : 0u, nm,
+                        (unsigned)q9_board_read16(b, d + 0x2d4u), (unsigned)q9_board_read16(b, d + 0x2d6u),
+                        (unsigned)q9_board_read32(b, d + 0x3acu), (unsigned)q9_board_read16(b, d + 0x3f8u),
+                        (unsigned)q9_board_read16(b, d + 0x168u), (unsigned)q9_board_read16(b, d + 0x16au),
+                        (unsigned)q9_board_read16(b, d + 0x16cu), (unsigned)q9_board_read16(b, d + 0x16eu));
+            }
+        }
+    }
+
     {   /* Laufender Prozess: P$State ist im echten Layout ein WORT bei +$1c
            (REF/OS9/SRC/DEFS/process.a). sc68681 prueft nach dem Aufwachen
            dessen Bit 1 im OBEREN Byte und bricht dann ab. */
