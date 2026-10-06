@@ -405,7 +405,15 @@ static void q9_dbg_instr_hook(unsigned int pc)
     q9_dbg_tr_d0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
     q9_dbg_tr_a0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
     q9_dbg_tr_sp[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
-    q9_dbg_tr_a4[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4);
+    {   /* Q9_TRACE_AREG=<0..7>: dieses Adressregister statt a4 in der Spalte
+           "a4" mitschreiben (Diagnose; ohne Variable unveraendert a4). */
+        static int areg = -1;
+        if (areg < 0) {
+            const char *e = getenv("Q9_TRACE_AREG");
+            areg = (e && e[0] >= '0' && e[0] <= '7') ? (e[0] - '0') : 4;
+        }
+        q9_dbg_tr_a4[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_A0 + areg));
+    }
     q9_dbg_tr_d1[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D1);
     q9_dbg_tr_d3[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D3);
     q9_dbg_tr_d4[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D4);
