@@ -44,6 +44,8 @@
 #include "q9boardrun.h"
 #include "q9board.h"
 #include "m68krt.h"
+#include "q9symbol.h"
+#include "q9line.h"
 #include "../devices/duart68681/duart68681.h"      /* THRA-Mitschrift, s. dort                */
 #include "../devices/nic/q9nic.h"
 #include "../devices/mc6845/mc6845.h"                  /* 5.24: MC6845-CRT-Controller             */
@@ -73,6 +75,9 @@ static uint8_t board_rom[BOARD_ROM_MAX];
 static uint8_t board_vram[Q9_FRAMEBUF_MAX_SIZE];       /* 5.26: VRAM-Backing, s. framebuf.h        */
 
 volatile int q9_dbg_dump_requested = 0;                /* s. q9boardrun.h */
+volatile int q9_dbg_resume_requested = 0;
+volatile int q9_dbg_step_requested = 0;
+static int q9_dbg_break_dumped = 0;                    /* genau ein Dump je Haltepunkt */
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // Function: dbg_dump_kernel_globals
@@ -289,6 +294,11 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 (unsigned)q9_board_read32(b, 0x15417cu));
         fprintf(f, "FLink-C-entry: %08x\n",
                 (unsigned)q9_board_read32(b, 0x1f70u));
+        fprintf(f, "FLink-search-diag: iter=%08x slot=%08x header=%08x guard=%08x\n",
+                (unsigned)q9_board_read32(b, 0x154180u),
+                (unsigned)q9_board_read32(b, 0x154184u),
+                (unsigned)q9_board_read32(b, 0x154188u),
+                (unsigned)q9_board_read32(b, 0x15418cu));
     }
 
     {   /* F$Link-Diagnose des eigenen Kernels: der Status bleibt auch bei
@@ -301,6 +311,17 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 (unsigned)q9_board_read32(b, 0x154150u),
                 (unsigned)q9_board_read32(b, 0x154154u),
                 (unsigned)q9_board_read32(b, 0x13c4u));
+        fprintf(f, "FLink-frame: mode=%08x entry-sp=%08x entry-word=%08x entry-pc=%08x post-sp=%08x post0=%08x post4=%08x post-pc=%08x rte-pc=%08x rte-sr=%08x\n",
+                (unsigned)q9_board_read32(b, 0x154194u),
+                (unsigned)q9_board_read32(b, 0x154198u),
+                (unsigned)q9_board_read32(b, 0x15419cu),
+                (unsigned)q9_board_read32(b, 0x1541acu),
+                (unsigned)q9_board_read32(b, 0x1541a0u),
+                (unsigned)q9_board_read32(b, 0x1541a4u),
+                (unsigned)q9_board_read32(b, 0x1541a8u),
+                (unsigned)q9_board_read32(b, 0x1541b0u),
+                (unsigned)q9_board_read32(b, 0x1541b4u),
+                (unsigned)q9_board_read32(b, 0x1541b8u));
     }
 
     {   /* F$Fork scratch fields: distinguish a failed lookup/allocation from
@@ -316,6 +337,25 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                 (unsigned)q9_board_read32(b, 0x1294u),
                 (unsigned)q9_board_read32(b, 0x1298u),
                 (unsigned)q9_board_read32(b, 0x129cu));
+    }
+
+    {   /* F$Chain scratch: zeigt den Aufbau des neuen Prozessblocks und die
+           fuer die spaetere Freigabe markierten alten Chain-Daten. */
+        fprintf(f, "F$Chain-Trace: type=%08x addmem=%08x params=%08x paths=%08x prio=%08x name=%08x param=%08x error=%08x ok=%08x oldblock=%08x oldsize=%08x oldmod=%08x\n",
+                (unsigned)q9_board_read32(b, 0x1ba0u),
+                (unsigned)q9_board_read32(b, 0x1ba4u),
+                (unsigned)q9_board_read32(b, 0x1ba8u),
+                (unsigned)q9_board_read32(b, 0x1bacu),
+                (unsigned)q9_board_read32(b, 0x1bb0u),
+                (unsigned)q9_board_read32(b, 0x1bb4u),
+                (unsigned)q9_board_read32(b, 0x1bb8u),
+                (unsigned)q9_board_read32(b, 0x1bbcu),
+                (unsigned)q9_board_read32(b, 0x1bc0u),
+                (unsigned)q9_board_read32(b, 0x1bc4u),
+                (unsigned)q9_board_read32(b, 0x1bc8u),
+                (unsigned)q9_board_read32(b, 0x1bccu));
+        fprintf(f, "I$ChgDir-Diagnose: %08x\n",
+                (unsigned)q9_board_read32(b, 0x154190u));
     }
 
     {   /* Prozessliste (Q9-Kernel, 2026-10-06): alle belegten Deskriptoren des
@@ -342,14 +382,22 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                         nm[k] = (char)ch; nm[k + 1] = 0;
                     }
                 }
-                fprintf(f, "  pid=%2u desc=%08x id=%04x state=%04x sig=%04x ssp=%08x pc=%08x mod=%-10s ioq=%04x/%04x nest=%08x rtrap=%04x path=%04x %04x %04x %04x\n",
+                {
+                    char sym[96] = "";
+                    char line[160] = "";
+                    uint32_t saved_pc = ssp && ssp < 0x1000000u ? q9_board_read32(b, ssp + 62u) : 0u;
+                    (void)q9_symbolize_pc(saved_pc, sym, sizeof(sym));
+                    (void)q9_line_lookup(saved_pc, line, sizeof(line));
+                    fprintf(f, "  pid=%2u desc=%08x id=%04x state=%04x sig=%04x ssp=%08x pc=%08x%s%s%s%s%s%s mod=%-10s ioq=%04x/%04x nest=%08x rtrap=%04x path=%04x %04x %04x %04x\n",
                         (unsigned)pid, (unsigned)d, (unsigned)q9_board_read16(b, d),
                         (unsigned)q9_board_read16(b, d + 0x1cu), (unsigned)q9_board_read16(b, d + 0x26u),
-                        (unsigned)ssp, ssp && ssp < 0x1000000u ? (unsigned)q9_board_read32(b, ssp + 62u) : 0u, nm,
+                        (unsigned)ssp, (unsigned)saved_pc, sym[0] ? " (" : "", sym[0] ? sym : "", sym[0] ? ")" : "",
+                        line[0] ? " [" : "", line[0] ? line : "", line[0] ? "]" : "", nm,
                         (unsigned)q9_board_read16(b, d + 0x2d4u), (unsigned)q9_board_read16(b, d + 0x2d6u),
                         (unsigned)q9_board_read32(b, d + 0x3acu), (unsigned)q9_board_read16(b, d + 0x3f8u),
                         (unsigned)q9_board_read16(b, d + 0x168u), (unsigned)q9_board_read16(b, d + 0x16au),
                         (unsigned)q9_board_read16(b, d + 0x16cu), (unsigned)q9_board_read16(b, d + 0x16eu));
+                }
             }
         }
     }
@@ -442,7 +490,7 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
            kam das vor? (Q9-OS legt beides ab $1730 ab, wenn die Diagnose
            dort eingeschaltet ist.) Dazu der aktuelle Inhalt der
            Callcode-Zelle $1370, die der Dispatcher beim Eintritt fuellt. */
-        fprintf(f, "Unimplemented: letzter Callcode=\$%02x  Anzahl=%u   ($1370 jetzt=$%02x)\n",
+        fprintf(f, "Unimplemented: letzter Callcode=$%02x  Anzahl=%u   ($1370 jetzt=$%02x)\n",
                 (unsigned)q9_board_read16(b, 0x1730u),
                 (unsigned)q9_board_read16(b, 0x1732u),
                 (unsigned)q9_board_read16(b, 0x1370u));
@@ -632,6 +680,20 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
     if (!f) {
         fprintf(stderr, "\n[q9dbg] konnte %s nicht zum Schreiben oeffnen.\n", DBG_DUMP_FILE);
         return;
+    }
+    q9_symbol_init_from_env();
+    q9_line_init_from_env();
+
+    if (q9_dbg_break_hit) {
+        fprintf(f, "\n--- Host-Breakpoint ---\n"
+                   "  PC=%08x D0=%08x D1=%08x D3=%08x D4=%08x\n"
+                   "  A0=%08x A4=%08x A6=%08x SP=%08x\n"
+                   "--- Ende Host-Breakpoint ---\n",
+                (unsigned)q9_dbg_break_pc, (unsigned)q9_dbg_break_d0,
+                (unsigned)q9_dbg_break_d1, (unsigned)q9_dbg_break_d3,
+                (unsigned)q9_dbg_break_d4, (unsigned)q9_dbg_break_a0,
+                (unsigned)q9_dbg_break_a4, (unsigned)q9_dbg_break_a6,
+                (unsigned)q9_dbg_break_sp);
     }
 
     dbg_dump_q9kernel_extras(b, f);
@@ -836,10 +898,18 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
                 q9_dbg_tr_frozen, (unsigned)q9_dbg_tr_fill);
         for (k = 0; k < q9_dbg_tr_fill; k++) {
             uint32_t idx = (q9_dbg_tr_head + Q9_DBG_TR_SIZE - q9_dbg_tr_fill + k) % Q9_DBG_TR_SIZE;
-            fprintf(f, "  pc=%08x d0=%08x a0=%08x a4=%08x sp=%08x d1=%08x d3=%08x d4=%08x\n",
-                    (unsigned)q9_dbg_tr_pc[idx], (unsigned)q9_dbg_tr_d0[idx],
+            {
+                char sym[96] = "";
+                char line[160] = "";
+                (void)q9_symbolize_pc(q9_dbg_tr_pc[idx], sym, sizeof(sym));
+                (void)q9_line_lookup(q9_dbg_tr_pc[idx], line, sizeof(line));
+                fprintf(f, "  pc=%08x%s%s%s%s%s%s d0=%08x a0=%08x a4=%08x sp=%08x d1=%08x d3=%08x d4=%08x\n",
+                    (unsigned)q9_dbg_tr_pc[idx], sym[0] ? " (" : "", sym[0] ? sym : "", sym[0] ? ")" : "",
+                    line[0] ? " [" : "", line[0] ? line : "", line[0] ? "]" : "",
+                    (unsigned)q9_dbg_tr_d0[idx],
                     (unsigned)q9_dbg_tr_a0[idx], (unsigned)q9_dbg_tr_a4[idx], (unsigned)q9_dbg_tr_sp[idx],
                     (unsigned)q9_dbg_tr_d1[idx], (unsigned)q9_dbg_tr_d3[idx], (unsigned)q9_dbg_tr_d4[idx]);
+            }
         }
         fputs("--- Ende Instruktionsspur ---\n", f);
     }
@@ -1402,6 +1472,37 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
             int      irq;
             uint32_t now_ms;
 
+            if (q9_dbg_break_requested) {
+                /* Auch im Haltepunkt-Zustand die Host-Tastatur pollen:
+                   q9_hal_con_get() verarbeitet Ctrl-R/Ctrl-T/Ctrl-] und
+                   liefert bei leerem, nichtblockierendem Eingang -1. */
+                (void)q9_hal_con_get();
+                if (q9_dbg_resume_requested) {
+                    q9_dbg_resume_requested = 0;
+                    q9_dbg_break_requested = 0;
+                    q9_dbg_break_dumped = 0;
+                    continue;
+                }
+                if (q9_dbg_step_requested) {
+                    q9_dbg_step_requested = 0;
+                    q9_dbg_break_requested = 0;
+                    q9_dbg_tr_frozen = 0;
+                    q9_dbg_prepare_single_step();
+                    cpu.execute(cpu.ctx, 1);
+                    q9_dbg_tr_frozen = 1;
+                    q9_dbg_break_requested = 1;
+                    q9_dbg_dump_requested = 1;
+                    q9_dbg_break_dumped = 0;
+                    continue;
+                }
+                if (!q9_dbg_break_dumped) {
+                    q9_dbg_dump_requested = 0;
+                    dbg_dump_kernel_globals(&board);
+                    q9_dbg_break_dumped = 1;
+                }
+                q9_hal_sleep_ms(10);
+                continue;
+            }
             cpu.execute(cpu.ctx, BOARD_SLICE_CYCLES);
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
             if (q9_dbg_dump_requested) {                    /* Debug-Sondertaste, s. q9boardrun.h     */

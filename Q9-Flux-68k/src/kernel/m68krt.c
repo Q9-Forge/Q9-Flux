@@ -271,6 +271,10 @@ uint32_t q9_dbg_pchit_a1[Q9_DBG_PCHIT_SIZE];
 uint32_t q9_dbg_pchit_mem4[Q9_DBG_PCHIT_SIZE];
 uint32_t q9_dbg_pchit_mem8[Q9_DBG_PCHIT_SIZE];
 uint32_t q9_dbg_pchit_n;
+volatile int q9_dbg_break_hit = 0;
+uint32_t q9_dbg_break_pc, q9_dbg_break_d0, q9_dbg_break_d1;
+uint32_t q9_dbg_break_d3, q9_dbg_break_d4, q9_dbg_break_a0;
+uint32_t q9_dbg_break_a4, q9_dbg_break_a6, q9_dbg_break_sp;
 uint32_t q9_dbg_a6_n = 0u;
 
 /* Stackbereich ZUM ZEITPUNKT jedes Dispatcher-Eintritts. Die Lage des
@@ -290,6 +294,13 @@ uint32_t q9_dbg_wake_send  = 0u;
 uint32_t q9_dbg_tr_head   = 0u;
 uint32_t q9_dbg_tr_fill   = 0u;
 int      q9_dbg_tr_frozen = 0;
+volatile int q9_dbg_break_requested = 0;
+static volatile int g_break_skip_once;
+
+void q9_dbg_prepare_single_step(void)
+{
+    g_break_skip_once = 1;
+}
 
 /* Frei waehlbare PC-Zaehler (Q9_COUNT_PC, kommagetrennte Adressliste).
    Beantwortet die Frage "welcher Zweig wird genommen?" in EINEM Lauf --
@@ -392,6 +403,46 @@ static void q9_dbg_instr_hook(unsigned int pc)
             q9_dbg_pchit_n++;
         }
     }
+    /* Echter Snapshot-Haltepunkt: unabhaengig vom Zustand der optionalen
+       Instruktionsspur pruefen. Die Spur kann bereits bei einem fruehen
+       Fehler-PC eingefroren sein; ein spaeter gesetzter Breakpoint muss
+       trotzdem noch anhalten koennen. */
+    {
+        static uint32_t bpc = 0u;
+        static uint32_t bn = 0u, seen = 0u;
+        static int initialized = 0;
+        if (!initialized) {
+            const char *e = getenv("Q9_BREAK_PC");
+            const char *n = getenv("Q9_BREAK_PC_N");
+            bpc = e ? (uint32_t)strtoul(e, NULL, 0) : 0xFFFFFFFFu;
+            bn = n ? (uint32_t)strtoul(n, NULL, 0) : 1u;
+            if (bn == 0u) bn = 1u;
+            initialized = 1;
+        }
+        /* Nur den angeforderten Treffer ausloesen. Mit >= wuerde ein nach
+           Ctrl-R fortgesetzter Lauf bei jedem weiteren Vorbeilauf an derselben
+           Adresse erneut anhalten, obwohl Q9_BREAK_PC_N bereits erfuellt ist. */
+        if ((uint32_t)pc == bpc && ++seen == bn) {
+            if (g_break_skip_once) {
+                g_break_skip_once = 0;
+            } else {
+                q9_dbg_break_hit = 1;
+                q9_dbg_break_pc = (uint32_t)pc;
+                q9_dbg_break_d0 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
+                q9_dbg_break_d1 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D1);
+                q9_dbg_break_d3 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D3);
+                q9_dbg_break_d4 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D4);
+                q9_dbg_break_a0 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
+                q9_dbg_break_a4 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4);
+                q9_dbg_break_a6 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A6);
+                q9_dbg_break_sp = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
+                q9_dbg_tr_frozen = 1;
+                q9_dbg_break_requested = 1;
+                return;
+            }
+        }
+    }
+
     if (q9_dbg_tr_frozen) {
         return;
     }
@@ -516,7 +567,7 @@ void q9_dbg_instr_trace_init(void)
 {
     const char *env = getenv("Q9_TRACE_INSTR");
 
-    if (env && env[0] == '1') {
+    if ((env && env[0] == '1') || getenv("Q9_BREAK_PC")) {
         q9_dbg_cpc_init();
         m68k_set_instr_hook_callback(q9_dbg_instr_hook);
     }

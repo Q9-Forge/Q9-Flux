@@ -1,0 +1,13 @@
+# The emulator and optional frame device are independent host projects.
+[global]
+TOOLCHAIN_FILE = ../Q9-QCC/Q9-Make/toolchains/qmake.conf
+SUBDIRS = Q9-Flux-68k Q9-Flux-Devices
+
+[mac-clang]
+all:
+
+[linux-gcc]
+all:
+
+[windows-clang]
+all:

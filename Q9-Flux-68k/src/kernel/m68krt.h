@@ -318,6 +318,10 @@ extern uint32_t q9_dbg_pchit_a1[Q9_DBG_PCHIT_SIZE];
 extern uint32_t q9_dbg_pchit_mem4[Q9_DBG_PCHIT_SIZE];
 extern uint32_t q9_dbg_pchit_mem8[Q9_DBG_PCHIT_SIZE];
 extern uint32_t q9_dbg_pchit_n;
+extern volatile int q9_dbg_break_hit;
+extern uint32_t q9_dbg_break_pc, q9_dbg_break_d0, q9_dbg_break_d1;
+extern uint32_t q9_dbg_break_d3, q9_dbg_break_d4, q9_dbg_break_a0;
+extern uint32_t q9_dbg_break_a4, q9_dbg_break_a6, q9_dbg_break_sp;
 
 #define Q9_DBG_ENT_MAX   24u
 #define Q9_DBG_ENT_WORDS 40u
@@ -365,6 +369,8 @@ extern uint32_t q9_dbg_cpc_n;
 extern uint32_t q9_dbg_tr_head;
 extern uint32_t q9_dbg_tr_fill;
 extern int      q9_dbg_tr_frozen;
+extern volatile int q9_dbg_break_requested;
+void q9_dbg_prepare_single_step(void);
 
 void q9_dbg_instr_trace_init(void);                 /* registriert den Hook, nur bei Q9_TRACE_INSTR=1 */
 void q9_dbg_instr_trace_note_tx(unsigned char val); /* vom DUART gerufen: friert bei val >= 0x80 ein  */

@@ -37,6 +37,9 @@
 //           OHNE MMU-Uebersetzung -- Debug-Werkzeug fuer die Q9-OS-Kernel-Entwicklung).
 //════════════════════════════════════════════════════════════════════════════════════════════════
 extern volatile int q9_dbg_dump_requested;
+extern volatile int q9_dbg_break_requested;
+extern volatile int q9_dbg_resume_requested;
+extern volatile int q9_dbg_step_requested;
 
 //════════════════════════════════════════════════════════════════════════════════════════════════
 // Function: q9_board_boot

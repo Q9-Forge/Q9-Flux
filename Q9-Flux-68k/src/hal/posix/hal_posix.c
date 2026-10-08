@@ -180,6 +180,7 @@ int q9_hal_con_tx_empty(void)
 int q9_hal_con_get(void)
 {
     unsigned char c;
+    static int dump_key_armed = 1;
     ssize_t       n = read(STDIN_FILENO, &c, 1);
 
     if (n == 1 && c == 0x1d) {                         /* Host-Escape: Ctrl-] beendet den Emulator */
@@ -187,8 +188,22 @@ int q9_hal_con_get(void)
         exit(0);
     }
     if (n == 1 && c == 0x1e) {                         /* Debug-Sondertaste: Ctrl-^ dumpt          */
-        q9_dbg_dump_requested = 1;                     /* physischen Kernel-Speicher (q9boardrun.c)  */
+        if (dump_key_armed) {
+            q9_dbg_dump_requested = 1;                 /* physischen Kernel-Speicher (q9boardrun.c)  */
+            dump_key_armed = 0;                        /* gehaltenes/repeatendes Zeichen nur einmal */
+        }
         return -1;                                     /* schlucken, nicht an den Gast weiterreichen */
+    }
+    if (n == 1) {
+        dump_key_armed = 1;
+    }
+    if (n == 1 && c == 0x12) {                         /* Ctrl-R: Breakpoint fortsetzen */
+        q9_dbg_resume_requested = 1;
+        return -1;
+    }
+    if (n == 1 && c == 0x14) {                         /* Ctrl-T: einen Instruktionsschritt */
+        q9_dbg_step_requested = 1;
+        return -1;
     }
     if (n == 1 && c == 0x7f) {
         c = 0x08;                                      /* macOS Backspace (DEL) -> OS-9 BS       */

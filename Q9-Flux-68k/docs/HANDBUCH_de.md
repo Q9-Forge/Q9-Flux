@@ -623,7 +623,8 @@ kurz benannt wird — vollständige Details stehen in `ARBEITSPLAN.md`:
 | Telnet-Terminals | Acht virtuelle Netzwerk-Terminals `/x1`–`/x8` über TCP (Port 2000+), Telnet-NVT-Normalisierung | Schritt 5.10 (Erweiterung 8 Kanäle) |
 | Video-Pipeline | MC6845-Registermodell (`src/devices/mc6845/`) + Framebuffer/VRAM (`src/devices/framebuf/`) + CLUT-Farbpalette (`src/devices/clut/`) + Q9-Frame-Netzwerkprotokoll für Remote-Anzeige (`src/devices/videobridge/`) | Schritte 5.24–5.29 |
 | RTC72421 | Echtzeituhr (Epson-Baustein), liest die Host-Uhr | Schritt 5.6 |
-| Debug-Sondertaste | Ctrl-^ dumpt physischen RAM-Inhalt (Analysehilfe für Q9-OS) | s. `q9_dbg_dump_requested` in `q9boardrun.h` |
+| Debug-Sondertaste | Ctrl-^ dumpt einmalig den physischen RAM-Inhalt nach `local_images/q9dbg_dump.txt` | s. `q9_dbg_dump_requested` in `q9boardrun.h` |
+| PC-Haltepunkt | `Q9_BREAK_PC=0xADDR` hält beim N-ten Treffer an; `Q9_BREAK_PC_N=N` wählt den Treffer | `Ctrl-R` fortsetzen, `Ctrl-T` Einzelschritt, `Ctrl-]` beenden |
 | RAM-Größe | `[board] ram = <MByte>` in der `.q9` (1–256, Voreinstellung 16). OS-9 nutzt davon nur, was ROM (`_RAMMax` in `systype.d`) und `init` beschreiben – für 64 MB: DHF-ROM und `Q9-OS/Q9-DHF-68k/boot/mk_init.sh 64`, Beispiel `Q9-Images/emu_config/q9sys.q9` | 2026-09-27 |
 | Mehrarchitektur-Planung | RISC-V32/ARM64/x86-32-Bit als weitere Zielarchitekturen, Board-Emulator vs. native Runtime — noch reine Planung | Phase 6 |
 

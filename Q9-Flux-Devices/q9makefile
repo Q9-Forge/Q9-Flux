@@ -1,0 +1,13 @@
+# Device projects are grouped below their owning emulator subsystem.
+[global]
+TOOLCHAIN_FILE = ../../Q9-QCC/Q9-Make/toolchains/qmake.conf
+SUBDIRS = Q9-Frame
+
+[mac-clang]
+all:
+
+[linux-gcc]
+all:
+
+[windows-clang]
+all:
