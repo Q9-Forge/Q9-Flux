@@ -205,6 +205,7 @@ int  q9_hal_con_tx_empty(void) { return 1; }
 
 int q9_hal_con_get(void)
 {
+    static int dump_key_armed = 1;
     int queued = keybuf_pop();
     if (queued >= 0) {
         return queued;
@@ -218,8 +219,20 @@ int q9_hal_con_get(void)
             exit(0);
         }
         if (c == 0x1e) {                                /* Debug-Sondertaste: Ctrl-^ dumpt physischen */
-            q9_dbg_dump_requested = 1;                  /* Kernel-Speicher (q9boardrun.c)                */
+            if (dump_key_armed) {
+                q9_dbg_dump_requested = 1;              /* Kernel-Speicher (q9boardrun.c)                */
+                dump_key_armed = 0;
+            }
             return -1;                                  /* schlucken, nicht an den Gast weiterreichen  */
+        }
+        dump_key_armed = 1;
+        if (c == 0x12) {                                /* Ctrl-R: Breakpoint fortsetzen */
+            q9_dbg_resume_requested = 1;
+            return -1;
+        }
+        if (c == 0x14) {                                /* Ctrl-T: einen Instruktionsschritt */
+            q9_dbg_step_requested = 1;
+            return -1;
         }
         if (c != 0 && c == quit_ctrl) {                 /* Konfigurierbarer Strg-Buchstabe (Default
                                                               Ctrl-Q), layoutunabhaengige Alternative

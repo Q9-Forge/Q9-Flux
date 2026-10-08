@@ -1,0 +1,20 @@
+# SDL frame device; the project Makefile maintains C++/SDL dependencies.
+[global]
+TOOLCHAIN_FILE = ../../../Q9-QCC/Q9-Make/toolchains/qmake.conf
+
+[mac-clang]
+all: frame
+frame:
+	make all
+clean:
+	make clean
+
+[linux-gcc]
+all: frame
+frame:
+	make all
+
+[windows-clang]
+all: frame
+frame:
+	make all

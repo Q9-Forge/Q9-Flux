@@ -22,6 +22,7 @@
 //         │      │ die fremde Debug-Zeile wieder verschwindet.                                  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "../src/hal/q9_hal.h"
+#include "../third_party/musashi/m68k.h"
 
 void q9_hal_con_put(char c)      { (void)c; }
 int  q9_hal_con_get(void)        { return -1; }
@@ -38,6 +39,21 @@ int  q9_hal_time(q9_datetime_t *dt)
    da Ziele wie test-io-dispatch SOWOHL diesen Stub ALS AUCH m68krt.c linken (dessen eigene,
    "richtige" q9_debug_arm_trace()) -- ohne weak gaebe es dort einen Mehrfachdefinitions-Fehler. */
 __attribute__((weak)) void q9_debug_arm_trace(void) { }
+
+/* DUART-Diagnose liest im nativen Build zwei Musashi-Werte und meldet das
+   gesendete Zeichen an die Instruktionsspur. Die kleinen CF-/Registry-Tests
+   linken bewusst keinen CPU-Backend; dafuer genuegen diese schwachen Stubs. */
+__attribute__((weak)) unsigned int m68k_get_reg(void *context, m68k_register_t reg)
+{
+    (void)context;
+    (void)reg;
+    return 0u;
+}
+
+__attribute__((weak)) void q9_dbg_instr_trace_note_tx(unsigned char val)
+{
+    (void)val;
+}
 
 //────────────────────────────────────────────────────────────────────────────────────────────────
 // EOF 07_hal_stub.c                                                                       Ver. 1.00

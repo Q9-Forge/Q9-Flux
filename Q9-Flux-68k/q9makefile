@@ -1,0 +1,26 @@
+# The maintained emulator Makefile owns generated Musashi and platform graphs.
+[global]
+TOOLCHAIN_FILE = ../../Q9-QCC/Q9-Make/toolchains/qmake.conf
+
+[mac-clang]
+all: host
+host:
+	make host
+test:
+	make test
+clean:
+	make clean
+
+[linux-gcc]
+all: host
+host:
+	make host
+test:
+	make test
+
+[windows-clang]
+all: host
+host:
+	make host
+test:
+	make test

@@ -177,10 +177,10 @@ DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c src/kernel/devreg.c \
 
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
-BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/boardcfg.c \
+BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/q9symbol.c src/kernel/q9line.c src/kernel/boardcfg.c \
             $(DEVDESC_SRC) \
             src/devices/videobridge/videobridge.c
-BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/devreg.h src/kernel/boardcfg.h \
+BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/q9symbol.h src/kernel/q9line.h src/kernel/devreg.h src/kernel/boardcfg.h \
             src/devices/cf/cf.h \
             src/devices/nic/q9nic.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
             src/devices/clut/clut.h src/devices/videobridge/videobridge.h \
@@ -366,7 +366,7 @@ test-io-dispatch: $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) -DQ9_HAVE_M68K -I$(MUSASHI_DIR) -I$(MUSASHI_GEN) \
 	    test/09_test_io_dispatch.c test/07_hal_stub.c \
-	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/devreg.c \
+	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/boardcfg.c src/kernel/devschema.c src/kernel/devdesc.c src/kernel/devreg.c \
 	    src/devices/cf/cf.c \
 	    src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
 	    src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \
