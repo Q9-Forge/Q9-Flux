@@ -287,7 +287,14 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf test-dhf-driver
+test: test-symbols test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf test-dhf-driver
+
+# H1: Linkkarten fuer dynamische OS-9-Module (Q9_SYMBOL_DIR/<modul>.map).
+# Prueft COD-Offsets, Case-Folding und sichere Modulnamen.
+test-symbols:
+	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
+	$(CC) $(CFLAGS) test/15_test_symbols.c src/kernel/q9symbol.c -o $(BUILD)/$(PLATFORM_DIR)/test_symbols
+	Q9_SYMBOL_DIR=$(CURDIR)/test/fixtures/symbols $(BUILD)/$(PLATFORM_DIR)/test_symbols
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (2026-08-20: nach
 # src/devices/cf/cf.c umgezogen, s. dortige Historie) -- reines ATA-PIO-Protokoll gegen

@@ -1,0 +1,5 @@
+Linkage map for module 'sample'
+'entry' psect from file: entry.r
+\tC:0000003c M:00000000 D:00000000
+ Init      COD 0000004a | Read      COD 00000060 | Write     COD 0000008a |
+ data      DAT 00000000 | helper    COD 00000070 |
