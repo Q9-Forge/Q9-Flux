@@ -293,8 +293,8 @@ test: test-symbols test-cf-sector test-devschema test-devdesc test-io-dispatch t
 # Prueft COD-Offsets, Case-Folding und sichere Modulnamen.
 test-symbols:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) test/15_test_symbols.c src/kernel/q9symbol.c -o $(BUILD)/$(PLATFORM_DIR)/test_symbols
-	Q9_SYMBOL_DIR=$(CURDIR)/test/fixtures/symbols $(BUILD)/$(PLATFORM_DIR)/test_symbols
+	$(CC) $(CFLAGS) test/15_test_symbols.c src/kernel/q9symbol.c src/kernel/q9line.c -o $(BUILD)/$(PLATFORM_DIR)/test_symbols
+	Q9_SYMBOL_DIR=$(CURDIR)/test/fixtures/symbols Q9_LINE_DIR=$(CURDIR)/test/fixtures/symbols $(BUILD)/$(PLATFORM_DIR)/test_symbols
 
 # 5.19b: dateisystem-unabhaengiger Sektor-Roundtrip-Test der CF-Emulation (2026-08-20: nach
 # src/devices/cf/cf.c umgezogen, s. dortige Historie) -- reines ATA-PIO-Protokoll gegen

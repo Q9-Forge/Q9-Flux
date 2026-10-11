@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../src/kernel/q9symbol.h"
+#include "../src/kernel/q9line.h"
 
 static int failures;
 static void expect_symbol(const char *label, const char *module, unsigned base,
@@ -29,6 +30,22 @@ int main(void)
     }
     if (q9_symbolize_module_pc("../sample", 0x2000u, 0x204au, out, sizeof(out))) {
         fprintf(stderr, "FAIL unsafe module name unexpectedly resolved\n");
+        failures++;
+    }
+    if (!q9_line_lookup_module("SAMPLE", 0x2000u, 0x2050u, out, sizeof(out)) ||
+        strcmp(out, "q9_sample.c:10:2") != 0) {
+        fprintf(stderr, "FAIL module source line: '%s'\n", out);
+        failures++;
+    } else {
+        printf("ok   module source line: %s\n", out);
+    }
+    if (!q9_line_lookup_module("sample", 0x2000u, 0x2061u, out, sizeof(out)) ||
+        strcmp(out, "q9_sample.c:20:4") != 0) {
+        fprintf(stderr, "FAIL next module source line: '%s'\n", out);
+        failures++;
+    }
+    if (q9_line_lookup_module("../sample", 0x2000u, 0x2050u, out, sizeof(out))) {
+        fprintf(stderr, "FAIL unsafe module line map unexpectedly resolved\n");
         failures++;
     }
     if (failures) return 1;

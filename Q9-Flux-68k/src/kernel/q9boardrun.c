@@ -126,13 +126,13 @@ static int q9_dbg_break_dumped = 0;                    /* genau ein Dump je Halt
 /* Symbolisiert zuerst den festen Kernel und danach jede aktuell geladene
    Moduladresse aus dem echten Q9-Moduldirectory. Ein fehlendes .map bleibt
    trotzdem lesbar als modul+offset. */
-static int dbg_symbolize_pc(q9_board_t *b, uint32_t pc, char *out, size_t out_len)
+static int dbg_module_at_pc(q9_board_t *b, uint32_t pc,
+                            char *name, size_t name_len, uint32_t *base)
 {
     uint32_t slot;
     unsigned guard = 0;
-    if (!out || out_len == 0) return 0;
-    out[0] = 0;
-    if (!b) return q9_symbolize_pc(pc, out, out_len);
+    if (!b || !name || name_len == 0 || !base) return 0;
+    name[0] = 0;
     slot = q9_board_read32(b, Q9K_DBG_MODDIR_HEAD);
     while (slot != 0 && slot < BOARD_RAM_BYTES && guard++ < Q9K_DBG_MODDIR_LIMIT) {
         uint32_t hdr = q9_board_read32(b, slot + Q9K_DBG_MODDIR_HDR_OFF);
@@ -140,30 +140,48 @@ static int dbg_symbolize_pc(q9_board_t *b, uint32_t pc, char *out, size_t out_le
             q9_board_read16(b, hdr) == 0x4afcu) {
             uint32_t size = q9_board_read32(b, hdr + Q9K_DBG_MH_SIZE_OFF);
             uint32_t name_off = q9_board_read32(b, hdr + Q9K_DBG_MH_NAME_OFF);
-            char name[33];
             unsigned i;
             if (name_off == 0 || name_off >= size || name_off >= BOARD_RAM_BYTES - hdr)
                 name_off = q9_board_read16(b, hdr + 0x0eu);
             if (name_off != 0 && name_off < size && name_off < BOARD_RAM_BYTES - hdr &&
                 size != 0 && size <= BOARD_RAM_BYTES - hdr &&
                 pc >= hdr && pc - hdr < size) {
-                for (i = 0; i < sizeof(name) - 1u && name_off + i < size; i++) {
+                for (i = 0; i + 1u < name_len && name_off + i < size; i++) {
                     uint8_t c = q9_board_read8(b, hdr + name_off + i);
                     if (c & 0x80u) c &= 0x7fu;
                     if (c == 0 || c < 0x20u || c > 0x7eu) break;
                     name[i] = (char)c;
                 }
                 name[i] = 0;
-                if (name[0]) {
-                    if (!q9_symbolize_module_pc(name, hdr, pc, out, out_len))
-                        snprintf(out, out_len, "%s+0x%x", name, (unsigned)(pc - hdr));
-                    return 1;
-                }
+                if (name[0]) { *base = hdr; return 1; }
             }
         }
         slot = q9_board_read32(b, slot + Q9K_DBG_MODDIR_NEXT_OFF);
     }
+    return 0;
+}
+
+static int dbg_symbolize_pc(q9_board_t *b, uint32_t pc, char *out, size_t out_len)
+{
+    char module[33];
+    uint32_t base;
+    if (!out || out_len == 0) return 0;
+    out[0] = 0;
+    if (dbg_module_at_pc(b, pc, module, sizeof(module), &base)) {
+        if (!q9_symbolize_module_pc(module, base, pc, out, out_len))
+            snprintf(out, out_len, "%s+0x%x", module, (unsigned)(pc - base));
+        return 1;
+    }
     return q9_symbolize_pc(pc, out, out_len);
+}
+
+static int dbg_lookup_line(q9_board_t *b, uint32_t pc, char *out, size_t out_len)
+{
+    char module[33];
+    uint32_t base;
+    if (dbg_module_at_pc(b, pc, module, sizeof(module), &base))
+        return q9_line_lookup_module(module, base, pc, out, out_len);
+    return q9_line_lookup(pc, out, out_len);
 }
 
 static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
@@ -435,7 +453,7 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
                     char line[160] = "";
                     uint32_t saved_pc = ssp && ssp < 0x1000000u ? q9_board_read32(b, ssp + 62u) : 0u;
                     (void)dbg_symbolize_pc(b, saved_pc, sym, sizeof(sym));
-                    (void)q9_line_lookup(saved_pc, line, sizeof(line));
+                    (void)dbg_lookup_line(b, saved_pc, line, sizeof(line));
                     fprintf(f, "  pid=%2u desc=%08x id=%04x state=%04x sig=%04x ssp=%08x pc=%08x%s%s%s%s%s%s mod=%-10s ioq=%04x/%04x nest=%08x rtrap=%04x path=%04x %04x %04x %04x\n",
                         (unsigned)pid, (unsigned)d, (unsigned)q9_board_read16(b, d),
                         (unsigned)q9_board_read16(b, d + 0x1cu), (unsigned)q9_board_read16(b, d + 0x26u),
@@ -1005,7 +1023,7 @@ static void dbg_dump_kernel_globals(q9_board_t *b, q9_cpu_type_t cpu_type)
         }
         if (i == 0u) strncat(stack, " <nicht lesbar>", sizeof(stack) - strlen(stack) - 1u);
         (void)dbg_symbolize_pc(b, q9_dbg_break_pc, sym, sizeof(sym));
-        (void)q9_line_lookup(q9_dbg_break_pc, line, sizeof(line));
+        (void)dbg_lookup_line(b, q9_dbg_break_pc, line, sizeof(line));
         fprintf(f, "\n--- Host-Breakpoint ---\n"
                    "  PC=%08x  letzte Instruktion=%08x%s%s%s%s%s\n",
                 (unsigned)q9_dbg_break_pc, (unsigned)q9_dbg_break_from_pc,
@@ -1254,7 +1272,7 @@ static void dbg_dump_kernel_globals(q9_board_t *b, q9_cpu_type_t cpu_type)
                 char sym[96] = "";
                 char line[160] = "";
                 (void)dbg_symbolize_pc(b, q9_dbg_tr_pc[idx], sym, sizeof(sym));
-                (void)q9_line_lookup(q9_dbg_tr_pc[idx], line, sizeof(line));
+                (void)dbg_lookup_line(b, q9_dbg_tr_pc[idx], line, sizeof(line));
                 fprintf(f, "  pc=%08x%s%s%s%s%s%s d0=%08x a0=%08x a4=%08x sp=%08x d1=%08x d3=%08x d4=%08x\n",
                     (unsigned)q9_dbg_tr_pc[idx], sym[0] ? " (" : "", sym[0] ? sym : "", sym[0] ? ")" : "",
                     line[0] ? " [" : "", line[0] ? line : "", line[0] ? "]" : "",
