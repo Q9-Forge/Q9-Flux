@@ -145,6 +145,7 @@ Stand (genaue Pfade und Versionen je Entwicklungsrechner) steht in
 | C-Compiler + make | Emulator übersetzen | macOS: Xcode Command Line Tools (`xcode-select --install`, liefert clang + make); Linux: übliches `build-essential`/`gcc`-Paket der Distribution |
 | Python 3 | Testsuite | meist vorinstalliert; sonst über die Distribution/Homebrew |
 | libslirp (optional) | `--net slirp`-Backend | macOS: `brew install libslirp`; Linux: `apt install libslirp-dev` o.ä. — fehlt es, meldet sich `--net slirp` beim Start sauber ab |
+| Capstone (optional) | umfassendere M68K-Disassembly am Emulator-Haltepunkt | macOS: `brew install capstone`; Linux: `apt install libcapstone-dev` o.ä. — wird über `pkg-config` erkannt; ohne Capstone bleibt der interne Teil-Decoder aktiv |
 
 Kein Emscripten, kein sonstiges Spezialwerkzeug nötig.
 
@@ -624,7 +625,9 @@ kurz benannt wird — vollständige Details stehen in `ARBEITSPLAN.md`:
 | Video-Pipeline | MC6845-Registermodell (`src/devices/mc6845/`) + Framebuffer/VRAM (`src/devices/framebuf/`) + CLUT-Farbpalette (`src/devices/clut/`) + Q9-Frame-Netzwerkprotokoll für Remote-Anzeige (`src/devices/videobridge/`) | Schritte 5.24–5.29 |
 | RTC72421 | Echtzeituhr (Epson-Baustein), liest die Host-Uhr | Schritt 5.6 |
 | Debug-Sondertaste | Ctrl-^ dumpt einmalig den physischen RAM-Inhalt nach `local_images/q9dbg_dump.txt` | s. `q9_dbg_dump_requested` in `q9boardrun.h` |
-| PC-Haltepunkt | `Q9_BREAK_PC=0xADDR` hält beim N-ten Treffer an; `Q9_BREAK_PC_N=N` wählt den Treffer | `Ctrl-R` fortsetzen, `Ctrl-T` Einzelschritt, `Ctrl-]` beenden |
+| PC-Haltepunkt | `Q9_BREAK_PC=0xADDR[,0xADDR...]` hält an bis zu 16 PC-Adressen; `Q9_BREAK_PC_N=N` wählt den Treffer je Adresse. Konsole und Dump zeigen Symbol und Quellzeile, wenn `Q9_SYMBOL_MAP`/`Q9_LINE_MAP` gesetzt sind, D0–D7, A0–A7, SR-Flags (T/S/IPL/XNZVC), USP/ISP/MSP sowie ein RAM-Stackfenster ab A7 (nach REMAP). Wenn Capstone über `pkg-config` verfügbar ist, verwendet der Host-Debugger dessen M68K-Decoder im konfigurierten CPU-Modus; ohne Capstone bleibt die sichere interne Teilvorschau aktiv. Diese dekodiert NOP/RTS/RTE/RTR/RESET/STOP, TRAP, LINK/UNLK, PEA absolut/PC-relativ, JSR/JMP absolut/PC-relativ, LEA absolut/PC-relativ, MOVEQ, registerdirektes MOVE/MOVEA, MOVE(A) mit Immediate, CLR/TST auf Dn, DBcc, ADDQ/SUBQ auf Dn und bedingte Zweige mit CPU-gerechter Byte-/Wort-/Langzielberechnung; übrige Opcodes erscheinen als Rohwort. Die Anzeige unterscheidet PC nach Ausführung und Adresse der letzten Instruktion; `Ctrl-T` führt genau eine weitere Instruktion aus und aktualisiert Konsole/Dump; `Ctrl-R` setzt die Emulation fort und nimmt die Instruktionsspur wieder auf. | `Ctrl-R` fortsetzen, `Ctrl-T` Einzelschritt, `Ctrl-]` beenden |
+| Schreib-Watch | `Q9_WATCH_ADDR=0xADDR[,0xADDR...]` (bis zu 16 Adressen), gemeinsame Fenstergröße `Q9_WATCH_LEN=N`; `Q9_WATCH_FREEZE=N` friert die Instruktionsspur ab dem N-ten Schreibtreffer ein. Treffer stehen im Debug-Dump. | Speicher-Schreiber über PC/Adresse/Wert ermitteln |
+| PC-Zähler | `Q9_COUNT_PC=0xADDR[,0xADDR...]` zählt Treffer an bis zu 16 Adressen; Werte stehen im Debug-Dump. | Zweig-/Aufrufhäufigkeiten vergleichen |
 | RAM-Größe | `[board] ram = <MByte>` in der `.q9` (1–256, Voreinstellung 16). OS-9 nutzt davon nur, was ROM (`_RAMMax` in `systype.d`) und `init` beschreiben – für 64 MB: DHF-ROM und `Q9-OS/Q9-DHF-68k/boot/mk_init.sh 64`, Beispiel `Q9-Images/emu_config/q9sys.q9` | 2026-09-27 |
 | Mehrarchitektur-Planung | RISC-V32/ARM64/x86-32-Bit als weitere Zielarchitekturen, Board-Emulator vs. native Runtime — noch reine Planung | Phase 6 |
 
@@ -663,14 +666,16 @@ Quellen dienen als fachliche Referenz — mit unterschiedlicher Rechtslage:
 | **Musashi** ([github.com/kstenerud/Musashi](https://github.com/kstenerud/Musashi), Commit `313ebf1`) | 68000/68030-Emulator, C | **MIT** | Nur Kern-Interpreter + Codegenerator + Softfloat vendored als `third_party/musashi/` (kein Disassembler, keine Testtreiber), in `make host` mitgebaut (Entscheidung E12) | Ja (MIT, Lizenztext in `m68k.h` u.a.) |
 | **TinyEMU** ([github.com/fernandotcl/TinyEMU](https://github.com/fernandotcl/TinyEMU), Commit `56ba49b`) | RISC-V-Emulator, C (Fabrice Bellard) | **MIT** | Nur der CPU-Kern vendored als `third_party/tinyemu/` (kein Board/Geräte/x86) — das RISC-V-Gegenstück zu Musashis Rolle, s. `docs/RISCV_de.md` | Ja (MIT, Lizenzkopf in jeder Quelldatei) |
 | **libslirp** | User-Mode-Netzwerkstack, C | **BSD-2-Clause** | `--net slirp`-Backend: Windows vendored unter `third_party/slirp/windows/`, macOS/Linux gegen System-libslirp per pkg-config | Ja |
+| **Capstone** | Disassembler-Framework, C | **BSD-3-Clause** | Optionaler Systemlink für M68K-Disassembly im Emulator-Debugger; nicht vendored, Erkennung über pkg-config | Ja |
 
 **Konsequenz für eine künftige Veröffentlichung:** Der Q9-eigene Quellbaum
 (`src/`, `tools/`, `test/`) enthält keine Zeilen aus einer der obigen
 GPL/proprietären Quellen — alles ist eigene Implementierung nach eigenem
 Verständnis der Konzepte. Tatsächlich übernommene Fremdquellen sind
 **Musashi** unter `third_party/musashi/` und **libslirp** (MIT bzw.
-BSD-2-Clause, beide unverändert) — kompatibel mit jeder künftigen
-Q9-Lizenzwahl. Sollte künftig doch GPL-Code aus NitrOS-9/OS9exec übernommen
+BSD-2-Clause, beide unverändert); Capstone ist nur eine optionale externe
+Systemabhängigkeit und wird nicht mitgeliefert. Diese Komponenten sind mit
+jeder künftigen Q9-Lizenzwahl kompatibel. Sollte künftig doch GPL-Code aus NitrOS-9/OS9exec übernommen
 werden, muss die Lizenz von Q9 (oder zumindest der betroffenen Module)
 GPL-kompatibel sein. Die REF- und Buch-Referenzen dürfen so oder so nie als
 Code auftauchen, nur als Verständnisgrundlage dienen.

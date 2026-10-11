@@ -319,9 +319,11 @@ extern uint32_t q9_dbg_pchit_mem4[Q9_DBG_PCHIT_SIZE];
 extern uint32_t q9_dbg_pchit_mem8[Q9_DBG_PCHIT_SIZE];
 extern uint32_t q9_dbg_pchit_n;
 extern volatile int q9_dbg_break_hit;
-extern uint32_t q9_dbg_break_pc, q9_dbg_break_d0, q9_dbg_break_d1;
-extern uint32_t q9_dbg_break_d3, q9_dbg_break_d4, q9_dbg_break_a0;
-extern uint32_t q9_dbg_break_a4, q9_dbg_break_a6, q9_dbg_break_sp;
+extern uint32_t q9_dbg_break_pc;
+extern uint32_t q9_dbg_break_from_pc;
+extern uint32_t q9_dbg_break_regs[16]; /* D0-D7, A0-A7 */
+extern uint32_t q9_dbg_break_sr, q9_dbg_break_usp, q9_dbg_break_isp, q9_dbg_break_msp;
+void q9_dbg_capture_current_snapshot(void);
 
 #define Q9_DBG_ENT_MAX   24u
 #define Q9_DBG_ENT_WORDS 40u

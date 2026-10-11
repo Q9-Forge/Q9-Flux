@@ -272,9 +272,10 @@ uint32_t q9_dbg_pchit_mem4[Q9_DBG_PCHIT_SIZE];
 uint32_t q9_dbg_pchit_mem8[Q9_DBG_PCHIT_SIZE];
 uint32_t q9_dbg_pchit_n;
 volatile int q9_dbg_break_hit = 0;
-uint32_t q9_dbg_break_pc, q9_dbg_break_d0, q9_dbg_break_d1;
-uint32_t q9_dbg_break_d3, q9_dbg_break_d4, q9_dbg_break_a0;
-uint32_t q9_dbg_break_a4, q9_dbg_break_a6, q9_dbg_break_sp;
+uint32_t q9_dbg_break_pc;
+uint32_t q9_dbg_break_from_pc;
+uint32_t q9_dbg_break_regs[16];
+uint32_t q9_dbg_break_sr, q9_dbg_break_usp, q9_dbg_break_isp, q9_dbg_break_msp;
 uint32_t q9_dbg_a6_n = 0u;
 
 /* Stackbereich ZUM ZEITPUNKT jedes Dispatcher-Eintritts. Die Lage des
@@ -297,8 +298,33 @@ int      q9_dbg_tr_frozen = 0;
 volatile int q9_dbg_break_requested = 0;
 static volatile int g_break_skip_once;
 
+static void q9_dbg_capture_registers(uint32_t pc)
+{
+    unsigned int i;
+    q9_dbg_break_hit = 1;
+    q9_dbg_break_pc = pc;
+    for (i = 0; i < 16u; i++)
+        q9_dbg_break_regs[i] = (uint32_t)m68k_get_reg(NULL, (m68k_register_t)i);
+    q9_dbg_break_sr = (uint32_t)m68k_get_reg(NULL, M68K_REG_SR);
+    q9_dbg_break_usp = (uint32_t)m68k_get_reg(NULL, M68K_REG_USP);
+    q9_dbg_break_isp = (uint32_t)m68k_get_reg(NULL, M68K_REG_ISP);
+    q9_dbg_break_msp = (uint32_t)m68k_get_reg(NULL, M68K_REG_MSP);
+}
+
+static void q9_dbg_capture_snapshot(uint32_t pc)
+{
+    q9_dbg_break_from_pc = pc;
+    q9_dbg_capture_registers((uint32_t)m68k_get_reg(NULL, M68K_REG_PC));
+}
+
+void q9_dbg_capture_current_snapshot(void)
+{
+    q9_dbg_capture_registers((uint32_t)m68k_get_reg(NULL, M68K_REG_PC));
+}
+
 void q9_dbg_prepare_single_step(void)
 {
+    q9_dbg_break_from_pc = (uint32_t)m68k_get_reg(NULL, M68K_REG_PC);
     g_break_skip_once = 1;
 }
 
@@ -329,6 +355,14 @@ static void q9_dbg_cpc_init(void)
 
 static void q9_dbg_instr_hook(unsigned int pc)
 {
+    /* PC-Haeufigkeiten vor allen Freeze-/Breakpoint-Abkuerzungen zaehlen, damit
+       auch die Instruktion, die einen Haltepunkt oder Freeze ausloest, enthalten ist. */
+    {
+        uint32_t k;
+        for (k = 0u; k < q9_dbg_cpc_n; k++) {
+            if ((uint32_t)pc == q9_dbg_cpc_addr[k]) { q9_dbg_cpc_hits[k]++; }
+        }
+    }
     /* A6-Aenderungs-Ringpuffer (2026-09-13, Fortsetzung 55/56) -- s.
      * ausfuehrliche Begruendung in m68krt.h ("Q9_DBG_A6_SIZE"). Bewusst
      * OHNE jedes I/O hier (die fruehere fprintf-Fassung brachte den
@@ -408,37 +442,42 @@ static void q9_dbg_instr_hook(unsigned int pc)
        Fehler-PC eingefroren sein; ein spaeter gesetzter Breakpoint muss
        trotzdem noch anhalten koennen. */
     {
-        static uint32_t bpc = 0u;
-        static uint32_t bn = 0u, seen = 0u;
+        enum { BREAK_MAX = 16 };
+        static uint32_t bpc[BREAK_MAX], seen[BREAK_MAX], count = 0u;
+        static uint32_t bn = 1u;
         static int initialized = 0;
         if (!initialized) {
             const char *e = getenv("Q9_BREAK_PC");
             const char *n = getenv("Q9_BREAK_PC_N");
-            bpc = e ? (uint32_t)strtoul(e, NULL, 0) : 0xFFFFFFFFu;
             bn = n ? (uint32_t)strtoul(n, NULL, 0) : 1u;
             if (bn == 0u) bn = 1u;
+            while (e && *e && count < BREAK_MAX) {
+                char *end = NULL;
+                unsigned long v = strtoul(e, &end, 0);
+                uint32_t i;
+                int duplicate = 0;
+                if (end == e) break;
+                for (i = 0u; i < count; i++) if (bpc[i] == (uint32_t)v) duplicate = 1;
+                if (!duplicate) bpc[count++] = (uint32_t)v;
+                e = (*end == ',') ? end + 1 : end;
+            }
             initialized = 1;
         }
-        /* Nur den angeforderten Treffer ausloesen. Mit >= wuerde ein nach
-           Ctrl-R fortgesetzter Lauf bei jedem weiteren Vorbeilauf an derselben
-           Adresse erneut anhalten, obwohl Q9_BREAK_PC_N bereits erfuellt ist. */
-        if ((uint32_t)pc == bpc && ++seen == bn) {
-            if (g_break_skip_once) {
-                g_break_skip_once = 0;
-            } else {
-                q9_dbg_break_hit = 1;
-                q9_dbg_break_pc = (uint32_t)pc;
-                q9_dbg_break_d0 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
-                q9_dbg_break_d1 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D1);
-                q9_dbg_break_d3 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D3);
-                q9_dbg_break_d4 = (uint32_t)m68k_get_reg(NULL, M68K_REG_D4);
-                q9_dbg_break_a0 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
-                q9_dbg_break_a4 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4);
-                q9_dbg_break_a6 = (uint32_t)m68k_get_reg(NULL, M68K_REG_A6);
-                q9_dbg_break_sp = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
-                q9_dbg_tr_frozen = 1;
-                q9_dbg_break_requested = 1;
-                return;
+        /* Q9_BREAK_PC akzeptiert bis zu 16 Adressen. Jede Adresse zaehlt
+           ihren eigenen Treffer; Q9_BREAK_PC_N gilt fuer alle. */
+        {
+            uint32_t i;
+            for (i = 0u; i < count; i++) {
+                if ((uint32_t)pc != bpc[i] || ++seen[i] != bn) continue;
+                if (g_break_skip_once) {
+                    g_break_skip_once = 0;
+                } else {
+                    q9_dbg_capture_snapshot((uint32_t)pc);
+                    q9_dbg_tr_frozen = 1;
+                    q9_dbg_break_requested = 1;
+                    m68k_end_timeslice(); /* stop this slice after the instruction at PC */
+                    return;
+                }
             }
         }
     }
@@ -510,12 +549,6 @@ static void q9_dbg_instr_hook(unsigned int pc)
             q9_dbg_exi_stk[q9_dbg_exi_n][w] = (uint16_t)m68k_read_memory_16(fsp + w * 2u);
         }
         q9_dbg_exi_n++;
-    }
-    {   /* frei waehlbare Zaehler, s. oben */
-        uint32_t k;
-        for (k = 0u; k < q9_dbg_cpc_n; k++) {
-            if ((uint32_t)pc == q9_dbg_cpc_addr[k]) { q9_dbg_cpc_hits[k]++; }
-        }
     }
     q9_dbg_tr_head = (q9_dbg_tr_head + 1u) % Q9_DBG_TR_SIZE;
     if (q9_dbg_tr_fill < Q9_DBG_TR_SIZE) {
@@ -645,10 +678,10 @@ unsigned int m68k_read_memory_32(unsigned int address)
            ((unsigned int)g_ram[address + 2] <<  8) |  (unsigned int)g_ram[address + 3];
 }
 
-/* Diagnose (2026-09-04): Schreib-Watch auf einen einzelnen Vektorslot.
-   Vektor 27 zeigte 50 Byte zu tief in den IRQ-Dispatcher hinein, waehrend
-   alle anderen korrekt auf dessen Einstieg zeigen -- gesucht ist, WER den
-   Wert dorthin schreibt. */
+/* Diagnose (2026-09-04): konfigurierbarer Schreib-Watch auf ein oder mehrere
+   Speicherfenster. Vektor 27 zeigte 50 Byte zu tief in den IRQ-Dispatcher
+   hinein, waehrend alle anderen korrekt auf dessen Einstieg zeigen -- gesucht
+   ist, WER den Wert dorthin schreibt. */
 uint32_t q9_dbg_wv_n = 0u;
 uint32_t q9_dbg_wv_pc[Q9_DBG_WV_SIZE];
 uint32_t q9_dbg_wv_val[Q9_DBG_WV_SIZE];
@@ -656,8 +689,11 @@ uint32_t q9_dbg_wv_size[Q9_DBG_WV_SIZE];
 uint32_t q9_dbg_wv_adr[Q9_DBG_WV_SIZE];
 uint32_t q9_dbg_wv_seq[Q9_DBG_WV_SIZE];
 static uint32_t g_dbg_write_seq = 0u;   /* zaehlt ALLE Schreibzugriffe -- monotone Zeitachse */
-static uint32_t g_dbg_watch_addr = 0u;
+#define Q9_DBG_WATCH_MAX 16u
+static uint32_t g_dbg_watch_addr[Q9_DBG_WATCH_MAX];
+static uint32_t g_dbg_watch_count;
 static uint32_t g_dbg_watch_len  = 0u;
+static int g_dbg_watch_initialized;
 
 uint32_t q9_dbg_write_seq_now(void) { return g_dbg_write_seq; }
 
@@ -667,21 +703,43 @@ static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int 
 
     /* Beobachtete Adresse -- ueber die Umgebung setzbar, damit der Watch ohne
        Neuuebersetzung auf ein anderes Feld gelegt werden kann. */
-    if (g_dbg_watch_addr == 0u) {
+    if (!g_dbg_watch_initialized) {
         const char *e = getenv("Q9_WATCH_ADDR");
         const char *l = getenv("Q9_WATCH_LEN");
-        g_dbg_watch_addr = e ? (uint32_t)strtoul(e, 0, 0) : 0xFFFFFFFFu;
         g_dbg_watch_len  = l ? (uint32_t)strtoul(l, 0, 0) : 1u;
-        if (g_dbg_watch_len == 0u) {
-            g_dbg_watch_len = 1u;
+        if (g_dbg_watch_len == 0u) g_dbg_watch_len = 1u;
+        if (!e) {
+            g_dbg_watch_addr[0] = 0xFFFFFFFFu;
+            g_dbg_watch_count = 1u;
+        } else {
+            while (*e && g_dbg_watch_count < Q9_DBG_WATCH_MAX) {
+                char *end = NULL;
+                unsigned long v = strtoul(e, &end, 0);
+                uint32_t i;
+                int duplicate = 0;
+                if (end == e) break;
+                for (i = 0u; i < g_dbg_watch_count; i++)
+                    if (g_dbg_watch_addr[i] == (uint32_t)v) duplicate = 1;
+                if (!duplicate) g_dbg_watch_addr[g_dbg_watch_count++] = (uint32_t)v;
+                e = (*end == ',') ? end + 1 : end;
+            }
         }
+        g_dbg_watch_initialized = 1;
     }
-    /* Ueberlappt der Zugriff [address,address+size) das Fenster
-       [addr,addr+len)? Ein Fenster statt einer einzelnen Adresse, weil die
-       Geraetestatik bei jeder Aenderung der Bootdateigroesse verrutscht --
-       eine feste Adresse ging deshalb zuletzt schlicht ins Leere. */
-    if (address < g_dbg_watch_addr + g_dbg_watch_len &&
-        address + size > g_dbg_watch_addr) {
+    /* Ein Schreibzugriff wird einmal erfasst, auch wenn er mehrere der
+       konfigurierten Fenster gleichzeitig ueberlappt. Differenzen statt
+       Endadressen vermeiden Ueberlauf an $FFFFFFFF. */
+    {
+        uint32_t k;
+        int hit = 0;
+        for (k = 0u; size != 0u && k < g_dbg_watch_count; k++) {
+            uint32_t w = g_dbg_watch_addr[k];
+            if (address >= w ? address - w < g_dbg_watch_len : w - address < size) {
+                hit = 1;
+                break;
+            }
+        }
+        if (hit) {
         /* Ringpuffer: die JUENGSTEN 64 Treffer bleiben stehen. Bei einem oft
            beschriebenen Feld (z.B. D_Proc bei jedem Prozesswechsel) waren die
            ersten 64 Treffer sonst laengst vor dem interessanten Moment voll. */
@@ -704,6 +762,7 @@ static void q9_dbg_watch(unsigned int address, unsigned int value, unsigned int 
             if (wf > 0 && (int)q9_dbg_wv_n >= wf) {
                 q9_dbg_tr_frozen = 1;
             }
+        }
         }
     }
 }

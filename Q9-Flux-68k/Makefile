@@ -143,10 +143,10 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
 # 2026-09-25: Q9-OS/Q9-DHF-68k's echtes 68k-Treibermodul (dhfdrv_68k.a, per psect gebauter
 # Modulkopf, s. dortige STATUS.md) -- Quelle liegt versioniert im Geschwister-Repo Q9-OS, wird HIER
 # frisch per qr68k/ql68k assembliert+gelinkt (nur test-dhf-driver braucht das fertige .mod, nicht
-# Teil des normalen "make host"). QR68K/QL68K-Pfade sind absolute Mehr-Repo-Pfade, analog
-# q9_dhf_init()s Q9-Images-Basepath in m68krt.c -- dieselbe Mehr-Repo-Realitaet dieses Projekts.
-QR68K      = /Volumes/SSD1TB/projects/Q9-Forge/Q9-QCC/Q9-BACKEND-68K/q9-qr68k/build/qr68k
-QL68K      = /Volumes/SSD1TB/projects/Q9-Forge/Q9-QCC/Q9-BACKEND-68K/q9-ql68k/build/ql68k
+# Teil des normalen "make host"). Q9-QCC und Q9-OS liegen als Geschwister unter
+# SRC/SYSTEM; Pfade relativ zum Repo statt an einen einzelnen Mountpunkt gebunden.
+QR68K      = $(abspath ../../Q9-QCC/Q9-BACKEND-68K/q9-qr68k/build/qr68k)
+QL68K      = $(abspath ../../Q9-QCC/Q9-BACKEND-68K/q9-ql68k/build/ql68k)
 DHFDRV_SRC = ../../Q9-OS/Q9-DHF-68k/driver/dhfdrv_68k.a
 DHFDRV_MOD = ../../Q9-OS/Q9-DHF-68k/driver/dhfdrv_68k.mod
 
@@ -154,7 +154,7 @@ DHFDRV_MOD = ../../Q9-OS/Q9-DHF-68k/driver/dhfdrv_68k.mod
 # os9/), die qr68 nur relativ zum eigenen Arbeitsverzeichnis sucht (-u= wirkt nur bei "use
 # <datei>" in spitzen Klammern) -- deshalb hier bewusst MIT cd in dieses Verzeichnis aufgerufen,
 # alle Pfade daher absolut.
-QR68K_DEFS_DIR = /Volumes/SSD1TB/projects/Q9-Forge/Q9-QCC/runtime/os9
+QR68K_DEFS_DIR = $(abspath ../../Q9-QCC/runtime/os9)
 
 $(DHFDRV_MOD): $(DHFDRV_SRC)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
@@ -216,6 +216,15 @@ ifeq ($(shell uname -s 2>/dev/null),Darwin)
     BOARD_NET_LIBS  = -framework vmnet
 endif
 
+# Optionaler Host-Disassembler fuer den Emulator-Debugger. Ohne Capstone bleibt der sichere
+# eingebaute Teildecoder aktiv; kein Zielsystem muss diese Bibliothek zwingend installieren.
+CAPSTONE_FLAGS =
+CAPSTONE_LIBS =
+ifeq ($(shell pkg-config --exists capstone 2>/dev/null && echo yes),yes)
+    CAPSTONE_FLAGS = -DQ9_HAVE_CAPSTONE $(shell pkg-config --cflags capstone)
+    CAPSTONE_LIBS  = $(shell pkg-config --libs capstone)
+endif
+
 # 5.14: slirp-Backend (--net slirp), PLATTFORMUEBERGREIFEND (anders als vmnet/bridge oben) -- unter
 # Windows gegen die vendorten Dateien in third_party/slirp/windows/ (s. dortige Q9_VENDOR.md: kein
 # Paketmanager noetig, w64devkit allein reicht), unter macOS/Linux gegen ein System-libslirp per
@@ -268,9 +277,9 @@ $(BUILD)/$(PLATFORM_DIR)/q9.exe: $(M68KRT_SRC) $(M68KRT_HDR) \
                         $(SLIRP_SRC) $(SLIRP_HDR) $(LAUNCHER_SRC) $(LAUNCHER_HDR) \
                         $(HOST_HAL_SRC) $(HDRS) $(MUSASHI_OBJS)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
-	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(BOARD_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) \
+	$(CC) $(CFLAGS) -DQ9_HAVE_M68K $(BOARD_NET_FLAGS) $(SLIRP_FLAGS) -I$(MUSASHI_DIR) $(CAPSTONE_FLAGS) \
 	    $(M68KRT_SRC) $(BOARD_SRC) $(BOARD_NET_SRC) $(SLIRP_SRC) $(LAUNCHER_SRC) $(HOST_HAL_SRC) \
-	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(HOST_EXTRA_LIBS) -o $@
+	    $(MUSASHI_OBJS) $(BOARD_NET_LIBS) $(SLIRP_LIBS) $(CAPSTONE_LIBS) $(HOST_EXTRA_LIBS) -o $@
 ifneq ($(SLIRP_RUNTIME_DLLS),)
 	@cp $(SLIRP_RUNTIME_DLLS) $(BUILD)/$(PLATFORM_DIR)/
 endif
@@ -317,7 +326,7 @@ test-dhf-driver: $(MUSASHI_OBJS) $(DHFDRV_MOD)
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) -DQ9_HAVE_M68K -I$(MUSASHI_DIR) -I$(MUSASHI_GEN) \
 	    test/14_test_dhf_driver.c test/07_hal_stub.c \
-	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/devreg.c \
+	    src/kernel/m68krt.c src/kernel/q9board.c src/kernel/boardcfg.c src/kernel/devschema.c src/kernel/devdesc.c src/kernel/devreg.c \
 	    src/devices/cf/cf.c \
 	    src/devices/duart68681/duart68681.c src/devices/rtc72421/rtc72421.c \
 	    src/devices/timer_irq/timer_irq.c src/devices/nettty/nettty.c \

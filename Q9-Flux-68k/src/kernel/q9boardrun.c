@@ -43,6 +43,9 @@
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "q9boardrun.h"
 #include "q9board.h"
+#ifdef Q9_HAVE_CAPSTONE
+#include <capstone.h>
+#endif
 #include "m68krt.h"
 #include "q9symbol.h"
 #include "q9line.h"
@@ -670,7 +673,263 @@ static void dbg_dump_q9kernel_extras(q9_board_t *b, FILE *f)
     fprintf(f, "--- Ende Q9-eigener-Kernel-Zusatzdump ---\n\n");
 }
 
-static void dbg_dump_kernel_globals(q9_board_t *b)
+/* Kleine, nebenwirkungsfreie Vorschau fuer den Host-Breakpoint. Der vollstaendige
+   Musashi-Disassembler ist im vendorten Build nicht enthalten. Deshalb dekodieren
+   wir nur kurze, eindeutige Grundformen; alle anderen Opcodes bleiben als Rohwort.
+   Code wird direkt aus ROM/RAM gelesen, nie ueber MMIO-Dispatch. */
+static int dbg_peek_code16(const q9_board_t *b, uint32_t addr, uint16_t *out)
+{
+    uint8_t hi, lo;
+    if (!b || !out || (addr & 1u)) return 0;
+    if (b->remapped && b->ram && addr < b->ram_len && b->ram_len - addr >= 2u) {
+        hi = b->ram[addr];
+        lo = b->ram[addr + 1u];
+    } else if (b->remapped && b->rom && b->rom_len &&
+               addr >= Q9_BOARD_ROM_REMAP_BASE && addr <= Q9_BOARD_ROM_REMAP_TOP) {
+        uint32_t off = addr - Q9_BOARD_ROM_REMAP_BASE;
+        if (off >= b->rom_len || b->rom_len - off < 2u) return 0;
+        hi = b->rom[off];
+        lo = b->rom[off + 1u];
+    } else if (!b->remapped) {
+        uint32_t a0, a1;
+        if (!b->rom || !b->rom_len || addr > Q9_BOARD_ROM_MIRROR_TOP) return 0;
+        a0 = addr % b->rom_len;
+        a1 = (addr + 1u) % b->rom_len;
+        hi = b->rom[a0];
+        lo = b->rom[a1];
+    } else return 0;
+    *out = (uint16_t)(((uint16_t)hi << 8) | lo);
+    return 1;
+}
+
+static int dbg_peek_stack16(const q9_board_t *b, uint32_t addr, uint16_t *out)
+{
+    if (!b || !out || !b->remapped || (addr & 1u) || !b->ram ||
+        addr >= b->ram_len || b->ram_len - addr < 2u) return 0;
+    *out = (uint16_t)(((uint16_t)b->ram[addr] << 8) | b->ram[addr + 1u]);
+    return 1;
+}
+
+static void dbg_format_sr(uint32_t sr, char *out, size_t cap)
+{
+    snprintf(out, cap, "SR=%04x T1=%u T0=%u S=%u M=%u IPL=%u X=%u N=%u Z=%u V=%u C=%u",
+             (unsigned)(sr & 0xffffu), (unsigned)((sr >> 15) & 1u),
+             (unsigned)((sr >> 14) & 1u), (unsigned)((sr >> 13) & 1u),
+             (unsigned)((sr >> 12) & 1u), (unsigned)((sr >> 8) & 7u),
+             (unsigned)((sr >> 4) & 1u), (unsigned)((sr >> 3) & 1u),
+             (unsigned)((sr >> 2) & 1u), (unsigned)((sr >> 1) & 1u), (unsigned)(sr & 1u));
+}
+
+#ifdef Q9_HAVE_CAPSTONE
+static cs_mode dbg_capstone_mode(q9_cpu_type_t cpu_type)
+{
+    cs_mode mode = CS_MODE_BIG_ENDIAN;
+    switch (cpu_type) {
+    case Q9_CPU_68000: mode |= CS_MODE_M68K_000; break;
+    case Q9_CPU_68010: mode |= CS_MODE_M68K_010; break;
+    case Q9_CPU_68EC020:
+    case Q9_CPU_68020: mode |= CS_MODE_M68K_020; break;
+    case Q9_CPU_68EC030:
+    case Q9_CPU_68030: mode |= CS_MODE_M68K_030; break;
+    case Q9_CPU_68EC040:
+    case Q9_CPU_68LC040:
+    case Q9_CPU_68040: mode |= CS_MODE_M68K_040; break;
+    default: mode |= CS_MODE_M68K_030; break;
+    }
+    return mode;
+}
+
+static int dbg_format_capstone(const q9_board_t *b, uint32_t pc, q9_cpu_type_t cpu_type,
+                               uint16_t opcode, char *out, size_t cap)
+{
+    uint8_t bytes[16];
+    size_t have = 0, count;
+    csh handle;
+    cs_insn *insn = NULL;
+    size_t i;
+    for (i = 0; i < sizeof(bytes); i += 2u) {
+        uint16_t word;
+        uint32_t addr;
+        if (pc > UINT32_MAX - (uint32_t)i - 1u) break;
+        addr = pc + (uint32_t)i;
+        if (!dbg_peek_code16(b, addr, &word)) break;
+        bytes[i] = (uint8_t)(word >> 8);
+        bytes[i + 1u] = (uint8_t)word;
+        have += 2u;
+    }
+    if (have < 2u || cs_open(CS_ARCH_M68K, dbg_capstone_mode(cpu_type), &handle) != CS_ERR_OK)
+        return 0;
+    count = cs_disasm(handle, bytes, have, pc, 1u, &insn);
+    if (count) {
+        /* Capstone uses dc.w for valid-but-unhandled forms on some CPU modes,
+           notably 68000 Bcc.B with displacement $FF. Let the local decoder
+           handle those instead of presenting them as data. */
+        if (strncmp(insn[0].mnemonic, "dc.", 3u) == 0) {
+            cs_free(insn, count);
+            cs_close(&handle);
+            return 0;
+        }
+        snprintf(out, cap, "NEXT=%08x %04x  %s%s%s", (unsigned)pc, opcode,
+                 insn[0].mnemonic, insn[0].op_str[0] ? " " : "", insn[0].op_str);
+        cs_free(insn, count);
+    }
+    cs_close(&handle);
+    return count != 0;
+}
+#endif
+
+static void dbg_format_next_insn(const q9_board_t *b, uint32_t pc, q9_cpu_type_t cpu_type, char *out, size_t cap)
+{
+    static const char *const cc[16] = {
+        "BRA", "BSR", "BHI", "BLS", "BCC", "BCS", "BNE", "BEQ",
+        "BVC", "BVS", "BPL", "BMI", "BGE", "BLT", "BGT", "BLE"
+    };
+    uint16_t op;
+    if (!cap) return;
+    if (!dbg_peek_code16(b, pc, &op)) {
+        snprintf(out, cap, "NEXT=%08x <nicht lesbar>", (unsigned)pc);
+        return;
+    }
+#ifdef Q9_HAVE_CAPSTONE
+    if (dbg_format_capstone(b, pc, cpu_type, op, out, cap)) return;
+#endif
+    if (op == 0x4e71) snprintf(out, cap, "NEXT=%08x %04x  NOP", (unsigned)pc, op);
+    else if (op == 0x4e75) snprintf(out, cap, "NEXT=%08x %04x  RTS", (unsigned)pc, op);
+    else if (op == 0x4e73) snprintf(out, cap, "NEXT=%08x %04x  RTE", (unsigned)pc, op);
+    else if (op == 0x4e77) snprintf(out, cap, "NEXT=%08x %04x  RTR", (unsigned)pc, op);
+    else if (op == 0x4e70) snprintf(out, cap, "NEXT=%08x %04x  RESET", (unsigned)pc, op);
+    else if (op == 0x4e72) {
+        uint16_t imm;
+        if (dbg_peek_code16(b, pc + 2u, &imm))
+            snprintf(out, cap, "NEXT=%08x %04x  STOP #$%04x", (unsigned)pc, op, imm);
+        else snprintf(out, cap, "NEXT=%08x %04x  STOP <imm unlesbar>", (unsigned)pc, op);
+    } else if ((op & 0xfff0u) == 0x4e40u)
+        snprintf(out, cap, "NEXT=%08x %04x  TRAP #%u", (unsigned)pc, op, op & 15u);
+    else if ((op & 0xfff8u) == 0x4e50u) {
+        uint16_t disp;
+        if (dbg_peek_code16(b, pc + 2u, &disp))
+            snprintf(out, cap, "NEXT=%08x %04x  LINK A%u,#%d", (unsigned)pc, op,
+                     op & 7u, (int)(int16_t)disp);
+        else snprintf(out, cap, "NEXT=%08x %04x  LINK A%u,<disp unlesbar>", (unsigned)pc, op, op & 7u);
+    } else if ((op & 0xfff8u) == 0x4e58u)
+        snprintf(out, cap, "NEXT=%08x %04x  UNLK A%u", (unsigned)pc, op, op & 7u);
+    else if (op == 0x4878u || op == 0x4879u || op == 0x487au) {
+        uint16_t hi, lo;
+        if (op == 0x487au && dbg_peek_code16(b, pc + 2u, &lo))
+            snprintf(out, cap, "NEXT=%08x %04x  PEA $%08x(PC)", (unsigned)pc, op,
+                     (unsigned)(pc + 2u + (int16_t)lo));
+        else if (op == 0x4878u && dbg_peek_code16(b, pc + 2u, &lo))
+            snprintf(out, cap, "NEXT=%08x %04x  PEA $%08x", (unsigned)pc, op,
+                     (unsigned)(int32_t)(int16_t)lo);
+        else if (op == 0x4879u && dbg_peek_code16(b, pc + 2u, &hi) && dbg_peek_code16(b, pc + 4u, &lo))
+            snprintf(out, cap, "NEXT=%08x %04x  PEA $%08x", (unsigned)pc, op,
+                     (unsigned)(((uint32_t)hi << 16) | lo));
+        else snprintf(out, cap, "NEXT=%08x %04x  PEA <addr unlesbar>", (unsigned)pc, op);
+    }
+    else if (op == 0x4ebau || op == 0x4efau) {
+        uint16_t disp;
+        if (dbg_peek_code16(b, pc + 2u, &disp))
+            snprintf(out, cap, "NEXT=%08x %04x  %s $%08x(PC)", (unsigned)pc, op,
+                     op == 0x4ebau ? "JSR" : "JMP", (unsigned)(pc + 2u + (int16_t)disp));
+        else snprintf(out, cap, "NEXT=%08x %04x  %s <disp unlesbar>", (unsigned)pc, op, op == 0x4ebau ? "JSR" : "JMP");
+    } else if ((op & 0xfff8u) == 0x4e90u || (op & 0xfff8u) == 0x4ed0u)
+        snprintf(out, cap, "NEXT=%08x %04x  %s (A%u)", (unsigned)pc, op,
+                 (op & 0x0040u) ? "JMP" : "JSR", op & 7u);
+    else if (op == 0x4eb8u || op == 0x4ef8u) {
+        uint16_t ext;
+        if (dbg_peek_code16(b, pc + 2u, &ext))
+            snprintf(out, cap, "NEXT=%08x %04x  %s $%08x", (unsigned)pc, op,
+                     op == 0x4ef8u ? "JMP" : "JSR", (unsigned)(int32_t)(int16_t)ext);
+        else snprintf(out, cap, "NEXT=%08x %04x  %s <addr unlesbar>", (unsigned)pc, op, op == 0x4ef8u ? "JMP" : "JSR");
+    } else if (op == 0x4eb9u || op == 0x4ef9u) {
+        uint16_t hi, lo;
+        if (dbg_peek_code16(b, pc + 2u, &hi) && dbg_peek_code16(b, pc + 4u, &lo))
+            snprintf(out, cap, "NEXT=%08x %04x  %s $%08x", (unsigned)pc, op,
+                     op == 0x4ef9u ? "JMP" : "JSR", (unsigned)(((uint32_t)hi << 16) | lo));
+        else snprintf(out, cap, "NEXT=%08x %04x  %s <addr unlesbar>", (unsigned)pc, op, op == 0x4ef9u ? "JMP" : "JSR");
+    } else if ((op & 0xf100u) == 0x7000u)
+        snprintf(out, cap, "NEXT=%08x %04x  MOVEQ #%d,D%u", (unsigned)pc, op,
+                 (int)(int8_t)(op & 0xffu), (op >> 9) & 7u);
+    else if (((op >> 12) == 1u || (op >> 12) == 2u || (op >> 12) == 3u) &&
+             ((op >> 3) & 7u) == 0u && ((op >> 6) & 7u) == 0u) {
+        const char *sz = (op >> 12) == 1u ? ".B" : (op >> 12) == 2u ? ".L" : ".W";
+        snprintf(out, cap, "NEXT=%08x %04x  MOVE%s D%u,D%u", (unsigned)pc, op, sz, op & 7u, (op >> 9) & 7u);
+    } else if (((op >> 12) == 2u || (op >> 12) == 3u) &&
+               ((op >> 3) & 7u) == 0u && ((op >> 6) & 7u) == 1u) {
+        snprintf(out, cap, "NEXT=%08x %04x  MOVEA%s D%u,A%u", (unsigned)pc, op,
+                 (op >> 12) == 2u ? ".L" : ".W", op & 7u, (op >> 9) & 7u);
+    } else if (((op & 0xfff8u) == 0x4200u) || ((op & 0xfff8u) == 0x4240u) ||
+               ((op & 0xfff8u) == 0x4280u)) {
+        const char *sz = (op & 0x00c0u) == 0x0000u ? ".B" : (op & 0x00c0u) == 0x0040u ? ".W" : ".L";
+        snprintf(out, cap, "NEXT=%08x %04x  CLR%s D%u", (unsigned)pc, op, sz, op & 7u);
+    } else if (((op & 0xfff8u) == 0x4a00u) || ((op & 0xfff8u) == 0x4a40u) ||
+               ((op & 0xfff8u) == 0x4a80u)) {
+        const char *sz = (op & 0x00c0u) == 0x0000u ? ".B" : (op & 0x00c0u) == 0x0040u ? ".W" : ".L";
+        snprintf(out, cap, "NEXT=%08x %04x  TST%s D%u", (unsigned)pc, op, sz, op & 7u);
+    } else if ((op & 0xf1ffu) == 0x207cu || (op & 0xf1ffu) == 0x203cu) {
+        uint16_t hi, lo;
+        if (dbg_peek_code16(b, pc + 2u, &hi) && dbg_peek_code16(b, pc + 4u, &lo)) {
+            uint32_t imm = ((uint32_t)hi << 16) | lo;
+            if ((op & 0xf1ffu) == 0x207cu)
+                snprintf(out, cap, "NEXT=%08x %04x  MOVEA.L #$%08x,A%u", (unsigned)pc, op, imm, (op >> 9) & 7u);
+            else
+                snprintf(out, cap, "NEXT=%08x %04x  MOVE.L #$%08x,D%u", (unsigned)pc, op, imm, (op >> 9) & 7u);
+        } else snprintf(out, cap, "NEXT=%08x %04x  MOVE.L #<imm unlesbar>", (unsigned)pc, op);
+    } else if ((op & 0xf1ffu) == 0x307cu) {
+        uint16_t imm;
+        if (dbg_peek_code16(b, pc + 2u, &imm))
+            snprintf(out, cap, "NEXT=%08x %04x  MOVEA.W #$%04x,A%u", (unsigned)pc, op, imm, (op >> 9) & 7u);
+        else snprintf(out, cap, "NEXT=%08x %04x  MOVEA.W #<imm unlesbar>", (unsigned)pc, op);
+    } else if ((op & 0xf1ffu) == 0x41fau) {
+        uint16_t disp;
+        if (dbg_peek_code16(b, pc + 2u, &disp))
+            snprintf(out, cap, "NEXT=%08x %04x  LEA $%08x(PC),A%u", (unsigned)pc, op,
+                     (unsigned)(pc + 2u + (int16_t)disp), (op >> 9) & 7u);
+        else snprintf(out, cap, "NEXT=%08x %04x  LEA <disp unlesbar>(PC),A%u", (unsigned)pc, op, (op >> 9) & 7u);
+    } else if ((op & 0xf1ffu) == 0x41f9u) {
+        uint16_t hi, lo;
+        if (dbg_peek_code16(b, pc + 2u, &hi) && dbg_peek_code16(b, pc + 4u, &lo))
+            snprintf(out, cap, "NEXT=%08x %04x  LEA $%08x,A%u", (unsigned)pc, op,
+                     (unsigned)(((uint32_t)hi << 16) | lo), (op >> 9) & 7u);
+        else snprintf(out, cap, "NEXT=%08x %04x  LEA <addr unlesbar>,A%u", (unsigned)pc, op, (op >> 9) & 7u);
+    } else if ((op & 0xf0f8u) == 0x50c8u) {
+        uint16_t ext;
+        static const char *const dbcc[16] = {
+            "DBT", "DBRA", "DBHI", "DBLS", "DBCC", "DBCS", "DBNE", "DBEQ",
+            "DBVC", "DBVS", "DBPL", "DBMI", "DBGE", "DBLT", "DBGT", "DBLE"
+        };
+        if (dbg_peek_code16(b, pc + 2u, &ext))
+            snprintf(out, cap, "NEXT=%08x %04x  %s D%u,$%08x", (unsigned)pc, op,
+                     dbcc[(op >> 8) & 15u], op & 7u, (unsigned)(pc + 2u + (int16_t)ext));
+        else snprintf(out, cap, "NEXT=%08x %04x  %s D%u,<disp unlesbar>", (unsigned)pc, op,
+                      dbcc[(op >> 8) & 15u], op & 7u);
+    } else if ((op & 0xf000u) == 0x5000u && (op & 0x0038u) == 0 && ((op >> 6) & 3u) != 3u) {
+        unsigned q = (op >> 9) & 7u;
+        unsigned size = (op >> 6) & 3u;
+        const char *sz = size == 0 ? ".B" : size == 1 ? ".W" : size == 2 ? ".L" : "";
+        if (!q) q = 8;
+        snprintf(out, cap, "NEXT=%08x %04x  %sQ%s #%u,D%u", (unsigned)pc, op,
+                 (op & 0x0100u) ? "SUB" : "ADD", sz, q, op & 7u);
+    } else if ((op & 0xf000u) == 0x6000u) {
+        int32_t disp = (int8_t)(op & 0xffu);
+        uint32_t base = pc + 2u;
+        uint8_t bdisp = (uint8_t)op;
+        if (bdisp == 0u) {
+            uint16_t ext;
+            if (dbg_peek_code16(b, pc + 2u, &ext)) disp = (int16_t)ext;
+            else { snprintf(out, cap, "NEXT=%08x %04x  %s <disp unlesbar>", (unsigned)pc, op, cc[(op >> 8) & 15u]); return; }
+        } else if (bdisp == 0xffu && cpu_type != Q9_CPU_68000 && cpu_type != Q9_CPU_68010) {
+            uint16_t hi, lo;
+            if (dbg_peek_code16(b, pc + 2u, &hi) && dbg_peek_code16(b, pc + 4u, &lo))
+                disp = (int32_t)(((uint32_t)hi << 16) | lo);
+            else { snprintf(out, cap, "NEXT=%08x %04x  %s <disp32 unlesbar>", (unsigned)pc, op, cc[(op >> 8) & 15u]); return; }
+        }
+        snprintf(out, cap, "NEXT=%08x %04x  %s $%08x", (unsigned)pc, op,
+                 cc[(op >> 8) & 15u], (unsigned)(base + disp));
+    } else snprintf(out, cap, "NEXT=%08x %04x  .word $%04x (Dekodierung offen)", (unsigned)pc, op, op);
+}
+
+static void dbg_dump_kernel_globals(q9_board_t *b, q9_cpu_type_t cpu_type)
 {
     /* In eine Datei statt nach stderr schreiben: bei groesseren Dumps (Syscall-Tabellen-Scan,
        D_ExcJmp) geht sonst Text im PTY-Puffer verloren, wenn viele Zeilen ohne Interaktion in
@@ -685,15 +944,63 @@ static void dbg_dump_kernel_globals(q9_board_t *b)
     q9_line_init_from_env();
 
     if (q9_dbg_break_hit) {
+        char sym[128] = "", line[192] = "", next[128], flags[160], stack[160] = "Stack@A7:";
+        unsigned int i;
+        uint32_t sp = q9_dbg_break_regs[15];
+        size_t used;
+        dbg_format_next_insn(b, q9_dbg_break_pc, cpu_type, next, sizeof(next));
+        dbg_format_sr(q9_dbg_break_sr, flags, sizeof(flags));
+        for (i = 0; i < 8u; i++) {
+            uint16_t word;
+            char item[16];
+            if (sp > 0xfffffff1u - i * 2u || !dbg_peek_stack16(b, sp + i * 2u, &word)) break;
+            snprintf(item, sizeof(item), " %04x", word);
+            used = strlen(stack);
+            if (used < sizeof(stack)) strncat(stack, item, sizeof(stack) - used - 1u);
+        }
+        if (i == 0u) strncat(stack, " <nicht lesbar>", sizeof(stack) - strlen(stack) - 1u);
+        (void)q9_symbolize_pc(q9_dbg_break_pc, sym, sizeof(sym));
+        (void)q9_line_lookup(q9_dbg_break_pc, line, sizeof(line));
         fprintf(f, "\n--- Host-Breakpoint ---\n"
-                   "  PC=%08x D0=%08x D1=%08x D3=%08x D4=%08x\n"
-                   "  A0=%08x A4=%08x A6=%08x SP=%08x\n"
+                   "  PC=%08x  letzte Instruktion=%08x%s%s%s%s%s\n",
+                (unsigned)q9_dbg_break_pc, (unsigned)q9_dbg_break_from_pc,
+                sym[0] ? "  " : "", sym[0] ? sym : "",
+                line[0] ? "  [" : "", line[0] ? line : "", line[0] ? "]" : "");
+        for (i = 0; i < 8u; i += 4u)
+            fprintf(f, "  D%u=%08x D%u=%08x D%u=%08x D%u=%08x\n",
+                    i, (unsigned)q9_dbg_break_regs[i], i + 1u,
+                    (unsigned)q9_dbg_break_regs[i + 1u], i + 2u,
+                    (unsigned)q9_dbg_break_regs[i + 2u], i + 3u,
+                    (unsigned)q9_dbg_break_regs[i + 3u]);
+        for (i = 0; i < 8u; i += 4u)
+            fprintf(f, "  A%u=%08x A%u=%08x A%u=%08x A%u=%08x\n",
+                    i, (unsigned)q9_dbg_break_regs[8u + i], i + 1u,
+                    (unsigned)q9_dbg_break_regs[9u + i], i + 2u,
+                    (unsigned)q9_dbg_break_regs[10u + i], i + 3u,
+                    (unsigned)q9_dbg_break_regs[11u + i]);
+        fprintf(f, "  %s USP=%08x ISP=%08x MSP=%08x\n  %s\n  %s\n"
                    "--- Ende Host-Breakpoint ---\n",
-                (unsigned)q9_dbg_break_pc, (unsigned)q9_dbg_break_d0,
-                (unsigned)q9_dbg_break_d1, (unsigned)q9_dbg_break_d3,
-                (unsigned)q9_dbg_break_d4, (unsigned)q9_dbg_break_a0,
-                (unsigned)q9_dbg_break_a4, (unsigned)q9_dbg_break_a6,
-                (unsigned)q9_dbg_break_sp);
+                flags, (unsigned)q9_dbg_break_usp, (unsigned)q9_dbg_break_isp,
+                (unsigned)q9_dbg_break_msp, next, stack);
+        fprintf(stderr, "\n[q9dbg] Breakpoint PC=%08x  letzte Instruktion=%08x%s%s%s%s%s\n"
+                        "  D0=%08x D1=%08x D2=%08x D3=%08x\n"
+                        "  D4=%08x D5=%08x D6=%08x D7=%08x\n"
+                        "  A0=%08x A1=%08x A2=%08x A3=%08x\n"
+                        "  A4=%08x A5=%08x A6=%08x A7=%08x\n"
+                        "  %s USP=%08x ISP=%08x MSP=%08x\n  %s\n  %s\n",
+                (unsigned)q9_dbg_break_pc, (unsigned)q9_dbg_break_from_pc,
+                sym[0] ? "  " : "", sym[0] ? sym : "",
+                line[0] ? "  [" : "", line[0] ? line : "", line[0] ? "]" : "",
+                (unsigned)q9_dbg_break_regs[0], (unsigned)q9_dbg_break_regs[1],
+                (unsigned)q9_dbg_break_regs[2], (unsigned)q9_dbg_break_regs[3],
+                (unsigned)q9_dbg_break_regs[4], (unsigned)q9_dbg_break_regs[5],
+                (unsigned)q9_dbg_break_regs[6], (unsigned)q9_dbg_break_regs[7],
+                (unsigned)q9_dbg_break_regs[8], (unsigned)q9_dbg_break_regs[9],
+                (unsigned)q9_dbg_break_regs[10], (unsigned)q9_dbg_break_regs[11],
+                (unsigned)q9_dbg_break_regs[12], (unsigned)q9_dbg_break_regs[13],
+                (unsigned)q9_dbg_break_regs[14], (unsigned)q9_dbg_break_regs[15],
+                flags, (unsigned)q9_dbg_break_usp, (unsigned)q9_dbg_break_isp,
+                (unsigned)q9_dbg_break_msp, next, stack);
     }
 
     dbg_dump_q9kernel_extras(b, f);
@@ -1296,6 +1603,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
     q9_slirp_hostfwd_t slirp_hostfwd[Q9_MAX_HOSTFWD];
     int                 slirp_hostfwd_count = 0;
     q9_m68krt_t       rt;
+    q9_cpu_type_t     cpu_type;
     q9_cpu_backend_t  cpu;                              /* 6.5: reset/execute/set_irq/is_stopped   */
     uint32_t          rom_len = 0;
     int               cf2_used   = 0;
@@ -1420,7 +1728,8 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
 
     fflush(stdout);                                    /* Banner raus, bevor der CPU-Loop beginnt */
 
-    q9_m68krt_init(&rt, board_ram, board_ram_bytes, q9_board_resolve_cpu(cfg ? cfg->cpu : ""));
+    cpu_type = q9_board_resolve_cpu(cfg ? cfg->cpu : "");
+    q9_m68krt_init(&rt, board_ram, board_ram_bytes, cpu_type);
     q9_m68krt_get_backend(&rt, &cpu);                  /* 6.5: ab hier nur noch ueber die Vtable  */
     q9_m68krt_attach_board(&board);                    /* ab jetzt laeuft ALLES ueber das Board  */
     if (cf2_used) {
@@ -1481,6 +1790,8 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                     q9_dbg_resume_requested = 0;
                     q9_dbg_break_requested = 0;
                     q9_dbg_break_dumped = 0;
+                    q9_dbg_break_hit = 0;
+                    q9_dbg_tr_frozen = 0;
                     continue;
                 }
                 if (q9_dbg_step_requested) {
@@ -1489,6 +1800,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                     q9_dbg_tr_frozen = 0;
                     q9_dbg_prepare_single_step();
                     cpu.execute(cpu.ctx, 1);
+                    q9_dbg_capture_current_snapshot();
                     q9_dbg_tr_frozen = 1;
                     q9_dbg_break_requested = 1;
                     q9_dbg_dump_requested = 1;
@@ -1497,17 +1809,19 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                 }
                 if (!q9_dbg_break_dumped) {
                     q9_dbg_dump_requested = 0;
-                    dbg_dump_kernel_globals(&board);
+                    dbg_dump_kernel_globals(&board, cpu_type);
                     q9_dbg_break_dumped = 1;
                 }
                 q9_hal_sleep_ms(10);
                 continue;
             }
             cpu.execute(cpu.ctx, BOARD_SLICE_CYCLES);
+            if (q9_dbg_break_requested)
+                q9_dbg_capture_current_snapshot();
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
             if (q9_dbg_dump_requested) {                    /* Debug-Sondertaste, s. q9boardrun.h     */
                 q9_dbg_dump_requested = 0;
-                dbg_dump_kernel_globals(&board);
+                dbg_dump_kernel_globals(&board, cpu_type);
             }
             now_ms = q9_hal_ticks_ms();
 
