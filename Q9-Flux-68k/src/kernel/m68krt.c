@@ -298,7 +298,7 @@ int      q9_dbg_tr_frozen = 0;
 volatile int q9_dbg_break_requested = 0;
 static volatile int g_break_skip_once;
 #define Q9_DBG_PC_BREAK_MAX 32u
-typedef struct { uint32_t pc, seen, hit_at; } q9_dbg_pc_break_t;
+typedef struct { uint32_t pc, seen, hit_at; int repeat; } q9_dbg_pc_break_t;
 static q9_dbg_pc_break_t g_pc_breaks[Q9_DBG_PC_BREAK_MAX];
 static uint32_t g_pc_break_count;
 static int g_pc_breaks_initialized;
@@ -324,6 +324,7 @@ static void q9_dbg_pc_breaks_init(void)
             g_pc_breaks[g_pc_break_count].pc = (uint32_t)value;
             g_pc_breaks[g_pc_break_count].seen = 0u;
             g_pc_breaks[g_pc_break_count].hit_at = hit_at;
+            g_pc_breaks[g_pc_break_count].repeat = 0;
             g_pc_break_count++;
         }
         list = (*end == ',') ? end + 1 : end;
@@ -334,12 +335,19 @@ int q9_m68krt_breakpoint_add(uint32_t pc)
 {
     uint32_t i;
     q9_dbg_pc_breaks_init();
-    for (i = 0; i < g_pc_break_count; i++)
-        if (g_pc_breaks[i].pc == pc) return 0;
+    for (i = 0; i < g_pc_break_count; i++) {
+        if (g_pc_breaks[i].pc == pc) {
+            g_pc_breaks[i].seen = 0u;
+            g_pc_breaks[i].hit_at = 1u;
+            g_pc_breaks[i].repeat = 1;
+            return 0;
+        }
+    }
     if (g_pc_break_count >= Q9_DBG_PC_BREAK_MAX) return -1;
     g_pc_breaks[g_pc_break_count].pc = pc;
     g_pc_breaks[g_pc_break_count].seen = 0u;
     g_pc_breaks[g_pc_break_count].hit_at = 1u;
+    g_pc_breaks[g_pc_break_count].repeat = 1;
     g_pc_break_count++;
     return 1;
 }
@@ -502,18 +510,19 @@ static void q9_dbg_instr_hook(unsigned int pc)
     q9_dbg_pc_breaks_init();
     {
         uint32_t i;
+        int skip_current = g_break_skip_once && (uint32_t)pc == q9_dbg_break_from_pc;
+        if (skip_current) g_break_skip_once = 0;
         for (i = 0u; i < g_pc_break_count; i++) {
             q9_dbg_pc_break_t *bp = &g_pc_breaks[i];
-            if ((uint32_t)pc != bp->pc || ++bp->seen != bp->hit_at) continue;
-            if (g_break_skip_once) {
-                g_break_skip_once = 0;
-            } else {
-                q9_dbg_capture_snapshot((uint32_t)pc);
-                q9_dbg_tr_frozen = 1;
-                q9_dbg_break_requested = 1;
-                m68k_end_timeslice();
-                return;
-            }
+            if ((uint32_t)pc != bp->pc || skip_current) continue;
+            if (bp->repeat) {
+                if (++bp->seen < bp->hit_at) continue;
+            } else if (++bp->seen != bp->hit_at) continue;
+            q9_dbg_capture_snapshot((uint32_t)pc);
+            q9_dbg_tr_frozen = 1;
+            q9_dbg_break_requested = 1;
+            m68k_end_timeslice();
+            return;
         }
     }
 
@@ -629,6 +638,31 @@ static void q9_dbg_instr_hook(unsigned int pc)
             }
         }
     }
+}
+
+uint32_t q9_m68krt_debug_reg_get(unsigned reg)
+{
+    if (reg < 16u) return (uint32_t)m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_D0 + reg));
+    if (reg == 16u) return (uint32_t)m68k_get_reg(NULL, M68K_REG_SR);
+    if (reg == 17u) return (uint32_t)m68k_get_reg(NULL, M68K_REG_PC);
+    return 0u;
+}
+
+void q9_m68krt_debug_reg_set(unsigned reg, uint32_t value)
+{
+    if (reg < 16u) m68k_set_reg((m68k_register_t)(M68K_REG_D0 + reg), value);
+    else if (reg == 16u) m68k_set_reg(M68K_REG_SR, value & 0xffffu);
+    else if (reg == 17u) m68k_set_reg(M68K_REG_PC, value);
+}
+
+unsigned int q9_m68krt_debug_mem_read8(uint32_t address)
+{
+    return m68k_read_memory_8(address);
+}
+
+void q9_m68krt_debug_mem_write8(uint32_t address, unsigned int value)
+{
+    m68k_write_memory_8(address, value);
 }
 
 void q9_dbg_instr_trace_init(void)

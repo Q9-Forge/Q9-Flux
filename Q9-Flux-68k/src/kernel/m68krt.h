@@ -375,6 +375,10 @@ extern volatile int q9_dbg_break_requested;
 void q9_dbg_prepare_single_step(void);
 int q9_m68krt_breakpoint_add(uint32_t pc);
 int q9_m68krt_breakpoint_remove(uint32_t pc);
+uint32_t q9_m68krt_debug_reg_get(unsigned reg);
+void q9_m68krt_debug_reg_set(unsigned reg, uint32_t value);
+unsigned int q9_m68krt_debug_mem_read8(uint32_t address);
+void q9_m68krt_debug_mem_write8(uint32_t address, unsigned int value);
 
 void q9_dbg_instr_trace_init(void);                 /* registriert den Hook, nur bei Q9_TRACE_INSTR=1 */
 void q9_dbg_instr_trace_note_tx(unsigned char val); /* vom DUART gerufen: friert bei val >= 0x80 ein  */

@@ -177,10 +177,10 @@ DEVDESC_SRC = src/kernel/devdesc.c src/kernel/devschema.c src/kernel/devreg.c \
 
 # 5.2a: Board-Speicherlogik (RAM/ROM/Remap, docs/BOARD.md) -- Q9-eigener Code, volle CFLAGS
 # wie M68KRT_SRC.
-BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/q9symbol.c src/kernel/q9line.c src/kernel/boardcfg.c \
+BOARD_SRC = src/kernel/q9board.c src/kernel/q9boardrun.c src/kernel/q9gdbstub.c src/kernel/q9symbol.c src/kernel/q9line.c src/kernel/boardcfg.c \
             $(DEVDESC_SRC) \
             src/devices/videobridge/videobridge.c
-BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/q9symbol.h src/kernel/q9line.h src/kernel/devreg.h src/kernel/boardcfg.h \
+BOARD_HDR = src/kernel/q9board.h src/kernel/q9boardrun.h src/kernel/q9gdbstub.h src/kernel/q9symbol.h src/kernel/q9line.h src/kernel/devreg.h src/kernel/boardcfg.h \
             src/devices/cf/cf.h \
             src/devices/nic/q9nic.h src/devices/mc6845/mc6845.h src/devices/framebuf/framebuf.h \
             src/devices/clut/clut.h src/devices/videobridge/videobridge.h \
@@ -287,7 +287,11 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-symbols test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf test-dhf-driver
+test: test-gdbstub test-symbols test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf test-dhf-driver
+
+# GDB RSP gegen ein synthetisches 68k-ROM: Registers, Memory, Breakpoints, Continue, Step.
+test-gdbstub: $(BUILD)/$(PLATFORM_DIR)/q9.exe
+	python3 test/test_gdbstub.py $(BUILD)/$(PLATFORM_DIR)/q9.exe
 
 # H1: Linkkarten fuer dynamische OS-9-Module (Q9_SYMBOL_DIR/<modul>.map).
 # Prueft COD-Offsets, Case-Folding und sichere Modulnamen.
@@ -691,7 +695,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-dhf test-dhf-driver test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx clean distclean
+.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-dhf test-dhf-driver test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx test-gdbstub clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 4.40

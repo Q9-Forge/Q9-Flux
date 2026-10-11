@@ -49,6 +49,7 @@
 #include "m68krt.h"
 #include "q9symbol.h"
 #include "q9line.h"
+#include "q9gdbstub.h"
 #include "../devices/duart68681/duart68681.h"      /* THRA-Mitschrift, s. dort                */
 #include "../devices/nic/q9nic.h"
 #include "../devices/mc6845/mc6845.h"                  /* 5.24: MC6845-CRT-Controller             */
@@ -1833,6 +1834,8 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
         }
     }
     cpu.reset(cpu.ctx);                                 /* Reset-Vektoren kommen aus dem ROM      */
+    if (q9_gdbstub_init() != 0)
+        fprintf(stderr, "[Q9 GDB] Remote-Debugger konnte nicht gestartet werden; lokale Debugger-Tasten bleiben aktiv\n");
 
     {
         /* Q9_BOARD_DEBUG=1 in der Umgebung: alle ~3s CPU-Zustand auf stderr (PC/SR/IACK-Zaehler
@@ -1845,6 +1848,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
             uint32_t now_ms;
 
             if (q9_dbg_break_requested) {
+                if (q9_gdbstub_active()) q9_gdbstub_poll(1);
                 /* Auch im Haltepunkt-Zustand die Host-Tastatur pollen:
                    q9_hal_con_get() verarbeitet Ctrl-R/Ctrl-T/Ctrl-] und
                    liefert bei leerem, nichtblockierendem Eingang -1. */
@@ -1867,11 +1871,11 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                     q9_dbg_capture_current_snapshot();
                     q9_dbg_tr_frozen = 1;
                     q9_dbg_break_requested = 1;
-                    q9_dbg_dump_requested = 1;
+                    q9_dbg_dump_requested = q9_gdbstub_connected() ? 0 : 1;
                     q9_dbg_break_dumped = 0;
                     continue;
                 }
-                if (!q9_dbg_break_dumped) {
+                if (!q9_dbg_break_dumped && !q9_gdbstub_connected()) {
                     q9_dbg_dump_requested = 0;
                     dbg_dump_kernel_globals(&board, cpu_type);
                     q9_dbg_break_dumped = 1;
@@ -1880,6 +1884,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                 continue;
             }
             cpu.execute(cpu.ctx, BOARD_SLICE_CYCLES);
+            if (q9_gdbstub_active()) q9_gdbstub_poll(0);
             if (q9_dbg_break_requested)
                 q9_dbg_capture_current_snapshot();
             q9_hal_con_flush();                             /* 5.7: TX-Rest aus vorherigen Runden   */
