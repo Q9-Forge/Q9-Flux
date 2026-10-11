@@ -1851,6 +1851,7 @@ int q9_board_boot(const char *rom_path, const char *cf_path, const char *net_mod
                 (void)q9_hal_con_get();
                 if (q9_dbg_resume_requested) {
                     q9_dbg_resume_requested = 0;
+                    q9_dbg_prepare_single_step(); /* bestehende Breakpoint-Instruktion einmal ausfuehren */
                     q9_dbg_break_requested = 0;
                     q9_dbg_break_dumped = 0;
                     q9_dbg_break_hit = 0;

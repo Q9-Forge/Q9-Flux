@@ -297,6 +297,66 @@ uint32_t q9_dbg_tr_fill   = 0u;
 int      q9_dbg_tr_frozen = 0;
 volatile int q9_dbg_break_requested = 0;
 static volatile int g_break_skip_once;
+#define Q9_DBG_PC_BREAK_MAX 32u
+typedef struct { uint32_t pc, seen, hit_at; } q9_dbg_pc_break_t;
+static q9_dbg_pc_break_t g_pc_breaks[Q9_DBG_PC_BREAK_MAX];
+static uint32_t g_pc_break_count;
+static int g_pc_breaks_initialized;
+
+static void q9_dbg_pc_breaks_init(void)
+{
+    const char *list, *nth;
+    uint32_t hit_at, i;
+    if (g_pc_breaks_initialized) return;
+    g_pc_breaks_initialized = 1;
+    nth = getenv("Q9_BREAK_PC_N");
+    hit_at = nth ? (uint32_t)strtoul(nth, NULL, 0) : 1u;
+    if (hit_at == 0u) hit_at = 1u;
+    list = getenv("Q9_BREAK_PC");
+    while (list && *list && g_pc_break_count < Q9_DBG_PC_BREAK_MAX) {
+        char *end = NULL;
+        unsigned long value = strtoul(list, &end, 0);
+        int duplicate = 0;
+        if (end == list) break;
+        for (i = 0; i < g_pc_break_count; i++)
+            if (g_pc_breaks[i].pc == (uint32_t)value) duplicate = 1;
+        if (!duplicate) {
+            g_pc_breaks[g_pc_break_count].pc = (uint32_t)value;
+            g_pc_breaks[g_pc_break_count].seen = 0u;
+            g_pc_breaks[g_pc_break_count].hit_at = hit_at;
+            g_pc_break_count++;
+        }
+        list = (*end == ',') ? end + 1 : end;
+    }
+}
+
+int q9_m68krt_breakpoint_add(uint32_t pc)
+{
+    uint32_t i;
+    q9_dbg_pc_breaks_init();
+    for (i = 0; i < g_pc_break_count; i++)
+        if (g_pc_breaks[i].pc == pc) return 0;
+    if (g_pc_break_count >= Q9_DBG_PC_BREAK_MAX) return -1;
+    g_pc_breaks[g_pc_break_count].pc = pc;
+    g_pc_breaks[g_pc_break_count].seen = 0u;
+    g_pc_breaks[g_pc_break_count].hit_at = 1u;
+    g_pc_break_count++;
+    return 1;
+}
+
+int q9_m68krt_breakpoint_remove(uint32_t pc)
+{
+    uint32_t i;
+    q9_dbg_pc_breaks_init();
+    for (i = 0; i < g_pc_break_count; i++) {
+        if (g_pc_breaks[i].pc == pc) {
+            for (; i + 1u < g_pc_break_count; i++) g_pc_breaks[i] = g_pc_breaks[i + 1u];
+            g_pc_break_count--;
+            return 1;
+        }
+    }
+    return 0;
+}
 
 static void q9_dbg_capture_registers(uint32_t pc)
 {
@@ -437,47 +497,22 @@ static void q9_dbg_instr_hook(unsigned int pc)
             q9_dbg_pchit_n++;
         }
     }
-    /* Echter Snapshot-Haltepunkt: unabhaengig vom Zustand der optionalen
-       Instruktionsspur pruefen. Die Spur kann bereits bei einem fruehen
-       Fehler-PC eingefroren sein; ein spaeter gesetzter Breakpoint muss
-       trotzdem noch anhalten koennen. */
+    /* Snapshot-Haltepunkt vor der Instruktionsausfuehrung. Der Musashi-Hook
+       kann die Instruktion per m68k_end_timeslice() sicher zurueckhalten. */
+    q9_dbg_pc_breaks_init();
     {
-        enum { BREAK_MAX = 16 };
-        static uint32_t bpc[BREAK_MAX], seen[BREAK_MAX], count = 0u;
-        static uint32_t bn = 1u;
-        static int initialized = 0;
-        if (!initialized) {
-            const char *e = getenv("Q9_BREAK_PC");
-            const char *n = getenv("Q9_BREAK_PC_N");
-            bn = n ? (uint32_t)strtoul(n, NULL, 0) : 1u;
-            if (bn == 0u) bn = 1u;
-            while (e && *e && count < BREAK_MAX) {
-                char *end = NULL;
-                unsigned long v = strtoul(e, &end, 0);
-                uint32_t i;
-                int duplicate = 0;
-                if (end == e) break;
-                for (i = 0u; i < count; i++) if (bpc[i] == (uint32_t)v) duplicate = 1;
-                if (!duplicate) bpc[count++] = (uint32_t)v;
-                e = (*end == ',') ? end + 1 : end;
-            }
-            initialized = 1;
-        }
-        /* Q9_BREAK_PC akzeptiert bis zu 16 Adressen. Jede Adresse zaehlt
-           ihren eigenen Treffer; Q9_BREAK_PC_N gilt fuer alle. */
-        {
-            uint32_t i;
-            for (i = 0u; i < count; i++) {
-                if ((uint32_t)pc != bpc[i] || ++seen[i] != bn) continue;
-                if (g_break_skip_once) {
-                    g_break_skip_once = 0;
-                } else {
-                    q9_dbg_capture_snapshot((uint32_t)pc);
-                    q9_dbg_tr_frozen = 1;
-                    q9_dbg_break_requested = 1;
-                    m68k_end_timeslice(); /* stop this slice after the instruction at PC */
-                    return;
-                }
+        uint32_t i;
+        for (i = 0u; i < g_pc_break_count; i++) {
+            q9_dbg_pc_break_t *bp = &g_pc_breaks[i];
+            if ((uint32_t)pc != bp->pc || ++bp->seen != bp->hit_at) continue;
+            if (g_break_skip_once) {
+                g_break_skip_once = 0;
+            } else {
+                q9_dbg_capture_snapshot((uint32_t)pc);
+                q9_dbg_tr_frozen = 1;
+                q9_dbg_break_requested = 1;
+                m68k_end_timeslice();
+                return;
             }
         }
     }
@@ -600,7 +635,8 @@ void q9_dbg_instr_trace_init(void)
 {
     const char *env = getenv("Q9_TRACE_INSTR");
 
-    if ((env && env[0] == '1') || getenv("Q9_BREAK_PC")) {
+    q9_dbg_pc_breaks_init();
+    if ((env && env[0] == '1') || getenv("Q9_BREAK_PC") || getenv("Q9_GDB_PORT")) {
         q9_dbg_cpc_init();
         m68k_set_instr_hook_callback(q9_dbg_instr_hook);
     }

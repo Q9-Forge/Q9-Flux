@@ -993,6 +993,9 @@ int m68k_execute(int num_cycles)
 
 			/* Call external hook to peek at CPU */
 			m68ki_instr_hook(REG_PC); /* auto-disable (see m68kcpu.h) */
+			/* A debugger hook may end the slice before this instruction. */
+			if (GET_CYCLES() <= 0)
+				break;
 
 			/* Record previous program counter */
 			REG_PPC = REG_PC;
