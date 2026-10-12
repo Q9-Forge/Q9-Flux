@@ -144,7 +144,7 @@ int q9_line_lookup(uint32_t pc, char *out, size_t out_len)
             lo = mid + 1u;
         } else hi = mid;
     }
-    if (!best) return 0;
+    if (!best || best->source[0] == '!') return 0;
     snprintf(out, out_len, "%s:%u:%u", best->source, best->line, best->column);
     return 1;
 }
@@ -173,7 +173,7 @@ int q9_line_lookup_module(const char *module, uint32_t module_base,
             hi = mid;
         }
     }
-    if (!best) return 0;
+    if (!best || best->source[0] == '!') return 0;
     snprintf(out, out_len, "%s:%u:%u", best->source, best->line, best->column);
     return 1;
 }

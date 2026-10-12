@@ -44,6 +44,10 @@ int main(void)
         fprintf(stderr, "FAIL next module source line: '%s'\n", out);
         failures++;
     }
+    if (q9_line_lookup_module("sample", 0x2000u, 0x2070u, out, sizeof(out))) {
+        fprintf(stderr, "FAIL module line map crossed its end marker: '%s'\n", out);
+        failures++;
+    }
     if (q9_line_lookup_module("../sample", 0x2000u, 0x2050u, out, sizeof(out))) {
         fprintf(stderr, "FAIL unsafe module line map unexpectedly resolved\n");
         failures++;
