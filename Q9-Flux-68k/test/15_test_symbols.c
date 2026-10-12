@@ -21,9 +21,25 @@ static void expect_symbol(const char *label, const char *module, unsigned base,
 int main(void)
 {
     char out[128];
-    expect_symbol("exact entry", "sample", 0x2000u, 0x204au, "Init+0x0");
+    /* sample.stb contains a conflicting symbol; the text map must win. */
+    expect_symbol("map preferred over STB", "sample", 0x2000u,
+                  0x204au, "Init+0x0");
     expect_symbol("next symbol", "SAMPLE", 0x2000u, 0x2076u, "helper+0x6");
     expect_symbol("module relative", "sample", 0x3000u, 0x308du, "Write+0x3");
+    expect_symbol("STB exact code entry", "stb_sample", 0x4000u,
+                  0x4044u, "entry+0x0");
+    expect_symbol("STB code entry", "stb_sample", 0x4000u,
+                  0x4062u, "helper+0x2");
+    if (q9_symbolize_module_pc("stb_sample", 0x4000u, 0x4002u,
+                               out, sizeof(out))) {
+        fprintf(stderr, "FAIL STB data entry was treated as code: '%s'\n", out);
+        failures++;
+    }
+    if (q9_symbolize_module_pc("bad_stb", 0x4000u, 0x4044u,
+                               out, sizeof(out))) {
+        fprintf(stderr, "FAIL malformed STB was accepted: '%s'\n", out);
+        failures++;
+    }
     if (q9_symbolize_module_pc("missing", 0x2000u, 0x2040u, out, sizeof(out))) {
         fprintf(stderr, "FAIL missing map unexpectedly resolved as %s\n", out);
         failures++;

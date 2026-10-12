@@ -293,8 +293,8 @@ test: test-gdbstub test-symbols test-cf-sector test-devschema test-devdesc test-
 test-gdbstub: $(BUILD)/$(PLATFORM_DIR)/q9.exe
 	python3 test/test_gdbstub.py $(BUILD)/$(PLATFORM_DIR)/q9.exe
 
-# H1: Linkkarten fuer dynamische OS-9-Module (Q9_SYMBOL_DIR/<modul>.map).
-# Prueft COD-Offsets, Case-Folding und sichere Modulnamen.
+# H1: Symbolquellen fuer dynamische OS-9-Module (.map bevorzugt, .stb als Fallback).
+# Prueft COD-Offsets, STB-Codeeintraege, Case-Folding und sichere Modulnamen.
 test-symbols:
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(CFLAGS) test/15_test_symbols.c src/kernel/q9symbol.c src/kernel/q9line.c -o $(BUILD)/$(PLATFORM_DIR)/test_symbols
