@@ -22,6 +22,8 @@ typedef struct {
     char module[33];
     q9_symbol_t *symbols;
     size_t count;
+    uint32_t expected_module_crc;
+    int has_expected_module_crc;
 } q9_module_map_t;
 
 static q9_module_map_t g_module_maps[Q9_MODULE_MAP_CACHE];
@@ -111,6 +113,10 @@ static int load_stb_file(q9_module_map_t *map, const char *path)
     if (module_size > (uint32_t)file_size || module_size < 0x30u ||
         bytes[0x12] != 0x04u || symtab < 0x30u || symtab > module_size ||
         module_size - symtab < 14u || bytes[symtab] != 1u) goto done;
+    map->expected_module_crc = ((uint32_t)bytes[symtab + 3u] << 16) |
+                               ((uint32_t)bytes[symtab + 4u] << 8) |
+                               bytes[symtab + 5u];
+    map->has_expected_module_crc = 1;
     records = ((uint32_t)bytes[symtab + 8u] << 8) | bytes[symtab + 9u];
     count = ((uint32_t)bytes[symtab + 12u] << 8) | bytes[symtab + 13u];
     if (records < symtab + 14u || records > module_size ||
@@ -148,7 +154,11 @@ static int load_stb_file(q9_module_map_t *map, const char *path)
 done:
     free(bytes);
     fclose(f);
-    if (!ok) map->count = 0;
+    if (!ok) {
+        map->count = 0;
+        map->expected_module_crc = 0;
+        map->has_expected_module_crc = 0;
+    }
     return ok;
 }
 
@@ -248,7 +258,8 @@ int q9_symbolize_pc(uint32_t pc, char *out, size_t out_len)
 }
 
 int q9_symbolize_module_pc(const char *module, uint32_t module_base,
-                           uint32_t pc, char *out, size_t out_len)
+                           uint32_t pc, uint32_t module_crc,
+                           char *out, size_t out_len)
 {
     q9_module_map_t *map;
     const q9_symbol_t *best = NULL;
@@ -258,7 +269,9 @@ int q9_symbolize_module_pc(const char *module, uint32_t module_base,
     out[0] = 0;
     if (pc < module_base) return 0;
     map = load_module_map(module);
-    if (!map) return 0;
+    if (!map || (map->has_expected_module_crc &&
+                 map->expected_module_crc != (module_crc & 0x00ffffffu)))
+        return 0;
     offset = pc - module_base;
     hi = map->count;
     while (lo < hi) {

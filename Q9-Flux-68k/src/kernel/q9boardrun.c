@@ -181,11 +181,17 @@ static int dbg_symbolize_pc_hint(q9_board_t *b, uint32_t pc, uint32_t header_hin
                                  char *out, size_t out_len)
 {
     char module[33];
-    uint32_t base;
+    uint32_t base, size, module_crc = 0;
     if (!out || out_len == 0) return 0;
     out[0] = 0;
     if (dbg_module_at_pc(b, pc, header_hint, module, sizeof(module), &base)) {
-        if (!q9_symbolize_module_pc(module, base, pc, out, out_len))
+        size = q9_board_read32(b, base + Q9K_DBG_MH_SIZE_OFF);
+        if (size >= 3u && size <= BOARD_RAM_BYTES - base) {
+            module_crc = ((uint32_t)q9_board_read8(b, base + size - 3u) << 16) |
+                         ((uint32_t)q9_board_read8(b, base + size - 2u) << 8) |
+                         (uint32_t)q9_board_read8(b, base + size - 1u);
+        }
+        if (!q9_symbolize_module_pc(module, base, pc, module_crc, out, out_len))
             snprintf(out, out_len, "%s+0x%x", module, (unsigned)(pc - base));
         return 1;
     }
