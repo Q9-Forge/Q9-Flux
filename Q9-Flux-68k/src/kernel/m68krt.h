@@ -275,6 +275,7 @@ void q9_m68krt_get_backend(q9_m68krt_t *rt, q9_cpu_backend_t *backend);
 extern uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+extern uint32_t q9_dbg_tr_a3[Q9_DBG_TR_SIZE]; /* Modulbasis fuer private Prozesskopien */
 extern uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];
 extern uint32_t q9_dbg_tr_a4[Q9_DBG_TR_SIZE];       /* a7 -- macht den Exception-Frame lesbar */
 extern uint32_t q9_dbg_tr_d1[Q9_DBG_TR_SIZE];       /* zusaetzliche Register in der Instruktionsspur, s. Q9_TRACE_INSTR */

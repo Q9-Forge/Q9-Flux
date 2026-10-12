@@ -254,6 +254,7 @@ static inline int ram_fast_hit(uint32_t address, uint32_t span)
 uint32_t q9_dbg_tr_pc[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_d0[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_a0[Q9_DBG_TR_SIZE];
+uint32_t q9_dbg_tr_a3[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_sp[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_a4[Q9_DBG_TR_SIZE];
 uint32_t q9_dbg_tr_d1[Q9_DBG_TR_SIZE];
@@ -538,6 +539,7 @@ static void q9_dbg_instr_hook(unsigned int pc)
     q9_dbg_tr_pc[q9_dbg_tr_head] = (uint32_t)pc;
     q9_dbg_tr_d0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_D0);
     q9_dbg_tr_a0[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A0);
+    q9_dbg_tr_a3[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_A3);
     q9_dbg_tr_sp[q9_dbg_tr_head] = (uint32_t)m68k_get_reg(NULL, M68K_REG_SP);
     {   /* Q9_TRACE_AREG=<0..7>: dieses Adressregister statt a4 in der Spalte
            "a4" mitschreiben (Diagnose; ohne Variable unveraendert a4). */
