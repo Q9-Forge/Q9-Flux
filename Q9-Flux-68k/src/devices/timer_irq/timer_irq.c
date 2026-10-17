@@ -14,6 +14,22 @@
 //         │      │ q9_devdesc_timer_irq; q9_board_poll_timer wurde `static`                  │
 //═════════╧══════╧════════════════════════════════════════════════════════════════════════╧══════
 #include "timer_irq.h"
+#include <stdlib.h>
+
+/* 2026-10-16 (Q9-KERNEL Arbeitsplan A15, Interrupt-Injektion): die Tickperiode laesst sich ueber die Umgebungsvariable
+   Q9_TIMER_PERIOD_MS (1..1000) verkuerzen, damit die IRQ-Fenster des Kernels deutlich haeufiger getroffen werden. Ohne
+   Variable gilt unveraendert Q9_BOARD_TIMER_PERIOD_MS (10 ms, 100 Hz). Die Q9-Uhr laeuft bei kuerzerer Periode
+   entsprechend schneller (ein Tick je Interrupt), Schlaf- und Zeitwerte des Kernels verkuerzen sich im gleichen Verhaeltnis. */
+static uint32_t timer_period_ms(void)
+{
+    static uint32_t cached = 0;
+    if (cached == 0) {
+        const char *e = getenv("Q9_TIMER_PERIOD_MS");
+        long v = e ? strtol(e, NULL, 10) : 0;
+        cached = (v >= 1 && v <= 1000) ? (uint32_t)v : Q9_BOARD_TIMER_PERIOD_MS;
+    }
+    return cached;
+}
 
 /* 2026-08-21: `static` -- kein externer Aufrufer mehr ausser der eigenen Vtable weiter unten
    (verifiziert: weder q9boardrun.c/m68krt.c noch test/tools/ riefen diese Funktion je direkt auf,
@@ -31,7 +47,7 @@ static int q9_board_poll_timer(q9_board_t *b, uint32_t now_ms)
         b->timer_last_ms = now_ms;
         return 1;
     }
-    if (now_ms - b->timer_last_ms >= Q9_BOARD_TIMER_PERIOD_MS) {
+    if (now_ms - b->timer_last_ms >= timer_period_ms()) {
         /* 5.6: Tick-Schulden nachholen statt verwerfen — vorher wurde timer_last_ms auf
            "jetzt" gesetzt, d.h. pro Poll hoechstens EIN Tick, egal wie viel Echtzeit
            vergangen war. Im Idle-Betrieb (STOP + Host-Schlafdrossel, 5.9) verlor die
@@ -44,7 +60,7 @@ static int q9_board_poll_timer(q9_board_t *b, uint32_t now_ms)
         if (now_ms - b->timer_last_ms > 30000u) {
             b->timer_last_ms = now_ms - 30000u;
         }
-        b->timer_last_ms += Q9_BOARD_TIMER_PERIOD_MS;
+        b->timer_last_ms += timer_period_ms();
         return 1;
     }
     return 0;

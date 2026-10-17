@@ -112,7 +112,9 @@ M68KRT_HDR   = src/kernel/m68krt.h
 MUSASHI_DIR  = third_party/musashi
 MUSASHI_GEN  = $(BUILD)/$(PLATFORM_DIR)/musashi_gen
 MUSASHI_MAKE = $(BUILD)/$(PLATFORM_DIR)/m68kmake
-MUSASHI_CFLAGS = -std=c99 -O2 -I$(MUSASHI_DIR) -I$(MUSASHI_GEN)
+# 2026-10-16 (Q9-KERNEL Arbeitsplan C2, F$DExec): das Trace-Bit (SR bit 15) muss wirken, sonst gibt es keinen Einzelschritt und
+# F$DFork/F$DExec/F$DExit sind live nicht pruefbar. Der Schalter steht hier statt in dem vendorten m68kconf.h (dort #ifndef).
+MUSASHI_CFLAGS = -std=c99 -O2 -DM68K_EMULATE_TRACE=M68K_OPT_ON -I$(MUSASHI_DIR) -I$(MUSASHI_GEN)
 # m68kcpu.c bindet m68kfpu.c bereits selbst per #include ein (Musashi-eigenes Muster, s.
 # third_party/musashi/m68kcpu.c Zeile 51) -- m68kfpu.c darf deshalb NICHT separat uebersetzt
 # werden, sonst doppelte Symbole (m68040_fpu_op0/op1) beim Linken.

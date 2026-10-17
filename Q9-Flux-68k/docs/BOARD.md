@@ -99,6 +99,8 @@ dokumentiert waren.
 
 ### Timer/Interrupt IRQ3 (Andreas, 2026-07-04)
 
+**Taktverkürzung für Tests (2026-10-16, Q9-KERNEL Arbeitsplan A15):** die Umgebungsvariable `Q9_TIMER_PERIOD_MS` (1–1000) ersetzt die Tickperiode `Q9_BOARD_TIMER_PERIOD_MS` (10 ms) in `src/devices/timer_irq/timer_irq.c`. Mit `1` laufen Kernel-IRQ-Fenster zehnmal so oft an; die Q9-Uhr läuft entsprechend zehnmal schneller (gemessen: 55 s statt 5 s im selben Testlauf). Ohne Variable bleibt alles beim Alten.
+
 `TI_IRQ_ON`/`TI_IRQ_OFF` sind **keine Datenregister**, sondern reine
 Adress-Trigger (wie REMAP): Ein einfacher Buszugriff auf die `TI_IRQ_ON`-Adresse
 schaltet einen Timer ein, der einen Interrupt auf **IRQ3** auslöst; ein
