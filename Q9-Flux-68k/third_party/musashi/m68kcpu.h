@@ -996,6 +996,7 @@ typedef struct
 	uint mmu_crp_aptr, mmu_crp_limit;
 	uint mmu_srp_aptr, mmu_srp_limit;
 	uint mmu_tc;
+	uint mmu_tt0, mmu_tt1; /* Q9: MC68030 transparent translation registers */
 	uint16 mmu_sr;
 
 	const uint8* cyc_instruction;

@@ -138,7 +138,7 @@ $(BUILD)/$(PLATFORM_DIR)/musashi_softfloat.o: $(MUSASHI_DIR)/softfloat/softfloat
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 
-$(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c
+$(BUILD)/$(PLATFORM_DIR)/musashi_m68kops.o: $(MUSASHI_GEN)/m68kops.c $(MUSASHI_DIR)/m68kcpu.h $(MUSASHI_DIR)/m68k.h $(MUSASHI_DIR)/m68kconf.h
 	@mkdir -p $(BUILD)/$(PLATFORM_DIR)
 	$(CC) $(MUSASHI_CFLAGS) -c $< -o $@
 

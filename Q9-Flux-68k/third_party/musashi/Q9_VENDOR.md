@@ -74,3 +74,11 @@ mshell (`$`-Prompt, `mdir` funktioniert) — s. ARBEITSPLAN.md 5.4.
    gestoppten CPU sofort wieder (100 % Host-CPU im Leerlauf), weil es von aussen
    keine Möglichkeit gab, den Stopp-Zustand abzufragen. Rein additiv (keine
    bestehende Funktion geändert), markiert mit `Q9`.
+
+## Q9-eigene Änderung: 68030-PMMU (P2, in Arbeit)
+
+7. **PMOVE TT0/TT1 und MMUSR**: 68030-TT-Register werden getrennt von
+   Root-Pointern gespeichert (PRM S. 6-50), MMUSR als Wort transferiert
+   (PRM S. 6-49); Reset loescht die E-Bits (MC68030UM 9.2.2). Tests in
+   `test/16_test_pmmu.c`. TT-Adresstranslation, ATC/FD und Konfigurations-
+   exception sind noch nicht implementiert (P2/P3/P8 nicht abgeschlossen).

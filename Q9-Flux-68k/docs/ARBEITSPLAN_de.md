@@ -48,8 +48,11 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
   explizitem Pfad zum vorhandenen Q9-OS-DHF-Treibermodul. Diese DHF-Aenderungen
   gehoeren nicht zum PMMU-Commit; im unveraenderten Ausgangsstand sind die
   DHF-Tests veraltet und der Treiberpfad im Worktree nicht automatisch gueltig.
-- P2 bis P10: ausstehend (PMOVE, TT, Tablewalk, Fault/RTE, PTEST, ATC,
-  Debugger, Regression/Dokumentation); keine PMMU-Funktionalitaet geaendert.
+- P2 in Arbeit: TT0/TT1-PMOVE getrennt von SRP/CRP, MMUSR als Wort;
+  Register-Roundtrips und Reset geprueft. TC/Root-Konfigurationsfehler,
+  vollstaendige PMOVE-Semantik und ATC/FD fehlen noch.
+- P3 bis P10 ausstehend (TT-Uebersetzung, Tablewalk, Fault/RTE, PTEST,
+  ATC, Debugger, Regression/Dokumentation).
 
 ## Nächste Arbeitsschritte
 

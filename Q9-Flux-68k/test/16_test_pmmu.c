@@ -73,5 +73,47 @@ int main(void) {
         return 1;
     }
     puts("PASS PMMU root DT=1: identity and relocated guest instruction/data reads");
+    /* PMOVE TT0/TT1 and MMUSR roundtrips, with adjacent sentinel words.
+       Format and operand sizes: Motorola M68000 PRM pp. 6-49/6-50. */
+    memset(ram, 0, sizeof ram);
+    put32(0, 0x8000); put32(4, 0x100);
+    {
+        unsigned pc = 0x100;
+        const unsigned ext[] = {0x0800, 0x0c00, 0x0a00, 0x0e00, 0x6000, 0x6200};
+        const unsigned addr[] = {0x300, 0x304, 0x310, 0x314, 0x320, 0x324};
+        unsigned i;
+        for (i = 0; i < 6; i++) {
+            put16(pc, 0xf039); put16(pc + 2, ext[i]); put32(pc + 4, addr[i]); pc += 8;
+        }
+        put16(pc, 0x4e72); put16(pc + 2, 0x2700);
+    }
+    put32(0x300, 0x12345678); put32(0x304, 0x23456789);
+    put16(0x320, 0xa5c3); put16(0x322, 0x5678);
+    put32(0x324, 0xdeadbeef);
+    accesses_outside_ram = 0;
+    m68k_pulse_reset();
+    m68ki_cpu.mmu_crp_limit = 0x12340001; m68ki_cpu.mmu_crp_aptr = 0x56789000;
+    m68ki_cpu.mmu_srp_limit = 0x87650001; m68ki_cpu.mmu_srp_aptr = 0x43210000;
+    m68k_execute(1000);
+    if (m68ki_cpu.mmu_crp_limit != 0x12340001 || m68ki_cpu.mmu_crp_aptr != 0x56789000 ||
+        m68ki_cpu.mmu_srp_limit != 0x87650001 || m68ki_cpu.mmu_srp_aptr != 0x43210000 ||
+        !m68k_is_stopped() || accesses_outside_ram ||
+        m68k_read_memory_32(0x310) != 0x12345678 ||
+        m68k_read_memory_32(0x314) != 0x23456789 ||
+        m68k_read_memory_16(0x324) != 0xa5c3 ||
+        m68k_read_memory_16(0x326) != 0xbeef) {
+        fprintf(stderr, "FAIL PMOVE TT/MMUSR: tt0=%08x tt1=%08x status=%08x\n",
+                m68k_read_memory_32(0x310), m68k_read_memory_32(0x314), m68k_read_memory_32(0x324));
+        return 1;
+    }
+    puts("PASS PMOVE TT0/TT1 and 16-bit MMUSR roundtrips");
+    m68ki_cpu.mmu_tc = 0x80c08840;
+    m68ki_cpu.mmu_tt0 = 0x1234d678; m68ki_cpu.mmu_tt1 = 0x2345e789;
+    m68k_pulse_reset();
+    if (m68ki_cpu.mmu_tc != 0x00c08840 || m68ki_cpu.mmu_tt0 != 0x12345678 ||
+        m68ki_cpu.mmu_tt1 != 0x23456789 || m68ki_cpu.pmmu_enabled) {
+        fprintf(stderr, "FAIL reset must clear TC/TT enable bits\n"); return 1;
+    }
+    puts("PASS reset clears only TC/TT enable bits");
     return 0;
 }

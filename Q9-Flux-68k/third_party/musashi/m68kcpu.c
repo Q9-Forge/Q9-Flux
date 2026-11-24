@@ -1130,6 +1130,12 @@ void m68k_pulse_reset(void)
 {
 	/* Disable the PMMU on reset */
 	m68ki_cpu.pmmu_enabled = 0;
+	/* Q9: 68030 reset clears the E bits, MC68030UM section 9.2.2. */
+	if (CPU_TYPE == CPU_TYPE_030) {
+		m68ki_cpu.mmu_tc &= ~0x80000000u;
+		m68ki_cpu.mmu_tt0 &= ~0x00008000u;
+		m68ki_cpu.mmu_tt1 &= ~0x00008000u;
+	}
 
 	/* Clear all stop levels and eat up all remaining cycles */
 	CPU_STOPPED = 0;

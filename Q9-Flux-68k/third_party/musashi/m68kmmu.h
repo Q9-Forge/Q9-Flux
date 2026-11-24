@@ -391,7 +391,17 @@ void m68881_mmu_ops(void)
 				{
 					switch ((modes>>13) & 0x7)
 					{
-						case 0:	// MC68030/040 form with FD bit
+						case 0: /* Q9: 68030 TT0/TT1, PRM p. 6-50 */
+							if (CPU_TYPE == CPU_TYPE_030) {
+								uint *tt = ((modes >> 10) & 7) == 2 ? &m68ki_cpu.mmu_tt0 :
+								           ((modes >> 10) & 7) == 3 ? &m68ki_cpu.mmu_tt1 : NULL;
+								if (!tt || (modes & 0xff)) { m68ki_exception_illegal(); return; }
+								if (modes & 0x200) WRITE_EA_32(ea, *tt);
+								else *tt = READ_EA_32(ea);
+								/* FD/ATC behaviour will be implemented with the ATC (P8). */
+								break;
+							}
+							/* Other CPU types retain the existing upstream behaviour. */
 						case 2:	// MC68881 form, FD never set
 							if (modes & 0x200)
 							{
@@ -453,11 +463,11 @@ void m68881_mmu_ops(void)
 						case 3:	// MC68030 to/from status reg
 							if (modes & 0x200)
 							{
-								WRITE_EA_32(ea, m68ki_cpu.mmu_sr);
+								WRITE_EA_16(ea, m68ki_cpu.mmu_sr);
 							}
 							else
 							{
-								m68ki_cpu.mmu_sr = READ_EA_32(ea);
+								m68ki_cpu.mmu_sr = READ_EA_16(ea);
 							}
 							break;
 
