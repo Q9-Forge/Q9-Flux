@@ -39,6 +39,18 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 
 ---
 
+## 68030-PMMU-Ausbau (Branch feature/pmmu-68030)
+
+- P1: Hosttest ohne Board/OS, `make test-pmmu` und Einbindung in `make test`.
+  Gastprogramm schaltet per PMOVE CRP/TC ein; Root-DT=1 mit identischer und
+  verschobener Abbildung (Befehls- und Datenzugriff) bestanden am 2026-11-24.
+- Gesamt-`make test` bestand mit separat vorhandenen DHF-Testkorrekturen und
+  explizitem Pfad zum vorhandenen Q9-OS-DHF-Treibermodul. Diese DHF-Aenderungen
+  gehoeren nicht zum PMMU-Commit; im unveraenderten Ausgangsstand sind die
+  DHF-Tests veraltet und der Treiberpfad im Worktree nicht automatisch gueltig.
+- P2 bis P10: ausstehend (PMOVE, TT, Tablewalk, Fault/RTE, PTEST, ATC,
+  Debugger, Regression/Dokumentation); keine PMMU-Funktionalitaet geaendert.
+
 ## Nächste Arbeitsschritte
 
 ### Phase 0 — Fundament

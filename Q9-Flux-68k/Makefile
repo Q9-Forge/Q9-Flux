@@ -289,7 +289,12 @@ endif
 #───────────────────────────────────────────────────────────────────────────────────────────────
 # test / clean
 #───────────────────────────────────────────────────────────────────────────────────────────────
-test: test-gdbstub test-symbols test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf test-dhf-driver
+test: test-pmmu test-gdbstub test-symbols test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-boardcfg-save test-dhf test-dhf-driver
+
+# Isolierter 68030-PMMU-Hosttest: keine Board-Geraete oder OS-Images.
+test-pmmu: $(MUSASHI_OBJS)
+	$(CC) $(MUSASHI_CFLAGS) test/16_test_pmmu.c $(MUSASHI_OBJS) -lm -o $(BUILD)/$(PLATFORM_DIR)/test_pmmu
+	$(BUILD)/$(PLATFORM_DIR)/test_pmmu
 
 # GDB RSP gegen ein synthetisches 68k-ROM: Registers, Memory, Breakpoints, Continue, Step.
 test-gdbstub: $(BUILD)/$(PLATFORM_DIR)/q9.exe
@@ -697,7 +702,7 @@ clean:
 distclean: clean
 	rm -rf $(BUILD)
 
-.PHONY: build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-dhf test-dhf-driver test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx test-gdbstub clean distclean
+.PHONY: test-pmmu build host native q9fat test test-cf-sector test-devschema test-devdesc test-io-dispatch test-ansi test-screenbuf test-widgets test-procspawn test-input test-listview test-filelist test-filedialog test-useslot test-dhf test-dhf-driver test-riscv test-rvboard test-rvtimer test-rvextirq test-rvnuttx test-gdbstub clean distclean
 
 #─────────────────────────────────────────────────────────────────────────────────────────────────
 # EOF Makefile                                                                            Ver. 4.40
