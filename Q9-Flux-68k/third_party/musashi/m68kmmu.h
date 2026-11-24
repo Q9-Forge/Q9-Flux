@@ -315,6 +315,20 @@ uint pmmu_translate_addr(uint addr_in)
 
 */
 
+/* Q9: MC68030UM 9.7.5.3, TC consistency when translation is enabled. */
+static int q9_pmmu_tc_valid(uint tc)
+{
+    uint ps = (tc >> 20) & 15, total = ps + ((tc >> 16) & 15);
+    int shift;
+    if (ps < 8) return 0;
+    for (shift = 12; shift >= 0; shift -= 4) {
+        uint bits = (tc >> shift) & 15;
+        if (!bits) break;
+        total += bits;
+    }
+    return total == 32;
+}
+
 void m68881_mmu_ops(void)
 {
 	uint16 modes;
@@ -431,6 +445,15 @@ void m68881_mmu_ops(void)
 									case 0:	// translation control register
 										m68ki_cpu.mmu_tc = READ_EA_32(ea);
 
+										/* Q9: invalid TC is retained with E cleared; vector 56
+										 * is a post-instruction exception (MC68030UM 8.1.10). */
+										if (CPU_TYPE == CPU_TYPE_030 && (m68ki_cpu.mmu_tc & 0x80000000u) &&
+										    !q9_pmmu_tc_valid(m68ki_cpu.mmu_tc)) {
+											m68ki_cpu.mmu_tc &= ~0x80000000u;
+											m68ki_cpu.pmmu_enabled = 0;
+											m68ki_exception_trap(56);
+											break;
+										}
 										if (m68ki_cpu.mmu_tc & 0x80000000)
 										{
 											m68ki_cpu.pmmu_enabled = 1;
@@ -445,12 +468,18 @@ void m68881_mmu_ops(void)
 										temp64 = READ_EA_64(ea);
 										m68ki_cpu.mmu_srp_limit = (temp64>>32) & 0xffffffff;
 										m68ki_cpu.mmu_srp_aptr = temp64 & 0xffffffff;
+										/* Q9: DT=0 raises a post-instruction configuration exception. */
+										if (CPU_TYPE == CPU_TYPE_030 && !(m68ki_cpu.mmu_srp_limit & 3))
+											m68ki_exception_trap(56);
 										break;
 
 									case 3:	// CPU root pointer
 										temp64 = READ_EA_64(ea);
 										m68ki_cpu.mmu_crp_limit = (temp64>>32) & 0xffffffff;
 										m68ki_cpu.mmu_crp_aptr = temp64 & 0xffffffff;
+										/* Q9: DT=0 raises a post-instruction configuration exception. */
+										if (CPU_TYPE == CPU_TYPE_030 && !(m68ki_cpu.mmu_crp_limit & 3))
+											m68ki_exception_trap(56);
 										break;
 
 									default:

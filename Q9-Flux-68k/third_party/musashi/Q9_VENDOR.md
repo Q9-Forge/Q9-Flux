@@ -80,5 +80,12 @@ mshell (`$`-Prompt, `mdir` funktioniert) — s. ARBEITSPLAN.md 5.4.
 7. **PMOVE TT0/TT1 und MMUSR**: 68030-TT-Register werden getrennt von
    Root-Pointern gespeichert (PRM S. 6-50), MMUSR als Wort transferiert
    (PRM S. 6-49); Reset loescht die E-Bits (MC68030UM 9.2.2). Tests in
-   `test/16_test_pmmu.c`. TT-Adresstranslation, ATC/FD und Konfigurations-
-   exception sind noch nicht implementiert (P2/P3/P8 nicht abgeschlossen).
+   `test/16_test_pmmu.c`. TT-Adresstranslation, ATC/FD und Fehlerbehandlung
+   beim Zugriff auf ungueltige aktive Tabellen sind noch nicht implementiert
+   (P2/P3/P5/P8 nicht abgeschlossen).
+
+8. **PMOVE-Konfigurationsfehler**: Pruefung von TC (PS und Summe der
+   Indexfelder), sowie Root-DT=0; Vektor 56 mit Format-2-Rahmen und bei
+   ungueltigem TC geloeschtem E-Bit (MC68030UM 8.1.10 und 9.7.5.3).
+   Hosttests decken ungueltige TC/CRP/SRP bei deaktivierter PMMU ab.
+   Fehler beim Zugriff auf ungueltige aktive Tabellen bleiben Teil von P5.

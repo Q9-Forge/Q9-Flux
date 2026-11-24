@@ -35,6 +35,38 @@ void m68k_write_memory_32_pd(unsigned int a, unsigned int v) {
 static void put16(unsigned a, unsigned v) { m68k_write_memory_16(a, v); }
 static void put32(unsigned a, unsigned v) { m68k_write_memory_32(a, v); }
 
+/* Vector 56 is a post-instruction exception with a format-2 frame:
+   MC68030UM pp. 8-21/8-22, 9-52. */
+static int check_config_error(unsigned ext, unsigned high, unsigned low) {
+    unsigned sp;
+    memset(ram, 0, sizeof ram);
+    put32(0, 0x8000); put32(4, 0x100); put32(56 * 4, 0x200);
+    put16(0x100, 0xf039); put16(0x102, ext); put32(0x104, 0x300);
+    put16(0x108, 0x4e72); put16(0x10a, 0x2700);
+    put16(0x200, 0x4e72); put16(0x202, 0x2700);
+    put32(0x300, high); put32(0x304, low);
+    accesses_outside_ram = 0;
+    m68k_pulse_reset(); m68k_execute(1000);
+    sp = m68k_get_reg(NULL, M68K_REG_SP);
+    if (!m68k_is_stopped() || m68k_get_reg(NULL, M68K_REG_PC) != 0x204 ||
+        sp != 0x7ff4 || m68k_read_memory_32(sp + 2) != 0x108 ||
+        m68k_read_memory_16(sp + 6) != 0x20e0 ||
+        m68k_read_memory_32(sp + 8) != 0x100 || accesses_outside_ram) {
+        fprintf(stderr, "FAIL config exception ext=%04x PC=%08x SP=%08x\n", ext,
+                m68k_get_reg(NULL, M68K_REG_PC), sp); return 1;
+    }
+    if (ext == 0x4000 && (m68ki_cpu.mmu_tc != (high & 0x7fffffff) || m68ki_cpu.pmmu_enabled)) {
+        fputs("FAIL invalid TC not retained with E cleared\n", stderr); return 1;
+    }
+    if (ext == 0x4c00 && (m68ki_cpu.mmu_crp_limit != high || m68ki_cpu.mmu_crp_aptr != low)) {
+        fputs("FAIL invalid CRP not retained\n", stderr); return 1;
+    }
+    if (ext == 0x4800 && (m68ki_cpu.mmu_srp_limit != high || m68ki_cpu.mmu_srp_aptr != low)) {
+        fputs("FAIL invalid SRP not retained\n", stderr); return 1;
+    }
+    return 0;
+}
+
 int main(void) {
     /* PMOVE ($300).L,CRP; PMOVE ($308).L,TC; MOVE.L ($400).L,D0;
        STOP #$2700. Encodings: M68000 PRM 6-48, 6-49. */
@@ -115,5 +147,10 @@ int main(void) {
         fprintf(stderr, "FAIL reset must clear TC/TT enable bits\n"); return 1;
     }
     puts("PASS reset clears only TC/TT enable bits");
+    if (check_config_error(0x4000, 0x80000000, 0) ||
+        check_config_error(0x4000, 0x80c08440, 0) ||
+        check_config_error(0x4c00, 0x12340000, 0x12345678) ||
+        check_config_error(0x4800, 0x12340000, 0x87654321)) return 1;
+    puts("PASS invalid TC, CRP and SRP raise vector 56");
     return 0;
 }
