@@ -51,6 +51,7 @@ Wird bei jeder Arbeitssession aktualisiert (feiner granular als context.txt).
 - P2 in Arbeit: TT0/TT1-PMOVE getrennt von SRP/CRP, MMUSR als Wort;
   Register-Roundtrips und Reset geprueft. Ungueltige TC/CRP/SRP loesen
   Vektor 56 aus (Format-2-Rahmen getestet, PMMU dabei deaktiviert).
+  TC/CRP/SRP-Roundtrips und User-Modus-Privilegfehler bestanden.
   Vollstaendige PMOVE-Semantik und ATC/FD fehlen noch.
 - P3 bis P10 ausstehend (TT-Uebersetzung, Tablewalk, Fault/RTE, PTEST,
   ATC, Debugger, Regression/Dokumentation).

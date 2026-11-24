@@ -89,3 +89,7 @@ mshell (`$`-Prompt, `mdir` funktioniert) — s. ARBEITSPLAN.md 5.4.
    ungueltigem TC geloeschtem E-Bit (MC68030UM 8.1.10 und 9.7.5.3).
    Hosttests decken ungueltige TC/CRP/SRP bei deaktivierter PMMU ab.
    Fehler beim Zugriff auf ungueltige aktive Tabellen bleiben Teil von P5.
+
+9. **68030-MMU-Befehle privilegiert**: User-Modus loest vor der Befehls-
+   ausfuehrung die Privileg-Ausnahme aus (MC68030UM 9.8); Hosttest prueft,
+   dass ein PMOVE den TT0-Inhalt dabei nicht veraendert.

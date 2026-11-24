@@ -335,6 +335,12 @@ void m68881_mmu_ops(void)
 	uint32 ea = m68ki_cpu.ir & 0x3f;
 	uint64 temp64;
 
+	/* Q9: 68030 MMU instructions are privileged (MC68030UM 9.8). */
+	if (CPU_TYPE == CPU_TYPE_030 && !FLAG_S) {
+		m68ki_exception_privilege_violation();
+		return;
+	}
+
 	// catch the 2 "weird" encodings up front (PBcc)
 	if ((m68ki_cpu.ir & 0xffc0) == 0xf0c0)
 	{

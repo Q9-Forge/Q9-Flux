@@ -67,6 +67,50 @@ static int check_config_error(unsigned ext, unsigned high, unsigned low) {
     return 0;
 }
 
+static int check_pmove_privilege(void) {
+    memset(ram, 0, sizeof ram);
+    put32(0, 0x8000); put32(4, 0x100); put32(8 * 4, 0x200);
+    put16(0x100, 0xf039); put16(0x102, 0x0800); put32(0x104, 0x300);
+    put16(0x108, 0x4e72); put16(0x10a, 0x2700);
+    put16(0x200, 0x4e72); put16(0x202, 0x2700); put32(0x300, 0x12345678);
+    accesses_outside_ram = 0;
+    m68k_pulse_reset(); m68ki_cpu.mmu_tt0 = 0;
+    m68k_set_reg(M68K_REG_USP, 0x7000); m68k_set_reg(M68K_REG_SR, 0);
+    m68k_execute(1000);
+    if (!m68k_is_stopped() || m68k_get_reg(NULL, M68K_REG_PC) != 0x204 ||
+        m68ki_cpu.mmu_tt0 || accesses_outside_ram) {
+        fprintf(stderr, "FAIL user-mode PMOVE privilege exception PC=%08x\n", m68k_get_reg(NULL, M68K_REG_PC));
+        return 1;
+    }
+    puts("PASS user-mode PMOVE raises privilege exception");
+    return 0;
+}
+
+static int check_root_tc_roundtrips(void) {
+    unsigned pc = 0x100, i;
+    const unsigned ext[] = {0x4900, 0x4d00, 0x4100, 0x4a00, 0x4e00, 0x4200};
+    const unsigned addr[] = {0x300, 0x308, 0x310, 0x320, 0x328, 0x330};
+    memset(ram, 0, sizeof ram);
+    put32(0, 0x8000); put32(4, 0x100);
+    for (i = 0; i < 6; i++) {
+        put16(pc, 0xf039); put16(pc + 2, ext[i]); put32(pc + 4, addr[i]); pc += 8;
+    }
+    put16(pc, 0x4e72); put16(pc + 2, 0x2700);
+    put32(0x300, 0x7fff0002); put32(0x304, 0x1200);
+    put32(0x308, 0x6fff0003); put32(0x30c, 0x2300);
+    put32(0x310, 0x00c08840);
+    accesses_outside_ram = 0;
+    m68k_pulse_reset(); m68k_execute(1000);
+    if (!m68k_is_stopped() || accesses_outside_ram ||
+        m68k_read_memory_32(0x320) != 0x7fff0002 || m68k_read_memory_32(0x324) != 0x1200 ||
+        m68k_read_memory_32(0x328) != 0x6fff0003 || m68k_read_memory_32(0x32c) != 0x2300 ||
+        m68k_read_memory_32(0x330) != 0x00c08840) {
+        fputs("FAIL PMOVE TC/CRP/SRP roundtrip\n", stderr); return 1;
+    }
+    puts("PASS PMOVE TC/CRP/SRP roundtrips including FD encoding");
+    return 0;
+}
+
 int main(void) {
     /* PMOVE ($300).L,CRP; PMOVE ($308).L,TC; MOVE.L ($400).L,D0;
        STOP #$2700. Encodings: M68000 PRM 6-48, 6-49. */
@@ -152,5 +196,5 @@ int main(void) {
         check_config_error(0x4c00, 0x12340000, 0x12345678) ||
         check_config_error(0x4800, 0x12340000, 0x87654321)) return 1;
     puts("PASS invalid TC, CRP and SRP raise vector 56");
-    return 0;
+    return check_root_tc_roundtrips() || check_pmove_privilege();
 }
